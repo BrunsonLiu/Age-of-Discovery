@@ -1,0 +1,48 @@
+import { Ship } from '@/types'
+
+export const shipTemplates: Record<string, Omit<Ship, 'id'>> = {
+  caravel: {
+    name: '卡拉维尔帆船',
+    type: 'caravel',
+    speed: 8,
+    durability: 60,
+    maxDurability: 60,
+    capacity: 40,
+    usedCapacity: 0,
+    crew: 15,
+    maxCrew: 20,
+  },
+  galleon: {
+    name: '盖伦大帆船',
+    type: 'galleon',
+    speed: 5,
+    durability: 120,
+    maxDurability: 120,
+    capacity: 100,
+    usedCapacity: 0,
+    crew: 40,
+    maxCrew: 60,
+  },
+  sloop: {
+    name: '单桅快船',
+    type: 'sloop',
+    speed: 12,
+    durability: 40,
+    maxDurability: 40,
+    capacity: 20,
+    usedCapacity: 0,
+    crew: 8,
+    maxCrew: 12,
+  },
+  frigate: {
+    name: '护卫舰',
+    type: 'frigate',
+    speed: 7,
+    durability: 90,
+    maxDurability: 90,
+    capacity: 60,
+    usedCapacity: 0,
+    crew: 30,
+    maxCrew: 45,
+  },
+}

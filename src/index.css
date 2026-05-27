@@ -1,0 +1,233 @@
+@import url('https://fonts.googleapis.com/css2?family=Pirata+One&family=Crimson+Text:ital,wght@0,400;0,600;0,700;1,400&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --ocean-deep: #1a2a3a;
+  --ocean-mid: #2d5fa8;
+  --gold-accent: #c9a96e;
+  --parchment: #f4e4c1;
+  --danger: #8b2500;
+  --safe: #2d5a27;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  font-family: 'Crimson Text', Georgia, serif;
+  background-color: var(--ocean-deep);
+  color: var(--parchment);
+}
+
+.leaflet-container {
+  width: 100% !important;
+  height: 100% !important;
+  background: linear-gradient(180deg,
+    #0d2a45 0%,
+    #0f3355 20%,
+    #123d65 40%,
+    #0f3555 60%,
+    #0c2a45 80%,
+    #091e35 100%
+  ) !important;
+  cursor: crosshair !important;
+  font-family: 'Crimson Text', Georgia, serif;
+}
+
+.leaflet-control-zoom {
+  border: 2px solid rgba(201,169,110,0.5) !important;
+  border-radius: 6px !important;
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.4) !important;
+}
+
+.leaflet-control-zoom a {
+  background-color: rgba(244, 228, 193, 0.92) !important;
+  color: #4d3518 !important;
+  border-color: rgba(201, 169, 110, 0.5) !important;
+  font-size: 16px !important;
+  line-height: 28px !important;
+}
+
+.leaflet-control-zoom a:hover {
+  background-color: rgba(212, 168, 56, 0.95) !important;
+  color: #1a2a3a !important;
+}
+
+.leaflet-control-attribution {
+  background: rgba(10, 18, 25, 0.8) !important;
+  color: #6b4e1e !important;
+  font-size: 8px !important;
+  border-radius: 3px 0 0 0 !important;
+}
+
+.leaflet-control-attribution a {
+  color: #8a6c2a !important;
+}
+
+.map-vignette {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background: radial-gradient(ellipse at center, transparent 55%, rgba(9,15,25,0.5) 100%);
+}
+
+.notification-toast {
+  animation: fadeInUp 0.4s ease-out, fadeOut 0.4s ease-in 3.6s forwards;
+}
+
+@keyframes fadeOut {
+  from { opacity: 1; transform: translateY(0); }
+  to { opacity: 0; transform: translateY(-10px); }
+}
+
+@layer components {
+  .parchment-bg {
+    background: linear-gradient(135deg, #f4e4c1 0%, #edd4a0 50%, #f4e4c1 100%);
+    color: #2b1e0e;
+  }
+
+  .parchment-bg-dark {
+    background: linear-gradient(135deg, rgba(244, 228, 193, 0.1) 0%, rgba(237, 212, 160, 0.05) 100%);
+    color: #f4e4c1;
+    border: 1px solid rgba(201, 169, 110, 0.3);
+  }
+
+  .gold-border {
+    border: 2px solid var(--gold-accent);
+    box-shadow: 0 0 10px rgba(201, 169, 110, 0.3);
+  }
+
+  .pirate-title {
+    font-family: 'Pirata One', cursive;
+    color: var(--gold-accent);
+    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+  }
+
+  .ink-text {
+    font-family: 'Crimson Text', Georgia, serif;
+    color: #2b1e0e;
+  }
+
+  .ocean-gradient {
+    background: linear-gradient(180deg, #1a2a3a 0%, #0a1219 100%);
+  }
+
+  .panel-slide-left {
+    animation: slideInLeft 0.4s ease-out forwards;
+  }
+
+  .panel-slide-right {
+    animation: slideInRight 0.4s ease-out forwards;
+  }
+
+  .btn-nautical {
+    @apply px-4 py-2 rounded font-serif font-semibold transition-all duration-200;
+    background: linear-gradient(180deg, #c9a96e 0%, #8a6c2a 100%);
+    color: #1a2a3a;
+    border: 2px solid #d4a838;
+    text-shadow: 0 1px 0 rgba(255, 255, 255, 0.3);
+  }
+
+  .btn-nautical:hover {
+    background: linear-gradient(180deg, #d4a838 0%, #c9a96e 100%);
+    box-shadow: 0 0 15px rgba(201, 169, 110, 0.5);
+    transform: translateY(-1px);
+  }
+
+  .btn-nautical:active {
+    transform: translateY(1px);
+    box-shadow: none;
+  }
+
+  .btn-danger {
+    @apply px-4 py-2 rounded font-serif font-semibold transition-all duration-200;
+    background: linear-gradient(180deg, #d46a55 0%, #8b2500 100%);
+    color: #fce8e4;
+    border: 2px solid #b8432e;
+  }
+
+  .btn-danger:hover {
+    background: linear-gradient(180deg, #e89a8a 0%, #d46a55 100%);
+    box-shadow: 0 0 15px rgba(139, 37, 0, 0.5);
+  }
+
+  .resource-bar {
+    @apply h-2 rounded-full overflow-hidden;
+    background-color: rgba(26, 42, 58, 0.8);
+  }
+
+  .resource-bar-fill {
+    @apply h-full rounded-full transition-all duration-500;
+  }
+
+  .scroll-parchment {
+    @apply overflow-y-auto;
+    scrollbar-width: thin;
+    scrollbar-color: #c9a96e rgba(244, 228, 193, 0.2);
+  }
+
+  .scroll-parchment::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .scroll-parchment::-webkit-scrollbar-track {
+    background: rgba(244, 228, 193, 0.1);
+  }
+
+  .scroll-parchment::-webkit-scrollbar-thumb {
+    background: #c9a96e;
+    border-radius: 3px;
+  }
+}
+
+@keyframes slideInLeft {
+  from { transform: translateX(-100%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+@keyframes slideInRight {
+  from { transform: translateX(100%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes loadPulse {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 1; }
+}
+
+.map-loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2;
+  background: linear-gradient(180deg, #0d2a45, #091e35);
+  color: #c9a96e;
+  font-family: 'Crimson Text', Georgia, serif;
+  font-size: 18px;
+  letter-spacing: 3px;
+}
+
+.map-loading-dot {
+  animation: loadPulse 1.5s ease-in-out infinite;
+}
