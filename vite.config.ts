@@ -5,8 +5,8 @@ import { traeBadgePlugin } from 'vite-plugin-trae-solo-badge';
 
 const isDev = process.env.NODE_ENV !== 'production'
 
-// https://vite.dev/config/
-export default defineConfig({
+export default defineConfig(({ command }) => ({
+  base: command === 'build' ? '/Age-of-Discovery/' : '/',
   build: {
     sourcemap: 'hidden',
   },
@@ -25,4 +25,4 @@ export default defineConfig({
     }), 
     tsconfigPaths()
   ],
-})
+}))
