@@ -84,6 +84,7 @@ export default {
         'shimmer': 'shimmer 2s linear infinite',
         'slide-in-right': 'slideInRightToast 0.4s ease-out forwards',
         'slide-out-right': 'slideOutRightToast 0.4s ease-in forwards',
+        'fade-in-scale': 'fadeInScale 0.3s ease-out forwards',
       },
       keyframes: {
         shipSway: {
@@ -121,6 +122,10 @@ export default {
         slideOutRightToast: {
           '0%': { transform: 'translateX(0)', opacity: '1' },
           '100%': { transform: 'translateX(100%)', opacity: '0' },
+        },
+        fadeInScale: {
+          '0%': { transform: 'scale(0.9)', opacity: '0' },
+          '100%': { transform: 'scale(1)', opacity: '1' },
         },
       },
     },

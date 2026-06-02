@@ -1,28 +1,10 @@
 import { useState } from 'react'
-import { Cloud, Skull, Heart, AlertTriangle, Compass, Scroll } from 'lucide-react'
 import { useGameStore } from '@/store/useGameStore'
 import { selectOutcome } from '@/utils/eventEngine'
+import { EVENT_TYPE_BG, renderEventIcon } from '@/utils/eventTypeStyles'
 import EventChoiceComponent from './EventChoice'
 import EventResult from './EventResult'
 import type { EventOutcome } from '@/types'
-
-const typeIcons: Record<string, React.ReactNode> = {
-  storm: <Cloud size={40} className="text-blue-400" />,
-  pirate: <Skull size={40} className="text-danger-400" />,
-  disease: <Heart size={40} className="text-green-400" />,
-  accident: <AlertTriangle size={40} className="text-yellow-400" />,
-  discovery: <Compass size={40} className="text-cyan-400" />,
-  historical: <Scroll size={40} className="text-purple-400" />,
-}
-
-const typeBgColors: Record<string, string> = {
-  storm: 'from-blue-900/30 to-ocean-900/30',
-  pirate: 'from-danger-900/30 to-ocean-900/30',
-  disease: 'from-green-900/30 to-ocean-900/30',
-  accident: 'from-yellow-900/30 to-ocean-900/30',
-  discovery: 'from-cyan-900/30 to-ocean-900/30',
-  historical: 'from-purple-900/30 to-ocean-900/30',
-}
 
 export default function EventCard() {
   const currentEvent = useGameStore(s => s.currentEvent)
@@ -58,15 +40,15 @@ export default function EventCard() {
     clearCurrentEvent()
   }
 
-  const icon = typeIcons[currentEvent.type] || <Scroll size={40} className="text-gold-400" />
-  const bgGradient = typeBgColors[currentEvent.type] || 'from-gold-900/30 to-ocean-900/30'
+  const icon = renderEventIcon(currentEvent.type, 40)
+  const bgGradient = EVENT_TYPE_BG[currentEvent.type] || 'from-gold-900/30 to-ocean-900/30'
 
   return (
-    <div className="fixed inset-0 flex items-center justify-center bg-black/70 backdrop-blur-sm"
-      style={{ animation: 'fadeInScale 0.3s ease-out', zIndex: 80 }}
+    <div className="fixed inset-0 flex items-center justify-center bg-black/70 backdrop-blur-sm animate-fade-in-scale"
+      style={{ zIndex: 80 }}
     >
-      <div className={`w-96 max-w-[90vw] bg-gradient-to-b ${bgGradient} parchment-bg rounded-xl p-6`}
-        style={{ animation: 'fadeInScale 0.4s ease-out' }}
+      <div className={`w-96 max-w-[90vw] bg-gradient-to-b ${bgGradient} parchment-bg rounded-xl p-6 animate-fade-in-scale`}
+        style={{ animationDelay: '0.05s' }}
       >
         {!outcome ? (
           <>

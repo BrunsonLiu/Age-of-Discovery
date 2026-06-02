@@ -1,4 +1,4 @@
-import type { GameEvent, GameState, EventOutcome, Fleet } from '@/types'
+import type { GameEvent, GameState, EventOutcome } from '@/types'
 import { ports } from '@/data/ports'
 
 export function checkEventTrigger(event: GameEvent, gameState: GameState): boolean {
@@ -58,19 +58,4 @@ export function getRandomEvents(
     }
   }
   return null
-}
-
-export function applyOutcomeToFleet(fleet: Fleet, outcome: EventOutcome): Fleet {
-  return {
-    ...fleet,
-    gold: Math.max(0, fleet.gold + outcome.goldChange),
-    food: Math.max(0, fleet.food + outcome.foodChange),
-    water: Math.max(0, fleet.water + outcome.waterChange),
-    morale: Math.max(0, Math.min(100, fleet.morale + outcome.moraleChange)),
-    ships: fleet.ships.map(ship => ({
-      ...ship,
-      durability: Math.max(0, Math.min(ship.maxDurability, ship.durability + outcome.durabilityChange)),
-      crew: Math.max(0, Math.min(ship.maxCrew, ship.crew + outcome.crewChange)),
-    })),
-  }
 }

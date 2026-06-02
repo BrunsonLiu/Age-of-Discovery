@@ -1,6 +1,22 @@
 import { useMemo, useEffect, useRef } from 'react'
 import { useGameStore } from '@/store/useGameStore'
 import { ports } from '@/data/ports'
+import { calculateBearing } from '@/utils/navigation'
+
+const TICK_DEGREES = Array.from({ length: 72 }, (_, i) => i * 5)
+
+interface TickStyle {
+  inner: number
+  sw: number
+  op: number
+}
+
+const TICK_STYLES: TickStyle[] = TICK_DEGREES.map((deg) => {
+  if (deg % 90 === 0) return { inner: 60, sw: 1.5, op: 0.8 }
+  if (deg % 30 === 0) return { inner: 68, sw: 1, op: 0.5 }
+  if (deg % 10 === 0) return { inner: 74, sw: 0.7, op: 0.35 }
+  return { inner: 78, sw: 0.4, op: 0.2 }
+})
 
 export default function Compass() {
   const fleet = useGameStore(s => s.fleet)
@@ -10,6 +26,8 @@ export default function Compass() {
   const angleRef = useRef(0)
   const velocityRef = useRef(0)
   const targetRef = useRef(0)
+  const isSailingRef = useRef(false)
+  const bearingRef = useRef<number | null>(null)
   const rafRef = useRef<number>(0)
   const divRef = useRef<SVGGElement>(null)
 
@@ -30,15 +48,15 @@ export default function Compass() {
       toLng = waypoint.longitude
     } else return null
 
-    const dLng = (toLng - fromPort.longitude) * Math.PI / 180
-    const lat1 = fromPort.latitude * Math.PI / 180
-    const lat2 = toLat * Math.PI / 180
-    const y = Math.sin(dLng) * Math.cos(lat2)
-    const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLng)
-    return ((Math.atan2(y, x) * 180 / Math.PI) + 360) % 360
+    return calculateBearing(fromPort.latitude, fromPort.longitude, toLat, toLng)
   }, [fleet.isSailing, currentRoute, waypoint])
 
   useEffect(() => {
+    isSailingRef.current = fleet.isSailing
+  }, [fleet.isSailing])
+
+  useEffect(() => {
+    bearingRef.current = bearing
     if (bearing !== null) {
       targetRef.current = bearing
     }
@@ -48,8 +66,10 @@ export default function Compass() {
     const animate = () => {
       let current = angleRef.current
       const target = targetRef.current
+      const isSailing = isSailingRef.current
+      const activeBearing = bearingRef.current
 
-      if (fleet.isSailing && bearing !== null) {
+      if (isSailing && activeBearing !== null) {
         let diff = target - current
         if (diff > 180) diff -= 360
         if (diff < -180) diff += 360
@@ -81,7 +101,7 @@ export default function Compass() {
 
     rafRef.current = requestAnimationFrame(animate)
     return () => cancelAnimationFrame(rafRef.current)
-  }, [fleet.isSailing, bearing])
+  }, [])
 
   return (
     <div className="w-24 h-24 pointer-events-none select-none">
@@ -112,13 +132,9 @@ export default function Compass() {
         <circle cx="100" cy="100" r="78" fill="none" stroke="#c9a96e" strokeWidth="0.3" opacity="0.2" />
         <circle cx="100" cy="100" r="68" fill="none" stroke="#c9a96e" strokeWidth="0.3" opacity="0.15" />
 
-        {[0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90, 95, 100, 105, 110, 115, 120, 125, 130, 135, 140, 145, 150, 155, 160, 165, 170, 175, 180, 185, 190, 195, 200, 205, 210, 215, 220, 225, 230, 235, 240, 245, 250, 255, 260, 265, 270, 275, 280, 285, 290, 295, 300, 305, 310, 315, 320, 325, 330, 335, 340, 345, 350, 355].map(deg => {
+        {TICK_DEGREES.map((deg, i) => {
           const rad = deg * Math.PI / 180
-          let inner: number, sw: number, op: number
-          if (deg % 90 === 0) { inner = 60; sw = 1.5; op = 0.8 }
-          else if (deg % 30 === 0) { inner = 68; sw = 1; op = 0.5 }
-          else if (deg % 10 === 0) { inner = 74; sw = 0.7; op = 0.35 }
-          else { inner = 78; sw = 0.4; op = 0.2 }
+          const { inner, sw, op } = TICK_STYLES[i]
           const x1 = 100 + Math.sin(rad) * inner
           const y1 = 100 - Math.cos(rad) * inner
           const x2 = 100 + Math.sin(rad) * 86

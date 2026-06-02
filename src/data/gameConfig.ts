@@ -23,12 +23,3 @@ export const GAME_BALANCE = {
   /** 货舱容量上限 */
   CARGO_CAPACITY_MAX: 200,
 } as const
-
-/** 根据航行距离（海里）推算危险等级 */
-export function dangerLevelFromDistance(distanceNm: number): 1 | 2 | 3 | 4 | 5 {
-  if (distanceNm < 500) return 1
-  if (distanceNm < 1500) return 2
-  if (distanceNm < 3000) return 3
-  if (distanceNm < 5000) return 4
-  return 5
-}

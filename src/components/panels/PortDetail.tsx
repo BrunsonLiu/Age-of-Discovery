@@ -3,6 +3,7 @@ import { useGameStore } from '@/store/useGameStore'
 import { useMapStore } from '@/store/useMapStore'
 import { ports } from '@/data/ports'
 import { tasks } from '@/data/tasks'
+import { GAME_BALANCE } from '@/data/gameConfig'
 import ParchmentCard from '@/components/ui/ParchmentCard'
 import ActionButton from '@/components/ui/ActionButton'
 
@@ -40,22 +41,21 @@ export default function PortDetail() {
   const handleRepair = (shipId: number) => {
     const ship = fleet.ships.find(s => s.id === shipId)
     if (!ship) return
-    const cost = (ship.maxDurability - ship.durability) * 5
+    const cost = (ship.maxDurability - ship.durability) * GAME_BALANCE.REPAIR_COST_PER_DURABILITY
     if (fleet.gold < cost) return
     repairShip(shipId)
   }
 
   const handleSupply = () => {
-    if (fleet.gold < 60) return
+    if (fleet.gold < GAME_BALANCE.SUPPLY_TOTAL_COST) return
     supplyFleet()
   }
 
-  const RECRUIT_COUNT = 5
-  const RECRUIT_COST = RECRUIT_COUNT * 10
+  const RECRUIT_COST = GAME_BALANCE.DEFAULT_RECRUIT_COUNT * GAME_BALANCE.CREW_COST_PER_PERSON
 
   const handleRecruit = (shipId: number) => {
     if (fleet.gold < RECRUIT_COST) return
-    recruitCrew(shipId, RECRUIT_COUNT)
+    recruitCrew(shipId, GAME_BALANCE.DEFAULT_RECRUIT_COUNT)
   }
 
   return (
@@ -100,7 +100,7 @@ export default function PortDetail() {
               </h4>
               {fleet.ships.map(ship => {
                 const damage = ship.maxDurability - ship.durability
-                const cost = damage * 5
+                const cost = damage * GAME_BALANCE.REPAIR_COST_PER_DURABILITY
                 return (
                   <div key={ship.id} className="flex items-center justify-between text-xs mb-1">
                     <span className="text-gold-400 font-serif">{ship.name} ({ship.durability}/{ship.maxDurability})</span>
@@ -123,9 +123,9 @@ export default function PortDetail() {
                 <Package size={12} /> 补给物资
               </h4>
               <div className="flex items-center justify-between text-xs">
-                <span className="text-gold-400 font-serif">食物+20 淡水+20</span>
-                <ActionButton onClick={handleSupply} disabled={fleet.gold < 60} variant="secondary">
-                  <Coins size={10} /> 60
+                <span className="text-gold-400 font-serif">食物+{GAME_BALANCE.SUPPLY_AMOUNT} 淡水+{GAME_BALANCE.SUPPLY_AMOUNT}</span>
+                <ActionButton onClick={handleSupply} disabled={fleet.gold < GAME_BALANCE.SUPPLY_TOTAL_COST} variant="secondary">
+                  <Coins size={10} /> {GAME_BALANCE.SUPPLY_TOTAL_COST}
                 </ActionButton>
               </div>
             </div>
@@ -141,7 +141,7 @@ export default function PortDetail() {
                   <span className="text-gold-400 font-serif">{ship.name} ({ship.crew}/{ship.maxCrew})</span>
                   {ship.crew < ship.maxCrew && (
                     <ActionButton onClick={() => handleRecruit(ship.id)} disabled={fleet.gold < RECRUIT_COST} variant="secondary">
-                      +{RECRUIT_COUNT}人 <Coins size={10} /> {RECRUIT_COST}
+                      +{GAME_BALANCE.DEFAULT_RECRUIT_COUNT}人 <Coins size={10} /> {RECRUIT_COST}
                     </ActionButton>
                   )}
                 </div>

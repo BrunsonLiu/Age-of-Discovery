@@ -36,6 +36,9 @@ const Z = {
   OVERLAY: 70,
 }
 
+const LEFT_PANELS: readonly PanelType[] = ['fleet', 'task', 'event'] as const
+const RIGHT_PANELS: readonly PanelType[] = ['port', 'trade'] as const
+
 export default function MainMap() {
   const gamePhase = useGameStore(s => s.gamePhase)
   const activePanel = useGameStore(s => s.activePanel)
@@ -52,11 +55,8 @@ export default function MainMap() {
     setActivePanel(activePanel === panel ? null : panel)
   }
 
-  const leftPanels: PanelType[] = ['fleet', 'task', 'event']
-  const rightPanels: PanelType[] = ['port', 'trade']
-
-  const activeLeftPanel = leftPanels.includes(activePanel as PanelType) ? activePanel : null
-  const activeRightPanel = rightPanels.includes(activePanel as PanelType) ? activePanel : null
+  const activeLeftPanel = activePanel && LEFT_PANELS.includes(activePanel) ? activePanel : null
+  const activeRightPanel = activePanel && RIGHT_PANELS.includes(activePanel) ? activePanel : null
 
   return (
     <div className="h-screen w-screen overflow-hidden bg-ocean-900">

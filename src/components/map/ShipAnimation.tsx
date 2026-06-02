@@ -3,15 +3,7 @@ import { Marker, useMap } from 'react-leaflet'
 import L from 'leaflet'
 import { useGameStore } from '@/store/useGameStore'
 import { ports } from '@/data/ports'
-
-function calculateBearing(from: [number, number], to: [number, number]): number {
-  const dLng = (to[1] - from[1]) * Math.PI / 180
-  const lat1 = from[0] * Math.PI / 180
-  const lat2 = to[0] * Math.PI / 180
-  const y = Math.sin(dLng) * Math.cos(lat2)
-  const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLng)
-  return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360
-}
+import { calculateBearing } from '@/utils/navigation'
 
 function createShipIcon(sailing: boolean, bearing: number) {
   const rotation = sailing ? bearing - 90 : 0
@@ -117,7 +109,7 @@ export function ShipAnimation() {
 
   const bearing = useMemo(() => {
     if (fleet.isSailing && position && waypoint) {
-      return calculateBearing(position, [waypoint.latitude, waypoint.longitude])
+      return calculateBearing(position[0], position[1], waypoint.latitude, waypoint.longitude)
     }
     return 0
   }, [fleet.isSailing, position, waypoint])

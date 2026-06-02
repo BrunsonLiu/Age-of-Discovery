@@ -5,15 +5,14 @@ import { ports } from '@/data/ports'
 const BASE_MOVE_DEG_PER_SEC = 0.35
 const KM_PER_DEGREE = 111
 const NM_PER_KM = 0.539957
+const ARRIVE_THRESHOLD_DEG = 0.05
+const NEARBY_PORT_THRESHOLD_DEG = 10
 
 export default function SailingController() {
   const isSailing = useGameStore(s => s.fleet.isSailing)
   const gamePhase = useGameStore(s => s.gamePhase)
   const waypoint = useGameStore(s => s.waypoint)
   const simSpeed = useGameStore(s => s.simSpeed)
-  const shipPosition = useGameStore(s => s.shipPosition)
-  const setShipPosition = useGameStore(s => s.setShipPosition)
-  const addNotification = useGameStore(s => s.addNotification)
   const shipSpeedKnots = useGameStore(s => {
     if (s.fleet.ships.length === 0) return 0
     return s.fleet.ships.reduce((sum, ship) => sum + ship.speed, 0) / s.fleet.ships.length
@@ -24,7 +23,9 @@ export default function SailingController() {
   const rafRef = useRef<number>(0)
 
   useEffect(() => {
-    if (!isSailing || gamePhase !== 'playing' || !waypoint || !shipPosition) {
+    const shouldRun = isSailing && gamePhase === 'playing' && !!waypoint
+
+    if (!shouldRun) {
       if (rafRef.current) {
         cancelAnimationFrame(rafRef.current)
         rafRef.current = 0
@@ -33,7 +34,6 @@ export default function SailingController() {
       return
     }
 
-    const shipSpeedNmPerSec = shipSpeedKnots * NM_PER_KM / 3600
     const moveDegPerSec = BASE_MOVE_DEG_PER_SEC * (shipSpeedKnots / 5) * simSpeed
 
     const animate = (timestamp: number) => {
@@ -61,7 +61,7 @@ export default function SailingController() {
       const dLng = target.longitude - currentPos[1]
       const distDeg = Math.sqrt(dLat * dLat + dLng * dLng)
 
-      if (distDeg < 0.05) {
+      if (distDeg < ARRIVE_THRESHOLD_DEG) {
         if (target.portId) {
           state.arriveAtPort(target.portId)
           state.discoverPort(target.portId)
@@ -79,7 +79,7 @@ export default function SailingController() {
             return nearest
           }, null as { port: typeof ports[0]; dist: number } | null)
 
-          if (nearestPort && nearestPort.dist < 10) {
+          if (nearestPort && nearestPort.dist < NEARBY_PORT_THRESHOLD_DEG) {
             state.arriveAtPort(nearestPort.port.id)
             state.discoverPort(nearestPort.port.id)
             state.addNotification({
@@ -139,7 +139,7 @@ export default function SailingController() {
       }
       lastTimeRef.current = 0
     }
-  }, [isSailing, gamePhase, waypoint, shipPosition, simSpeed, shipSpeedKnots])
+  }, [isSailing, gamePhase, waypoint, simSpeed, shipSpeedKnots])
 
   return null
 }

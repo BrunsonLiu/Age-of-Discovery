@@ -4,6 +4,7 @@ import L from 'leaflet'
 import { useGameStore } from '@/store/useGameStore'
 import { ports } from '@/data/ports'
 import { routes } from '@/data/routes'
+import { calculateBearing } from '@/utils/navigation'
 
 function getDangerColor(level: number): string {
   if (level <= 2) return '#2d8a27'
@@ -54,15 +55,6 @@ function createArrowIcon(angle: number, color: string) {
     iconSize: [10, 10],
     iconAnchor: [5, 5],
   })
-}
-
-function calculateBearing(from: [number, number], to: [number, number]): number {
-  const dLng = (to[1] - from[1]) * Math.PI / 180
-  const lat1 = from[0] * Math.PI / 180
-  const lat2 = to[0] * Math.PI / 180
-  const y = Math.sin(dLng) * Math.cos(lat2)
-  const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLng)
-  return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360
 }
 
 export function RouteLine() {
@@ -136,7 +128,7 @@ export function RouteLine() {
             />
             {arrowPositions.map(({ pos, idx }, ai) => {
               const nextIdx = Math.min(idx + 1, points.length - 1)
-              const angle = calculateBearing(points[idx], points[nextIdx])
+              const angle = calculateBearing(points[idx][0], points[idx][1], points[nextIdx][0], points[nextIdx][1])
               return (
                 <Marker
                   key={`${route.id}-arrow-${ai}`}

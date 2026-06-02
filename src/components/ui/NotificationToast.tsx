@@ -1,6 +1,6 @@
 import { useGameStore } from '@/store/useGameStore'
 import { Compass, Scroll, Trophy, AlertTriangle, X } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 const iconMap = {
   discovery: Compass,
@@ -32,40 +32,55 @@ interface VisibleNotification {
   removing: boolean
 }
 
+const AUTO_DISMISS_MS = 3500
+const REMOVE_AFTER_ANIM_MS = 500
+
 export default function NotificationToast() {
   const notifications = useGameStore(s => s.notifications)
   const removeNotification = useGameStore(s => s.removeNotification)
   const [visible, setVisible] = useState<VisibleNotification[]>([])
+  const visibleRef = useRef<VisibleNotification[]>([])
 
   useEffect(() => {
+    visibleRef.current = visible
+  }, [visible])
+
+  useEffect(() => {
+    if (notifications.length === 0) {
+      setVisible(prev => prev.length > 0 ? [] : prev)
+      return
+    }
+
+    const prevById = new Map(visibleRef.current.map(v => [v.id, v]))
     const newVisible = notifications.map(n => {
-      const existing = visible.find(v => v.id === n.id)
-      return existing ? existing : { ...n, removing: false }
+      const existing = prevById.get(n.id)
+      return existing ?? { ...n, removing: false }
     })
     setVisible(newVisible)
   }, [notifications])
 
   useEffect(() => {
+    if (visible.length === 0) return
+
     const timers: ReturnType<typeof setTimeout>[] = []
 
-    visible.forEach(n => {
-      if (!n.removing) {
-        const dismissTimer = setTimeout(() => {
-          setVisible(prev => prev.map(v => v.id === n.id ? { ...v, removing: true } : v))
-        }, 3500)
-        const removeTimer = setTimeout(() => {
-          removeNotification(n.id)
-        }, 4000)
-        timers.push(dismissTimer, removeTimer)
-      }
-    })
+    for (const n of visible) {
+      if (n.removing) continue
+      const dismissTimer = setTimeout(() => {
+        setVisible(prev => prev.map(v => v.id === n.id ? { ...v, removing: true } : v))
+      }, AUTO_DISMISS_MS)
+      const removeTimer = setTimeout(() => {
+        removeNotification(n.id)
+      }, AUTO_DISMISS_MS + REMOVE_AFTER_ANIM_MS)
+      timers.push(dismissTimer, removeTimer)
+    }
 
     return () => timers.forEach(clearTimeout)
-  }, [visible.length])
+  }, [visible, removeNotification])
 
   const handleDismiss = (id: string) => {
     setVisible(prev => prev.map(v => v.id === id ? { ...v, removing: true } : v))
-    setTimeout(() => removeNotification(id), 500)
+    setTimeout(() => removeNotification(id), REMOVE_AFTER_ANIM_MS)
   }
 
   if (visible.length === 0) return null
@@ -93,6 +108,7 @@ export default function NotificationToast() {
             </div>
             <button
               onClick={() => handleDismiss(n.id)}
+              aria-label="关闭通知"
               className="text-gold-600 hover:text-gold-300 transition-colors shrink-0 mt-0.5"
             >
               <X size={14} />

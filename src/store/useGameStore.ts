@@ -15,18 +15,12 @@ import { getRandomEvents } from '@/utils/eventEngine'
 import { calculateBuyPrice, calculateSellPrice, canAfford, hasCargoSpace } from '@/utils/trade'
 import { historicalTimeline } from '@/data/historicalTimeline'
 import { GAME_BALANCE } from '@/data/gameConfig'
+import { shipTemplates } from '@/data/ships'
 
 const createStartingShip = (): Ship => ({
   id: 1,
+  ...shipTemplates.caravel,
   name: '圣玛利亚号',
-  type: 'caravel',
-  speed: 5,
-  durability: 100,
-  maxDurability: 100,
-  capacity: 50,
-  usedCapacity: 0,
-  crew: 20,
-  maxCrew: 30,
 })
 
 const createStartingFleet = (): Fleet => ({
@@ -67,7 +61,6 @@ interface GameStore extends GameState {
   addNotification: (notification: Omit<GameStore['notifications'][0], 'timestamp'>) => void
   removeNotification: (id: string) => void
   markHistoricalEventSeen: (day: number) => void
-  waypoint: Waypoint | null
   setWaypoint: (waypoint: Waypoint | null) => void
   setSimSpeed: (speed: number) => void
   setShipPosition: (pos: [number, number]) => void
@@ -137,7 +130,6 @@ export const useGameStore = create<GameStore>()(
       showHelp: false,
       notifications: [],
       seenHistoricalEvents: [],
-      waypoint: null,
       simSpeed: 3,
       shipPosition: null,
 
@@ -174,7 +166,7 @@ export const useGameStore = create<GameStore>()(
           routeProgress: 0,
           waypoint,
           shipPosition: state.shipPosition ?? [originLat, originLng],
-          fleet: { ...state.fleet, isSailing: true, currentPortId: waypoint.portId ? null : null },
+          fleet: { ...state.fleet, isSailing: true, currentPortId: null },
         }
       }),
 
@@ -450,22 +442,24 @@ export const useGameStore = create<GameStore>()(
     {
       name: 'age-of-discovery-save',
       version: 1,
-      onRehydrateStorage: () => {
-        return (state, error) => {
-          if (error) {
-            console.warn('存档数据损坏，已重置', error)
-          }
+      onRehydrateStorage: () => (state, error) => {
+        if (error) {
+          console.warn('存档数据损坏，已重置', error)
         }
       },
       partialize: (state) => ({
         fleet: state.fleet,
         currentRoute: state.currentRoute,
         routeProgress: state.routeProgress,
+        waypoint: state.waypoint,
+        shipPosition: state.shipPosition,
+        simSpeed: state.simSpeed,
         completedTasks: state.completedTasks,
         activeTasks: state.activeTasks,
         eventLog: state.eventLog,
         discoveredPorts: state.discoveredPorts,
         gamePhase: state.gamePhase,
+        tutorialStep: state.tutorialStep,
         seenHistoricalEvents: state.seenHistoricalEvents,
       }),
     }

@@ -1,5 +1,19 @@
 import type { Route, Fleet } from '@/types'
 
+export function calculateBearing(
+  fromLat: number,
+  fromLng: number,
+  toLat: number,
+  toLng: number
+): number {
+  const dLng = (toLng - fromLng) * Math.PI / 180
+  const lat1 = fromLat * Math.PI / 180
+  const lat2 = toLat * Math.PI / 180
+  const y = Math.sin(dLng) * Math.cos(lat2)
+  const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLng)
+  return ((Math.atan2(y, x) * 180 / Math.PI) + 360) % 360
+}
+
 export function calculateSailingDays(route: Route, fleet: Fleet): number {
   if (fleet.ships.length === 0) return Infinity
   const avgSpeed = fleet.ships.reduce((sum, ship) => sum + ship.speed, 0) / fleet.ships.length

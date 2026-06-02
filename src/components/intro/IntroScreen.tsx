@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useGameStore } from '@/store/useGameStore'
 
 const pages = [
@@ -77,6 +77,15 @@ export default function IntroScreen() {
   const [currentPage, setCurrentPage] = useState(0)
   const [fade, setFade] = useState(true)
   const initGame = useGameStore(s => s.initGame)
+  const fadeTimerRef = useRef<number | null>(null)
+
+  useEffect(() => {
+    return () => {
+      if (fadeTimerRef.current !== null) {
+        clearTimeout(fadeTimerRef.current)
+      }
+    }
+  }, [])
 
   const page = pages[currentPage]
   if (!page) {
@@ -87,9 +96,13 @@ export default function IntroScreen() {
   const handleNext = () => {
     if (currentPage < pages.length - 1) {
       setFade(false)
-      setTimeout(() => {
+      if (fadeTimerRef.current !== null) {
+        clearTimeout(fadeTimerRef.current)
+      }
+      fadeTimerRef.current = window.setTimeout(() => {
         setCurrentPage(prev => prev + 1)
         setFade(true)
+        fadeTimerRef.current = null
       }, 300)
     } else {
       initGame()
