@@ -99,11 +99,15 @@ export function ShipAnimation() {
   const portMap = useMemo(() => new Map(ports.map(p => [p.id, p])), [])
 
   const position = useMemo((): [number, number] | null => {
-    if (shipPosition) return shipPosition
+    if (shipPosition && isFinite(shipPosition[0]) && isFinite(shipPosition[1])) {
+      return shipPosition
+    }
     if (fleet.currentPortId) {
       const port = portMap.get(fleet.currentPortId)
       if (port) return [port.latitude, port.longitude]
     }
+    const fallback = portMap.get(6)
+    if (fallback) return [fallback.latitude, fallback.longitude]
     return null
   }, [shipPosition, fleet.currentPortId, portMap])
 

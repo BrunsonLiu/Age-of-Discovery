@@ -18,7 +18,7 @@ export default function EventLog() {
           </div>
         ) : (
           <div className="space-y-2 max-h-80 overflow-y-auto scrollbar-thin">
-            {eventLog.slice().reverse().map((entry, idx) => (
+            {eventLog.slice().reverse().map((entry) => (
               <div
                 key={`${entry.day}-${entry.event.id}-${entry.choiceIndex}`}
                 className={`bg-ocean-800/30 rounded p-2 border-l-2 ${EVENT_TYPE_COLORS[entry.event.type] || 'border-l-gold-500/50'}`}

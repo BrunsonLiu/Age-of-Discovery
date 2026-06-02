@@ -1,4 +1,3 @@
-import type { Fleet, Ship } from '@/types'
 
 /** 游戏数值平衡常量，集中管理所有可调参数 */
 export const GAME_BALANCE = {

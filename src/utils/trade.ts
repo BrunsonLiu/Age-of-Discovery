@@ -1,30 +1,11 @@
-import type { PortGood, Good, Fleet } from '@/types'
+import type { PortGood, Fleet } from '@/types'
 
-export function calculateBuyPrice(portGood: PortGood, good: Good): number {
+export function calculateBuyPrice(portGood: PortGood): number {
   return Math.round(portGood.price * portGood.priceModifier)
 }
 
-export function calculateSellPrice(portGood: PortGood, good: Good): number {
+export function calculateSellPrice(portGood: PortGood): number {
   return Math.round(portGood.price * portGood.priceModifier * 0.85)
-}
-
-export function calculateProfit(buyPrice: number, sellPrice: number, quantity: number): number {
-  return (sellPrice - buyPrice) * quantity
-}
-
-export function getPortGoods(
-  portId: number,
-  portGoods: PortGood[],
-  goods: Good[]
-): (PortGood & Good)[] {
-  return portGoods
-    .filter(pg => pg.portId === portId)
-    .map(pg => {
-      const good = goods.find(g => g.id === pg.goodId)
-      if (!good) return null
-      return { ...pg, ...good }
-    })
-    .filter((item): item is PortGood & Good => item !== null)
 }
 
 export function canAfford(gold: number, price: number, quantity: number): boolean {

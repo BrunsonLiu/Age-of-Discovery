@@ -2,11 +2,10 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import type {
   Fleet, Ship, GameState, GameEvent, EventOutcome, EventLogEntry,
-  Route, PanelType, Task, CargoItem, Waypoint,
+  Route, PanelType, CargoItem, Waypoint,
 } from '@/types'
 import { ports } from '@/data/ports'
 import { events } from '@/data/events'
-import { routes } from '@/data/routes'
 import { tasks } from '@/data/tasks'
 import { goods } from '@/data/goods'
 import { portGoods } from '@/data/ports'
@@ -60,7 +59,6 @@ interface GameStore extends GameState {
   shipPosition: [number, number] | null
   addNotification: (notification: Omit<GameStore['notifications'][0], 'timestamp'>) => void
   removeNotification: (id: string) => void
-  markHistoricalEventSeen: (day: number) => void
   setWaypoint: (waypoint: Waypoint | null) => void
   setSimSpeed: (speed: number) => void
   setShipPosition: (pos: [number, number]) => void
@@ -312,7 +310,7 @@ export const useGameStore = create<GameStore>()(
         if (!pg || pg.stock < quantity) return state
         const good = goods.find(g => g.id === goodId)
         if (!good) return state
-        const buyPrice = calculateBuyPrice(pg, good)
+        const buyPrice = calculateBuyPrice(pg)
         if (!canAfford(state.fleet.gold, buyPrice, quantity)) return state
         if (!hasCargoSpace(state.fleet, quantity)) return state
         const newCargo = updateCargo(state.fleet.cargo, goodId, quantity)
@@ -327,7 +325,7 @@ export const useGameStore = create<GameStore>()(
         if (!pg) return state
         const good = goods.find(g => g.id === goodId)
         if (!good) return state
-        const sellPrice = calculateSellPrice(pg, good)
+        const sellPrice = calculateSellPrice(pg)
         const newCargo = updateCargo(state.fleet.cargo, goodId, -quantity)
         return { fleet: syncUsedCapacity({ ...state.fleet, gold: state.fleet.gold + sellPrice * quantity, cargo: newCargo }) }
       }),
@@ -423,7 +421,6 @@ export const useGameStore = create<GameStore>()(
       setActivePanel: (panel) => set({ activePanel: panel }),
       addNotification: (notification) => set((state) => ({ notifications: [...state.notifications, { ...notification, timestamp: Date.now() }] })),
       removeNotification: (id) => set((state) => ({ notifications: state.notifications.filter(n => n.id !== id) })),
-      markHistoricalEventSeen: (day) => set((state) => ({ seenHistoricalEvents: state.seenHistoricalEvents.includes(day) ? state.seenHistoricalEvents : [...state.seenHistoricalEvents, day] })),
       nextTutorialStep: () => set((state) => ({ tutorialStep: state.tutorialStep + 1 })),
       skipTutorial: () => set({ tutorialStep: -1 }),
       setShowHelp: (show) => set({ showHelp: show }),
@@ -441,11 +438,32 @@ export const useGameStore = create<GameStore>()(
     }),
     {
       name: 'age-of-discovery-save',
-      version: 1,
+      version: 2,
       onRehydrateStorage: () => (state, error) => {
         if (error) {
           console.warn('存档数据损坏，已重置', error)
+          return
         }
+        if (!state) return
+        if (!state.shipPosition) {
+          const portId = state.fleet.currentPortId ?? 6
+          const startPort = ports.find(p => p.id === portId)
+          if (startPort) {
+            state.shipPosition = [startPort.latitude, startPort.longitude]
+          }
+        }
+      },
+      migrate: (persistedState, version) => {
+        if (!persistedState) return persistedState
+        if (version < 2) {
+          const pState = persistedState as { fleet?: { currentPortId?: number | null }; shipPosition?: [number, number] | null }
+          const portId = pState.fleet?.currentPortId ?? 6
+          const startPort = ports.find(p => p.id === portId)
+          if (startPort && !pState.shipPosition) {
+            pState.shipPosition = [startPort.latitude, startPort.longitude]
+          }
+        }
+        return persistedState
       },
       partialize: (state) => ({
         fleet: state.fleet,

@@ -62,7 +62,7 @@ export default function TradePanel() {
               {currentPortGoods.map(pg => {
                 const good = goods.find(g => g.id === pg.goodId)
                 if (!good) return null
-                const buyPrice = calculateBuyPrice(pg, good)
+                const buyPrice = calculateBuyPrice(pg)
                 const priceDiff = buyPrice - good.basePrice
                 const isCheap = priceDiff < 0
                 const isExpensive = priceDiff > 0
@@ -108,7 +108,7 @@ export default function TradePanel() {
                   const good = goods.find(g => g.id === item.goodId)
                   const pg = portGoods.find(p => p.portId === portId && p.goodId === item.goodId)
                   if (!good || !pg) return null
-                  const sellPrice = calculateSellPrice(pg, good)
+                  const sellPrice = calculateSellPrice(pg)
                   return (
                     <div key={item.goodId} className="bg-ocean-800/30 rounded p-2">
                       <div className="flex items-center justify-between mb-1">

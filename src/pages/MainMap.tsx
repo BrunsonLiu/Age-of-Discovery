@@ -84,6 +84,8 @@ export default function MainMap() {
                 : 'bg-ocean-900/80 text-gold-500 hover:text-gold-300 hover:bg-ocean-800/80'
             } backdrop-blur-sm border border-gold-700/20`}
             title={btn.label}
+            aria-label={btn.label}
+            aria-pressed={activePanel === btn.type}
           >
             {btn.icon}
           </button>
@@ -104,6 +106,8 @@ export default function MainMap() {
                 : 'bg-ocean-900/80 text-gold-500 hover:text-gold-300 hover:bg-ocean-800/80'
             } backdrop-blur-sm border border-gold-700/20`}
             title={btn.label}
+            aria-label={btn.label}
+            aria-pressed={activePanel === btn.type}
           >
             {btn.icon}
           </button>
@@ -119,6 +123,8 @@ export default function MainMap() {
               : 'bg-ocean-900/80 text-gold-500 hover:text-gold-300 hover:bg-ocean-800/80'
           } backdrop-blur-sm border border-gold-700/20`}
           title="帮助"
+          aria-label="帮助"
+          aria-pressed={showHelp}
         >
           <HelpCircle size={18} />
         </button>

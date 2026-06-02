@@ -8,6 +8,8 @@ const NM_PER_KM = 0.539957
 const ARRIVE_THRESHOLD_DEG = 0.05
 const NEARBY_PORT_THRESHOLD_DEG = 10
 
+const portMap = new Map(ports.map(p => [p.id, p]))
+
 export default function SailingController() {
   const isSailing = useGameStore(s => s.fleet.isSailing)
   const gamePhase = useGameStore(s => s.gamePhase)
@@ -65,7 +67,7 @@ export default function SailingController() {
         if (target.portId) {
           state.arriveAtPort(target.portId)
           state.discoverPort(target.portId)
-          const port = ports.find(p => p.id === target.portId)
+          const port = portMap.get(target.portId)
           state.addNotification({
             id: `arrive-${target.portId}-${Date.now()}`,
             type: 'discovery',
@@ -73,11 +75,13 @@ export default function SailingController() {
             message: `你到达了${port?.nameCn ?? '目的地'}`,
           })
         } else {
-          const nearestPort = ports.reduce((nearest, port) => {
+          let nearestPort: { port: typeof ports[0]; dist: number } | null = null
+          for (const port of portMap.values()) {
             const dp = Math.sqrt((port.latitude - target.latitude) ** 2 + (port.longitude - target.longitude) ** 2)
-            if (!nearest || dp < nearest.dist) return { port, dist: dp }
-            return nearest
-          }, null as { port: typeof ports[0]; dist: number } | null)
+            if (!nearestPort || dp < nearestPort.dist) {
+              nearestPort = { port, dist: dp }
+            }
+          }
 
           if (nearestPort && nearestPort.dist < NEARBY_PORT_THRESHOLD_DEG) {
             state.arriveAtPort(nearestPort.port.id)

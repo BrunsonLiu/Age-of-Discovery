@@ -1,4 +1,4 @@
-﻿﻿﻿import { Port, PortGood } from '@/types'
+import { Port, PortGood } from '@/types'
 
 export const ports: Port[] = [
   { id: 1, name: 'Havana', nameCn: '哈瓦那', latitude: 23.1136, longitude: -82.3666, region: 'caribbean', description: '古巴首府，加勒比海最大的西班牙殖民港口，以优质雪茄和蔗糖闻名', services: ['repair', 'supply', 'recruit', 'trade'] },

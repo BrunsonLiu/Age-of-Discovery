@@ -49,9 +49,9 @@ export default function FleetPanel() {
           </div>
 
           <div className="space-y-1.5">
-            <ResourceBar value={fleet.food} maxValue={200} label="食物" color="" icon={<Utensils size={14} />} />
-            <ResourceBar value={fleet.water} maxValue={200} label="淡水" color="" icon={<Droplets size={14} />} />
-            <ResourceBar value={fleet.morale} maxValue={100} label="士气" color="" icon={<Heart size={14} />} />
+            <ResourceBar value={fleet.food} maxValue={200} label="食物" icon={<Utensils size={14} />} />
+            <ResourceBar value={fleet.water} maxValue={200} label="淡水" icon={<Droplets size={14} />} />
+            <ResourceBar value={fleet.morale} maxValue={100} label="士气" icon={<Heart size={14} />} />
           </div>
 
           <div className="border-t border-gold-700/30 pt-2 space-y-2">
@@ -61,7 +61,7 @@ export default function FleetPanel() {
                   <span className="text-gold-300 font-serif">{ship.name}</span>
                   <span className="text-gold-500 text-xs">{shipTypeNames[ship.type]}</span>
                 </div>
-                <ResourceBar value={ship.durability} maxValue={ship.maxDurability} label="耐久" color="" icon={<Ship size={12} />} />
+                <ResourceBar value={ship.durability} maxValue={ship.maxDurability} label="耐久" icon={<Ship size={12} />} />
                 <div className="flex justify-between text-xs text-gold-500 mt-1">
                   <span>船员 {ship.crew}/{ship.maxCrew}</span>
                   <span>货舱 {ship.usedCapacity}/{ship.capacity}</span>

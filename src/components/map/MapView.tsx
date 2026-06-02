@@ -38,11 +38,18 @@ function MapController() {
   const zoom = useMapStore((s) => s.zoom)
 
   useEffect(() => {
-    map.setView(center, zoom)
-  }, [])
+    const cur = map.getCenter()
+    if (Math.abs(cur.lat - center[0]) > 0.0001 || Math.abs(cur.lng - center[1]) > 0.0001) {
+      map.setView(center, zoom, { animate: true })
+    } else if (map.getZoom() !== zoom) {
+      map.setZoom(zoom)
+    }
+  }, [center, zoom, map])
 
   useEffect(() => {
+    let cancelled = false
     const onMoveEnd = () => {
+      if (cancelled) return
       const c = map.getCenter()
       const cur = useMapStore.getState().center
       if (Math.abs(c.lat - cur[0]) > 0.01 || Math.abs(c.lng - cur[1]) > 0.01) {
@@ -50,6 +57,7 @@ function MapController() {
       }
     }
     const onZoomEnd = () => {
+      if (cancelled) return
       const z = map.getZoom()
       if (z !== useMapStore.getState().zoom) {
         useMapStore.getState().setZoom(z)
@@ -58,6 +66,7 @@ function MapController() {
     map.on('moveend', onMoveEnd)
     map.on('zoomend', onZoomEnd)
     return () => {
+      cancelled = true
       map.off('moveend', onMoveEnd)
       map.off('zoomend', onZoomEnd)
     }

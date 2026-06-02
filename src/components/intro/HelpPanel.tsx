@@ -2,7 +2,7 @@ import { useGameStore } from '@/store/useGameStore'
 import ParchmentCard from '@/components/ui/ParchmentCard'
 import {
   HelpCircle, Ship, Anchor, Package,
-  Coins, Utensils, Droplets, Heart, Shield, X,
+  Coins, Utensils, Droplets, Heart, Shield,
 } from 'lucide-react'
 
 const sections = [

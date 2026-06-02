@@ -4,7 +4,6 @@ interface ResourceBarProps {
   value: number
   maxValue: number
   label: string
-  color: string
   icon?: ReactNode
 }
 
@@ -15,7 +14,7 @@ function getStatusColor(value: number, maxValue: number): string {
   return 'bg-danger-400'
 }
 
-export default function ResourceBar({ value, maxValue, label, color, icon }: ResourceBarProps) {
+export default function ResourceBar({ value, maxValue, label, icon }: ResourceBarProps) {
   const pct = Math.min(100, Math.max(0, (value / maxValue) * 100))
   const statusColor = getStatusColor(value, maxValue)
 

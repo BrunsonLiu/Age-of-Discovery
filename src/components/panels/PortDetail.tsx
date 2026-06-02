@@ -71,6 +71,12 @@ export default function PortDetail() {
 
           <p className="text-gold-500 text-xs font-serif leading-relaxed">{port.description}</p>
 
+          {!isAtPort && (
+            <div className="bg-ocean-800/40 border border-gold-700/20 rounded p-2 text-xs text-gold-400 font-serif">
+              ⛵ 你当前不在此港，点击地图航行前往
+            </div>
+          )}
+
           {isAtPort && (
             <div className="border-t border-gold-700/30 pt-2">
               <h4 className="text-gold-300 font-serif text-sm mb-2 flex items-center gap-1">

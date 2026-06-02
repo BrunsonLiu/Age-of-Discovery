@@ -6,7 +6,6 @@ import { calculateSailingDays } from '@/utils/navigation'
 
 export default function BottomBar() {
   const fleet = useGameStore((s) => s.fleet)
-  const gamePhase = useGameStore((s) => s.gamePhase)
   const currentRoute = useGameStore((s) => s.currentRoute)
   const routeProgress = useGameStore((s) => s.routeProgress)
   const waypoint = useGameStore((s) => s.waypoint)
@@ -85,6 +84,8 @@ export default function BottomBar() {
                   : 'text-gold-500 hover:text-gold-300 hover:bg-ocean-600/50'
               }`}
               title={opt.value === 0 ? '暂停' : `${opt.label}速度`}
+              aria-label={opt.value === 0 ? '暂停' : `${opt.label}速度`}
+              aria-pressed={simSpeed === opt.value}
             >
               {opt.icon || opt.label}
             </button>
@@ -94,6 +95,7 @@ export default function BottomBar() {
           onClick={advanceDay}
           className="px-2 py-1 text-xs font-serif text-gold-500 hover:text-gold-300 bg-ocean-700/40 rounded-md border border-gold-700/20 transition-colors"
           title="跳过一天"
+          aria-label="跳过一天"
         >
           +1天
         </button>
@@ -115,8 +117,10 @@ export default function BottomBar() {
               showWindOverlay ? 'bg-gold-700/40 text-gold-200' : 'text-gold-500 hover:text-gold-300'
             }`}
             title="风向"
+            aria-label="风向"
+            aria-pressed={showWindOverlay}
           >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9.59 4.59A2 2 0 1 1 11 8H2m10.59 11.41A2 2 0 1 0 14 16H2m15.73-8.27A2.5 2.5 0 1 1 19.5 12H2"/></svg>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M9.59 4.59A2 2 0 1 1 11 8H2m10.59 11.41A2 2 0 1 0 14 16H2m15.73-8.27A2.5 2.5 0 1 1 19.5 12H2"/></svg>
           </button>
           <button
             onClick={toggleCurrentOverlay}
@@ -124,8 +128,10 @@ export default function BottomBar() {
               showCurrentOverlay ? 'bg-gold-700/40 text-gold-200' : 'text-gold-500 hover:text-gold-300'
             }`}
             title="洋流"
+            aria-label="洋流"
+            aria-pressed={showCurrentOverlay}
           >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M2 12c1.5-2 3.5-2 5 0s3.5 2 5 0 3.5-2 5 0 3.5 2 5 0M2 18c1.5-2 3.5-2 5 0s3.5 2 5 0 3.5-2 5 0 3.5 2 5 0M2 6c1.5-2 3.5-2 5 0s3.5 2 5 0 3.5-2 5 0 3.5 2 5 0"/></svg>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M2 12c1.5-2 3.5-2 5 0s3.5 2 5 0 3.5-2 5 0 3.5 2 5 0M2 18c1.5-2 3.5-2 5 0s3.5 2 5 0 3.5-2 5 0 3.5 2 5 0M2 6c1.5-2 3.5-2 5 0s3.5 2 5 0 3.5-2 5 0 3.5 2 5 0"/></svg>
           </button>
           <button
             onClick={togglePirateZones}
@@ -133,16 +139,19 @@ export default function BottomBar() {
               showPirateZones ? 'bg-danger-700/40 text-danger-200' : 'text-gold-500 hover:text-gold-300'
             }`}
             title="海盗区域"
+            aria-label="海盗区域"
+            aria-pressed={showPirateZones}
           >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4m0 4h.01"/></svg>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 8v4m0 4h.01"/></svg>
           </button>
           <div className="w-px h-3 bg-gold-700/30" />
           <button
             onClick={resetGame}
             className="p-1 rounded text-gold-500 hover:text-gold-300 hover:bg-gold-700/30 transition-colors"
             title="重新开始"
+            aria-label="重新开始"
           >
-            <RotateCcw size={12} />
+            <RotateCcw size={12} aria-hidden="true" />
           </button>
         </div>
       </div>

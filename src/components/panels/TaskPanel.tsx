@@ -11,9 +11,13 @@ export default function TaskPanel() {
   const completeTask = useGameStore(s => s.completeTask)
   const setActivePanel = useGameStore(s => s.setActivePanel)
 
-  const availableTasks = tasks.filter(
-    t => t.status === 'available' && !activeTasks.some(at => at.id === t.id) && !completedTasks.includes(t.id)
-  )
+  const availableTasks = tasks.filter(t => {
+    if (t.status !== 'available') return false
+    if (activeTasks.some(at => at.id === t.id)) return false
+    if (completedTasks.includes(t.id)) return false
+    if (t.portId !== null && t.portId !== undefined && fleet.currentPortId !== t.portId) return false
+    return true
+  })
 
   const canComplete = (task: typeof activeTasks[0]) => {
     const targetPort = task.targetPortId ?? task.portId

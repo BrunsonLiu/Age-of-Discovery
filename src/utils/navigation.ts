@@ -29,22 +29,6 @@ export function calculateDailyConsumption(fleet: Fleet): { food: number; water: 
   }
 }
 
-export function calculateRouteProgress(currentDay: number, totalDays: number): number {
-  if (totalDays <= 0) return 1
-  return Math.min(1, currentDay / totalDays)
-}
-
-export function getRoutesFromPort(portId: number, routes: Route[]): Route[] {
-  return routes.filter(r => r.fromPortId === portId)
-}
-
-export function estimateArrival(route: Route, fleet: Fleet): Date {
-  const days = calculateSailingDays(route, fleet)
-  const arrival = new Date()
-  arrival.setDate(arrival.getDate() + days)
-  return arrival
-}
-
 /** 根据航行距离（海里）推断危险等级 */
 export function dangerLevelFromDistance(distanceNm: number): 1 | 2 | 3 | 4 | 5 {
   if (distanceNm < 500) return 1
