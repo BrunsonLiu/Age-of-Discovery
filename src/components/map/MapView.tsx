@@ -6,6 +6,7 @@ import { RouteLine } from './RouteLine'
 import { ShipAnimation } from './ShipAnimation'
 import MapClickHandler from './MapClickHandler'
 import OceanLabels from './OceanLabels'
+import VintageMapOverlay from './VintageMapOverlay'
 import { loadLandData } from '@/utils/landCheck'
 import 'leaflet/dist/leaflet.css'
 
@@ -76,10 +77,10 @@ function MapController() {
   return null
 }
 
-const landStyle = { fillColor: '#3d5a3a', fillOpacity: 0.7, color: '#5a7a50', weight: 0.8, opacity: 0.6 }
-const coastlineStyle = { fillColor: 'transparent', fillOpacity: 0, color: '#a89060', weight: 1.5, opacity: 0.8 }
-const bordersStyle = { fillColor: 'transparent', fillOpacity: 0, color: '#7a6a4a', weight: 0.6, opacity: 0.3, dashArray: '4 3' }
-const oceanStyle = { fillColor: '#1a3a5a', fillOpacity: 0.15, color: '#2a5a8a', weight: 0.5, opacity: 0.3 }
+const landStyle = { fillColor: '#d4b884', fillOpacity: 0.55, color: '#7a5a30', weight: 0.8, opacity: 0.75 }
+const coastlineStyle = { fillColor: 'transparent', fillOpacity: 0, color: '#3d2810', weight: 1.4, opacity: 0.85 }
+const bordersStyle = { fillColor: 'transparent', fillOpacity: 0, color: '#6b4a2a', weight: 0.6, opacity: 0.35, dashArray: '3 2' }
+const oceanStyle = { fillColor: '#7d9a82', fillOpacity: 0.18, color: '#5a7a5a', weight: 0.5, opacity: 0.3 }
 
 export default function MapView() {
   const mapCenter = useMapStore(s => s.center)
@@ -130,7 +131,7 @@ export default function MapView() {
   return (
     <div className="relative" style={{ width: '100%', height: '100%' }}>
       {loading && (
-        <div className="absolute inset-0 z-10 flex items-center justify-center bg-ocean-900 text-gold-400 font-serif" style={{ fontSize: 18, letterSpacing: 3 }}>
+        <div className="absolute inset-0 z-10 flex items-center justify-center text-[#5a3e1a] font-serif" style={{ fontSize: 18, letterSpacing: 3, background: 'linear-gradient(180deg, #e8d4a8 0%, #d4b884 50%, #e8d4a8 100%)' }}>
           <div className="text-center">
             <div className="text-4xl mb-4" style={{ animation: 'loadPulse 1.5s ease-in-out infinite' }}>⛵</div>
             <div>绘制航海图...</div>
@@ -179,7 +180,7 @@ export default function MapView() {
         </MapContainer>
       </MapErrorBoundary>
 
-      <div className="absolute inset-0 pointer-events-none" style={{ background: 'radial-gradient(ellipse at center, transparent 55%, rgba(9,15,25,0.5) 100%)' }} />
+      <VintageMapOverlay />
     </div>
   )
 }

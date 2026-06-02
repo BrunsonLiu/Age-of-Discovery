@@ -37,13 +37,14 @@ const regionLabels = [
 
 function createLabelIcon(text: string, isOcean: boolean) {
   const html = `<div style="
-    color: ${isOcean ? 'rgba(80,160,220,0.3)' : 'rgba(201,169,110,0.25)'};
+    color: ${isOcean ? 'rgba(60, 80, 50, 0.45)' : 'rgba(90, 62, 26, 0.5)'};
     font-family: 'Crimson Text', Georgia, serif;
-    font-size: ${isOcean ? '13px' : '12px'};
-    font-weight: ${isOcean ? '400' : '600'};
-    letter-spacing: ${isOcean ? '5px' : '3px'};
+    font-size: ${isOcean ? '14px' : '13px'};
+    font-weight: ${isOcean ? '400' : '700'};
+    font-style: ${isOcean ? 'italic' : 'normal'};
+    letter-spacing: ${isOcean ? '4px' : '6px'};
     white-space: nowrap;
-    text-shadow: 0 0 10px rgba(0,0,0,0.6);
+    text-shadow: 0 0 8px rgba(244, 228, 193, 0.4);
     pointer-events: none;
     user-select: none;
   ">${text}</div>`

@@ -5,11 +5,12 @@ import { useMapStore } from '@/store/useMapStore'
 import { ports } from '@/data/ports'
 
 function createPortIcon(isCurrent: boolean) {
-  const size = isCurrent ? 32 : 26
-  const color = isCurrent ? '#d4a838' : '#c9a96e'
+  const size = isCurrent ? 34 : 28
+  const color = isCurrent ? '#3d2810' : '#6b4a2a'
+  const fillColor = isCurrent ? 'rgba(244, 228, 193, 0.6)' : 'rgba(212, 184, 132, 0.35)'
   const glow = isCurrent
-    ? 'box-shadow: 0 0 10px rgba(212,168,56,0.7), 0 0 20px rgba(212,168,56,0.3);'
-    : 'box-shadow: 0 0 5px rgba(201,169,110,0.3);'
+    ? 'box-shadow: 0 0 8px rgba(244, 228, 193, 0.8), 0 0 16px rgba(201, 169, 110, 0.4);'
+    : 'box-shadow: 0 0 3px rgba(201, 169, 110, 0.4);'
   const pulse = isCurrent
     ? 'animation: portPulse 2.5s ease-in-out infinite;'
     : ''
@@ -25,7 +26,7 @@ function createPortIcon(isCurrent: boolean) {
   const html = `
     <div style="
       width:${size}px;height:${size}px;
-      background:radial-gradient(circle, ${isCurrent ? 'rgba(212,168,56,0.3)' : 'rgba(201,169,110,0.15)'} 30%, transparent 70%);
+      background:radial-gradient(circle, ${fillColor} 30%, transparent 70%);
       border:2px solid ${color};border-radius:50%;
       display:flex;align-items:center;justify-content:center;
       ${glow}${pulse}
@@ -47,10 +48,10 @@ function createUnknownPortIcon() {
   const html = `
     <div style="
       width:${size}px;height:${size}px;
-      background:radial-gradient(circle, rgba(120,120,140,0.15) 30%, transparent 70%);
-      border:1px dashed rgba(160,160,180,0.45);border-radius:50%;
+      background:radial-gradient(circle, rgba(90, 62, 26, 0.1) 30%, transparent 70%);
+      border:1px dashed rgba(90, 62, 26, 0.4);border-radius:50%;
       display:flex;align-items:center;justify-content:center;
-      color:rgba(180,180,200,0.55);
+      color:rgba(90, 62, 26, 0.5);
       font-size:9px;font-family:serif;
       pointer-events:none;
     ">?</div>
@@ -109,9 +110,9 @@ export function PortMarker() {
               permanent={true}
             >
               <span className="font-serif text-xs" style={{
-                color: isCurrent ? '#d4a838' : '#c9a96e',
+                color: isCurrent ? '#2b1e0e' : '#5a3e1a',
                 fontWeight: isCurrent ? 'bold' : 'normal',
-                textShadow: isCurrent ? '0 0 6px rgba(212,168,56,0.5)' : 'none',
+                textShadow: '0 0 4px rgba(244, 228, 193, 0.7), 0 0 2px rgba(244, 228, 193, 0.9)',
               }}>
                 {port.nameCn}
               </span>
@@ -128,17 +129,17 @@ export function PortMarker() {
           opacity: 0.5;
         }
         .port-tooltip {
-          background: rgba(10,18,25,0.85) !important;
-          border: 1px solid rgba(201,169,110,0.3) !important;
-          border-radius: 3px !important;
-          color: #c9a96e !important;
+          background: rgba(244, 228, 193, 0.95) !important;
+          border: 1px solid rgba(90, 62, 26, 0.5) !important;
+          border-radius: 2px !important;
+          color: #2b1e0e !important;
           padding: 1px 6px !important;
-          box-shadow: 0 2px 8px rgba(0,0,0,0.5) !important;
+          box-shadow: 0 1px 4px rgba(43, 30, 14, 0.4) !important;
           font-size: 11px !important;
           white-space: nowrap !important;
         }
         .port-tooltip::before {
-          border-top-color: rgba(201,169,110,0.3) !important;
+          border-top-color: rgba(90, 62, 26, 0.5) !important;
         }
         @keyframes portPulse {
           0%, 100% { transform: scale(1); box-shadow: 0 0 10px rgba(212,168,56,0.7), 0 0 20px rgba(212,168,56,0.3); }

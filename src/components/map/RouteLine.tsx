@@ -7,9 +7,9 @@ import { routes } from '@/data/routes'
 import { calculateBearing } from '@/utils/navigation'
 
 function getDangerColor(level: number): string {
-  if (level <= 2) return '#2d8a27'
-  if (level === 3) return '#c9a96e'
-  return '#c44020'
+  if (level <= 2) return '#6b4a2a'
+  if (level === 3) return '#8b5a2a'
+  return '#7a2810'
 }
 
 function createArcPoints(
@@ -104,9 +104,9 @@ export function RouteLine() {
               <Polyline
                 positions={points}
                 pathOptions={{
-                  color: '#f0d88a',
-                  weight: 8,
-                  opacity: 0.3,
+                  color: '#3d2810',
+                  weight: 9,
+                  opacity: 0.18,
                   lineCap: 'round',
                   lineJoin: 'round',
                 }}
@@ -115,10 +115,10 @@ export function RouteLine() {
             <Polyline
               positions={points}
               pathOptions={{
-                color: isSelected ? '#f0d88a' : color,
-                weight: isSelected ? 4 : 3,
-                opacity: isSelected ? 0.9 : 0.6,
-                dashArray: isSelected ? '12 8' : '8 6',
+                color: isSelected ? '#3d2810' : color,
+                weight: isSelected ? 3.5 : 2.5,
+                opacity: isSelected ? 0.95 : 0.7,
+                dashArray: isSelected ? '10 6' : '6 5',
                 lineCap: 'round',
                 lineJoin: 'round',
                 className: isSelected ? 'route-selected-animated' : '',
@@ -165,8 +165,8 @@ export function RouteLine() {
           html: `<div style="
             width:20px;height:20px;
             display:flex;align-items:center;justify-content:center;
-            color:#d4a838;font-size:16px;font-weight:bold;
-            text-shadow:0 0 6px rgba(212,168,56,0.8);
+            color:#3d2810;font-size:18px;font-weight:bold;
+            text-shadow:0 0 4px rgba(244,228,193,0.6);
           ">✦</div>`,
           className: 'waypoint-dest-icon',
           iconSize: [20, 20],
@@ -178,10 +178,10 @@ export function RouteLine() {
             <Polyline
               positions={points}
               pathOptions={{
-                color: '#d4a838',
-                weight: 4,
-                opacity: 0.8,
-                dashArray: '16 10',
+                color: '#3d2810',
+                weight: 3.5,
+                opacity: 0.85,
+                dashArray: '12 8',
                 lineCap: 'round',
                 lineJoin: 'round',
                 className: 'waypoint-route-animated',
