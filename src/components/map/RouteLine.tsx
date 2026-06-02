@@ -63,6 +63,7 @@ export function RouteLine() {
   const selectRoute = useGameStore((s) => s.selectRoute)
   const waypoint = useGameStore((s) => s.waypoint)
   const isSailing = useGameStore((s) => s.fleet.isSailing)
+  const shipPosition = useGameStore((s) => s.shipPosition)
 
   const availableRoutes = useMemo(() => {
     if (!currentPortId) return []
@@ -142,16 +143,21 @@ export function RouteLine() {
         )
       })}
       {waypoint && isSailing && (() => {
-        const fromPortId = currentRoute?.fromPortId ?? currentPortId
-        const fromPort = fromPortId
-          ? portMap.get(fromPortId)
-          : null
-        if (!fromPort || !isFinite(waypoint.latitude) || !isFinite(waypoint.longitude)) return null
+        if (!isFinite(waypoint.latitude) || !isFinite(waypoint.longitude)) return null
 
-        const points = createArcPoints(
-          [fromPort.latitude, fromPort.longitude],
-          [waypoint.latitude, waypoint.longitude],
-        )
+        const startPos: [number, number] | null =
+          shipPosition && isFinite(shipPosition[0]) && isFinite(shipPosition[1])
+            ? shipPosition
+            : currentPortId
+              ? (() => {
+                  const p = portMap.get(currentPortId)
+                  return p ? [p.latitude, p.longitude] as [number, number] : null
+                })()
+              : null
+
+        if (!startPos) return null
+
+        const points = createArcPoints(startPos, [waypoint.latitude, waypoint.longitude])
 
         if (points.length === 0) return null
 
