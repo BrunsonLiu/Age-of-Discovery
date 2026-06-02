@@ -14,17 +14,17 @@ export default function ParchmentCard({ title, children, className = '', onClose
       className={`relative rounded-lg overflow-hidden ${className}`}
       style={{
         background: `
-          linear-gradient(135deg, rgba(244,228,193,0.12) 0%, rgba(176,141,58,0.08) 50%, rgba(244,228,193,0.1) 100%)
+          linear-gradient(135deg, rgba(48, 36, 22, 0.96) 0%, rgba(60, 44, 26, 0.96) 50%, rgba(48, 36, 22, 0.96) 100%)
         `,
-        border: '1px solid rgba(201,169,110,0.35)',
-        boxShadow: '0 4px 24px rgba(0,0,0,0.4), inset 0 1px 0 rgba(244,228,193,0.1)',
+        border: '2px solid rgba(201,169,110,0.6)',
+        boxShadow: '0 8px 32px rgba(0,0,0,0.7), inset 0 1px 0 rgba(244,228,193,0.15)',
       }}
     >
       <div
-        className="absolute inset-0 pointer-events-none opacity-5"
+        className="absolute inset-0 pointer-events-none opacity-8"
         style={{
           backgroundImage: `repeating-linear-gradient(
-            45deg, transparent, transparent 2px, rgba(201,169,110,0.3) 2px, rgba(201,169,110,0.3) 4px
+            45deg, transparent, transparent 2px, rgba(201,169,110,0.25) 2px, rgba(201,169,110,0.25) 4px
           )`,
         }}
       />

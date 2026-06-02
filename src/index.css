@@ -168,9 +168,10 @@ body {
   }
 
   .parchment-bg-dark {
-    background: linear-gradient(135deg, rgba(244, 228, 193, 0.1) 0%, rgba(237, 212, 160, 0.05) 100%);
+    background: linear-gradient(135deg, rgba(48, 36, 22, 0.97) 0%, rgba(60, 44, 26, 0.97) 100%);
     color: #f4e4c1;
-    border: 1px solid rgba(201, 169, 110, 0.3);
+    border: 1px solid rgba(201, 169, 110, 0.5);
+    box-shadow: 0 8px 32px rgba(0,0,0,0.6);
   }
 
   .gold-border {

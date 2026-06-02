@@ -47,10 +47,17 @@ export function selectOutcome(outcomes: EventOutcome[]): EventOutcome {
   return outcomes[outcomes.length - 1]
 }
 
+const GLOBAL_EVENT_CHANCE = 0.35
+const MIN_DAYS_BETWEEN_EVENTS = 3
+
 export function getRandomEvents(
   gameState: GameState,
-  events: GameEvent[]
+  events: GameEvent[],
+  daysSinceLastEvent: number = 99,
 ): GameEvent | null {
+  if (daysSinceLastEvent < MIN_DAYS_BETWEEN_EVENTS) return null
+  if (Math.random() > GLOBAL_EVENT_CHANCE) return null
+
   const shuffled = [...events].sort(() => Math.random() - 0.5)
   for (const event of shuffled) {
     if (checkEventTrigger(event, gameState)) {

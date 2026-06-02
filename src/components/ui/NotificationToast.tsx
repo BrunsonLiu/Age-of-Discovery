@@ -10,10 +10,10 @@ const iconMap = {
 }
 
 const colorMap = {
-  discovery: 'border-blue-400/40 bg-ocean-900/90',
-  history: 'border-gold-400/40 bg-ocean-900/90',
-  achievement: 'border-amber-400/40 bg-ocean-900/90',
-  warning: 'border-red-400/40 bg-ocean-900/90',
+  discovery: 'border-blue-400/60 bg-slate-900/95',
+  history: 'border-gold-400/60 bg-slate-900/95',
+  achievement: 'border-amber-400/60 bg-slate-900/95',
+  warning: 'border-red-400/60 bg-slate-900/95',
 }
 
 const iconColorMap = {

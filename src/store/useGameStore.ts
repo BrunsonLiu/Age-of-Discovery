@@ -57,6 +57,7 @@ interface GameStore extends GameState {
   seenHistoricalEvents: number[]
   simSpeed: number
   shipPosition: [number, number] | null
+  lastEventDay: number
   addNotification: (notification: Omit<GameStore['notifications'][0], 'timestamp'>) => void
   removeNotification: (id: string) => void
   setWaypoint: (waypoint: Waypoint | null) => void
@@ -130,6 +131,7 @@ export const useGameStore = create<GameStore>()(
       seenHistoricalEvents: [],
       simSpeed: 3,
       shipPosition: null,
+      lastEventDay: 0,
 
       setWaypoint: (waypoint) => set({ waypoint }),
       setSimSpeed: (speed) => set({ simSpeed: speed }),
@@ -259,7 +261,8 @@ export const useGameStore = create<GameStore>()(
           }
           newFleet = { ...newFleet, food: newFood, water: newWater, morale: newMorale }
 
-          const triggeredEvent = getRandomEvents({ ...state, fleet: newFleet, routeProgress: state.routeProgress }, events)
+          const lastEventDay = state.lastEventDay ?? 0
+          const triggeredEvent = getRandomEvents({ ...state, fleet: newFleet, routeProgress: state.routeProgress }, events, newDay - lastEventDay)
           if (triggeredEvent) {
             newCurrentEvent = triggeredEvent
             newGamePhase = 'event'
@@ -289,6 +292,7 @@ export const useGameStore = create<GameStore>()(
           currentEvent: newCurrentEvent,
           notifications: newNotifications,
           seenHistoricalEvents: newSeenHistoricalEvents,
+          lastEventDay: newCurrentEvent ? newDay : state.lastEventDay,
         })
       },
 
@@ -412,9 +416,46 @@ export const useGameStore = create<GameStore>()(
       discoverPort: (portId) => set((state) => {
         if (state.discoveredPorts.includes(portId)) return state
         const port = ports.find(p => p.id === portId)
+        if (!port) return state
+        const newlyDiscovered = [...state.discoveredPorts, portId]
+        const isFirstDiscovery = newlyDiscovered.length === 2
+        const isMilestone = newlyDiscovered.length === 5 || newlyDiscovered.length === 10 || newlyDiscovered.length === 15 || newlyDiscovered.length === 20
+
+        if (isFirstDiscovery) {
+          return {
+            discoveredPorts: newlyDiscovered,
+            notifications: [...state.notifications, {
+              id: `first-discover-${Date.now()}`,
+              type: 'achievement' as const,
+              title: '✦ 首次发现新港口 ✦',
+              message: `${port.nameCn}！船长日志：远方出现了从未见过的陆地轮廓，我们的名字将记入史册。`,
+              timestamp: Date.now(),
+            }],
+          }
+        }
+
+        if (isMilestone) {
+          return {
+            discoveredPorts: newlyDiscovered,
+            notifications: [...state.notifications, {
+              id: `milestone-discover-${Date.now()}`,
+              type: 'achievement' as const,
+              title: `⛵ 已探索 ${newlyDiscovered.length} 座港口`,
+              message: `从塞维利亚启航到今天，你已经成为这条航线上最有经验的船长。`,
+              timestamp: Date.now(),
+            }],
+          }
+        }
+
         return {
-          discoveredPorts: [...state.discoveredPorts, portId],
-          notifications: [...state.notifications, { id: `discover-${portId}-${Date.now()}`, type: 'discovery' as const, title: '发现新港口！', message: port ? `${port.nameCn}（${port.name}）` : '未知港口', timestamp: Date.now() }],
+          discoveredPorts: newlyDiscovered,
+          notifications: [...state.notifications, {
+            id: `discover-${portId}-${Date.now()}`,
+            type: 'discovery' as const,
+            title: '发现新港口',
+            message: `${port.nameCn}（${port.name}）`,
+            timestamp: Date.now(),
+          }],
         }
       }),
 
@@ -433,6 +474,7 @@ export const useGameStore = create<GameStore>()(
           notifications: [], seenHistoricalEvents: [],
           waypoint: null, simSpeed: 3,
           shipPosition: startPort ? [startPort.latitude, startPort.longitude] : null,
+          lastEventDay: 0,
         })
       },
     }),
@@ -479,6 +521,7 @@ export const useGameStore = create<GameStore>()(
         gamePhase: state.gamePhase,
         tutorialStep: state.tutorialStep,
         seenHistoricalEvents: state.seenHistoricalEvents,
+        lastEventDay: state.lastEventDay,
       }),
     }
   )

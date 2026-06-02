@@ -41,7 +41,7 @@ export default function EventCard() {
   }
 
   const icon = renderEventIcon(currentEvent.type, 40)
-  const bgGradient = EVENT_TYPE_BG[currentEvent.type] || 'from-gold-900/30 to-ocean-900/30'
+  const bgGradient = EVENT_TYPE_BG[currentEvent.type] || 'from-gold-900/30 to-slate-900/30'
 
   return (
     <div className="fixed inset-0 flex items-center justify-center bg-black/70 backdrop-blur-sm animate-fade-in-scale"
