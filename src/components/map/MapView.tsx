@@ -96,13 +96,13 @@ export default function MapView() {
 
   const loadData = useCallback(async () => {
     setLoading(true)
-    setLoadError(false)
     try {
+      const base = import.meta.env.BASE_URL
       const results = await Promise.allSettled([
-        fetch('/data/land.geojson').then(r => r.ok ? r.json() : Promise.reject('land load fail')),
-        fetch('/data/coastline.geojson').then(r => r.ok ? r.json() : Promise.reject('coastline load fail')),
-        fetch('/data/borders.geojson').then(r => r.ok ? r.json() : Promise.reject('borders load fail')),
-        fetch('/data/ocean.geojson').then(r => r.ok ? r.json() : Promise.reject('ocean load fail')),
+        fetch(`${base}data/land.geojson`).then(r => r.ok ? r.json() : Promise.reject('land load fail')),
+        fetch(`${base}data/coastline.geojson`).then(r => r.ok ? r.json() : Promise.reject('coastline load fail')),
+        fetch(`${base}data/borders.geojson`).then(r => r.ok ? r.json() : Promise.reject('borders load fail')),
+        fetch(`${base}data/ocean.geojson`).then(r => r.ok ? r.json() : Promise.reject('ocean load fail')),
       ])
 
       const [land, coastline, borders, ocean] = results

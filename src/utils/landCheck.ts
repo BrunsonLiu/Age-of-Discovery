@@ -81,7 +81,7 @@ function isNearAnyPort(lat: number, lng: number): boolean {
 export function loadLandData(): Promise<void> {
   if (loaded) return Promise.resolve()
   if (loadingPromise) return loadingPromise
-  loadingPromise = fetch('/data/land.geojson')
+  loadingPromise = fetch(`${import.meta.env.BASE_URL}data/land.geojson`)
     .then(r => {
       if (!r.ok) throw new Error(`land.geojson ${r.status}`)
       return r.json()
