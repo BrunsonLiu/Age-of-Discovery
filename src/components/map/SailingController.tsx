@@ -7,6 +7,7 @@ const KM_PER_DEGREE = 111
 const NM_PER_KM = 0.539957
 const ARRIVE_THRESHOLD_DEG = 0.05
 const NEARBY_PORT_THRESHOLD_DEG = 10
+const SIGHT_RANGE_DEG = 4
 
 const portMap = new Map(ports.map(p => [p.id, p]))
 
@@ -118,6 +119,15 @@ export default function SailingController() {
       const newLng = currentPos[1] + dLng * ratio
 
       state.setShipPosition([newLat, newLng])
+
+      for (const port of portMap.values()) {
+        if (state.discoveredPorts.includes(port.id)) continue
+        const dLatP = port.latitude - newLat
+        const dLngP = port.longitude - newLng
+        if (dLatP * dLatP + dLngP * dLngP < SIGHT_RANGE_DEG * SIGHT_RANGE_DEG) {
+          state.discoverPort(port.id)
+        }
+      }
 
       const distMovedNm = actualMove * KM_PER_DEGREE * NM_PER_KM
       const nmPerDay = shipSpeedKnots * 24
