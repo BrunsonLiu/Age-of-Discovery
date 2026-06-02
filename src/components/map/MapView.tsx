@@ -6,6 +6,7 @@ import { RouteLine } from './RouteLine'
 import { ShipAnimation } from './ShipAnimation'
 import MapClickHandler from './MapClickHandler'
 import OceanLabels from './OceanLabels'
+import { loadLandData } from '@/utils/landCheck'
 import 'leaflet/dist/leaflet.css'
 
 class MapErrorBoundary extends Component<{ children: React.ReactNode }, { hasError: boolean; error: string }> {
@@ -123,6 +124,7 @@ export default function MapView() {
 
   useEffect(() => {
     loadData()
+    loadLandData()
   }, [loadData])
 
   return (

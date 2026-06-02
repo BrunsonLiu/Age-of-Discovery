@@ -2,6 +2,7 @@ import { useMapEvents } from 'react-leaflet'
 import { useGameStore } from '@/store/useGameStore'
 import { useMapStore } from '@/store/useMapStore'
 import { ports } from '@/data/ports'
+import { findNearestOceanPoint, isOnLand } from '@/utils/landCheck'
 import type { Waypoint } from '@/types'
 
 export default function MapClickHandler() {
@@ -12,6 +13,7 @@ export default function MapClickHandler() {
   const changeCourse = useGameStore(s => s.changeCourse)
   const setActivePanel = useGameStore(s => s.setActivePanel)
   const discoverPort = useGameStore(s => s.discoverPort)
+  const addNotification = useGameStore(s => s.addNotification)
   const setSelectedPortId = useMapStore(s => s.setSelectedPortId)
 
   useMapEvents({
@@ -46,7 +48,30 @@ export default function MapClickHandler() {
         return
       }
 
-      const waypoint: Waypoint = { latitude: lat, longitude: lng }
+      let targetLat = lat
+      let targetLng = lng
+      if (isOnLand(lat, lng)) {
+        const ocean = findNearestOceanPoint(lat, lng)
+        if (!ocean) {
+          addNotification({
+            id: `no-ocean-${Date.now()}`,
+            type: 'warning',
+            title: '无法航行',
+            message: '这一带是连绵的陆地，附近找不到可以出海的点。',
+          })
+          return
+        }
+        targetLat = ocean[0]
+        targetLng = ocean[1]
+        addNotification({
+          id: `coast-snap-${Date.now()}`,
+          type: 'discovery',
+          title: '航线已贴岸',
+          message: '目标点在陆地上，航线自动改道至最近的海岸。',
+        })
+      }
+
+      const waypoint: Waypoint = { latitude: targetLat, longitude: targetLng }
 
       if (fleet.isSailing) {
         changeCourse(waypoint)

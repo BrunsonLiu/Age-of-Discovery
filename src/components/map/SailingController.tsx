@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { useGameStore } from '@/store/useGameStore'
 import { ports } from '@/data/ports'
+import { isOnLand } from '@/utils/landCheck'
 
 const BASE_MOVE_DEG_PER_SEC = 0.35
 const KM_PER_DEGREE = 111
@@ -117,6 +118,30 @@ export default function SailingController() {
 
       const newLat = currentPos[0] + dLat * ratio
       const newLng = currentPos[1] + dLng * ratio
+
+      if (isOnLand(newLat, newLng)) {
+        const safeLat = currentPos[0] + dLat * 0.5
+        const safeLng = currentPos[1] + dLng * 0.5
+        if (isOnLand(safeLat, safeLng)) {
+          state.setShipPosition(currentPos)
+          useGameStore.setState({
+            fleet: { ...state.fleet, isSailing: false },
+            currentRoute: null, routeProgress: 0, waypoint: null,
+          })
+          state.addNotification({
+            id: `run-aground-${Date.now()}`,
+            type: 'warning',
+            title: '触礁搁浅',
+            message: '前方是陆地，船只被迫停航。重新规划航线吧！',
+          })
+          dayAccumRef.current = 0
+          lastTimeRef.current = 0
+          return
+        }
+        state.setShipPosition([safeLat, safeLng])
+        useGameStore.setState({ routeProgress: Math.min(1, Math.max(0, 0.5)) })
+        return
+      }
 
       state.setShipPosition([newLat, newLng])
 
