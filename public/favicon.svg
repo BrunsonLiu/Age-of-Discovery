@@ -1,4 +1,27 @@
-<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-<rect width="32" height="32" fill="#0A0B0D"/>
-<path d="M26.6677 23.7149H8.38057V20.6496H5.33301V8.38159H26.6677V23.7149ZM8.38057 20.6496H23.6201V11.4482H8.38057V20.6496ZM16.0011 16.0021L13.8461 18.1705L11.6913 16.0021L13.8461 13.8337L16.0011 16.0021ZM22.0963 16.0008L19.9414 18.1691L17.7865 16.0008L19.9414 13.8324L22.0963 16.0008Z" fill="#32F08C"/>
+<svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- 羊皮纸圆角底 -->
+  <rect width="64" height="64" rx="10" fill="#3a2817"/>
+  <rect x="2" y="2" width="60" height="60" rx="9" fill="none" stroke="#c9a96e" stroke-width="1.5" opacity="0.6"/>
+
+  <!-- 罗盘玫瑰 -->
+  <g transform="translate(32 32)">
+    <!-- 东南西北指针 -->
+    <path d="M0 -22 L3 0 L0 22 L-3 0 Z" fill="#c9a96e" opacity="0.85"/>
+    <path d="M-22 0 L0 3 L22 0 L0 -3 Z" fill="#8b6f3e" opacity="0.85"/>
+    <!-- 中心圆 -->
+    <circle r="4" fill="#3a2817" stroke="#c9a96e" stroke-width="1.5"/>
+    <circle r="1.2" fill="#c9a96e"/>
+    <!-- N 标 -->
+    <text y="-25" font-family="serif" font-size="6" fill="#c9a96e" text-anchor="middle" font-weight="bold">N</text>
+  </g>
+
+  <!-- 帆船 -->
+  <g transform="translate(32 14)">
+    <!-- 主桅杆 -->
+    <line x1="0" y1="0" x2="0" y2="9" stroke="#c9a96e" stroke-width="0.8"/>
+    <!-- 主帆 -->
+    <path d="M0 0 L7 5 L0 8 Z" fill="#e8d5a8" stroke="#8b6f3e" stroke-width="0.4"/>
+    <!-- 前帆 -->
+    <path d="M0 1 L-4 5 L0 7 Z" fill="#d4b884" stroke="#8b6f3e" stroke-width="0.4"/>
+  </g>
 </svg>
