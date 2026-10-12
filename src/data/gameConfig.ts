@@ -27,8 +27,6 @@ export const GAME_BALANCE = {
   STOCK_RECOVER_PER_DAY: 8,
   /** 胜利条件：探索全部港口 */
   VICTORY_DISCOVER_ALL: 20,
-  /** 胜利条件：完成全部任务 */
-  VICTORY_COMPLETE_ALL_TASKS: 3,
-  /** 胜利条件：累积金币 */
+  /** 胜利条件：累积金币（完成全部任务一档按 tasks.length 动态判定） */
   VICTORY_GOLD: 20000,
 } as const

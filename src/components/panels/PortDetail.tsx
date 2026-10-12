@@ -1,4 +1,4 @@
-import { Anchor, Wrench, Package, Users, Coins, Shield, Heart, Ship } from 'lucide-react'
+import { Anchor, Wrench, Package, Users, Coins, Shield, Heart, Ship, Map } from 'lucide-react'
 import { useGameStore } from '@/store/useGameStore'
 import { useMapStore } from '@/store/useMapStore'
 import { ports } from '@/data/ports'
@@ -30,6 +30,9 @@ export default function PortDetail() {
   const repairShip = useGameStore(s => s.repairShip)
   const supplyFleet = useGameStore(s => s.supplyFleet)
   const recruitCrew = useGameStore(s => s.recruitCrew)
+  const activeTasks = useGameStore(s => s.activeTasks)
+  const completedTasks = useGameStore(s => s.completedTasks)
+  const acceptTask = useGameStore(s => s.acceptTask)
 
   const portId = fleet.currentPortId || selectedPortId
   const port = ports.find(p => p.id === portId)
@@ -37,7 +40,13 @@ export default function PortDetail() {
   if (!port) return null
 
   const isAtPort = fleet.currentPortId === port.id
-  const portTasks = tasks.filter(t => t.portId === port.id && t.status === 'available')
+  const portTasks = tasks.filter(t => {
+    if (t.portId !== port.id || t.status !== 'available') return false
+    if (activeTasks.some(at => at.id === t.id)) return false
+    if (completedTasks.includes(t.id)) return false
+    if (t.minDay !== undefined && fleet.day < t.minDay) return false
+    return true
+  })
 
   const handleRepair = (shipId: number) => {
     const ship = fleet.ships.find(s => s.id === shipId)
@@ -157,15 +166,30 @@ export default function PortDetail() {
             </div>
           )}
 
-          {portTasks.length > 0 && (
+          {isAtPort && portTasks.length > 0 && (
             <div className="border-t border-gold-700/30 pt-2">
               <h4 className="text-gold-300 font-serif text-xs mb-1.5 flex items-center gap-1">
-                <Heart size={12} /> 港口任务
+                <Heart size={12} /> 可接任务
               </h4>
-              {portTasks.slice(0, 2).map(task => (
+              {portTasks.slice(0, 3).map(task => (
                 <div key={task.id} className="bg-ocean-800/30 rounded p-1.5 mb-1">
-                  <div className="text-gold-200 text-xs font-serif">{task.title}</div>
-                  <div className="text-gold-500 text-xs">奖励: <Coins size={10} className="inline" /> {task.reward.gold}</div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-gold-200 text-xs font-serif">{task.title}</span>
+                    <button
+                      onClick={() => acceptTask(task.id)}
+                      className="text-gold-400 hover:text-gold-300 text-xs font-serif transition-colors"
+                    >
+                      接受
+                    </button>
+                  </div>
+                  <div className="flex items-center justify-between text-gold-500 text-xs mt-0.5">
+                    <span>奖励: <Coins size={10} className="inline" /> {task.reward.gold}{task.reward.fame ? ` +${task.reward.fame}声望` : ''}</span>
+                    {task.targetPortId && (
+                      <span className="flex items-center gap-0.5">
+                        <Map size={9} /> {ports.find(p => p.id === task.targetPortId)?.nameCn}
+                      </span>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>

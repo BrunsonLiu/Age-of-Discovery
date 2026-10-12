@@ -115,6 +115,8 @@ export interface Task {
   portId: number
   targetPortId?: number
   requiredGoods?: { goodId: number; quantity: number }[]
+  /** 达到该天数后任务才出现在列表（用于让任务随航行逐步浮现） */
+  minDay?: number
 }
 
 export interface EventLogEntry {

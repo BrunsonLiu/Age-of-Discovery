@@ -156,8 +156,9 @@ function checkVictory(state: GameState): string | null {
   if (state.discoveredPorts.length >= GAME_BALANCE.VICTORY_DISCOVER_ALL) {
     return '你发现了世上全部 20 座港口——每一片海岸都记得你的帆影。'
   }
-  if (state.completedTasks.length >= GAME_BALANCE.VICTORY_COMPLETE_ALL_TASKS) {
-    return '所有冒险传闻都成了你的日志里落款的一页——传奇船长，实至名归。'
+  // "完成全部任务"按任务总数动态判定，随任务线扩充自动生效
+  if (state.completedTasks.length >= tasks.length) {
+    return `${tasks.length} 段冒险全部写进了你的航海日志——传奇船长，实至名归。`
   }
   if (state.fleet.gold >= GAME_BALANCE.VICTORY_GOLD) {
     return '两万金币的家底——你的船队比西班牙珍宝舰队还令人垂涎。'
@@ -507,6 +508,7 @@ export const useGameStore = create<GameStore>()(
       acceptTask: (taskId) => set((state) => {
         const task = tasks.find(t => t.id === taskId)
         if (!task || state.activeTasks.some(t => t.id === taskId)) return state
+        if (task.minDay !== undefined && state.fleet.day < task.minDay) return state
         return { activeTasks: [...state.activeTasks, { ...task, status: 'active' as const }] }
       }),
 

@@ -17,6 +17,9 @@ import IntroScreen from '@/components/intro/IntroScreen'
 import TutorialOverlay from '@/components/intro/TutorialOverlay'
 import HelpPanel from '@/components/intro/HelpPanel'
 import type { PanelType } from '@/types'
+import { tasks } from '@/data/tasks'
+
+const totalTasks = tasks.length
 
 const panelButtons: { type: PanelType; icon: React.ReactNode; label: string; side: 'left' | 'right' }[] = [
   { type: 'fleet', icon: <Ship size={18} />, label: '舰队', side: 'left' },
@@ -56,7 +59,7 @@ export default function MainMap() {
 
   const victoryDesc = useGameStore(() => {
     if (discoveredPorts.length >= 20) return '你发现了世上全部 20 座港口——每一片海岸都记得你的帆影。'
-    if (completedTasks.length >= 3) return '所有冒险传闻都成了你的日志里落款的一页——传奇船长，实至名归。'
+    if (completedTasks.length >= totalTasks) return `${totalTasks} 段冒险全部写进了你的航海日志——传奇船长，实至名归。`
     if (fleet.gold >= 20000) return '两万金币的家底——你的船队比西班牙珍宝舰队还令人垂涎。'
     return '你的名字已被这片大海记住。'
   })
