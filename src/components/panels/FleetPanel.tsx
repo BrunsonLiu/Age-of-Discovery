@@ -8,6 +8,7 @@ import { calculateSailingDays } from '@/utils/navigation'
 import ParchmentCard from '@/components/ui/ParchmentCard'
 import ResourceBar from '@/components/ui/ResourceBar'
 import ActionButton from '@/components/ui/ActionButton'
+import Ship3DView from '@/components/three/Ship3DView'
 
 const shipTypeNames: Record<string, string> = {
   caravel: '卡拉维尔', galleon: '盖伦帆船', sloop: '单桅纵帆', frigate: '护卫舰',
@@ -23,6 +24,7 @@ export default function FleetPanel() {
   const setCenter = useMapStore(s => s.setCenter)
   const routeProgress = useGameStore(s => s.routeProgress)
   const [selectedRouteId, setSelectedRouteId] = useState<number | null>(null)
+  const [previewId, setPreviewId] = useState<number | null>(null)
 
   const availableRoutes = fleet.currentPortId
     ? routes.filter(r => r.fromPortId === fleet.currentPortId)
@@ -58,14 +60,27 @@ export default function FleetPanel() {
             {fleet.ships.map(ship => (
               <div key={ship.id} className="bg-ocean-800/40 rounded p-2">
                 <div className="flex items-center justify-between text-sm mb-1">
-                  <span className="text-gold-300 font-serif">{ship.name}</span>
-                  <span className="text-gold-500 text-xs">{shipTypeNames[ship.type]}</span>
+                  <span className="text-gold-300 font-serif">
+                    {ship.name} <span className="text-gold-600 text-xs">{shipTypeNames[ship.type]}</span>
+                  </span>
+                  <button
+                    onClick={() => setPreviewId(previewId === ship.id ? null : ship.id)}
+                    className="text-gold-500 hover:text-gold-300 text-xs font-serif transition-colors"
+                    aria-expanded={previewId === ship.id}
+                  >
+                    {previewId === ship.id ? '收起 3D' : '查看 3D'}
+                  </button>
                 </div>
                 <ResourceBar value={ship.durability} maxValue={ship.maxDurability} label="耐久" icon={<Ship size={12} />} />
                 <div className="flex justify-between text-xs text-gold-500 mt-1">
                   <span>船员 {ship.crew}/{ship.maxCrew}</span>
                   <span>货舱 {ship.usedCapacity}/{ship.capacity}</span>
                 </div>
+                {previewId === ship.id && (
+                  <div className="mt-2 rounded overflow-hidden border border-gold-700/20 bg-ocean-900/60">
+                    <Ship3DView type={ship.type} name={ship.name} />
+                  </div>
+                )}
               </div>
             ))}
           </div>
