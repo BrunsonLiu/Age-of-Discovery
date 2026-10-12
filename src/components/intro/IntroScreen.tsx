@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useGameStore } from '@/store/useGameStore'
+import { startAmbience } from '@/utils/audio'
 
 const pages = [
   {
@@ -105,6 +106,8 @@ export default function IntroScreen() {
         fadeTimerRef.current = null
       }, 300)
     } else {
+      // 用户手势中启动环境音（满足浏览器自动播放策略）
+      startAmbience()
       initGame()
     }
   }

@@ -1,7 +1,7 @@
 import { useState } from 'react'
-import { Coins, Package, TrendingUp, TrendingDown } from 'lucide-react'
+import { Coins, Package, TrendingUp, TrendingDown, Sprout, HandCoins } from 'lucide-react'
 import { useGameStore } from '@/store/useGameStore'
-import { portGoods } from '@/data/ports'
+import { portGoods, localSpecialties, localDemands } from '@/data/ports'
 import { goods } from '@/data/goods'
 import ParchmentCard from '@/components/ui/ParchmentCard'
 import ActionButton from '@/components/ui/ActionButton'
@@ -20,6 +20,14 @@ export default function TradePanel() {
   const currentPortGoods = portGoods.filter(pg => pg.portId === portId)
   const totalCapacity = fleet.ships.reduce((s, sh) => s + sh.capacity, 0)
   const usedCapacity = fleet.cargo.reduce((s, c) => s + c.quantity, 0)
+
+  const nameOf = (id: number) => goods.find(g => g.id === id)?.nameCn ?? ''
+  const specialties = localSpecialties(portId).map(nameOf).filter(Boolean)
+  const demands = localDemands(portId).map(nameOf).filter(Boolean)
+  // 玩家货舱里此港高价收购的商品（直接提示"可在此出手"）
+  const sellableHigh = fleet.cargo
+    .filter(c => demands.includes(nameOf(c.goodId)))
+    .map(c => `${nameOf(c.goodId)}×${c.quantity}`)
 
   const getStock = (pg: { portId: number; goodId: number; stock: number }) =>
     marketStock[`${pg.portId}:${pg.goodId}`] ?? pg.stock
@@ -40,6 +48,28 @@ export default function TradePanel() {
             <span className="flex items-center gap-1"><Coins size={12} /> {fleet.gold} 金币</span>
             <span className="flex items-center gap-1"><Package size={12} /> {usedCapacity}/{totalCapacity}</span>
           </div>
+
+          {(specialties.length > 0 || demands.length > 0) && (
+            <div className="bg-ocean-800/40 border border-gold-700/20 rounded p-2 space-y-1">
+              {specialties.length > 0 && (
+                <p className="text-safe-400 text-xs font-serif flex items-start gap-1">
+                  <Sprout size={11} className="mt-0.5 shrink-0" />
+                  <span>本地特产：{specialties.join('、')}（买入最便宜）</span>
+                </p>
+              )}
+              {demands.length > 0 && (
+                <p className="text-gold-300 text-xs font-serif flex items-start gap-1">
+                  <HandCoins size={11} className="mt-0.5 shrink-0" />
+                  <span>高价收购：{demands.slice(0, 3).join('、')}</span>
+                </p>
+              )}
+              {sellableHigh.length > 0 && (
+                <p className="text-gold-400 text-xs font-serif italic">
+                  ✓ 你船上的 {sellableHigh.join('、')} 在此可卖高价
+                </p>
+              )}
+            </div>
+          )}
 
           <div className="flex gap-1">
             <button

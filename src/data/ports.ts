@@ -179,3 +179,18 @@ export const portGoods: PortGood[] = [
 export const marketTips: { portId: number; goodId: number }[] = portGoods
   .filter(pg => pg.priceModifier >= 1.3)
   .map(pg => ({ portId: pg.portId, goodId: pg.goodId }))
+
+/** 某港的本地特产（买价便宜，modifier <= 0.75） */
+export function localSpecialties(portId: number): number[] {
+  return portGoods
+    .filter(pg => pg.portId === portId && pg.priceModifier <= 0.75)
+    .map(pg => pg.goodId)
+}
+
+/** 某港高价收购的商品（modifier >= 1.3），按渴求度降序 */
+export function localDemands(portId: number): number[] {
+  return portGoods
+    .filter(pg => pg.portId === portId && pg.priceModifier >= 1.3)
+    .sort((a, b) => b.priceModifier - a.priceModifier)
+    .map(pg => pg.goodId)
+}

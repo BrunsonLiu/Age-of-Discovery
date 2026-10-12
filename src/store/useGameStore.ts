@@ -4,7 +4,7 @@ import type {
   Fleet, Ship, GameState, GameEvent, EventOutcome, EventLogEntry,
   Route, PanelType, CargoItem, Waypoint,
 } from '@/types'
-import { ports, portGoods } from '@/data/ports'
+import { ports, portGoods, localDemands } from '@/data/ports'
 import { events } from '@/data/events'
 import { tasks } from '@/data/tasks'
 import { goods } from '@/data/goods'
@@ -563,11 +563,27 @@ export const useGameStore = create<GameStore>()(
         // 到港发现的声望奖励
         const fameGain = 5
 
+        // 行情速报：告诉玩家此港高价收购什么，让"去哪儿卖"可以规划
+        const tipKey = `${portId}`
+        const hasSeenTip = state.seenMarketTips.includes(tipKey)
+        const demands = localDemands(portId)
+        const marketNotif = (!hasSeenTip && demands.length > 0)
+          ? [{
+              id: `market-${portId}-${Date.now()}`,
+              type: 'warning' as const,
+              title: '📜 行情速报',
+              message: `${port.nameCn}正高价收购：${demands.slice(0, 2).map(id => goods.find(g => g.id === id)?.nameCn ?? '').filter(Boolean).join('、')}——运来此处出手最划算。`,
+              timestamp: Date.now(),
+            }]
+          : []
+        const newSeenMarketTips = hasSeenTip ? state.seenMarketTips : [...state.seenMarketTips, tipKey]
+
         if (isFirstDiscovery) {
           return {
             discoveredPorts: newlyDiscovered,
             fleet: { ...state.fleet, fame: state.fleet.fame + fameGain },
-            notifications: [...state.notifications, {
+            seenMarketTips: newSeenMarketTips,
+            notifications: [...state.notifications, ...marketNotif, {
               id: `first-discover-${Date.now()}`,
               type: 'achievement' as const,
               title: '✦ 首次发现新港口 ✦',
@@ -581,7 +597,8 @@ export const useGameStore = create<GameStore>()(
           return {
             discoveredPorts: newlyDiscovered,
             fleet: { ...state.fleet, fame: state.fleet.fame + fameGain },
-            notifications: [...state.notifications, {
+            seenMarketTips: newSeenMarketTips,
+            notifications: [...state.notifications, ...marketNotif, {
               id: `milestone-discover-${Date.now()}`,
               type: 'achievement' as const,
               title: `⛵ 已探索 ${newlyDiscovered.length} 座港口`,
@@ -594,7 +611,8 @@ export const useGameStore = create<GameStore>()(
         return {
           discoveredPorts: newlyDiscovered,
           fleet: { ...state.fleet, fame: state.fleet.fame + fameGain },
-          notifications: [...state.notifications, {
+          seenMarketTips: newSeenMarketTips,
+          notifications: [...state.notifications, ...marketNotif, {
             id: `discover-${portId}-${Date.now()}`,
             type: 'discovery' as const,
             title: '发现新港口',

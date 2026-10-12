@@ -3,6 +3,7 @@ import { useGameStore } from '@/store/useGameStore'
 import { useMapStore } from '@/store/useMapStore'
 import { ports } from '@/data/ports'
 import { calculateSailingDays } from '@/utils/navigation'
+import SoundToggle from '@/components/ui/SoundToggle'
 
 export default function BottomBar() {
   const fleet = useGameStore((s) => s.fleet)
@@ -144,6 +145,8 @@ export default function BottomBar() {
           >
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 8v4m0 4h.01"/></svg>
           </button>
+          <div className="w-px h-3 bg-gold-700/30" />
+          <SoundToggle />
           <div className="w-px h-3 bg-gold-700/30" />
           <button
             onClick={resetGame}
