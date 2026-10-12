@@ -23,4 +23,5 @@ export const historicalTimeline: HistoricalEvent[] = [
   { day: 130, year: 1620, title: '五月花号抵达新大陆', description: '载有清教徒的五月花号抵达普利茅斯，北美殖民历史翻开新篇章。' },
   { day: 140, year: 1630, title: '加勒比海盗黄金时代', description: '以拿骚和托尔图加为基地的海盗活动达到顶峰，黑胡子、亨利·摩根等传奇海盗活跃于加勒比海域。', region: 'caribbean' },
   { day: 150, year: 1650, title: '大航海时代落幕', description: '随着殖民体系的建立和海上霸权的转移，大航海时代逐渐落幕，但它的遗产永远改变了世界。' },
+  { day: 200, year: 1700, title: '四海皆知你的名号', description: '从塞维利亚到马六甲，每个港口的酒馆里都在传唱你的航迹。船长，这片大海已经装不下你的传说了。' },
 ]

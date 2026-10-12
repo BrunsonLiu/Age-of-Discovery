@@ -4,6 +4,7 @@ import { useMapStore } from '@/store/useMapStore'
 import { PortMarker } from './PortMarker'
 import { RouteLine } from './RouteLine'
 import { ShipAnimation } from './ShipAnimation'
+import { MapOverlays } from './MapOverlays'
 import MapClickHandler from './MapClickHandler'
 import OceanLabels from './OceanLabels'
 import VintageMapOverlay from './VintageMapOverlay'
@@ -17,6 +18,9 @@ class MapErrorBoundary extends Component<{ children: React.ReactNode }, { hasErr
   }
   static getDerivedStateFromError(error: Error) {
     return { hasError: true, error: error.message }
+  }
+  componentDidCatch(error: Error, info: { componentStack?: string | null }) {
+    console.error('[MapErrorBoundary]', error.message, info.componentStack)
   }
   render() {
     if (this.state.hasError) {
@@ -40,6 +44,7 @@ function MapController() {
   const zoom = useMapStore((s) => s.zoom)
 
   useEffect(() => {
+    if (!isFinite(center[0]) || !isFinite(center[1]) || !isFinite(zoom)) return
     const cur = map.getCenter()
     if (Math.abs(cur.lat - center[0]) > 0.0001 || Math.abs(cur.lng - center[1]) > 0.0001) {
       map.setView(center, zoom, { animate: true })
@@ -172,6 +177,7 @@ export default function MapView() {
           )}
 
           <MapController />
+          <MapOverlays />
           <MapClickHandler />
           <OceanLabels />
           <RouteLine />

@@ -5,6 +5,7 @@ import SailingController from '@/components/map/SailingController'
 import FleetPanel from '@/components/panels/FleetPanel'
 import PortDetail from '@/components/panels/PortDetail'
 import TradePanel from '@/components/panels/TradePanel'
+import ShipyardPanel from '@/components/panels/ShipyardPanel'
 import EventLog from '@/components/panels/EventLog'
 import TaskPanel from '@/components/panels/TaskPanel'
 import EventCard from '@/components/events/EventCard'
@@ -37,7 +38,7 @@ const Z = {
 }
 
 const LEFT_PANELS: readonly PanelType[] = ['fleet', 'task', 'event'] as const
-const RIGHT_PANELS: readonly PanelType[] = ['port', 'trade'] as const
+const RIGHT_PANELS: readonly PanelType[] = ['port', 'trade', 'shipyard'] as const
 
 export default function MainMap() {
   const gamePhase = useGameStore(s => s.gamePhase)
@@ -49,6 +50,16 @@ export default function MainMap() {
   const tutorialStep = useGameStore(s => s.tutorialStep)
   const showHelp = useGameStore(s => s.showHelp)
   const setShowHelp = useGameStore(s => s.setShowHelp)
+  const victoryDay = useGameStore(s => s.victoryDay)
+  const discoveredPorts = useGameStore(s => s.discoveredPorts)
+  const completedTasks = useGameStore(s => s.completedTasks)
+
+  const victoryDesc = useGameStore(() => {
+    if (discoveredPorts.length >= 20) return '你发现了世上全部 20 座港口——每一片海岸都记得你的帆影。'
+    if (completedTasks.length >= 3) return '所有冒险传闻都成了你的日志里落款的一页——传奇船长，实至名归。'
+    if (fleet.gold >= 20000) return '两万金币的家底——你的船队比西班牙珍宝舰队还令人垂涎。'
+    return '你的名字已被这片大海记住。'
+  })
 
   const togglePanel = (panel: PanelType) => {
     if (showHelp) setShowHelp(false)
@@ -148,6 +159,7 @@ export default function MainMap() {
         >
           {activeRightPanel === 'port' && <PortDetail />}
           {activeRightPanel === 'trade' && <TradePanel />}
+          {activeRightPanel === 'shipyard' && <ShipyardPanel />}
         </div>
       )}
 
@@ -192,15 +204,32 @@ export default function MainMap() {
 
       {gamePhase === 'gameover' && (
         <div className="fixed inset-0 flex items-center justify-center bg-black/80 backdrop-blur-md" style={{ zIndex: Z.OVERLAY }}>
-          <div className="text-center space-y-6">
-            <div className="text-5xl mb-4">🏴‍☠️</div>
-            <h1 className="pirate-title text-4xl text-danger-400">航行终结</h1>
-            <p className="text-gold-400 font-serif text-lg">
-              你的舰队在第{fleet.day}天走向了终结
-            </p>
-            <p className="text-gold-500 font-serif">
-              积累财富: <span className="text-gold-300">{fleet.gold} 金币</span>
-            </p>
+          <div className="text-center space-y-6 max-w-md px-6">
+            {victoryDay !== null ? (
+              <>
+                <div className="text-5xl mb-4">👑</div>
+                <h1 className="pirate-title text-4xl text-gold-300">传奇船长</h1>
+                <p className="text-gold-400 font-serif text-lg">第{victoryDay}天，四海皆知你的名号</p>
+                <div className="space-y-1 text-gold-500 font-serif text-sm">
+                  <p>{victoryDesc}</p>
+                  <p>累积财富: <span className="text-gold-300">{fleet.gold} 金币</span> · 声望: <span className="text-gold-300">{fleet.fame}</span></p>
+                  <p>探索港口: <span className="text-gold-300">{discoveredPorts.length}/20</span> · 完成冒险: <span className="text-gold-300">{completedTasks.length}</span></p>
+                </div>
+                <p className="text-gold-600 font-serif text-sm italic">大航海时代落幕了，但酒馆里永远流传着你的航迹。</p>
+              </>
+            ) : (
+              <>
+                <div className="text-5xl mb-4">🏴‍☠️</div>
+                <h1 className="pirate-title text-4xl text-danger-400">航行终结</h1>
+                <p className="text-gold-400 font-serif text-lg">
+                  你的舰队在第{fleet.day}天走向了终结
+                </p>
+                <div className="space-y-1 text-gold-500 font-serif text-sm">
+                  <p>积累财富: <span className="text-gold-300">{fleet.gold} 金币</span> · 声望: <span className="text-gold-300">{fleet.fame}</span></p>
+                  <p>探索港口: <span className="text-gold-300">{discoveredPorts.length}/20</span> · 完成冒险: <span className="text-gold-300">{completedTasks.length}</span></p>
+                </div>
+              </>
+            )}
             <button
               onClick={resetGame}
               className="btn-nautical px-6 py-2 rounded-lg font-serif hover:bg-gold-500 transition-all"

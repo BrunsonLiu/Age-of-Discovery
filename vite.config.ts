@@ -4,7 +4,7 @@ import tsconfigPaths from "vite-tsconfig-paths";
 
 const isDev = process.env.NODE_ENV !== 'production'
 
-export default defineConfig(({ command }) => ({
+export default defineConfig(() => ({
   base: '/Age-of-Discovery/',
   build: {
     sourcemap: 'hidden',

@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 import { useGameStore } from '@/store/useGameStore'
 import { ports } from '@/data/ports'
 import { isOnLand } from '@/utils/landCheck'
+import { effectiveFleetSpeed } from '@/utils/navigation'
 
 const BASE_MOVE_DEG_PER_SEC = 0.35
 const KM_PER_DEGREE = 111
@@ -17,10 +18,11 @@ export default function SailingController() {
   const gamePhase = useGameStore(s => s.gamePhase)
   const waypoint = useGameStore(s => s.waypoint)
   const simSpeed = useGameStore(s => s.simSpeed)
-  const shipSpeedKnots = useGameStore(s => {
-    if (s.fleet.ships.length === 0) return 0
-    return s.fleet.ships.reduce((sum, ship) => sum + ship.speed, 0) / s.fleet.ships.length
-  })
+  const currentRoute = useGameStore(s => s.currentRoute)
+  // 有效船速：船员不足会掉速（与预估公式一致）
+  const shipSpeedKnots = useGameStore(s => effectiveFleetSpeed(s.fleet))
+  // 真风有利度：与预估公式一致（route.windFavor 已在出航时按真风计算）
+  const windFavor = currentRoute ? Math.max(0.5, currentRoute.windFavor) : 1
 
   const lastTimeRef = useRef<number>(0)
   const dayAccumRef = useRef<number>(0)
@@ -38,7 +40,7 @@ export default function SailingController() {
       return
     }
 
-    const moveDegPerSec = BASE_MOVE_DEG_PER_SEC * (shipSpeedKnots / 5) * simSpeed
+    const moveDegPerSec = BASE_MOVE_DEG_PER_SEC * (shipSpeedKnots / 5) * windFavor * simSpeed
 
     const animate = (timestamp: number) => {
       if (lastTimeRef.current === 0) {
@@ -155,7 +157,7 @@ export default function SailingController() {
       }
 
       const distMovedNm = actualMove * KM_PER_DEGREE * NM_PER_KM
-      const nmPerDay = shipSpeedKnots * 24
+      const nmPerDay = shipSpeedKnots * windFavor * 24
       dayAccumRef.current += distMovedNm / nmPerDay
 
       while (dayAccumRef.current >= 1) {
@@ -178,7 +180,7 @@ export default function SailingController() {
       }
       lastTimeRef.current = 0
     }
-  }, [isSailing, gamePhase, waypoint, simSpeed, shipSpeedKnots])
+  }, [isSailing, gamePhase, waypoint, simSpeed, shipSpeedKnots, windFavor])
 
   return null
 }

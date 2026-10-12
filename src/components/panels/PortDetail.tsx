@@ -1,4 +1,4 @@
-import { Anchor, Wrench, Package, Users, Coins, Shield, Heart } from 'lucide-react'
+import { Anchor, Wrench, Package, Users, Coins, Shield, Heart, Ship } from 'lucide-react'
 import { useGameStore } from '@/store/useGameStore'
 import { useMapStore } from '@/store/useMapStore'
 import { ports } from '@/data/ports'
@@ -16,10 +16,11 @@ const serviceIcons: Record<string, React.ReactNode> = {
   supply: <Package size={14} />,
   recruit: <Users size={14} />,
   trade: <Coins size={14} />,
+  shipyard: <Ship size={14} />,
 }
 
 const serviceNames: Record<string, string> = {
-  repair: '修理', supply: '补给', recruit: '招募', trade: '贸易',
+  repair: '修理', supply: '补给', recruit: '招募', trade: '贸易', shipyard: '造船厂',
 }
 
 export default function PortDetail() {
@@ -88,6 +89,7 @@ export default function PortDetail() {
                     key={svc}
                     onClick={() => {
                       if (svc === 'trade') setActivePanel('trade')
+                      if (svc === 'shipyard') setActivePanel('shipyard')
                     }}
                     className="flex items-center gap-1.5 bg-ocean-800/40 hover:bg-ocean-700/40 border border-gold-700/20 rounded px-2 py-1.5 text-xs text-gold-300 font-serif transition-colors"
                   >

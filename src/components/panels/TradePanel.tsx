@@ -3,12 +3,12 @@ import { Coins, Package, TrendingUp, TrendingDown } from 'lucide-react'
 import { useGameStore } from '@/store/useGameStore'
 import { portGoods } from '@/data/ports'
 import { goods } from '@/data/goods'
-import { calculateBuyPrice, calculateSellPrice } from '@/utils/trade'
 import ParchmentCard from '@/components/ui/ParchmentCard'
 import ActionButton from '@/components/ui/ActionButton'
 
 export default function TradePanel() {
   const fleet = useGameStore(s => s.fleet)
+  const marketStock = useGameStore(s => s.marketStock)
   const buyGood = useGameStore(s => s.buyGood)
   const sellGood = useGameStore(s => s.sellGood)
   const setActivePanel = useGameStore(s => s.setActivePanel)
@@ -20,6 +20,9 @@ export default function TradePanel() {
   const currentPortGoods = portGoods.filter(pg => pg.portId === portId)
   const totalCapacity = fleet.ships.reduce((s, sh) => s + sh.capacity, 0)
   const usedCapacity = fleet.cargo.reduce((s, c) => s + c.quantity, 0)
+
+  const getStock = (pg: { portId: number; goodId: number; stock: number }) =>
+    marketStock[`${pg.portId}:${pg.goodId}`] ?? pg.stock
 
   const handleBuy = (goodId: number, qty: number) => {
     buyGood(portId, goodId, qty)
@@ -62,7 +65,11 @@ export default function TradePanel() {
               {currentPortGoods.map(pg => {
                 const good = goods.find(g => g.id === pg.goodId)
                 if (!good) return null
-                const buyPrice = calculateBuyPrice(pg)
+                const stock = getStock(pg)
+                // 动态价格：库存越低越贵
+                const stockRatio = Math.min(1, stock / pg.stock)
+                const surge = 1 + (1 - stockRatio) * 0.4
+                const buyPrice = Math.round(pg.price * pg.priceModifier * surge)
                 const priceDiff = buyPrice - good.basePrice
                 const isCheap = priceDiff < 0
                 const isExpensive = priceDiff > 0
@@ -79,13 +86,13 @@ export default function TradePanel() {
                       </span>
                     </div>
                     <div className="flex items-center justify-between">
-                      <span className="text-gold-600 text-xs">库存: {pg.stock}</span>
+                      <span className="text-gold-600 text-xs">库存: {stock}</span>
                       <div className="flex gap-1">
                         {[1, 5, 10].map(qty => (
                           <ActionButton
                             key={qty}
                             onClick={() => handleBuy(pg.goodId, qty)}
-                            disabled={fleet.gold < buyPrice * qty || usedCapacity + qty > totalCapacity || pg.stock < qty}
+                            disabled={fleet.gold < buyPrice * qty || usedCapacity + qty > totalCapacity || stock < qty}
                             variant="secondary"
                           >
                             +{qty}
@@ -107,12 +114,17 @@ export default function TradePanel() {
                 fleet.cargo.map(item => {
                   const good = goods.find(g => g.id === item.goodId)
                   const pg = portGoods.find(p => p.portId === portId && p.goodId === item.goodId)
-                  if (!good || !pg) return null
-                  const sellPrice = calculateSellPrice(pg)
+                  if (!good) return null
+                  // 本港不经营的商品按基准价 ×0.5 折价收购（总有出路，但亏）
+                  const sellPrice = pg
+                    ? Math.round(pg.price * pg.priceModifier * 0.85)
+                    : Math.round(good.basePrice * 0.5)
                   return (
                     <div key={item.goodId} className="bg-ocean-800/30 rounded p-2">
                       <div className="flex items-center justify-between mb-1">
-                        <span className="text-gold-200 text-xs font-serif">{good.nameCn}</span>
+                        <span className="text-gold-200 text-xs font-serif">
+                          {good.nameCn}{!pg && <span className="text-gold-600 text-xs">（本港不收，折价）</span>}
+                        </span>
                         <span className="flex items-center gap-0.5 text-safe-400 text-xs font-serif">
                           <Coins size={10} /> {sellPrice}
                         </span>

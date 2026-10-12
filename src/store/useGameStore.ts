@@ -4,17 +4,16 @@ import type {
   Fleet, Ship, GameState, GameEvent, EventOutcome, EventLogEntry,
   Route, PanelType, CargoItem, Waypoint,
 } from '@/types'
-import { ports } from '@/data/ports'
+import { ports, portGoods } from '@/data/ports'
 import { events } from '@/data/events'
 import { tasks } from '@/data/tasks'
 import { goods } from '@/data/goods'
-import { portGoods } from '@/data/ports'
-import { calculateDailyConsumption, dangerLevelFromDistance } from '@/utils/navigation'
+import { calculateDailyConsumption, dangerLevelFromDistance, computeWindFavor, effectiveFleetSpeed } from '@/utils/navigation'
 import { getRandomEvents } from '@/utils/eventEngine'
-import { calculateBuyPrice, calculateSellPrice, canAfford, hasCargoSpace } from '@/utils/trade'
+import { canAfford, hasCargoSpace } from '@/utils/trade'
 import { historicalTimeline } from '@/data/historicalTimeline'
 import { GAME_BALANCE } from '@/data/gameConfig'
-import { shipTemplates } from '@/data/ships'
+import { shipTemplates, shipResaleValue } from '@/data/ships'
 
 const createStartingShip = (): Ship => ({
   id: 1,
@@ -26,6 +25,7 @@ const createStartingFleet = (): Fleet => ({
   id: 1,
   name: '无敌舰队',
   gold: 500,
+  fame: 0,
   morale: 70,
   food: 100,
   water: 100,
@@ -35,6 +35,15 @@ const createStartingFleet = (): Fleet => ({
   ships: [createStartingShip()],
   cargo: [],
 })
+
+/** 生成初始市场库存表（key: portId:goodId） */
+function createInitialMarketStock(): Record<string, number> {
+  const stock: Record<string, number> = {}
+  for (const pg of portGoods) {
+    stock[`${pg.portId}:${pg.goodId}`] = pg.stock
+  }
+  return stock
+}
 
 const initialGameState: GameState = {
   fleet: createStartingFleet(),
@@ -47,6 +56,9 @@ const initialGameState: GameState = {
   discoveredPorts: [6],
   currentEvent: null,
   gamePhase: 'start',
+  marketStock: createInitialMarketStock(),
+  seenMarketTips: [],
+  victoryDay: null,
 }
 
 interface GameStore extends GameState {
@@ -77,6 +89,8 @@ interface GameStore extends GameState {
   repairShip: (shipId: number) => void
   supplyFleet: () => void
   recruitCrew: (shipId: number, count: number) => void
+  buyShip: (templateKey: string) => void
+  sellShip: (shipId: number) => void
   acceptTask: (taskId: number) => void
   completeTask: (taskId: number) => void
   applyEventOutcome: (outcome: EventOutcome) => void
@@ -120,6 +134,37 @@ function haversineDistance(lat1: number, lng1: number, lat2: number, lng2: numbe
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
 }
 
+/**
+ * 动态定价：库存越低越贵。
+ * 实际买价 = 基准价 × modifier × (1 + (1 - 库存率) × 0.4)
+ * 每日 +1 天时库存回升 STOCK_RECOVER_PER_DAY，高需求商品随时间自然回补。
+ */
+export function dynamicBuyPrice(pg: { price: number; priceModifier: number }, currentStock: number, baseStock: number): number {
+  const stockRatio = baseStock > 0 ? Math.min(1, currentStock / baseStock) : 1
+  const surge = 1 + (1 - stockRatio) * 0.4
+  return Math.round(pg.price * pg.priceModifier * surge)
+}
+
+export function dynamicSellPrice(pg: { price: number; priceModifier: number }, currentStock: number, baseStock: number): number {
+  const stockRatio = baseStock > 0 ? Math.min(1, currentStock / baseStock) : 1
+  const surge = 1 + (1 - stockRatio) * 0.4
+  return Math.round(pg.price * pg.priceModifier * surge * 0.85)
+}
+
+/** 检查并返回本局达成的胜利结局描述（null 表示未达成） */
+function checkVictory(state: GameState): string | null {
+  if (state.discoveredPorts.length >= GAME_BALANCE.VICTORY_DISCOVER_ALL) {
+    return '你发现了世上全部 20 座港口——每一片海岸都记得你的帆影。'
+  }
+  if (state.completedTasks.length >= GAME_BALANCE.VICTORY_COMPLETE_ALL_TASKS) {
+    return '所有冒险传闻都成了你的日志里落款的一页——传奇船长，实至名归。'
+  }
+  if (state.fleet.gold >= GAME_BALANCE.VICTORY_GOLD) {
+    return '两万金币的家底——你的船队比西班牙珍宝舰队还令人垂涎。'
+  }
+  return null
+}
+
 export const useGameStore = create<GameStore>()(
   persist(
     (set, get) => ({
@@ -151,6 +196,7 @@ export const useGameStore = create<GameStore>()(
 
         const distanceNm = haversineDistance(originLat, originLng, waypoint.latitude, waypoint.longitude) * 0.539957
         const dangerLevel = dangerLevelFromDistance(distanceNm)
+        const windFavor = computeWindFavor(originLat, originLng, waypoint.latitude, waypoint.longitude)
 
         const customRoute: Route = {
           id: -(Date.now()),
@@ -158,7 +204,7 @@ export const useGameStore = create<GameStore>()(
           toPortId: waypoint.portId ?? 0,
           distance: Math.round(distanceNm),
           dangerLevel,
-          windFavor: 1,
+          windFavor,
         }
 
         return {
@@ -178,6 +224,7 @@ export const useGameStore = create<GameStore>()(
 
         const distanceNm = haversineDistance(currentPos[0], currentPos[1], waypoint.latitude, waypoint.longitude) * 0.539957
         const dangerLevel = dangerLevelFromDistance(distanceNm)
+        const windFavor = computeWindFavor(currentPos[0], currentPos[1], waypoint.latitude, waypoint.longitude)
 
         const customRoute: Route = {
           id: -(Date.now()),
@@ -185,7 +232,7 @@ export const useGameStore = create<GameStore>()(
           toPortId: waypoint.portId ?? 0,
           distance: Math.round(distanceNm),
           dangerLevel,
-          windFavor: 1,
+          windFavor,
         }
 
         return {
@@ -215,6 +262,10 @@ export const useGameStore = create<GameStore>()(
           notifications: [],
           seenHistoricalEvents: [],
           simSpeed: 3,
+          marketStock: createInitialMarketStock(),
+          seenMarketTips: [],
+          victoryDay: null,
+          lastEventDay: 0,
         })
       },
 
@@ -229,8 +280,12 @@ export const useGameStore = create<GameStore>()(
         }
         const fromPort = ports.find(p => p.id === actualRoute.fromPortId)
         const toPort = ports.find(p => p.id === actualRoute.toPortId)
+        // 预定义航线也走真实风带计算，保证预估与实际一致
+        const windFavor = fromPort && toPort
+          ? computeWindFavor(fromPort.latitude, fromPort.longitude, toPort.latitude, toPort.longitude)
+          : actualRoute.windFavor
         return {
-          currentRoute: actualRoute,
+          currentRoute: { ...actualRoute, windFavor },
           routeProgress: 0,
           shipPosition: fromPort ? [fromPort.latitude, fromPort.longitude] : state.shipPosition,
           waypoint: toPort ? { latitude: toPort.latitude, longitude: toPort.longitude, name: toPort.nameCn, portId: toPort.id } : null,
@@ -250,6 +305,26 @@ export const useGameStore = create<GameStore>()(
         let newCurrentEvent: GameEvent | null = null
         let newNotifications = [...state.notifications]
         let newSeenHistoricalEvents = state.seenHistoricalEvents
+        let newMarketStock = state.marketStock
+
+        // 港内：消耗极低但仍存在（船员上岸自给一部分），库存缓慢回补
+        if (!fleet.isSailing) {
+          const consumption = calculateDailyConsumption(fleet)
+          const newFood = Math.max(0, fleet.food - Math.ceil(consumption.food / 4))
+          const newWater = Math.max(0, fleet.water - Math.ceil(consumption.water / 4))
+          newFleet = { ...newFleet, food: newFood, water: newWater }
+        }
+
+        // 库存回补
+        const updatedStock: Record<string, number> = { ...newMarketStock }
+        for (const pg of portGoods) {
+          const key = `${pg.portId}:${pg.goodId}`
+          const current = updatedStock[key] ?? pg.stock
+          if (current < pg.stock) {
+            updatedStock[key] = Math.min(pg.stock, current + GAME_BALANCE.STOCK_RECOVER_PER_DAY)
+          }
+        }
+        newMarketStock = updatedStock
 
         if (fleet.isSailing) {
           const consumption = calculateDailyConsumption(fleet)
@@ -286,12 +361,31 @@ export const useGameStore = create<GameStore>()(
           newSeenHistoricalEvents = [...newSeenHistoricalEvents, historicalEvent.day]
         }
 
+        // 胜利检查（不覆盖 gameover）
+        if (newGamePhase === 'playing') {
+          const victoryDesc = checkVictory({ ...state, fleet: newFleet, discoveredPorts: state.discoveredPorts, completedTasks: state.completedTasks })
+          if (victoryDesc) {
+            set({
+              fleet: newFleet,
+              gamePhase: 'gameover',
+              currentEvent: null,
+              notifications: newNotifications,
+              seenHistoricalEvents: newSeenHistoricalEvents,
+              marketStock: newMarketStock,
+              lastEventDay: state.lastEventDay,
+              victoryDay: newDay,
+            })
+            return
+          }
+        }
+
         set({
           fleet: newFleet,
           gamePhase: newGamePhase,
           currentEvent: newCurrentEvent,
           notifications: newNotifications,
           seenHistoricalEvents: newSeenHistoricalEvents,
+          marketStock: newMarketStock,
           lastEventDay: newCurrentEvent ? newDay : state.lastEventDay,
         })
       },
@@ -311,14 +405,20 @@ export const useGameStore = create<GameStore>()(
       buyGood: (portId, goodId, quantity) => set((state) => {
         if (state.fleet.currentPortId !== portId || state.fleet.isSailing) return state
         const pg = portGoods.find(p => p.portId === portId && p.goodId === goodId)
-        if (!pg || pg.stock < quantity) return state
+        if (!pg) return state
         const good = goods.find(g => g.id === goodId)
         if (!good) return state
-        const buyPrice = calculateBuyPrice(pg)
+        const key = `${portId}:${goodId}`
+        const stock = state.marketStock[key] ?? pg.stock
+        if (stock < quantity) return state
+        const buyPrice = dynamicBuyPrice(pg, stock, pg.stock)
         if (!canAfford(state.fleet.gold, buyPrice, quantity)) return state
         if (!hasCargoSpace(state.fleet, quantity)) return state
         const newCargo = updateCargo(state.fleet.cargo, goodId, quantity)
-        return { fleet: syncUsedCapacity({ ...state.fleet, gold: state.fleet.gold - buyPrice * quantity, cargo: newCargo }) }
+        return {
+          fleet: syncUsedCapacity({ ...state.fleet, gold: state.fleet.gold - buyPrice * quantity, cargo: newCargo }),
+          marketStock: { ...state.marketStock, [key]: stock - quantity },
+        }
       }),
 
       sellGood: (portId, goodId, quantity) => set((state) => {
@@ -329,9 +429,14 @@ export const useGameStore = create<GameStore>()(
         if (!pg) return state
         const good = goods.find(g => g.id === goodId)
         if (!good) return state
-        const sellPrice = calculateSellPrice(pg)
+        const key = `${portId}:${goodId}`
+        const stock = state.marketStock[key] ?? pg.stock
+        const sellPrice = dynamicSellPrice(pg, stock, pg.stock)
         const newCargo = updateCargo(state.fleet.cargo, goodId, -quantity)
-        return { fleet: syncUsedCapacity({ ...state.fleet, gold: state.fleet.gold + sellPrice * quantity, cargo: newCargo }) }
+        return {
+          fleet: syncUsedCapacity({ ...state.fleet, gold: state.fleet.gold + sellPrice * quantity, cargo: newCargo }),
+          marketStock: { ...state.marketStock, [key]: stock + quantity },
+        }
       }),
 
       repairShip: (shipId) => set((state) => {
@@ -366,6 +471,39 @@ export const useGameStore = create<GameStore>()(
         return { fleet: { ...state.fleet, gold: state.fleet.gold - actualCount * GAME_BALANCE.CREW_COST_PER_PERSON, ships: state.fleet.ships.map(s => s.id === shipId ? { ...s, crew: s.crew + actualCount } : s) } }
       }),
 
+      buyShip: (templateKey) => set((state) => {
+        if (!state.fleet.currentPortId) return state
+        const port = ports.find(p => p.id === state.fleet.currentPortId)
+        if (!port || !port.services.includes('shipyard')) return state
+        const template = shipTemplates[templateKey]
+        if (!template || template.price <= 0) return state
+        if (!template.regions.includes(port.region)) return state
+        if (state.fleet.gold < template.price) return state
+        const newId = Math.max(...state.fleet.ships.map(s => s.id)) + 1
+        const newShip: Ship = { id: newId, ...template, name: template.name }
+        return { fleet: { ...state.fleet, gold: state.fleet.gold - template.price, ships: [...state.fleet.ships, newShip] } }
+      }),
+
+      sellShip: (shipId) => set((state) => {
+        if (!state.fleet.currentPortId) return state
+        const port = ports.find(p => p.id === state.fleet.currentPortId)
+        if (!port || !port.services.includes('shipyard')) return state
+        // 最后一艘船不能卖
+        if (state.fleet.ships.length <= 1) return state
+        const ship = state.fleet.ships.find(s => s.id === shipId)
+        if (!ship) return state
+        // 带着货的船不能卖（防止货物凭空消失）
+        if (ship.usedCapacity > 0) return state
+        const value = shipResaleValue(ship)
+        return {
+          fleet: {
+            ...state.fleet,
+            gold: state.fleet.gold + value,
+            ships: state.fleet.ships.filter(s => s.id !== shipId),
+          },
+        }
+      }),
+
       acceptTask: (taskId) => set((state) => {
         const task = tasks.find(t => t.id === taskId)
         if (!task || state.activeTasks.some(t => t.id === taskId)) return state
@@ -387,8 +525,9 @@ export const useGameStore = create<GameStore>()(
         if (task.requiredGoods) {
           for (const req of task.requiredGoods) { newCargo = updateCargo(newCargo, req.goodId, -req.quantity) }
         }
+        const fameGain = task.reward.fame ?? 0
         return {
-          fleet: syncUsedCapacity({ ...state.fleet, gold: state.fleet.gold + task.reward.gold, cargo: newCargo }),
+          fleet: syncUsedCapacity({ ...state.fleet, gold: state.fleet.gold + task.reward.gold, fame: state.fleet.fame + fameGain }),
           completedTasks: [...state.completedTasks, taskId],
           activeTasks: state.activeTasks.filter(t => t.id !== taskId),
         }
@@ -421,14 +560,18 @@ export const useGameStore = create<GameStore>()(
         const isFirstDiscovery = newlyDiscovered.length === 2
         const isMilestone = newlyDiscovered.length === 5 || newlyDiscovered.length === 10 || newlyDiscovered.length === 15 || newlyDiscovered.length === 20
 
+        // 到港发现的声望奖励
+        const fameGain = 5
+
         if (isFirstDiscovery) {
           return {
             discoveredPorts: newlyDiscovered,
+            fleet: { ...state.fleet, fame: state.fleet.fame + fameGain },
             notifications: [...state.notifications, {
               id: `first-discover-${Date.now()}`,
               type: 'achievement' as const,
               title: '✦ 首次发现新港口 ✦',
-              message: `${port.nameCn}！船长日志：远方出现了从未见过的陆地轮廓，我们的名字将记入史册。`,
+              message: `${port.nameCn}！船长日志：远方出现了从未见过的陆地轮廓，我们的名字将记入史册。（声望+${fameGain}）`,
               timestamp: Date.now(),
             }],
           }
@@ -437,11 +580,12 @@ export const useGameStore = create<GameStore>()(
         if (isMilestone) {
           return {
             discoveredPorts: newlyDiscovered,
+            fleet: { ...state.fleet, fame: state.fleet.fame + fameGain },
             notifications: [...state.notifications, {
               id: `milestone-discover-${Date.now()}`,
               type: 'achievement' as const,
               title: `⛵ 已探索 ${newlyDiscovered.length} 座港口`,
-              message: `从塞维利亚启航到今天，你已经成为这条航线上最有经验的船长。`,
+              message: `从塞维利亚启航到今天，你已经成为这条航线上最有经验的船长。（声望+${fameGain}）`,
               timestamp: Date.now(),
             }],
           }
@@ -449,6 +593,7 @@ export const useGameStore = create<GameStore>()(
 
         return {
           discoveredPorts: newlyDiscovered,
+          fleet: { ...state.fleet, fame: state.fleet.fame + fameGain },
           notifications: [...state.notifications, {
             id: `discover-${portId}-${Date.now()}`,
             type: 'discovery' as const,
@@ -480,7 +625,7 @@ export const useGameStore = create<GameStore>()(
     }),
     {
       name: 'age-of-discovery-save',
-      version: 2,
+      version: 3,
       onRehydrateStorage: () => (state, error) => {
         if (error) {
           console.warn('存档数据损坏，已重置', error)
@@ -497,13 +642,20 @@ export const useGameStore = create<GameStore>()(
       },
       migrate: (persistedState, version) => {
         if (!persistedState) return persistedState
-        if (version < 2) {
-          const pState = persistedState as { fleet?: { currentPortId?: number | null }; shipPosition?: [number, number] | null }
-          const portId = pState.fleet?.currentPortId ?? 6
-          const startPort = ports.find(p => p.id === portId)
-          if (startPort && !pState.shipPosition) {
+        const pState = persistedState as Partial<GameState> & { fleet?: Partial<Fleet>; shipPosition?: [number, number] | null }
+        // v1→v2/v3: 补 shipPosition
+        if (version < 2 && pState.fleet?.currentPortId && !pState.shipPosition) {
+          const startPort = ports.find(p => p.id === (pState.fleet.currentPortId ?? 6))
+          if (startPort) {
             pState.shipPosition = [startPort.latitude, startPort.longitude]
           }
+        }
+        // v1/v2→v3: 补 fame、marketStock、seenMarketTips、victoryDay
+        if (version < 3) {
+          if (pState.fleet && pState.fleet.fame === undefined) pState.fleet.fame = 0
+          if (!pState.marketStock) pState.marketStock = createInitialMarketStock()
+          if (!pState.seenMarketTips) pState.seenMarketTips = []
+          if (pState.victoryDay === undefined) pState.victoryDay = null
         }
         return persistedState
       },
@@ -522,7 +674,29 @@ export const useGameStore = create<GameStore>()(
         tutorialStep: state.tutorialStep,
         seenHistoricalEvents: state.seenHistoricalEvents,
         lastEventDay: state.lastEventDay,
+        marketStock: state.marketStock,
+        seenMarketTips: state.seenMarketTips,
+        victoryDay: state.victoryDay,
       }),
+      // 存档软锁修复：存档里若停在事件阶段但事件未持久化，重开时落回 playing
+      merge: (persisted, current) => {
+        const merged = { ...current, ...(persisted as object) } as GameState & GameStore
+        if (merged.gamePhase === 'event' && !merged.currentEvent) {
+          merged.gamePhase = 'playing'
+        }
+        return merged
+      },
     }
   )
 )
+
+/** 供 UI 读取带动态库存的价格 */
+export function getPriceFor(portId: number, goodId: number, state: GameState, mode: 'buy' | 'sell'): number | null {
+  const pg = portGoods.find(p => p.portId === portId && p.goodId === goodId)
+  if (!pg) return null
+  const key = `${portId}:${goodId}`
+  const stock = state.marketStock[key] ?? pg.stock
+  return mode === 'buy' ? dynamicBuyPrice(pg, stock, pg.stock) : dynamicSellPrice(pg, stock, pg.stock)
+}
+
+export { effectiveFleetSpeed }

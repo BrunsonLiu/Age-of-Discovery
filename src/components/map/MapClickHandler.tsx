@@ -8,11 +8,11 @@ import type { Waypoint } from '@/types'
 export default function MapClickHandler() {
   const fleet = useGameStore(s => s.fleet)
   const shipPosition = useGameStore(s => s.shipPosition)
+  const discoveredPorts = useGameStore(s => s.discoveredPorts)
   const setWaypoint = useGameStore(s => s.setWaypoint)
   const sailToWaypoint = useGameStore(s => s.sailToWaypoint)
   const changeCourse = useGameStore(s => s.changeCourse)
   const setActivePanel = useGameStore(s => s.setActivePanel)
-  const discoverPort = useGameStore(s => s.discoverPort)
   const addNotification = useGameStore(s => s.addNotification)
   const setSelectedPortId = useMapStore(s => s.setSelectedPortId)
 
@@ -29,10 +29,14 @@ export default function MapClickHandler() {
       if (nearbyPort) {
         if (nearbyPort.id === fleet.currentPortId) return
 
+        // 已发现的港口：点击直接开港详情；未发现的：只设定航向，
+        // 发现与详情留到真正抵达时——保持"未知海域"的悬念
+        const alreadyDiscovered = discoveredPorts.includes(nearbyPort.id)
+
         const waypoint: Waypoint = {
           latitude: nearbyPort.latitude,
           longitude: nearbyPort.longitude,
-          name: nearbyPort.nameCn,
+          name: alreadyDiscovered ? nearbyPort.nameCn : undefined,
           portId: nearbyPort.id,
         }
 
@@ -42,9 +46,10 @@ export default function MapClickHandler() {
           setWaypoint(waypoint)
           sailToWaypoint(waypoint)
         }
-        discoverPort(nearbyPort.id)
-        setSelectedPortId(nearbyPort.id)
-        setActivePanel('port')
+        if (alreadyDiscovered) {
+          setSelectedPortId(nearbyPort.id)
+          setActivePanel('port')
+        }
         return
       }
 

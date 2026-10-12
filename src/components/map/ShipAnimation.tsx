@@ -82,10 +82,22 @@ function ShipCameraFollow({ position }: { position: [number, number] | null }) {
   const prevSailingRef = useRef(false)
 
   useEffect(() => {
-    if (position && !prevSailingRef.current && isSailing) {
-      map.flyTo(position, map.getZoom(), { duration: 1.5 })
+    // 地图初始化早期 map.getZoom() 可能为 NaN，或地图尚未就绪，
+    // 直接 flyTo 会抛 "Invalid LatLng object" 白屏，因此必须逐项校验。
+    if (!position || !isFinite(position[0]) || !isFinite(position[1])) return
+    if (prevSailingRef.current || !isSailing) {
+      prevSailingRef.current = isSailing
+      return
     }
-    prevSailingRef.current = isSailing
+    const zoom = map.getZoom()
+    // zoom 无效说明地图还没就绪：保持 ref 未置位，等下一次 effect 重试
+    if (!isFinite(zoom)) return
+    try {
+      map.flyTo(position, zoom, { duration: 1.5 })
+      prevSailingRef.current = true
+    } catch {
+      // 地图尚未就绪时忽略，等待下一次 effect 重试
+    }
   }, [isSailing, map, position])
 
   return null

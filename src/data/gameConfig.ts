@@ -21,4 +21,14 @@ export const GAME_BALANCE = {
   DEFAULT_RECRUIT_COUNT: 5,
   /** 货舱容量上限 */
   CARGO_CAPACITY_MAX: 200,
+  /** 每日价格波动幅度（±%，按库存反向浮动） */
+  PRICE_FLUCTUATION_MAX: 0.2,
+  /** 库存每日恢复量 */
+  STOCK_RECOVER_PER_DAY: 8,
+  /** 胜利条件：探索全部港口 */
+  VICTORY_DISCOVER_ALL: 20,
+  /** 胜利条件：完成全部任务 */
+  VICTORY_COMPLETE_ALL_TASKS: 3,
+  /** 胜利条件：累积金币 */
+  VICTORY_GOLD: 20000,
 } as const

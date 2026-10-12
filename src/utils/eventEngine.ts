@@ -47,8 +47,10 @@ export function selectOutcome(outcomes: EventOutcome[]): EventOutcome {
   return outcomes[outcomes.length - 1]
 }
 
-const GLOBAL_EVENT_CHANCE = 0.35
-const MIN_DAYS_BETWEEN_EVENTS = 3
+// 事件节奏：平均约每 9 个航行日触发一次（间隔下限 5 天 + 概率 0.25），
+// 避免长途航行被事件卡反复打断
+const GLOBAL_EVENT_CHANCE = 0.25
+const MIN_DAYS_BETWEEN_EVENTS = 5
 
 export function getRandomEvents(
   gameState: GameState,

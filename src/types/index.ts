@@ -15,6 +15,7 @@ export interface Fleet {
   id: number
   name: string
   gold: number
+  fame: number
   morale: number
   food: number
   water: number
@@ -38,7 +39,7 @@ export interface Port {
   longitude: number
   region: 'caribbean' | 'europe' | 'africa' | 'asia'
   description: string
-  services: ('repair' | 'supply' | 'recruit' | 'trade')[]
+  services: ('repair' | 'supply' | 'recruit' | 'trade' | 'shipyard')[]
 }
 
 export interface Good {
@@ -55,6 +56,13 @@ export interface PortGood {
   price: number
   stock: number
   priceModifier: number
+}
+
+/** 玩家视角的港口行情速报：某港正高价收购某商品 */
+export interface MarketTip {
+  portId: number
+  goodId: number
+  multiplier: number
 }
 
 export interface Route {
@@ -134,6 +142,12 @@ export interface GameState {
   discoveredPorts: number[]
   currentEvent: GameEvent | null
   gamePhase: 'start' | 'playing' | 'event' | 'gameover'
+  /** 港口动态库存与每日价格波动，随天数演进 */
+  marketStock: Record<string, number>
+  /** 本局已看过的行情速报（portId:goodId），避免重复弹 */
+  seenMarketTips: string[]
+  /** 触发胜利结局的天数（null 表示未达成） */
+  victoryDay: number | null
 }
 
-export type PanelType = 'fleet' | 'port' | 'event' | 'task' | 'trade' | null
+export type PanelType = 'fleet' | 'port' | 'event' | 'task' | 'trade' | 'shipyard' | null

@@ -43,27 +43,6 @@ function createPortIcon(isCurrent: boolean) {
   })
 }
 
-function createUnknownPortIcon() {
-  const size = 14
-  const html = `
-    <div style="
-      width:${size}px;height:${size}px;
-      background:radial-gradient(circle, rgba(90, 62, 26, 0.1) 30%, transparent 70%);
-      border:1px dashed rgba(90, 62, 26, 0.4);border-radius:50%;
-      display:flex;align-items:center;justify-content:center;
-      color:rgba(90, 62, 26, 0.5);
-      font-size:9px;font-family:serif;
-      pointer-events:none;
-    ">?</div>
-  `
-  return L.divIcon({
-    html,
-    className: 'port-marker-icon port-marker-unknown',
-    iconSize: [size, size],
-    iconAnchor: [size / 2, size / 2],
-  })
-}
-
 export function PortMarker() {
   const discoveredPorts = useGameStore((s) => s.discoveredPorts)
   const currentPortId = useGameStore((s) => s.fleet.currentPortId)
@@ -78,16 +57,10 @@ export function PortMarker() {
         const isDiscovered = discoveredPorts.includes(port.id)
         const showDiscoveredMarker = isCurrent || isDiscovered
 
+        // 未发现的港口不渲染任何标记——"未知海域"的位置应当保密，
+        // 直到船的瞭望范围（SailingController 的 SIGHT_RANGE）真正看到它
         if (!showDiscoveredMarker) {
-          return (
-            <Marker
-              key={port.id}
-              position={[port.latitude, port.longitude]}
-              icon={createUnknownPortIcon()}
-              interactive={false}
-              zIndexOffset={-100}
-            />
-          )
+          return null
         }
 
         return (
@@ -124,9 +97,6 @@ export function PortMarker() {
         .port-marker-icon {
           background: none !important;
           border: none !important;
-        }
-        .port-marker-unknown {
-          opacity: 0.5;
         }
         .port-tooltip {
           background: rgba(244, 228, 193, 0.95) !important;
