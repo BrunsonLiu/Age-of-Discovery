@@ -39,22 +39,25 @@ export default function ShipyardPanel() {
             <h4 className="text-gold-300 font-serif text-xs mb-1.5 flex items-center gap-1">
               <ShipIcon size={12} /> 出售旧船
             </h4>
-            {fleet.ships.map(ship => (
+            {fleet.ships.map(ship => {
+              const isFlagship = ship.id === fleet.flagshipId
+              const canSell = fleet.ships.length > 1 && ship.usedCapacity === 0 && !isFlagship
+              return (
               <div key={ship.id} className="flex items-center justify-between text-xs mb-1">
                 <span className="text-gold-400 font-serif">
-                  {ship.name} <span className="text-gold-600">({shipTypeNames[ship.type]})</span>
+                  {isFlagship && '👑 '}{ship.name} <span className="text-gold-600">({shipTypeNames[ship.type]})</span>
                 </span>
-                {fleet.ships.length > 1 && ship.usedCapacity === 0 ? (
+                {canSell ? (
                   <ActionButton onClick={() => sellShip(ship.id)} variant="secondary">
                     <Coins size={10} /> {shipResaleValue(ship)}
                   </ActionButton>
                 ) : (
                   <span className="text-gold-600 text-xs">
-                    {fleet.ships.length <= 1 ? '唯一座舰' : '卸货后可售'}
+                    {fleet.ships.length <= 1 ? '唯一座舰' : isFlagship ? '旗舰（先改旗）' : '卸货后可售'}
                   </span>
                 )}
               </div>
-            ))}
+            )})}
           </div>
 
           <div className="border-t border-gold-700/30 pt-2">

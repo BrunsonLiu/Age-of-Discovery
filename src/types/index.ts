@@ -24,6 +24,8 @@ export interface Fleet {
   day: number
   ships: Ship[]
   cargo: CargoItem[]
+  /** 旗舰的船只 id，玩家视角的"座舰" */
+  flagshipId: number
 }
 
 export interface CargoItem {

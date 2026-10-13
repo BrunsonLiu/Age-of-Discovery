@@ -34,6 +34,7 @@ const createStartingFleet = (): Fleet => ({
   day: 1,
   ships: [createStartingShip()],
   cargo: [],
+  flagshipId: 1,
 })
 
 /** 生成初始市场库存表（key: portId:goodId） */
@@ -91,6 +92,7 @@ interface GameStore extends GameState {
   recruitCrew: (shipId: number, count: number) => void
   buyShip: (templateKey: string) => void
   sellShip: (shipId: number) => void
+  setFlagship: (shipId: number) => void
   acceptTask: (taskId: number) => void
   completeTask: (taskId: number) => void
   applyEventOutcome: (outcome: EventOutcome) => void
@@ -491,6 +493,8 @@ export const useGameStore = create<GameStore>()(
         if (!port || !port.services.includes('shipyard')) return state
         // 最后一艘船不能卖
         if (state.fleet.ships.length <= 1) return state
+        // 旗舰不能卖——须先另立旗舰
+        if (shipId === state.fleet.flagshipId) return state
         const ship = state.fleet.ships.find(s => s.id === shipId)
         if (!ship) return state
         // 带着货的船不能卖（防止货物凭空消失）
@@ -503,6 +507,11 @@ export const useGameStore = create<GameStore>()(
             ships: state.fleet.ships.filter(s => s.id !== shipId),
           },
         }
+      }),
+
+      setFlagship: (shipId) => set((state) => {
+        if (!state.fleet.ships.some(s => s.id === shipId)) return state
+        return { fleet: { ...state.fleet, flagshipId: shipId } }
       }),
 
       acceptTask: (taskId) => set((state) => {
@@ -645,7 +654,7 @@ export const useGameStore = create<GameStore>()(
     }),
     {
       name: 'age-of-discovery-save',
-      version: 3,
+      version: 4,
       onRehydrateStorage: () => (state, error) => {
         if (error) {
           console.warn('存档数据损坏，已重置', error)
@@ -676,6 +685,13 @@ export const useGameStore = create<GameStore>()(
           if (!pState.marketStock) pState.marketStock = createInitialMarketStock()
           if (!pState.seenMarketTips) pState.seenMarketTips = []
           if (pState.victoryDay === undefined) pState.victoryDay = null
+        }
+        // v3→v4: 补 flagshipId（老存档没有该字段时，默认第一艘船为旗舰）
+        if (version < 4 && pState.fleet) {
+          const ships = pState.fleet.ships
+          if (pState.fleet.flagshipId === undefined && ships && ships.length > 0) {
+            pState.fleet.flagshipId = ships[0].id
+          }
         }
         return persistedState
       },

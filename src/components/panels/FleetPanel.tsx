@@ -4,7 +4,7 @@ import { useGameStore } from '@/store/useGameStore'
 import { useMapStore } from '@/store/useMapStore'
 import { routes } from '@/data/routes'
 import { ports } from '@/data/ports'
-import { calculateSailingDays } from '@/utils/navigation'
+import { calculateSailingDays, effectiveFleetSpeed } from '@/utils/navigation'
 import ParchmentCard from '@/components/ui/ParchmentCard'
 import ResourceBar from '@/components/ui/ResourceBar'
 import ActionButton from '@/components/ui/ActionButton'
@@ -23,8 +23,14 @@ export default function FleetPanel() {
   const selectRoute = useGameStore(s => s.selectRoute)
   const setCenter = useMapStore(s => s.setCenter)
   const routeProgress = useGameStore(s => s.routeProgress)
+  const setFlagship = useGameStore(s => s.setFlagship)
   const [selectedRouteId, setSelectedRouteId] = useState<number | null>(null)
   const [previewId, setPreviewId] = useState<number | null>(null)
+
+  const totalCapacity = fleet.ships.reduce((sum, sh) => sum + sh.capacity, 0)
+  const totalCrew = fleet.ships.reduce((sum, sh) => sum + sh.crew, 0)
+  const maxCrew = fleet.ships.reduce((sum, sh) => sum + sh.maxCrew, 0)
+  const avgSpeed = effectiveFleetSpeed(fleet)
 
   const availableRoutes = fleet.currentPortId
     ? routes.filter(r => r.fromPortId === fleet.currentPortId)
@@ -50,17 +56,40 @@ export default function FleetPanel() {
             </span>
           </div>
 
+          {/* 舰队总览 */}
+          <div className="grid grid-cols-3 gap-1 text-center bg-ocean-800/30 rounded p-1.5">
+            <div>
+              <div className="text-gold-500 text-[10px] font-serif">船只</div>
+              <div className="text-gold-200 text-xs font-serif">{fleet.ships.length} 艘</div>
+            </div>
+            <div>
+              <div className="text-gold-500 text-[10px] font-serif">均速</div>
+              <div className="text-gold-200 text-xs font-serif">{avgSpeed.toFixed(1)} 节</div>
+            </div>
+            <div>
+              <div className="text-gold-500 text-[10px] font-serif">总货舱</div>
+              <div className="text-gold-200 text-xs font-serif">{totalCapacity}</div>
+            </div>
+          </div>
+
           <div className="space-y-1.5">
             <ResourceBar value={fleet.food} maxValue={200} label="食物" icon={<Utensils size={14} />} />
             <ResourceBar value={fleet.water} maxValue={200} label="淡水" icon={<Droplets size={14} />} />
             <ResourceBar value={fleet.morale} maxValue={100} label="士气" icon={<Heart size={14} />} />
+            <div className="flex justify-between text-xs text-gold-500 px-0.5">
+              <span>总船员</span>
+              <span>{totalCrew}/{maxCrew}</span>
+            </div>
           </div>
 
           <div className="border-t border-gold-700/30 pt-2 space-y-2">
-            {fleet.ships.map(ship => (
-              <div key={ship.id} className="bg-ocean-800/40 rounded p-2">
+            {fleet.ships.map(ship => {
+              const isFlagship = ship.id === fleet.flagshipId
+              return (
+              <div key={ship.id} className={`rounded p-2 ${isFlagship ? 'bg-gold-700/15 border border-gold-600/30' : 'bg-ocean-800/40'}`}>
                 <div className="flex items-center justify-between text-sm mb-1">
-                  <span className="text-gold-300 font-serif">
+                  <span className="text-gold-300 font-serif flex items-center gap-1">
+                    {isFlagship && <span title="旗舰" aria-label="旗舰">👑</span>}
                     {ship.name} <span className="text-gold-600 text-xs">{shipTypeNames[ship.type]}</span>
                   </span>
                   <button
@@ -72,9 +101,19 @@ export default function FleetPanel() {
                   </button>
                 </div>
                 <ResourceBar value={ship.durability} maxValue={ship.maxDurability} label="耐久" icon={<Ship size={12} />} />
-                <div className="flex justify-between text-xs text-gold-500 mt-1">
+                <div className="flex justify-between items-center text-xs text-gold-500 mt-1">
                   <span>船员 {ship.crew}/{ship.maxCrew}</span>
                   <span>货舱 {ship.usedCapacity}/{ship.capacity}</span>
+                  {isFlagship ? (
+                    <span className="text-gold-400 text-[10px] font-serif">旗舰</span>
+                  ) : (
+                    <button
+                      onClick={() => setFlagship(ship.id)}
+                      className="text-gold-600 hover:text-gold-300 text-[10px] font-serif transition-colors"
+                    >
+                      设为旗舰
+                    </button>
+                  )}
                 </div>
                 {previewId === ship.id && (
                   <div className="mt-2 rounded overflow-hidden border border-gold-700/20 bg-ocean-900/60">
@@ -82,7 +121,7 @@ export default function FleetPanel() {
                   </div>
                 )}
               </div>
-            ))}
+            )})}
           </div>
 
           {fleet.currentPortId && !currentRoute && (
