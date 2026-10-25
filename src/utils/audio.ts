@@ -172,6 +172,73 @@ function scheduleGulls(context: AudioContext, out: GainNode) {
   }, delay)
 }
 
+/**
+ * 事件音效（cue）：与常驻环境音共用同一个 AudioContext 与 masterGain，
+ * 因此音量开关对两者同时生效，也无需额外的用户手势。
+ * 资源占用为零——全部现场合成，播完即弃。
+ */
+export type CueName =
+  | 'coin'
+  | 'sell'
+  | 'impact'
+  | 'discover'
+  | 'milestone'
+  | 'task'
+  | 'ship'
+  | 'sail'
+  | 'port'
+  | 'era'
+
+const CUES: Record<CueName, { root: number; ratios: number[]; dur: number; type: OscillatorType; vol: number }> = {
+  coin: { root: 740, ratios: [1, 1.25, 1.5], dur: 0.09, type: 'triangle', vol: 0.14 },
+  sell: { root: 987, ratios: [1, 1.19, 1.5, 2], dur: 0.22, type: 'triangle', vol: 0.15 },
+  impact: { root: 95, ratios: [1, 0.6], dur: 0.32, type: 'sawtooth', vol: 0.22 },
+  discover: { root: 587, ratios: [1, 1.25, 1.5, 2], dur: 0.30, type: 'sine', vol: 0.20 },
+  milestone: { root: 523, ratios: [1, 1.25, 1.5, 2, 2.5], dur: 0.38, type: 'triangle', vol: 0.20 },
+  task: { root: 440, ratios: [1, 1.5, 2, 3], dur: 0.24, type: 'triangle', vol: 0.17 },
+  ship: { root: 110, ratios: [1, 0.67, 1.5], dur: 0.34, type: 'triangle', vol: 0.20 },
+  sail: { root: 320, ratios: [1, 1.34, 1.8], dur: 0.16, type: 'triangle', vol: 0.16 },
+  port: { root: 392, ratios: [1, 1.5, 2], dur: 0.26, type: 'sine', vol: 0.18 },
+  // 年代钟：低沉、缓慢、尾音长——一个历史节点的分量
+  era: { root: 174, ratios: [1, 1.5, 2.25], dur: 0.9, type: 'sine', vol: 0.16 },
+}
+
+function playTone(
+  context: AudioContext,
+  out: GainNode,
+  freq: number,
+  start: number,
+  dur: number,
+  type: OscillatorType,
+  vol: number,
+) {
+  const osc = context.createOscillator()
+  osc.type = type
+  osc.frequency.value = freq
+  const g = context.createGain()
+  g.gain.setValueAtTime(0.0001, start)
+  g.gain.exponentialRampToValueAtTime(vol, start + 0.012)
+  g.gain.exponentialRampToValueAtTime(0.0001, start + dur)
+  osc.connect(g)
+  g.connect(out)
+  osc.start(start)
+  osc.stop(start + dur + 0.03)
+}
+
+/** 播放一声提示音。未启用音频（或浏览器不支持）时静默返回。 */
+export function playCue(name: CueName) {
+  if (!userEnabled) return
+  const context = ensureContext()
+  if (!context || !masterGain) return
+  if (context.state === 'suspended') void context.resume()
+  const cue = CUES[name]
+  if (!cue) return
+  const now = context.currentTime
+  cue.ratios.forEach((ratio, i) => {
+    playTone(context, masterGain!, cue.root * ratio, now + i * (cue.dur * 0.34), cue.dur, cue.type, cue.vol)
+  })
+}
+
 /** 在用户手势中调用：创建/恢复上下文并（按偏好）启动环境音 */
 export function startAmbience() {
   const context = ensureContext()

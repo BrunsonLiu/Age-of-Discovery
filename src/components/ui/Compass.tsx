@@ -1,24 +1,15 @@
-import { useMemo, useEffect, useRef } from 'react'
+import { useMemo, useEffect, useRef, useState } from 'react'
 import { useGameStore } from '@/store/useGameStore'
 import { ports } from '@/data/ports'
 import { calculateBearing } from '@/utils/navigation'
+import { UI_ASSETS } from '@/data/uiAssets'
 
-const TICK_DEGREES = Array.from({ length: 72 }, (_, i) => i * 5)
-
-interface TickStyle {
-  inner: number
-  sw: number
-  op: number
+interface CompassProps {
+  /** 当前风带风向（风吹去的罗盘方位角）；传入时在罗盘角上显示风向标 */
+  windBearing?: number | null
 }
 
-const TICK_STYLES: TickStyle[] = TICK_DEGREES.map((deg) => {
-  if (deg % 90 === 0) return { inner: 60, sw: 1.5, op: 0.8 }
-  if (deg % 30 === 0) return { inner: 68, sw: 1, op: 0.5 }
-  if (deg % 10 === 0) return { inner: 74, sw: 0.7, op: 0.35 }
-  return { inner: 78, sw: 0.4, op: 0.2 }
-})
-
-export default function Compass() {
+export default function Compass({ windBearing = null }: CompassProps) {
   const fleet = useGameStore(s => s.fleet)
   const currentRoute = useGameStore(s => s.currentRoute)
   const waypoint = useGameStore(s => s.waypoint)
@@ -30,6 +21,7 @@ export default function Compass() {
   const bearingRef = useRef<number | null>(null)
   const rafRef = useRef<number>(0)
   const divRef = useRef<SVGGElement>(null)
+  const [roseFailed, setRoseFailed] = useState(false)
 
   const bearing = useMemo(() => {
     if (!fleet.isSailing || !currentRoute) return null
@@ -104,17 +96,23 @@ export default function Compass() {
   }, [])
 
   return (
-    <div className="w-24 h-24 pointer-events-none select-none">
-      <svg viewBox="0 0 200 200" className="w-full h-full drop-shadow-xl">
+    <div className="relative w-24 h-24 pointer-events-none select-none">
+      {/* 真罗盘玫瑰（F3）作表盘：自带星芒与鸢尾花北向标；加载失败则由 SVG 深盘兜底 */}
+      {!roseFailed && (
+        <img
+          src={UI_ASSETS.compassRose}
+          alt=""
+          aria-hidden="true"
+          className="absolute inset-0 w-full h-full object-contain drop-shadow-xl"
+          onError={() => setRoseFailed(true)}
+        />
+      )}
+      <svg viewBox="0 0 200 200" className="relative w-full h-full drop-shadow-xl">
         <defs>
           <radialGradient id="compassBg" cx="50%" cy="50%" r="50%">
             <stop offset="0%" stopColor="rgba(25,40,55,0.95)" />
             <stop offset="80%" stopColor="rgba(15,25,38,0.98)" />
             <stop offset="100%" stopColor="rgba(10,18,25,1)" />
-          </radialGradient>
-          <radialGradient id="compassInner" cx="50%" cy="50%" r="50%">
-            <stop offset="0%" stopColor="rgba(201,169,110,0.08)" />
-            <stop offset="100%" stopColor="rgba(201,169,110,0)" />
           </radialGradient>
           <filter id="needleGlow">
             <feGaussianBlur stdDeviation="2" result="blur"/>
@@ -125,32 +123,17 @@ export default function Compass() {
           </filter>
         </defs>
 
-        <circle cx="100" cy="100" r="96" fill="url(#compassBg)" stroke="#6b4e1e" strokeWidth="3" />
-        <circle cx="100" cy="100" r="92" fill="none" stroke="#c9a96e" strokeWidth="1" opacity="0.5" />
-        <circle cx="100" cy="100" r="88" fill="url(#compassInner)" stroke="#c9a96e" strokeWidth="0.5" opacity="0.3" />
+        {/* 外圈金属框 */}
+        <circle cx="100" cy="100" r="95" fill="none" stroke="#6b4e1e" strokeWidth="3" />
+        {/* 表盘底：有真玫瑰时只留一层淡釉（玻璃感）；无图时退回不透明深盘 */}
+        <circle cx="100" cy="100" r="88" fill="url(#compassBg)" opacity={roseFailed ? 0.98 : 0.32} />
+        <circle cx="100" cy="100" r="90" fill="none" stroke="#c9a96e" strokeWidth="1" opacity="0.5" />
 
-        <circle cx="100" cy="100" r="78" fill="none" stroke="#c9a96e" strokeWidth="0.3" opacity="0.2" />
-        <circle cx="100" cy="100" r="68" fill="none" stroke="#c9a96e" strokeWidth="0.3" opacity="0.15" />
-
-        {TICK_DEGREES.map((deg, i) => {
-          const rad = deg * Math.PI / 180
-          const { inner, sw, op } = TICK_STYLES[i]
-          const x1 = 100 + Math.sin(rad) * inner
-          const y1 = 100 - Math.cos(rad) * inner
-          const x2 = 100 + Math.sin(rad) * 86
-          const y2 = 100 - Math.cos(rad) * 86
-          return <line key={deg} x1={x1} y1={y1} x2={x2} y2={y2} stroke="#c9a96e" strokeWidth={sw} opacity={op} />
-        })}
-
+        {/* 真玫瑰无 NSEW 字母，字母由 SVG 叠在表盘外圈上 */}
         <text x="100" y="24" textAnchor="middle" fill="#d4a838" fontSize="16" fontFamily="'Pirata One', cursive" fontWeight="bold">N</text>
         <text x="100" y="186" textAnchor="middle" fill="#8a6c2a" fontSize="13" fontFamily="'Crimson Text', serif">S</text>
         <text x="16" y="105" textAnchor="middle" fill="#8a6c2a" fontSize="13" fontFamily="'Crimson Text', serif">W</text>
         <text x="184" y="105" textAnchor="middle" fill="#8a6c2a" fontSize="13" fontFamily="'Crimson Text', serif">E</text>
-
-        <text x="100" y="48" textAnchor="middle" fill="#6b4e1e" fontSize="8" fontFamily="'Crimson Text', serif" opacity="0.5">NE</text>
-        <text x="152" y="105" textAnchor="middle" fill="#6b4e1e" fontSize="8" fontFamily="'Crimson Text', serif" opacity="0.5">SE</text>
-        <text x="100" y="162" textAnchor="middle" fill="#6b4e1e" fontSize="8" fontFamily="'Crimson Text', serif" opacity="0.5">SW</text>
-        <text x="48" y="105" textAnchor="middle" fill="#6b4e1e" fontSize="8" fontFamily="'Crimson Text', serif" opacity="0.5">NW</text>
 
         <g ref={divRef} style={{ transformOrigin: '100px 100px' }}>
           <polygon points="100,28 93,90 107,90" fill="#d4a838" opacity="0.95" filter="url(#needleGlow)" />
@@ -168,6 +151,23 @@ export default function Compass() {
 
         <circle cx="100" cy="96" r="1.5" fill="#d4a838" opacity="0.6" />
       </svg>
+
+      {/* 风向标：罗盘角上的小徽标，箭头指向风吹去的方位 */}
+      {windBearing != null && Number.isFinite(windBearing) && (
+        <div
+          className="absolute -bottom-1 -right-1 w-9 h-9 rounded-full bg-ocean-900/85 border border-gold-700/30 flex items-center justify-center shadow-lg"
+          title={`风向 ${Math.round(windBearing)}°`}
+          aria-label={`风向 ${Math.round(windBearing)} 度`}
+        >
+          <svg viewBox="0 0 40 40" className="w-7 h-7">
+            <g style={{ transform: `rotate(${windBearing}deg)`, transformOrigin: '20px 20px' }}>
+              <polygon points="20,5 25,26 20,22 15,26" fill="#9fc5e8" opacity="0.95" />
+              <line x1="20" y1="22" x2="20" y2="33" stroke="#9fc5e8" strokeWidth="1.4" opacity="0.6" />
+            </g>
+            <circle cx="20" cy="20" r="2" fill="#c9a96e" opacity="0.7" />
+          </svg>
+        </div>
+      )}
     </div>
   )
 }

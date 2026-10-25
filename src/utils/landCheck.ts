@@ -1,4 +1,5 @@
 import { ports } from '@/data/ports'
+import { loadSeaMask, loadPortChannels } from '@/utils/seaRoute'
 
 interface Polygon {
   rings: [number, number][][]
@@ -51,6 +52,9 @@ function pointInRing(lat: number, lng: number, ring: [number, number][]): boolea
   for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
     const lngI = ring[i][0], latI = ring[i][1]
     const lngJ = ring[j][0], latJ = ring[j][1]
+    // 经度相同的边会让分母为 0 —— 交点纬度算出来是 NaN，
+    // 比较恒为 false，射线法依然正确（那种边不产生穿越）。
+    if (lngI === lngJ) continue
     const intersect = (lngI > lng) !== (lngJ > lng) &&
       lat < ((latJ - latI) * (lng - lngI)) / (lngJ - lngI) + latI
     if (intersect) inside = !inside
@@ -78,21 +82,73 @@ function isNearAnyPort(lat: number, lng: number): boolean {
   return false
 }
 
+/**
+ * 空间索引：把多边形按 5°×5° 网格挂到格子上。
+ *
+ * 为什么需要：50m 精度的陆地数据有 1421 个多边形，
+ * 逐个做 bbox 检查也要 0.034 ms/次——而航线避让要做成千上万次。
+ * 有了网格索引，单次查询只测 2~5 个候选多边形，快一个数量级。
+ */
+const GRID_SIZE = 5
+const grid = new Map<string, number[]>()
+
+function gridKey(lat: number, lng: number): string {
+  const gy = Math.floor((lat + 90) / GRID_SIZE)
+  const gx = Math.floor((lng + 180) / GRID_SIZE)
+  return `${gy}:${gx}`
+}
+
+function buildGrid() {
+  grid.clear()
+  polygons.forEach((poly, idx) => {
+    const { minLng, maxLng, minLat, maxLat } = poly.bbox
+    const gx0 = Math.floor((minLng + 180) / GRID_SIZE)
+    const gx1 = Math.floor((maxLng + 180) / GRID_SIZE)
+    const gy0 = Math.floor((minLat + 90) / GRID_SIZE)
+    const gy1 = Math.floor((maxLat + 90) / GRID_SIZE)
+    for (let gy = gy0; gy <= gy1; gy++) {
+      for (let gx = gx0; gx <= gx1; gx++) {
+        const key = `${gy}:${gx}`
+        let bucket = grid.get(key)
+        if (!bucket) { bucket = []; grid.set(key, bucket) }
+        bucket.push(idx)
+      }
+    }
+  })
+}
+
 export function loadLandData(): Promise<void> {
   if (loaded) return Promise.resolve()
   if (loadingPromise) return loadingPromise
-  loadingPromise = fetch(`${import.meta.env.BASE_URL}data/land.geojson`)
-    .then(r => {
-      if (!r.ok) throw new Error(`land.geojson ${r.status}`)
-      return r.json()
-    })
-    .then(geojson => {
-      polygons = extractPolygons(geojson)
-      loaded = true
-    })
-    .catch(err => {
-      console.warn('陆地数据加载失败，陆地碰撞检测将禁用', err)
-    })
+  loadingPromise = Promise.all([
+    fetch(`${import.meta.env.BASE_URL}data/land.geojson`)
+      .then(r => {
+        if (!r.ok) throw new Error(`land.geojson ${r.status}`)
+        return r.json()
+      })
+      .then(geojson => {
+        polygons = extractPolygons(geojson)
+        buildGrid()
+        loaded = true
+      })
+      .catch(err => {
+        console.warn('陆地数据加载失败，陆地碰撞检测将禁用', err)
+      }),
+    // 海陆掩码（1 bit/格）供 A* 航路搜索使用
+    loadSeaMask(import.meta.env.BASE_URL),
+    // 港口航道（构建期挖好的内河/内湾通道）
+    loadPortChannels(import.meta.env.BASE_URL),
+  ]).then(() => {
+    // 数据到位后，之前算出的航线几何全部作废——
+    // 那时掩码可能还没加载，航路退化成了直线。必须清缓存重算。
+    //
+    // 这里用动态 import 断开循环依赖：
+    // routePath 需要 seaRoute，而这里又要让 routePath 清缓存。
+    // 直接 import 会形成环，ESM 下会拿到未初始化的绑定。
+    import('@/utils/routePath')
+      .then(m => m.invalidateRouteGeometryCache())
+      .catch(() => { /* 清缓存失败不影响功能，只是航路可能偏旧 */ })
+  })
   return loadingPromise
 }
 
@@ -102,8 +158,10 @@ export function isLandLoaded(): boolean {
 
 export function isOnLand(lat: number, lng: number): boolean {
   if (isNearAnyPort(lat, lng)) return false
-  for (const poly of polygons) {
-    if (pointInPolygon(lat, lng, poly)) return true
+  const bucket = grid.get(gridKey(lat, lng))
+  if (!bucket) return false
+  for (const idx of bucket) {
+    if (pointInPolygon(lat, lng, polygons[idx])) return true
   }
   return false
 }

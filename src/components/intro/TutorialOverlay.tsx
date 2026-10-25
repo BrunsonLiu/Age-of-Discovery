@@ -1,64 +1,89 @@
+import { createPortal } from 'react-dom'
+import { useCallback, useEffect, useLayoutEffect, useState } from 'react'
 import { useGameStore } from '@/store/useGameStore'
+import { TUTORIAL_STEPS, TUTORIAL_STEP_COUNT, type TutorialStep } from '@/constants/tutorial'
 
-interface SpotlightConfig {
-  left?: string
-  top?: string
-  right?: string
-  bottom?: string
-  width?: string
-  height?: string
+export { TUTORIAL_STEP_COUNT }
+
+// 步骤数与实际内容必须一致（MainMap 用它判断教学是否还在进行）
+if (TUTORIAL_STEPS.length !== TUTORIAL_STEP_COUNT) {
+  console.warn(`[教学] 步骤常量(${TUTORIAL_STEP_COUNT}) 与实际步骤数(${TUTORIAL_STEPS.length})不符`)
 }
 
-interface TutorialStep {
-  text: string
-  spotlight: SpotlightConfig | null
-  buttonText: string
+/** 聚光框的目标矩形（视口坐标） */
+interface SpotRect {
+  left: number
+  top: number
+  width: number
+  height: number
 }
 
-const steps: TutorialStep[] = [
-  {
-    text: '欢迎来到大航海时代！让我为你介绍基本操作',
-    spotlight: null,
-    buttonText: '下一步',
-  },
-  {
-    text: '左侧的舰队面板显示你的船只状态、资源和可用航线。现在直接点击左侧发光的🚢图标打开它。',
-    spotlight: { left: '20px', top: '50%', width: '40px', height: '40px' },
-    buttonText: '下一步',
-  },
-  {
-    text: '右侧的港口面板显示当前港口的信息和服务。点击右侧发光的⚓图标查看港口详情。',
-    spotlight: { right: '20px', top: '50%', width: '40px', height: '40px' },
-    buttonText: '下一步',
-  },
-  {
-    text: '在港口可以买卖商品赚取差价，有造船厂的港口还能购入更大的船。点击📦图标打开贸易面板。',
-    spotlight: { right: '20px', top: '55%', width: '40px', height: '40px' },
-    buttonText: '下一步',
-  },
-  {
-    text: '点击地图上的港口或任意位置设定航向，船就会自动扬帆起航。底部的速度档（⏸/1x/3x/8x）控制航行快慢，"+1天"可以直接推进一天。',
-    spotlight: { left: '0', right: '0', bottom: '0', height: '48px' },
-    buttonText: '下一步',
-  },
-  {
-    text: '航行中偶尔会遇到一些有趣的事情——风暴、奇遇、陌生的船只……不同的选择会带来不同的经历！注意船员是航行的根本：人手不足会掉速，所以别忘了在港口招募。',
-    spotlight: { left: 'calc(50% - 100px)', top: 'calc(50% - 100px)', width: '200px', height: '200px' },
-    buttonText: '下一步',
-  },
-  {
-    text: '你已经了解了基本操作！发现新港口、完成冒险、积累财富都会让你成为传奇船长。祝你旅途愉快，船长！',
-    spotlight: null,
-    buttonText: '开始冒险',
-  },
-]
+/**
+ * 测量 data-tut 锚点元素的真实矩形。
+ *
+ * 为什么不用硬编码像素：侧栏按钮是 flex 垂直居中排布的，
+ * 真实 y 取决于窗口高度、按钮数量、面板是否展开。
+ * 之前定义里写死 top:'50%'，实测落在 y=500，
+ * 而按钮实际在 y=388 —— 聚光框照的是一片空白。
+ */
+function measureTarget(target: string | undefined, pad: number): SpotRect | null {
+  if (!target) return null
+  const el = document.querySelector<HTMLElement>(`[data-tut="${target}"]`)
+  if (!el) return null
+  const r = el.getBoundingClientRect()
+  if (r.width === 0 && r.height === 0) return null
+  return {
+    left: r.left - pad,
+    top: r.top - pad,
+    width: r.width + pad * 2,
+    height: r.height + pad * 2,
+  }
+}
 
-function getTooltipPosition(step: TutorialStep, idx: number): React.CSSProperties {
-  if (!step.spotlight) return { top: '50%', left: '50%', transform: 'translate(-50%, -50%)' }
-  if (idx === 1) return { left: '80px', top: '50%', transform: 'translateY(-50%)' }
-  if (idx === 2 || idx === 3) return { right: '80px', top: '50%', transform: 'translateY(-50%)' }
-  if (idx === 4) return { left: '50%', bottom: '64px', transform: 'translateX(-50%)' }
-  return { top: 'calc(50% + 120px)', left: '50%', transform: 'translateX(-50%)' }
+/**
+ * 提示框位置：优先放在目标旁边，且**永不遮挡**目标。
+ * 目标靠左 → 放右侧；靠右 → 放左侧；靠上 → 放下方；靠下 → 放上方。
+ */
+function computeTooltipStyle(
+  spot: SpotRect | null,
+  tooltipW: number,
+  tooltipH: number,
+): React.CSSProperties {
+  const margin = 20
+  if (!spot) {
+    return { top: '50%', left: '50%', transform: 'translate(-50%, -50%)' }
+  }
+
+  const vw = window.innerWidth
+  const vh = window.innerHeight
+  const spotCx = spot.left + spot.width / 2
+  const spotCy = spot.top + spot.height / 2
+
+  // 目标偏左 → 提示框放右；偏右 → 放左
+  let left: number
+  if (spotCx < vw * 0.38) {
+    left = spot.left + spot.width + margin
+  } else if (spotCx > vw * 0.62) {
+    left = spot.left - tooltipW - margin
+  } else {
+    left = spotCx - tooltipW / 2
+  }
+  // 贴边时收回来，避免出屏
+  left = Math.max(margin, Math.min(left, vw - tooltipW - margin))
+
+  // 垂直：默认与目标平齐，但**目标贴底时必须整体上移**——
+  // 底栏是通栏的，提示框一旦压上去就把目标挡住了，等于没打光。
+  let top = spotCy - tooltipH / 2
+  if (spot.top + spot.height > vh - margin) {
+    // 目标在屏幕底部 → 提示框放到目标上方
+    top = spot.top - tooltipH - margin
+  } else if (spot.top < margin) {
+    // 目标在屏幕顶部 → 提示框放到目标下方
+    top = spot.top + spot.height + margin
+  }
+  top = Math.max(margin, Math.min(top, vh - tooltipH - margin))
+
+  return { left, top }
 }
 
 export default function TutorialOverlay() {
@@ -66,18 +91,57 @@ export default function TutorialOverlay() {
   const nextTutorialStep = useGameStore(s => s.nextTutorialStep)
   const skipTutorial = useGameStore(s => s.skipTutorial)
 
-  if (tutorialStep === null || tutorialStep < 0 || tutorialStep >= steps.length) return null
+  const [spot, setSpot] = useState<SpotRect | null>(null)
+  const [tipSize, setTipSize] = useState({ w: 320, h: 180 })
 
-  const step = steps[tutorialStep]
-  const hasSpotlight = step.spotlight !== null
+  const step: TutorialStep | undefined =
+    tutorialStep !== null && tutorialStep >= 0 ? TUTORIAL_STEPS[tutorialStep] : undefined
 
-  return (
+  const remeasure = useCallback(() => {
+    if (!step) {
+      setSpot(null)
+      return
+    }
+    setSpot(measureTarget(step.target, step.pad ?? 0))
+  }, [step])
+
+  // 步骤切换 / 首次挂载后测量
+  useLayoutEffect(() => {
+    remeasure()
+  }, [remeasure])
+
+  // 窗口尺寸变化时重新测量（聚光框必须跟着按钮走）
+  useEffect(() => {
+    if (!step?.target) return
+    const onResize = () => remeasure()
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [step?.target, remeasure])
+
+  // 提示框自身尺寸变化会影响避让计算，量一次存起来
+  useEffect(() => {
+    if (!step) return
+    const el = document.querySelector<HTMLElement>('[data-tut-tip]')
+    if (el) setTipSize({ w: el.offsetWidth, h: el.offsetHeight })
+  }, [step, spot])
+
+  if (!step) return null
+
+  const hasSpotlight = !!spot
+
+  // portal 到 body：教学是全屏遮罩，必须压过一切图层。
+  // 之前挂在 MainMap 的 OVERLAY 容器里，内部的 z-index 9999 只在该容器的
+  // stacking context 内生效，实际层级反而低于剧情对白层，老船长立绘会盖住提示框。
+  return createPortal(
     <div className="fixed inset-0 transition-all duration-300" style={{ zIndex: 9999 }}>
       {hasSpotlight && (
         <div
-          className="fixed rounded-md transition-all duration-500 pointer-events-none"
+          className="fixed rounded-md transition-all duration-300 pointer-events-none"
           style={{
-            ...step.spotlight,
+            left: spot!.left,
+            top: spot!.top,
+            width: spot!.width,
+            height: spot!.height,
             boxShadow: '0 0 0 9999px rgba(0, 0, 0, 0.80)',
             border: '2px solid rgba(201, 169, 110, 0.6)',
             zIndex: 1,
@@ -91,9 +155,12 @@ export default function TutorialOverlay() {
 
       <div
         className="fixed z-10 transition-all duration-300 pointer-events-none"
-        style={getTooltipPosition(step, tutorialStep)}
+        style={computeTooltipStyle(spot, tipSize.w, tipSize.h)}
       >
-        <div className="parchment-bg-dark gold-border rounded-lg p-5 max-w-xs pointer-events-auto">
+        <div
+          data-tut-tip
+          className="parchment-bg-dark gold-border rounded-lg p-5 max-w-xs pointer-events-auto"
+        >
           <p className="font-serif text-gold-200 text-sm leading-relaxed mb-4">
             {step.text}
           </p>
@@ -106,7 +173,7 @@ export default function TutorialOverlay() {
             </button>
             <button
               onClick={() => {
-                if (tutorialStep === steps.length - 1) {
+                if (tutorialStep === TUTORIAL_STEPS.length - 1) {
                   skipTutorial()
                 } else {
                   nextTutorialStep()
@@ -118,10 +185,11 @@ export default function TutorialOverlay() {
             </button>
           </div>
           <div className="text-center mt-3 text-gold-600 text-xs font-serif">
-            {tutorialStep + 1} / {steps.length}
+            {tutorialStep + 1} / {TUTORIAL_STEPS.length}
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }

@@ -3,6 +3,7 @@ import { useGameStore } from '@/store/useGameStore'
 import { useMapStore } from '@/store/useMapStore'
 import { ports } from '@/data/ports'
 import { findNearestOceanPoint, isOnLand } from '@/utils/landCheck'
+import { useFxStore as useFx } from '@/store/useFxStore'
 import type { Waypoint } from '@/types'
 
 export default function MapClickHandler() {
@@ -45,6 +46,7 @@ export default function MapClickHandler() {
         } else {
           setWaypoint(waypoint)
           sailToWaypoint(waypoint)
+          useFx.getState().fx({ kind: 'cue', tone: 'plain', text: '' }, 'sail')
         }
         if (alreadyDiscovered) {
           setSelectedPortId(nearbyPort.id)
@@ -83,6 +85,7 @@ export default function MapClickHandler() {
       } else if (fleet.currentPortId || shipPosition) {
         setWaypoint(waypoint)
         sailToWaypoint(waypoint)
+        useFx.getState().fx({ kind: 'cue', tone: 'plain', text: '' }, 'sail')
       }
     },
   })

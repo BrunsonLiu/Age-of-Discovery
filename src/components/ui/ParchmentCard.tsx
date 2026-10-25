@@ -1,14 +1,17 @@
 import type { ReactNode } from 'react'
 import { X } from 'lucide-react'
+import { UI_ASSETS } from '@/data/uiAssets'
 
 interface ParchmentCardProps {
   title?: string
+  /** 标题旁的小字（如成就进度 x / y） */
+  subtitle?: string
   children: ReactNode
   className?: string
   onClose?: () => void
 }
 
-export default function ParchmentCard({ title, children, className = '', onClose }: ParchmentCardProps) {
+export default function ParchmentCard({ title, subtitle, children, className = '', onClose }: ParchmentCardProps) {
   return (
     <div
       className={`relative rounded-lg overflow-hidden ${className}`}
@@ -20,12 +23,14 @@ export default function ParchmentCard({ title, children, className = '', onClose
         boxShadow: '0 8px 32px rgba(0,0,0,0.7), inset 0 1px 0 rgba(244,228,193,0.15)',
       }}
     >
+      {/* 真羊皮纸纹理（F1）：低透明度叠在深褐底上增加纸的颗粒感 */}
       <div
-        className="absolute inset-0 pointer-events-none opacity-8"
+        className="absolute inset-0 pointer-events-none"
         style={{
-          backgroundImage: `repeating-linear-gradient(
-            45deg, transparent, transparent 2px, rgba(201,169,110,0.25) 2px, rgba(201,169,110,0.25) 4px
-          )`,
+          backgroundImage: `url(${UI_ASSETS.parchment})`,
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+          opacity: 0.14,
         }}
       />
 
@@ -37,8 +42,9 @@ export default function ParchmentCard({ title, children, className = '', onClose
       <div className="relative p-4">
         <div className="flex items-center justify-between mb-3 pb-2 border-b border-gold-700/30">
           {title && (
-            <h3 className="font-pirate text-lg text-gold-300 tracking-wide">
+            <h3 className="font-pirate text-lg text-gold-300 tracking-wide flex items-center gap-2">
               {title}
+              {subtitle && <span className="text-gold-500 text-xs font-serif">{subtitle}</span>}
             </h3>
           )}
           {!title && <div />}

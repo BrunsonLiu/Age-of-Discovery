@@ -1,10 +1,12 @@
 import { Ship as ShipIcon, Coins, Users, Package, Gauge, Anchor } from 'lucide-react'
 import { useGameStore } from '@/store/useGameStore'
 import { shipTemplates, shipResaleValue } from '@/data/ships'
+import { shipSprite } from '@/data/shipSprites'
 import { ports } from '@/data/ports'
 import { effectiveFleetSpeed } from '@/utils/navigation'
 import ParchmentCard from '@/components/ui/ParchmentCard'
 import ActionButton from '@/components/ui/ActionButton'
+import { useFxStore as useFx } from '@/store/useFxStore'
 
 const buyableKeys = ['sloop', 'frigate', 'galleon'] as const
 
@@ -73,9 +75,27 @@ export default function ShipyardPanel() {
                 return (
                   <div key={key} className="bg-ocean-800/40 rounded p-2">
                     <div className="flex items-center justify-between mb-1">
-                      <span className="text-gold-200 text-xs font-serif">{template.name}</span>
+                      <span className="text-gold-200 text-xs font-serif flex items-center gap-2">
+                        <img
+                          src={shipSprite(key)}
+                          alt=""
+                          aria-hidden="true"
+                          className="h-9 w-auto object-contain drop-shadow-md"
+                          onError={(e) => { e.currentTarget.style.visibility = 'hidden' }}
+                        />
+                        {template.name}
+                      </span>
                       <ActionButton
-                        onClick={() => buyShip(key)}
+                        onClick={() => {
+                          const before = useGameStore.getState().fleet.ships.length
+                          buyShip(key)
+                          if (useGameStore.getState().fleet.ships.length > before) {
+                            useFx.getState().fx(
+                              { kind: 'banner', tone: 'gold', text: `⚓ ${template.name} 入列`, sub: `-${template.price} 金币` },
+                              'ship',
+                            )
+                          }
+                        }}
                         disabled={disabled}
                         variant="secondary"
                       >

@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback, Component } from 'react'
 import { MapContainer, GeoJSON, useMap } from 'react-leaflet'
 import { useMapStore } from '@/store/useMapStore'
+import { useGameStore } from '@/store/useGameStore'
 import { PortMarker } from './PortMarker'
 import { RouteLine } from './RouteLine'
 import { ShipAnimation } from './ShipAnimation'
@@ -90,6 +91,10 @@ const oceanStyle = { fillColor: '#7d9a82', fillOpacity: 0.18, color: '#5a7a5a', 
 export default function MapView() {
   const mapCenter = useMapStore(s => s.center)
   const mapZoom = useMapStore(s => s.zoom)
+  // 海面纹理：暴风雨天换更暗的版本——底图也参与天候叙事
+  const weatherKind = useGameStore(s => s.weather.kind)
+  const seaTile = weatherKind === 'storm' ? 'sea-tile-storm.png' : 'sea-tile.png'
+  const seaBg = `${import.meta.env.BASE_URL}assets/sea/${seaTile}`
   const [geoData, setGeoData] = useState<{
     land: GeoJSON.GeoJsonObject | null
     coastline: GeoJSON.GeoJsonObject | null
@@ -154,7 +159,14 @@ export default function MapView() {
         <MapContainer
           center={mapCenter}
           zoom={mapZoom}
-          style={{ width: '100%', height: '100%' }}
+          style={{
+            width: '100%',
+            height: '100%',
+            // 程序化海面纹理（无缝平铺），暴风雨版自动切换
+            backgroundColor: '#0a1219',
+            backgroundImage: `url(${seaBg})`,
+            backgroundRepeat: 'repeat',
+          }}
           zoomControl={true}
           minZoom={2}
           maxZoom={10}

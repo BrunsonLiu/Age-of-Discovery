@@ -4,6 +4,7 @@ import { tasks } from '@/data/tasks'
 import { goods } from '@/data/goods'
 import { ports } from '@/data/ports'
 import ParchmentCard from '@/components/ui/ParchmentCard'
+import { useFxStore as useFx } from '@/store/useFxStore'
 
 const typeLabels: Record<string, string> = {
   main: '主线', trade: '送货', escort: '护送', treasure: '寻宝', rescue: '救援',
@@ -91,7 +92,17 @@ export default function TaskPanel() {
                         </span>
                         {done ? (
                           <button
-                            onClick={() => completeTask(task.id)}
+                            onClick={() => {
+                              completeTask(task.id)
+                              if (completedTasks.includes(task.id)) return
+                              useFx.getState().fx(
+                                { kind: 'banner', tone: 'safe', text: '✦ 冒险达成 ✦', sub: task.title },
+                                'task',
+                              )
+                              useFx.getState().fx(
+                                { kind: 'float', tone: 'gold', text: `+${task.reward.gold}`, sub: task.reward.fame ? `声望 +${task.reward.fame}` : undefined },
+                              )
+                            }}
                             className="text-safe-400 hover:text-safe-300 text-xs font-serif transition-colors"
                           >
                             ✓ 交付领赏

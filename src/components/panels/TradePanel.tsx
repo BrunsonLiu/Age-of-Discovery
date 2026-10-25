@@ -5,6 +5,7 @@ import { portGoods, localSpecialties, localDemands } from '@/data/ports'
 import { goods } from '@/data/goods'
 import ParchmentCard from '@/components/ui/ParchmentCard'
 import ActionButton from '@/components/ui/ActionButton'
+import { useFxStore as useFx } from '@/store/useFxStore'
 
 export default function TradePanel() {
   const fleet = useGameStore(s => s.fleet)
@@ -33,11 +34,26 @@ export default function TradePanel() {
     marketStock[`${pg.portId}:${pg.goodId}`] ?? pg.stock
 
   const handleBuy = (goodId: number, qty: number) => {
+    const before = useGameStore.getState().fleet.gold
     buyGood(portId, goodId, qty)
+    const spent = before - useGameStore.getState().fleet.gold
+    if (spent > 0) {
+      useFx.getState().fx(
+        { kind: 'float', tone: 'plain', text: `-${spent}`, sub: `${nameOf(goodId)}×${qty}` },
+        'coin',
+      )
+    }
   }
 
   const handleSell = (goodId: number, qty: number) => {
+    const before = useGameStore.getState().fleet.gold
     sellGood(portId, goodId, qty)
+    const earned = useGameStore.getState().fleet.gold - before
+    if (earned <= 0) return
+    useFx.getState().fx(
+      { kind: 'float', tone: 'gold', text: `+${earned}`, sub: `${nameOf(goodId)}×${qty}` },
+      'sell',
+    )
   }
 
   return (

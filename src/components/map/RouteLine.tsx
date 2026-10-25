@@ -5,40 +5,12 @@ import { useGameStore } from '@/store/useGameStore'
 import { ports } from '@/data/ports'
 import { routes } from '@/data/routes'
 import { calculateBearing } from '@/utils/navigation'
+import { getRouteGeometry, toLatLngList } from '@/utils/routePath'
 
 function getDangerColor(level: number): string {
   if (level <= 2) return '#6b4a2a'
   if (level === 3) return '#8b5a2a'
   return '#7a2810'
-}
-
-function createArcPoints(
-  from: [number, number],
-  to: [number, number],
-  segments: number = 20,
-): [number, number][] {
-  if (!isFinite(from[0]) || !isFinite(from[1]) || !isFinite(to[0]) || !isFinite(to[1])) {
-    return []
-  }
-  const points: [number, number][] = []
-  const midLat = (from[0] + to[0]) / 2
-  const midLng = (from[1] + to[1]) / 2
-  const dx = to[1] - from[1]
-  const dy = to[0] - from[0]
-  const dist = Math.sqrt(dx * dx + dy * dy)
-  const offset = dist * 0.15
-  const ctrlLat = midLat + (dx / dist) * offset
-  const ctrlLng = midLng - (dy / dist) * offset
-
-  for (let i = 0; i <= segments; i++) {
-    const t = i / segments
-    const lat =
-      (1 - t) * (1 - t) * from[0] + 2 * (1 - t) * t * ctrlLat + t * t * to[0]
-    const lng =
-      (1 - t) * (1 - t) * from[1] + 2 * (1 - t) * t * ctrlLng + t * t * to[1]
-    points.push([lat, lng])
-  }
-  return points
 }
 
 function createArrowIcon(angle: number, color: string) {
@@ -64,6 +36,7 @@ export function RouteLine() {
   const waypoint = useGameStore((s) => s.waypoint)
   const isSailing = useGameStore((s) => s.fleet.isSailing)
   const shipPosition = useGameStore((s) => s.shipPosition)
+  const routeOrigin = useGameStore((s) => s.routeOrigin)
 
   const availableRoutes = useMemo(() => {
     if (!currentPortId) return []
@@ -77,6 +50,27 @@ export function RouteLine() {
     return map
   }, [])
 
+  /**
+   * 港口间的候选航线几何。
+   *
+   * 与船实际行走用的是**同一个** buildRouteGeometry，
+   * 所以玩家在图上看到的虚线，就是船要走的那条路。
+   */
+  const routeGeometries = useMemo(() => {
+    const map = new Map<number, [number, number][]>()
+    for (const route of availableRoutes) {
+      const fromPort = portMap.get(route.fromPortId)
+      const toPort = portMap.get(route.toPortId)
+      if (!fromPort || !toPort) continue
+      const geom = getRouteGeometry(
+        [fromPort.latitude, fromPort.longitude],
+        [toPort.latitude, toPort.longitude],
+      )
+      map.set(route.id, toLatLngList(geom))
+    }
+    return map
+  }, [availableRoutes, portMap])
+
   return (
     <>
       {availableRoutes.map((route) => {
@@ -86,10 +80,7 @@ export function RouteLine() {
 
         const isSelected = currentRoute?.id === route.id
         const color = getDangerColor(route.dangerLevel)
-        const points = createArcPoints(
-          [fromPort.latitude, fromPort.longitude],
-          [toPort.latitude, toPort.longitude],
-        )
+        const points = routeGeometries.get(route.id) ?? []
 
         if (points.length === 0) return null
 
@@ -145,19 +136,27 @@ export function RouteLine() {
       {waypoint && isSailing && (() => {
         if (!isFinite(waypoint.latitude) || !isFinite(waypoint.longitude)) return null
 
+        // 航线起点 = 出航时的位置（不是当前船位）。
+        // 用当前船位画线的话，线每帧都在变，玩家看到的不是船真正在走的那条路——
+        // 这就是「船和路线没对齐」的根源。
         const startPos: [number, number] | null =
-          shipPosition && isFinite(shipPosition[0]) && isFinite(shipPosition[1])
-            ? shipPosition
-            : currentPortId
-              ? (() => {
-                  const p = portMap.get(currentPortId)
-                  return p ? [p.latitude, p.longitude] as [number, number] : null
-                })()
-              : null
+          routeOrigin && isFinite(routeOrigin[0]) && isFinite(routeOrigin[1])
+            ? routeOrigin
+            : shipPosition && isFinite(shipPosition[0]) && isFinite(shipPosition[1])
+              ? shipPosition
+              : currentPortId
+                ? (() => {
+                    const p = portMap.get(currentPortId)
+                    return p ? [p.latitude, p.longitude] as [number, number] : null
+                  })()
+                : null
 
         if (!startPos) return null
 
-        const points = createArcPoints(startPos, [waypoint.latitude, waypoint.longitude])
+        // 与 SailingController 用**同一个**记忆化几何对象——
+        // 图上画的线就是船走的线，一模一样。
+        const geom = getRouteGeometry(startPos, [waypoint.latitude, waypoint.longitude])
+        const points = toLatLngList(geom)
 
         if (points.length === 0) return null
 

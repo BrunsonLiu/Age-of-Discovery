@@ -22,3 +22,5 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+# 代理工作区（诊断脚本/截图，不进仓库）
+.workbuddy/

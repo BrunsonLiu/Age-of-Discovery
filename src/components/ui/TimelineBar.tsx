@@ -1,11 +1,24 @@
 import { useGameStore } from '@/store/useGameStore'
 import { historicalTimeline } from '@/data/historicalTimeline'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { Award } from 'lucide-react'
+import { useFxStore as useFx } from '@/store/useFxStore'
 
 export default function TimelineBar() {
   const day = useGameStore(s => s.fleet.day)
+  const fame = useGameStore(s => s.fleet.fame)
   const seenHistoricalEvents = useGameStore(s => s.seenHistoricalEvents)
   const [hoveredEvent, setHoveredEvent] = useState<number | null>(null)
+
+  // 历史节点触发时，由时间轴自己上报为「年代」事件——
+  // 主循环已经降速（advanceDay 里改），这里兑现成一声钟响，让 10 年的分量落下来。
+  const lastHistoricalCount = useRef(seenHistoricalEvents.length)
+  useEffect(() => {
+    if (seenHistoricalEvents.length > lastHistoricalCount.current) {
+      useFx.getState().cue('era')
+    }
+    lastHistoricalCount.current = seenHistoricalEvents.length
+  }, [seenHistoricalEvents.length])
 
   const currentYear = Math.round(1492 + (day - 1) * (1650 - 1492) / 150)
   const progress = Math.min(1, (day - 1) / 150)
@@ -80,6 +93,15 @@ export default function TimelineBar() {
 
       <div className="text-gold-400 font-serif text-xs min-w-[120px] text-right truncate">
         {currentEvent ? currentEvent.title : latestSeenEvent ? latestSeenEvent.title : '启航'}
+      </div>
+
+      {/* 声望：天然的进度指标，此前只在结局画面出现，玩家全程看不到自己在往上走 */}
+      <div
+        className="flex items-center gap-1 text-gold-300 font-serif text-xs min-w-[68px] justify-end"
+        title="声望：发现新港口与完成冒险都会累积"
+      >
+        <Award size={13} className="text-gold-400" />
+        <span className="font-mono">{fame}</span>
       </div>
     </div>
   )

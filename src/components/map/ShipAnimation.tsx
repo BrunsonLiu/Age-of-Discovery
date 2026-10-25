@@ -4,76 +4,88 @@ import L from 'leaflet'
 import { useGameStore } from '@/store/useGameStore'
 import { ports } from '@/data/ports'
 import { calculateBearing } from '@/utils/navigation'
+import { shipSprite } from '@/data/shipSprites'
+import { FX_ASSETS } from '@/data/envAssets'
 
-function createShipIcon(sailing: boolean, bearing: number) {
-  const rotation = sailing ? bearing - 90 : 0
+const ICON_BOX = 90 // 图标盒尺寸（精灵纵向上溢出盒体，视觉更挺拔）
 
-  const shipSvg = `
-    <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" width="70" height="70">
-      <defs>
-        <linearGradient id="hullGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-          <stop offset="0%" style="stop-color:#8B4513;stop-opacity:1" />
-          <stop offset="100%" style="stop-color:#5C2E0A;stop-opacity:1" />
-        </linearGradient>
-        <linearGradient id="sailGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-          <stop offset="0%" style="stop-color:#F5E6C8;stop-opacity:0.95" />
-          <stop offset="100%" style="stop-color:#D4B896;stop-opacity:0.85" />
-        </linearGradient>
-        <linearGradient id="sailGrad2" x1="0%" y1="0%" x2="100%" y2="0%">
-          <stop offset="0%" style="stop-color:#E8D5B0;stop-opacity:0.9" />
-          <stop offset="100%" style="stop-color:#C4A878;stop-opacity:0.8" />
-        </linearGradient>
-      </defs>
-      <path d="M20,62 Q25,72 50,75 Q75,72 80,62 L75,58 Q50,62 25,58 Z" fill="url(#hullGrad)" stroke="#3A1A05" stroke-width="1"/>
-      <path d="M25,58 Q50,62 75,58 L73,55 Q50,59 27,55 Z" fill="#6B3410"/>
-      <line x1="50" y1="55" x2="50" y2="12" stroke="#5C2E0A" stroke-width="2.5" stroke-linecap="round"/>
-      <line x1="35" y1="55" x2="35" y2="25" stroke="#5C2E0A" stroke-width="2" stroke-linecap="round"/>
-      <line x1="65" y1="55" x2="65" y2="28" stroke="#5C2E0A" stroke-width="2" stroke-linecap="round"/>
-      <path d="M52,14 Q78,30 52,52 L50,52 L50,14 Z" fill="url(#sailGrad)" stroke="#A08050" stroke-width="0.5"/>
-      <path d="M37,27 Q52,38 37,52 L35,52 L35,27 Z" fill="url(#sailGrad2)" stroke="#A08050" stroke-width="0.5"/>
-      <path d="M67,30 Q78,40 67,52 L65,52 L65,30 Z" fill="url(#sailGrad2)" stroke="#A08050" stroke-width="0.5"/>
-      <path d="M20,60 L48,60 L48,56 L20,56 Z" fill="#D4A838" opacity="0.6"/>
-      <path d="M52,60 L80,60 L80,56 L52,56 Z" fill="#D4A838" opacity="0.6"/>
-      <path d="M48,8 L50,4 L52,8 Z" fill="#D4A838" stroke="#8B6914" stroke-width="0.5"/>
-      <circle cx="50" cy="3" r="1.5" fill="#D4A838"/>
-      ${sailing ? `
-      <path d="M30,70 Q35,78 50,80 Q65,78 70,70" fill="none" stroke="rgba(100,180,255,0.4)" stroke-width="1.5">
-        <animate attributeName="d" values="M30,70 Q35,78 50,80 Q65,78 70,70;M30,72 Q35,80 50,82 Q65,80 70,72;M30,70 Q35,78 50,80 Q65,78 70,70" dur="2s" repeatCount="indefinite"/>
-      </path>
-      ` : `
-      <g transform="translate(42, 78)">
-        <circle cx="8" cy="3" r="2.5" stroke="#D4A838" stroke-width="1" fill="none"/>
-        <line x1="8" y1="5.5" x2="8" y2="14" stroke="#D4A838" stroke-width="1"/>
-        <path d="M4,12 Q8,16 12,12" stroke="#D4A838" stroke-width="1" fill="none"/>
-      </g>
-      `}
-    </svg>
+/**
+ * 精灵图里船首指向的方位角（度）。
+ *
+ * 素材是"正北朝上（俯视，船首指向图像上方）"，而方位角 0° = 正北、
+ * 顺时针增大（正东 90°）。CSS rotate() 同样是顺时针为正，
+ * 所以船首朝上的图只需要 rotate(bearing)，**不能再减 90**。
+ *
+ * 之前写的是 bearing - 90（那是"船首朝右"的图才需要的补偿），
+ * 结果船永远朝目标方向偏 90°：向正东航行的船看起来在往北走。
+ * 参见 src/data/shipSprites.ts 顶部注释"船艏朝上（正北）"。
+ */
+const SPRITE_HEADING_DEG = 0
+
+function createShipIcon(sailing: boolean, bearing: number, shipType: string) {
+  const rotation = sailing ? bearing - SPRITE_HEADING_DEG : 0
+  const sprite = shipSprite(shipType)
+
+  /**
+   * 旋转必须放在**外层容器**上，摇摆动画放在**内层 img** 上。
+   *
+   * 原来两者都在 img 的 transform 里，而 @keyframes shipSway 里的 transform
+   * 会**整体覆盖**内联 transform —— 航行中船不但不转向，
+   * 连 translate(-50%,-50%) 的居中也没了（图标整个偏移）。
+   * 拆成两层后：外层负责"朝哪转"，内层负责"怎么晃"，互不干扰。
+   */
+  const shipImg = `
+    <img src="${sprite}" alt="" draggable="false"
+      style="position:relative;display:block;height:84px;width:auto;${sailing ? 'animation:shipSway 3s ease-in-out infinite;' : ''}filter:drop-shadow(0 2px 6px rgba(0,0,0,0.55));"
+      onerror="this.style.display='none'"/>
   `
 
-  const pulseRings = sailing ? `
-    <div style="position:absolute;width:90px;height:90px;left:-10px;top:-10px;border-radius:50%;border:2px solid rgba(212,168,56,0.4);animation:shipPulse 2.5s ease-in-out infinite;"></div>
-    <div style="position:absolute;width:110px;height:110px;left:-20px;top:-20px;border-radius:50%;border:1.5px solid rgba(212,168,56,0.2);animation:shipPulse 2.5s ease-in-out infinite 0.6s;"></div>
-  ` : `
-    <div style="position:absolute;width:84px;height:84px;left:-7px;top:-7px;border-radius:50%;border:1.5px solid rgba(212,168,56,0.25);"></div>
-  `
-
+  /**
+   * 船尾浪：贴图精灵（第 4 批 fx_bow_wave.png）。
+   *
+   * 原来这里是 4 个 rgba(100,180,255) 的 CSS 圆点 —— 一眼假，
+   * 且圆点是"横排一行"，与船首分波的物理形态完全不符。
+   *
+   * 贴图对齐的三个关键点：
+   * 1) **V 尖朝上**：素材的 V 口在图像顶部（bbox 顶部 8.8% 处是浪尖），
+   *    所以 top 取负值，让浪尖落在船首略上方 —— 水是被船艏"推开"的，
+   *    浪尖必须出现在艏柱位置，不能出现在船尾。
+   * 2) **画在船下面**：浪 img 在 DOM 里位于 shipImg 之前且用 absolute，
+   *    船是 relative，按绘制顺序船身压在浪上 —— 否则白色浪花会糊住船体。
+   * 3) **随船一起转**：浪在旋转容器内部，船转向时浪花跟着转
+   *    （这正是上一轮修"船东走浪花还朝下"的同一处）。
+   *
+   * 尺寸：118px 宽 ≈ 船身长（84px）的 1.4 倍，V 张开度约 76px，
+   * 与船长比例接近真实 wake（艉流宽度通常略大于船长）。
+   */
   const wakeHtml = sailing ? `
-    <div style="position:absolute;width:80px;height:16px;left:-5px;top:55px;display:flex;align-items:center;justify-content:center;gap:5px;">
-      ${[0, 1, 2, 3].map(i => `<div style="width:${7 - i}px;height:${7 - i}px;border-radius:50%;background:rgba(100,180,255,${0.5 - i * 0.12});animation:wakeFade ${0.8 + i * 0.2}s ease-out infinite;animation-delay:${i * 0.15}s;"></div>`).join('')}
-    </div>
+    <img src="${FX_ASSETS.bowWave}" alt="" draggable="false"
+      style="position:absolute;left:50%;top:-16px;transform:translateX(-50%);
+             width:118px;height:auto;opacity:0.92;pointer-events:none;
+             animation:wakeDrift 2.6s ease-in-out infinite;"
+      onerror="this.style.display='none'"/>
   ` : ''
 
+  const pulseRings = sailing ? `
+    <div style="position:absolute;width:90px;height:90px;left:0px;top:0px;border-radius:50%;border:2px solid rgba(212,168,56,0.4);animation:shipPulse 2.5s ease-in-out infinite;"></div>
+    <div style="position:absolute;width:110px;height:110px;left:-10px;top:-10px;border-radius:50%;border:1.5px solid rgba(212,168,56,0.2);animation:shipPulse 2.5s ease-in-out infinite 0.6s;"></div>
+  ` : `
+    <div style="position:absolute;width:84px;height:84px;left:3px;top:3px;border-radius:50%;border:1.5px solid rgba(212,168,56,0.25);"></div>
+  `
+
   const html = `
-    <div style="position:relative;width:70px;height:70px;">
+    <div style="position:relative;width:${ICON_BOX}px;height:${ICON_BOX}px;">
       ${pulseRings}
-      <div style="position:absolute;width:70px;height:70px;filter:drop-shadow(0 0 12px rgba(212,168,56,0.6));transform:rotate(${rotation}deg);transform-origin:35px 35px;${sailing ? 'animation:shipSway 3s ease-in-out infinite;' : ''}">
-        ${shipSvg}
+      <div data-tut="ship" style="position:absolute;inset:0;">
+        <div style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%) rotate(${rotation}deg);transform-origin:center;width:84px;display:flex;flex-direction:column;align-items:center;">
+          ${wakeHtml}
+          ${shipImg}
+        </div>
       </div>
-      ${wakeHtml}
     </div>
   `
 
-  return L.divIcon({ html, className: 'ship-marker-icon', iconSize: [70, 70], iconAnchor: [35, 35] })
+  return L.divIcon({ html, className: 'ship-marker-icon', iconSize: [ICON_BOX, ICON_BOX], iconAnchor: [ICON_BOX / 2, ICON_BOX / 2] })
 }
 
 function ShipCameraFollow({ position }: { position: [number, number] | null }) {
@@ -130,17 +142,34 @@ export function ShipAnimation() {
     return 0
   }, [fleet.isSailing, position, waypoint])
 
+  // 地图上显示旗舰的精绘精灵（按船型选图）
+  const shipType = useMemo(() => {
+    const flagship = fleet.ships.find(s => s.id === fleet.flagshipId) || fleet.ships[0]
+    return flagship?.type || 'galleon'
+  }, [fleet.ships, fleet.flagshipId])
+
   if (!position || !isFinite(position[0]) || !isFinite(position[1])) return null
+
+  // dev 调试钩子：让无头浏览器实测能读到地图上的实际船头朝向
+  // 生产构建会被 tree-shake 掉（import.meta.env.DEV 为 false）
+  if (import.meta.env?.DEV) {
+    ;(window as unknown as { __ship?: unknown }).__ship = {
+      bearing,
+      rotation: fleet.isSailing ? bearing - SPRITE_HEADING_DEG : 0,
+      position,
+      sailing: fleet.isSailing,
+    }
+  }
 
   return (
     <>
       <ShipCameraFollow position={position} />
-      <Marker position={position} icon={createShipIcon(fleet.isSailing, bearing)} zIndexOffset={1000} />
+      <Marker position={position} icon={createShipIcon(fleet.isSailing, bearing, shipType)} zIndexOffset={1000} />
       <style>{`
         .ship-marker-icon { background: none !important; border: none !important; }
         @keyframes shipPulse { 0%, 100% { transform: scale(1); opacity: 0.6; } 50% { transform: scale(1.3); opacity: 0.1; } }
         @keyframes shipSway { 0%, 100% { transform: rotate(0deg) translateY(0px); } 25% { transform: rotate(0.5deg) translateY(-2px); } 75% { transform: rotate(-0.5deg) translateY(1px); } }
-        @keyframes wakeFade { 0% { opacity: 1; transform: scale(1); } 100% { opacity: 0; transform: scale(0.2); } }
+        @keyframes wakeDrift { 0%, 100% { opacity: 0.78; transform: translateX(-50%) scale(1); } 50% { opacity: 1; transform: translateX(-50%) scale(1.03); } }
       `}</style>
     </>
   )

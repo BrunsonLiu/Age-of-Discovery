@@ -74,17 +74,20 @@ export default {
         pirate: ['"Pirata One"', 'cursive'],
         serif: ['"Crimson Text"', 'Georgia', 'serif'],
       },
+      // 时长与曲线对齐 src/utils/motion.ts 的 DURATION/EASE_* 档位
+      // （config 是 JS 无法 import TS，改动需同步）
       animation: {
         'ship-sway': 'shipSway 3s ease-in-out infinite',
         'pulse-gold': 'pulseGold 2s ease-in-out infinite',
         'fog-clear': 'fogClear 2s ease-out forwards',
-        'slide-in-left': 'slideInLeft 0.4s ease-out forwards',
-        'slide-in-right': 'slideInRight 0.4s ease-out forwards',
-        'fade-in-up': 'fadeInUp 0.5s ease-out forwards',
+        'slide-in-left': 'slideInLeft 380ms cubic-bezier(0.32, 0.72, 0, 1) forwards',
+        'slide-in-right': 'slideInRight 380ms cubic-bezier(0.32, 0.72, 0, 1) forwards',
+        'fade-in-up': 'fadeInUp 380ms cubic-bezier(0.32, 0.72, 0, 1) forwards',
         'shimmer': 'shimmer 2s linear infinite',
-        'slide-in-right': 'slideInRightToast 0.4s ease-out forwards',
-        'slide-out-right': 'slideOutRightToast 0.4s ease-in forwards',
-        'fade-in-scale': 'fadeInScale 0.3s ease-out forwards',
+        'slide-in-right': 'slideInRightToast 380ms cubic-bezier(0.32, 0.72, 0, 1) forwards',
+        'slide-out-right': 'slideOutRightToast 380ms cubic-bezier(0.4, 0, 1, 1) forwards',
+        'fade-in-scale': 'fadeInScale 280ms cubic-bezier(0.34, 1.32, 0.64, 1) forwards',
+        'res-pulse': 'resPulse 1.1s ease-in-out infinite',
       },
       keyframes: {
         shipSway: {
@@ -126,6 +129,10 @@ export default {
         fadeInScale: {
           '0%': { transform: 'scale(0.9)', opacity: '0' },
           '100%': { transform: 'scale(1)', opacity: '1' },
+        },
+        resPulse: {
+          '0%, 100%': { transform: 'scale(1)', opacity: '1' },
+          '50%': { transform: 'scale(1.28)', opacity: '0.72' },
         },
       },
     },
