@@ -166,6 +166,8 @@ export function summarizeChoice(
   moraleMax: number,
 ): ChoiceSummary {
   if (choice.miniGame) {
+    // risk 只是个占位：小游戏选项的 UI 不渲染风险档（见 EventChoice 的守卫），
+    // 因为这里的概率会被操作表现改写，任何"稳/搏/险"的断言都是编造的。
     return { chips: [], risk: 'gamble', plain: true }
   }
   const outs = adjustedOutcomes(choice, ctx, fleet, moraleMax)

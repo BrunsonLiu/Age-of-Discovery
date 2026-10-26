@@ -1,6 +1,6 @@
 import { ChevronRight, Coins, Droplets, Heart, Shield, Star, Users, Utensils } from 'lucide-react'
 import type { EventChoice as EventChoiceType } from '@/types'
-import { MINI_GAME_COPY } from '@/components/events/MiniGameOverlay'
+import { MINI_GAME_COPY } from '@/utils/miniGame'
 import { RESOURCE_LABEL, type ChoiceSummary, type ResourceKey, type RiskGrade } from '@/utils/eventSummary'
 
 interface EventChoiceProps {
@@ -90,7 +90,10 @@ export default function EventChoice({ choice, index, summary, onSelect }: EventC
               ))
             )}
           </span>
-          {risk && (!summary.plain || summary.risk !== 'steady') && (
+          {/* 小游戏选项不显示风险档：它的结局概率会被操作改写，
+              硬挂一个「搏」再配上「期望就差、尾部太重」这种断言，
+              等于凭空编造一个根本没算过的结论——左侧那句因果说明已经够了。 */}
+          {risk && !choice.miniGame && (!summary.plain || summary.risk !== 'steady') && (
             <span
               className={`shrink-0 font-serif text-[10px] ${risk.className}`}
               title={risk.hint}

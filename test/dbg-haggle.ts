@@ -1,8 +1,7 @@
 // 议价风险曲线实测
 import {
-  HAGGLE_FLOOR, HAGGLE_RAISE_STEP, HAGGLE_START_PRICE,
+  HAGGLE_START_PRICE,
   advanceHaggle, createHaggleState, haggleAction,
-  type HaggleAction,
 } from '../src/utils/miniGame'
 
 // 模拟"一味加价"，统计第 N 次加价的谈崩率

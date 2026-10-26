@@ -8,14 +8,14 @@ import { GAME_BALANCE } from '../src/data/gameConfig'
 import { RIVALS } from '../src/data/rivals'
 import { OFFICERS } from '../src/data/officers'
 import { effectiveFleetSpeed, calculateSailingDays, dailyDistanceNm, routeProgressOf } from '../src/utils/navigation'
-import { WEATHER_INFO, weatherFavorFactor } from '../src/utils/weather'
+import { WEATHER_INFO, weatherCell, weatherDuration, weatherFavorFactor } from '../src/utils/weather'
 import type { WeatherState } from '../src/types'
 import {
   dailyRates, daysToDestination, formatSupplyDays, moraleLevel, supplyDaysRemaining, supplyLevel,
 } from '../src/utils/voyage'
 import {
   adjustedOutcomes, crewLossChance, expectedDeltas, outcomeHarm, riskGrade, summarizeChoice,
-  CHIP_MIN_EV, type ChoiceSummary,
+  CHIP_MIN_EV, type AdjustedOutcome, type ChoiceSummary,
 } from '../src/utils/eventSummary'
 import { adjustOutcome, clampOutcomeToFleet } from '../src/utils/outcomeAdjust'
 import {
@@ -36,7 +36,7 @@ import { SHIP_SPRITES, SPECIAL_SPRITES, shipSprite } from '../src/data/shipSprit
 import { crewPortrait, officerPortrait, rivalPortrait } from '../src/data/portraits'
 import { sceneImage } from '../src/data/sceneImages'
 import { UI_ASSETS } from '../src/data/uiAssets'
-import { getStatusColor } from '../src/components/ui/ResourceBar'
+import { getStatusColor } from '../src/utils/resourceColor'
 import { FX_ASSETS, BG_ASSETS } from '../src/data/envAssets'
 import { portImage } from '../src/data/portImages'
 import {
@@ -60,6 +60,7 @@ import {
   GAMBLE_SPREAD,
   GAMBLE_STAKE,
   HAGGLE_EXIT_CONCESSION,
+  MINI_GAME_COPY,
   HAGGLE_FLOOR,
   HAGGLE_ROUNDS,
   HAGGLE_START_PRICE,
@@ -67,6 +68,7 @@ import {
   LOOKOUT_MAX_ROUNDS,
   LOOKOUT_START_LEN,
   STORM_ROUNDS,
+  STORM_ROUND_LIMIT,
   biasProbabilities,
   boardingPerformance,
   computeModifiers,
@@ -123,7 +125,11 @@ import {
 import { calculateBearing } from '../src/utils/navigation'
 import { readFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
-import type { Fleet, Route } from '../src/types'
+import type { EventOutcome, Fleet, MiniGameId, Route } from '../src/types'
+import {
+  greatCircleNm, greatCirclePoint, buildRouteGeometry, positionAtNm, traveledNmAt,
+} from '../src/utils/routePath'
+import { findSeaPath } from '../src/utils/seaRoute'
 
 let passed = 0
 let failed = 0
@@ -330,7 +336,7 @@ assert(nextSegmentBoundary(0, 4) === 0.25 && nextSegmentBoundary(1, 4) === 0.5 &
   let idx = 0
   const count = 8
   // 模拟一帧跨到 47.68%（8 段中的第 4 段起点之前）
-  let progress = 0.4768
+  const progress = 0.4768
   const before = idx
   if (progress >= nextSegmentBoundary(idx, count)) idx = idx + 1
   assert(idx === before + 1, `一帧最多推进一段（${before} → ${idx}，实际进度 ${progress}）`)
@@ -1437,7 +1443,7 @@ console.log('== 37. 教学引导：步骤常量与文案 ==')
   // 聚光框必须锚定到真实 DOM 元素，不能是硬编码像素。
   // 之前写死 { left:'20px', top:'50%' }，实测落在 y=500，
   // 而侧栏"舰队"按钮实际在 y=388 —— 聚光框照的是一片空白。
-  assert(!(TUTORIAL_STEPS as any[]).some(s => s.spotlight),
+  assert(!(TUTORIAL_STEPS as unknown as { spotlight?: unknown }[]).some(s => s.spotlight),
     '教学步骤不再使用硬编码 spotlight 坐标')
   assert(TUTORIAL_TARGETS.length >= 4,
     `教学至少 4 步带锚点（实际 ${TUTORIAL_TARGETS.length}）`)
@@ -1996,10 +2002,6 @@ console.log('== 43. 地图对齐：船头朝向与航线一致 ==')
 
 console.log('== 44. 航线几何：唯一权威路径（防瞬移 / 防船线分叉） ==')
 {
-  const {
-    greatCircleNm, greatCirclePoint, buildRouteGeometry, positionAtNm, traveledNmAt, toLatLngList,
-  } = require('../src/utils/routePath') as typeof import('../src/utils/routePath')
-
   const SEV = [37.3886, -5.9823] as [number, number]
   const CAR = [10.391, -75.5364] as [number, number]
 
@@ -2053,7 +2055,6 @@ console.log('== 44. 航线几何：唯一权威路径（防瞬移 / 防船线分
   // 的大洋当中，A* 顺着走廊从那儿搜到目的地，几何再把港口与那个点直连，
   // 于是船出港 16 海里就"触礁搁浅"，整条航程被清空。
   {
-    const { findSeaPath } = require('../src/utils/seaRoute') as typeof import('../src/utils/seaRoute')
     const sea = findSeaPath(SEV, CAR)
     if (sea.found && sea.points.length >= 2) {
       const d0 = greatCircleNm(SEV[0], SEV[1], sea.points[0][0], sea.points[0][1])
@@ -2335,6 +2336,15 @@ console.log('== 45. 常驻资源条：界面天数必须等于实际扣的天数
   console.log(`  摘要覆盖 ${libChoices} 个选项：稳 ${libSteady} / 搏 ${libGamble} / 险 ${libRisky}，` +
     `plain ${libPlain}（含小游戏 ${libMini}），单选项最多 ${libMaxChips} 个芯片`)
 
+  // --- 7.5 小游戏选项不得显示风险档 ---
+  // 它的结局概率会被操作表现改写，硬挂一个「搏」再配一句"期望就差、尾部太重"的
+  // 断言，等于凭空编造一个没算过的结论——屏显必须是真话。
+  {
+    const choiceSrc = readFileSync(join(process.cwd(), 'src/components/events/EventChoice.tsx'), 'utf8')
+    assert(/risk && !choice\.miniGame/.test(choiceSrc),
+      'EventChoice 对小游戏选项不渲染风险档（不编造未计算过的稳/搏/险）')
+  }
+
   // --- 8) 期望值口径：Σ p×delta，与逐结局加权一致 ---
   {
     const outs = adjustedOutcomes(ev101.choices[0], neutral, baseFleet, GAME_BALANCE.MORALE_MAX)
@@ -2474,6 +2484,123 @@ console.log('== 37. 事件小游戏：舷炮对轰 ==')
   const overlaySrc = readFileSync(join(process.cwd(), 'src', 'components', 'events', 'MiniGameOverlay.tsx'), 'utf8')
   assert(overlaySrc.includes("gameId === 'cannon'") && overlaySrc.includes('<CannonGame'),
     'MiniGameOverlay 真的分发 CannonGame')
+}
+
+console.log('== 47. 小游戏文案与实现常量一致 ==')
+{
+  // 玩家照着说明打，节奏才对得上：文案里写死的数字必须等于代码里的常量。
+  // 文案表放在 utils/miniGame.ts（纯逻辑层）就是为了让这条护栏能直接跑。
+  const bullets = (id: MiniGameId) => MINI_GAME_COPY[id].bullets.join(' ')
+  const ids: MiniGameId[] = ['storm', 'boarding', 'escape', 'lookout', 'gamble', 'haggle', 'cannon']
+  for (const id of ids) {
+    const c = MINI_GAME_COPY[id]
+    assert(!!c && !!c.title && !!c.brief && c.bullets.length >= 3 && c.start.includes('（Enter）'),
+      `小游戏 ${id} 文案完整（标题/开场白/≥3 条要点/开始键承诺 Enter）`)
+  }
+  assert(/5 轮/.test(bullets('storm')) && STORM_ROUNDS === 5, '收帆文案「5 轮」== STORM_ROUNDS')
+  assert(/4\.5 秒/.test(bullets('storm')) && STORM_ROUND_LIMIT === 4.5, '收帆文案「4.5 秒」== STORM_ROUND_LIMIT')
+  assert(/8 波/.test(bullets('boarding')) && BOARDING_WAVES === 8, '拦跳板文案「8 波」== BOARDING_WAVES')
+  assert(/8 次/.test(bullets('escape')) && ESCAPE_WAVES === 8, '逃脱文案「8 次」== ESCAPE_WAVES')
+  assert(/6 手/.test(bullets('gamble')) && GAMBLE_ROUNDS === 6, '对赌文案「6 手」== GAMBLE_ROUNDS')
+  assert(/每手押注 20 金/.test(bullets('gamble')) && GAMBLE_STAKE === 20, '对赌文案「押注 20 金」== GAMBLE_STAKE')
+  assert(/8 轮谈判/.test(bullets('haggle')) && HAGGLE_ROUNDS === 8, '议价文案「8 轮谈判」== HAGGLE_ROUNDS')
+  assert(/三轮齐射/.test(bullets('cannon')) && CANNON_VOLLEYS === 3, '舷炮文案「三轮齐射」== CANNON_VOLLEYS')
+  // 庄家报的区间必须「含而不露」：跨至少 2 个点、且不越骰子边界
+  {
+    const mods = computeModifiers({ hullRatio: 0.5, crewRatio: 0.5, officers: [] })
+    let ok = true
+    for (let d = 1; d <= GAMBLE_DICE; d++) {
+      const g = createGambleState()
+      dealGamble(g, mods, () => (d - 1) / GAMBLE_DICE)
+      if (!(g.high - g.low >= 1 && g.low >= 1 && g.high <= GAMBLE_DICE)) ok = false
+    }
+    assert(ok, `庄家区间恒跨 ≥2 个点且不越界（点数 1..${GAMBLE_DICE} 全覆盖）`)
+    assert(GAMBLE_SPREAD >= 1 && GAMBLE_SPREAD < GAMBLE_DICE, `区间半宽 ${GAMBLE_SPREAD} 合理`)
+  }
+  // 瞭望序列必须真的能变长，否则「一轮比一轮长」是空话
+  assert(LOOKOUT_MAX_LEN > LOOKOUT_START_LEN, `瞭望序列可增长（${LOOKOUT_START_LEN} → ${LOOKOUT_MAX_LEN}）`)
+}
+
+console.log('== 48. 风险档判据与份量权重 ==')
+{
+  const mk = (probability: number, ch: Partial<EventOutcome>): AdjustedOutcome => ({
+    probability,
+    outcome: {
+      probability, goldChange: 0, foodChange: 0, waterChange: 0, moraleChange: 0,
+      durabilityChange: 0, crewChange: 0, description: 't', ...ch,
+    } as EventOutcome,
+  })
+  // 份量权重：掉一个人（3 分）比掉一点耐久（0.5 分）重得多——决定徽章颜色
+  assert(Math.abs(outcomeHarm(mk(1, { crewChange: -1 }).outcome) - 3) < 1e-9, '掉 1 人的伤害分 = 3')
+  assert(Math.abs(outcomeHarm(mk(1, { durabilityChange: -1 }).outcome) - 0.5) < 1e-9, '掉 1 点耐久的伤害分 = 0.5')
+  assert(Math.abs(outcomeHarm(mk(1, { moraleChange: -1 }).outcome) - 0.3) < 1e-9, '掉 1 点士气的伤害分 = 0.3')
+  assert(outcomeHarm(mk(1, { goldChange: -10 }).outcome) < 1, '金币损失几乎不计伤害（份量最轻）')
+  assert(outcomeHarm(mk(1, { goldChange: 10 }).outcome) === 0, '只赚不赔时伤害分为 0')
+
+  // 三档判据
+  assert(riskGrade([mk(1, { goldChange: 10 })]) === 'steady', '只赚不赔 → 稳')
+  assert(riskGrade([mk(0.5, { goldChange: 10 }), mk(0.5, { durabilityChange: -20 })]) === 'gamble',
+    '期望伤害 5 分（尾部 10 分未越线）→ 搏')
+  assert(riskGrade([mk(0.7, { goldChange: 10 }), mk(0.3, { crewChange: -1 })]) === 'risky',
+    '掉人概率 30% → 险（人命不能被均值掩盖）')
+  assert(riskGrade([mk(0.5, { goldChange: 10 }), mk(0.5, { durabilityChange: -60 })]) === 'risky',
+    '尾部伤害过重 → 险')
+
+  // 摘要对象的类型与字段约定
+  const shipF = { id: 1, name: 's', type: 'caravel' as const, speed: 6, durability: 60, maxDurability: 100, capacity: 50, usedCapacity: 0, crew: 30, maxCrew: 40 }
+  const fleetF: Fleet = { id: 1, name: 't', gold: 500, fame: 20, morale: 70, food: 100, water: 100, currentPortId: null, isSailing: true, day: 1, ships: [shipF], cargo: [], flagshipId: 1, trait: null, durabilityCarry: 0 }
+  const s: ChoiceSummary = summarizeChoice(
+    { text: 'x', outcomes: [mk(1, { goldChange: 10 }).outcome] },
+    { stanceMagnitudeMul: 1, trait: null, hasQuartermaster: false },
+    fleetF, GAME_BALANCE.MORALE_MAX)
+  assert(s.plain === false && s.risk === 'steady' && s.chips.length === 1 && s.chips[0].key === 'gold' && s.chips[0].ev === 10,
+    '只赚 10 金的选项：评稳、恰好一枚金币芯片（不是"影响甚微"）')
+  const sTiny: ChoiceSummary = summarizeChoice(
+    { text: 'x', outcomes: [mk(1, { goldChange: 1 }).outcome] },
+    { stanceMagnitudeMul: 1, trait: null, hasQuartermaster: false },
+    fleetF, GAME_BALANCE.MORALE_MAX)
+  assert(sTiny.plain === true && sTiny.chips.length === 0,
+    `赚 1 金低于显示阈值 ${CHIP_MIN_EV} → 判为影响甚微`)
+}
+
+console.log('== 49. 弃牌与航速的环境因子 ==')
+{
+  // 弃牌：赌本归零、牌面已亮；已弃过的回合再弃是空操作
+  const g = createGambleState(() => 0.5)
+  const g2 = skipGambleRound(g)
+  assert(g2.side === null && g2.revealed === true && g2.player === 0 && g2.dealer === 0,
+    '弃牌后赌本归零、牌面已亮')
+  const g3 = skipGambleRound(g2)
+  assert(g3.side === null && g3.revealed === true, '已弃过的回合再弃不会翻出新牌')
+
+  // 顺风更快、逆风更慢：风必须真的作用在航速上
+  const shipG = { id: 1, name: 's', type: 'caravel' as const, speed: 6, durability: 60, maxDurability: 100, capacity: 50, usedCapacity: 0, crew: 30, maxCrew: 40 }
+  const fleetG: Fleet = { id: 1, name: 't', gold: 500, fame: 20, morale: 70, food: 100, water: 100, currentPortId: null, isSailing: true, day: 1, ships: [shipG], cargo: [], flagshipId: 1, trait: null, durabilityCarry: 0 }
+  const withWind = dailyDistanceNm(fleetG, [], 1.2)
+  const calm = dailyDistanceNm(fleetG, [], 1)
+  const against = dailyDistanceNm(fleetG, [], 0.8)
+  assert(calm > 0, '船必须能走（航速为 0 会让所有航程卡死）')
+  assert(withWind > calm && calm > against, `风影响航速（顺 ${withWind.toFixed(1)} > 平 ${calm.toFixed(1)} > 逆 ${against.toFixed(1)}）`)
+
+  // 天候：格子划分与持续天数
+  const [cx, cy] = weatherCell(0, 0)
+  assert(cx === 4 && cy === 9, `海域格按 20° 划分（0,0 → ${cx},${cy}）`)
+  const dur = weatherDuration(0, cx, cy)
+  assert(dur >= 1 && dur <= 3, `天候持续 1-3 天（实际 ${dur}）`)
+  assert(weatherDuration(0, cx, cy) === dur, '同格同日的天候时长确定（不会刷新就变天）')
+}
+
+console.log('== 50. 特质与成就的完整性 ==')
+{
+  assert(traits.length === 5, `船长特质 5 选 1（实际 ${traits.length}）`)
+  for (const t of traits) {
+    assert(!!t.id && !!t.name && !!t.effect && !!t.icon, `特质 ${t.id} 字段齐全`)
+  }
+  assert(achievements.length > 0, `成就清单非空（${achievements.length} 条）`)
+  for (const a of achievements) {
+    assert(!!a.id && !!a.title && !!a.description && !!a.icon && typeof a.check === 'function',
+      `成就 ${a.id} 字段齐全（含判定函数）`)
+  }
 }
 
 console.log(`\n最终结果：${passed} 通过 / ${failed} 失败`)

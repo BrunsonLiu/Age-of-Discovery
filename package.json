@@ -8,7 +8,9 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "check": "tsc -b --noEmit"
+    "check": "tsc -b --noEmit",
+    "test": "esbuild test/logic.test.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/logic.test.mjs --log-level=warning && node node_modules/.cache/logic.test.mjs",
+    "test:e2e": "node test/e2e/voyage-smoke.mjs"
   },
   "dependencies": {
     "clsx": "^2.1.1",
@@ -33,11 +35,13 @@
     "@vitejs/plugin-react": "^4.4.1",
     "autoprefixer": "^10.4.21",
     "babel-plugin-react-dev-locator": "^1.0.0",
+    "esbuild": "^0.28.2",
     "eslint": "^9.25.0",
     "eslint-plugin-react-hooks": "^5.2.0",
     "eslint-plugin-react-refresh": "^0.4.19",
     "globals": "^16.0.0",
     "postcss": "^8.5.3",
+    "puppeteer-core": "^25.16.0",
     "tailwindcss": "^3.4.17",
     "typescript": "~5.8.3",
     "typescript-eslint": "^8.30.1",
