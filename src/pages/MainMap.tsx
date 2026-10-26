@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { Ship, Anchor, Scroll, Flag, Package, HelpCircle, Trophy, Newspaper } from 'lucide-react'
+import { Ship, Anchor, Scroll, Flag, Package, HelpCircle, Trophy, Newspaper, Hammer } from 'lucide-react'
 import { useGameStore } from '@/store/useGameStore'
 import { useMapStore } from '@/store/useMapStore'
 import MapView from '@/components/map/MapView'
@@ -22,6 +22,7 @@ import WeatherBadge from '@/components/ui/WeatherBadge'
 import TimelineBar from '@/components/ui/TimelineBar'
 import NotificationToast from '@/components/ui/NotificationToast'
 import FxLayer from '@/components/ui/FxLayer'
+import BgmController from '@/components/ui/BgmController'
 import IntroScreen from '@/components/intro/IntroScreen'
 import { TUTORIAL_STEP_COUNT } from '@/constants/tutorial'
 import TutorialOverlay from '@/components/intro/TutorialOverlay'
@@ -52,6 +53,9 @@ const panelButtons: { type: PanelType; icon: React.ReactNode; label: string; sid
   { type: 'rival', icon: <Newspaper size={18} />, label: '见闻', side: 'left' },
   { type: 'port', icon: <Anchor size={18} />, label: '港口', side: 'right' },
   { type: 'trade', icon: <Package size={18} />, label: '贸易', side: 'right' },
+  // 造船厂原来只能按键盘 8 打开，没有任何可见入口——功能存在但玩家发现不了。
+  // 既然侧栏现在都带中文标签了，把它一并放进来。
+  { type: 'shipyard', icon: <Hammer size={18} />, label: '造船', side: 'right' },
 ]
 
 const Z = {
@@ -157,8 +161,19 @@ export default function MainMap() {
         <WindParticles windBearing={windBearing} windSpeed={windSpeed} />
       </div>
 
+      {/*
+        侧栏按钮：图标 + 常驻可见的中文标签。
+
+        【为什么必须有文字】
+        原来只有 lucide 图标，中文名藏在 title 里——那是"鼠标悬停才出现"的
+        提示。玩家第一眼看到的是一列无名的符号，得一个个悬停试过去才知道
+        哪个是港口、哪个是贸易。而触屏/手写板根本没有 hover。
+
+        标签横向排（图标在左、文字在右，左侧栏反之），整列看起来像船上的
+        仪表盘开关条，而不是一排猜谜图标。文字用 font-serif 与全局基调一致。
+      */}
       <div
-        className="absolute left-0 flex flex-col justify-center gap-2 px-1.5"
+        className="absolute left-0 flex flex-col justify-center gap-1.5 px-1.5"
         style={{ zIndex: Z.SIDE_BUTTONS, top: '60px', bottom: '52px' }}
       >
         {panelButtons.filter(b => b.side === 'left').map(btn => (
@@ -166,22 +181,23 @@ export default function MainMap() {
             key={btn.type}
             onClick={() => togglePanel(btn.type)}
             data-tut={btn.type}
-            className={`p-2.5 rounded-lg transition-all duration-200 ${
+            className={`flex items-center gap-2 pl-2.5 pr-3 py-2 rounded-lg transition-all duration-200 ${
               activePanel === btn.type
-                ? 'bg-gold-700/50 text-gold-200 shadow-lg shadow-gold-900/30'
-                : 'bg-ocean-900/80 text-gold-500 hover:text-gold-300 hover:bg-ocean-800/80'
-            } backdrop-blur-sm border border-gold-700/20`}
+                ? 'bg-gold-700/60 text-gold-100 shadow-lg shadow-gold-900/30 border-gold-500/50'
+                : 'bg-ocean-900/85 text-gold-400 hover:text-gold-200 hover:bg-ocean-800/90'
+            } backdrop-blur-sm border border-gold-700/25`}
             title={btn.label}
             aria-label={btn.label}
             aria-pressed={activePanel === btn.type}
           >
-            {btn.icon}
+            <span className="shrink-0 flex items-center justify-center w-4">{btn.icon}</span>
+            <span className="font-serif text-xs whitespace-nowrap leading-none">{btn.label}</span>
           </button>
         ))}
       </div>
 
       <div
-        className="absolute right-0 flex flex-col justify-center gap-2 px-1.5"
+        className="absolute right-0 flex flex-col justify-center gap-1.5 px-1.5"
         style={{ zIndex: Z.SIDE_BUTTONS, top: '60px', bottom: '52px' }}
       >
         {panelButtons.filter(b => b.side === 'right').map(btn => (
@@ -189,16 +205,17 @@ export default function MainMap() {
             key={btn.type}
             onClick={() => togglePanel(btn.type)}
             data-tut={btn.type}
-            className={`p-2.5 rounded-lg transition-all duration-200 ${
+            className={`flex items-center gap-2 pl-3 pr-2.5 py-2 rounded-lg transition-all duration-200 ${
               activePanel === btn.type
-                ? 'bg-gold-700/50 text-gold-200 shadow-lg shadow-gold-900/30'
-                : 'bg-ocean-900/80 text-gold-500 hover:text-gold-300 hover:bg-ocean-800/80'
-            } backdrop-blur-sm border border-gold-700/20`}
+                ? 'bg-gold-700/60 text-gold-100 shadow-lg shadow-gold-900/30 border-gold-500/50'
+                : 'bg-ocean-900/85 text-gold-400 hover:text-gold-200 hover:bg-ocean-800/90'
+            } backdrop-blur-sm border border-gold-700/25`}
             title={btn.label}
             aria-label={btn.label}
             aria-pressed={activePanel === btn.type}
           >
-            {btn.icon}
+            <span className="font-serif text-xs whitespace-nowrap leading-none">{btn.label}</span>
+            <span className="shrink-0 flex items-center justify-center w-4">{btn.icon}</span>
           </button>
         ))}
         <button
@@ -206,22 +223,23 @@ export default function MainMap() {
             if (activePanel) setActivePanel(null)
             setShowHelp(!showHelp)
           }}
-          className={`p-2.5 rounded-lg transition-all duration-200 ${
+          className={`flex items-center gap-2 pl-3 pr-2.5 py-2 rounded-lg transition-all duration-200 ${
             showHelp
-              ? 'bg-gold-700/50 text-gold-200 shadow-lg shadow-gold-900/30'
-              : 'bg-ocean-900/80 text-gold-500 hover:text-gold-300 hover:bg-ocean-800/80'
-          } backdrop-blur-sm border border-gold-700/20`}
+              ? 'bg-gold-700/60 text-gold-100 shadow-lg shadow-gold-900/30 border-gold-500/50'
+              : 'bg-ocean-900/85 text-gold-400 hover:text-gold-200 hover:bg-ocean-800/90'
+          } backdrop-blur-sm border border-gold-700/25`}
           title="帮助"
           aria-label="帮助"
           aria-pressed={showHelp}
         >
-          <HelpCircle size={18} />
+          <span className="font-serif text-xs whitespace-nowrap leading-none">帮助</span>
+          <span className="shrink-0 flex items-center justify-center w-4"><HelpCircle size={18} /></span>
         </button>
       </div>
 
       {activeLeftPanel && (
         <div
-          className="absolute left-10 top-12 bottom-12 w-80"
+          className="absolute left-[5.75rem] top-12 bottom-12 w-80"
           style={{ zIndex: Z.PANEL }}
         >
           {activeLeftPanel === 'fleet' && <FleetPanel />}
@@ -234,7 +252,7 @@ export default function MainMap() {
 
       {activeRightPanel && (
         <div
-          className="absolute right-10 top-12 bottom-12 w-80"
+          className="absolute right-[5.75rem] top-12 bottom-12 w-80"
           style={{ zIndex: Z.PANEL }}
         >
           {activeRightPanel === 'port' && <PortDetail />}
@@ -245,7 +263,7 @@ export default function MainMap() {
 
       {showHelp && (
         <div
-          className="absolute right-10 top-12 bottom-12 w-80"
+          className="absolute right-[5.75rem] top-12 bottom-12 w-80"
           style={{ zIndex: Z.PANEL }}
         >
           <HelpPanel />
@@ -266,6 +284,9 @@ export default function MainMap() {
 
       {/* 兑现层：音效 + 飘字 + 闪光 + 横幅 */}
       <FxLayer />
+
+      {/* 配乐控制器：情绪跟随游戏状态 */}
+      <BgmController />
 
       {/* 出航计划：点击地图后先评估、（可选）买情报，再升起旗帜 */}
       <VoyagePlanModal />

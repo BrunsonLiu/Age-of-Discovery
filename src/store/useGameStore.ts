@@ -24,6 +24,7 @@ import { OFFICER_MAP } from '@/data/officers'
 import { CREW_CHAR_MAP } from '@/data/crewChars'
 import { currentTitle } from '@/data/titles'
 import { useFxStore } from '@/store/useFxStore'
+import type { CueName } from '@/utils/audio'
 import { helmReward, type HelmRunResult } from '@/utils/helm'
 import {
   WEATHER_INFO, advanceWeather, createInitialWeather, isNotableWeather,
@@ -35,6 +36,26 @@ const createStartingShip = (): Ship => ({
   ...shipTemplates.caravel,
   name: '圣玛利亚号',
 })
+
+/**
+ * 事件场景 → 开场音效。
+ * 声音必须与画面同源：玩家看到暗礁就该听到浪，看到风暴就该听到雷。
+ */
+const EVENT_SCENE_CUE: Record<string, CueName> = {
+  storm: 'thunder',
+  cape: 'thunder',
+  pirate: 'cannon',
+  navy: 'cannon',
+  mutiny: 'creak',
+  disease: 'creak',
+  reef: 'wave',
+  wave: 'wave',
+  meteor: 'bell',
+  doldrums: 'creak',
+  ghostship: 'bell',
+  kraken: 'wave',
+  siren: 'bell',
+}
 
 const createStartingFleet = (): Fleet => ({
   id: 1,
@@ -765,7 +786,12 @@ export const useGameStore = create<GameStore>()(
       },
 
       setGamePhase: (phase) => set({ gamePhase: phase }),
-      setCurrentEvent: (event) => set({ currentEvent: event, gamePhase: 'event' }),
+      setCurrentEvent: (event) => {
+        // 事件开场：按事件场景选择环境音效（炮击/雷声等），让画面与声音同源
+        const cue = EVENT_SCENE_CUE[event.sceneKey ?? '']
+        if (cue) useFxStore.getState().cue(cue)
+        set({ currentEvent: event, gamePhase: 'event' })
+      },
       clearCurrentEvent: () => set({ currentEvent: null, gamePhase: 'playing' }),
 
       selectRoute: (route) => set((state) => {
@@ -859,6 +885,12 @@ export const useGameStore = create<GameStore>()(
                 message: weatherChangeMessage(newWeather),
                 timestamp: Date.now(),
               }]
+              // 声音跟着天况走：暴风雨配雷，浓雾配浪，其余配木船吱呀
+              const weatherCue: CueName =
+                newWeather.kind === 'storm' ? 'thunder'
+                : newWeather.kind === 'fog' ? 'wave'
+                : 'creak'
+              useFxStore.getState().cue(weatherCue)
             }
           }
         }
@@ -1052,20 +1084,24 @@ export const useGameStore = create<GameStore>()(
         }))
       },
 
-      arriveAtPort: (portId) => set((state) => {
-        const port = ports.find(p => p.id === portId)
-        return {
-          fleet: { ...state.fleet, currentPortId: portId, isSailing: false },
-          currentRoute: null,
-          routeProgress: 0,
-          routeOrigin: null,
-          waypoint: null,
-          // 到港即放弃任何未确认的出航计划
-          pendingVoyage: null,
-          shipPosition: port ? [port.latitude, port.longitude] : state.shipPosition,
-          discoveredPorts: state.discoveredPorts.includes(portId) ? state.discoveredPorts : [...state.discoveredPorts, portId],
-        }
-      }),
+      arriveAtPort: (portId) => {
+        // 抛锚：铁链哗啦 + 闷撞，与"靠岸"这一动作对应
+        useFxStore.getState().cue('anchor')
+        set((state) => {
+          const port = ports.find(p => p.id === portId)
+          return {
+            fleet: { ...state.fleet, currentPortId: portId, isSailing: false },
+            currentRoute: null,
+            routeProgress: 0,
+            routeOrigin: null,
+            waypoint: null,
+            // 到港即放弃任何未确认的出航计划
+            pendingVoyage: null,
+            shipPosition: port ? [port.latitude, port.longitude] : state.shipPosition,
+            discoveredPorts: state.discoveredPorts.includes(portId) ? state.discoveredPorts : [...state.discoveredPorts, portId],
+          }
+        })
+      },
 
       buyGood: (portId, goodId, quantity) => set((state) => {
         if (state.fleet.currentPortId !== portId || state.fleet.isSailing) return state

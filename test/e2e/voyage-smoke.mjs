@@ -83,7 +83,7 @@ check(!!traitPicked, `选择了一张天赋卡（${traitPicked}）`)
 await sleep(400)
 await clickIn('扬帆起航', '扬帆起航')
 await sleep(700)
-await clickIn('航海指南', '启航')
+await clickIn('开船前的最后一眼', '启航')
 await sleep(1500)
 let st = await page.evaluate(() => {
   const s = window.__gameStore.getState()

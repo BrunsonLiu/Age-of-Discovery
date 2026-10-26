@@ -1,7 +1,7 @@
 import type { ReactElement } from 'react'
 import { useState } from 'react'
 import { DefaultScene } from './sceneKit'
-import { sceneImage } from '@/data/sceneImages'
+import { sceneImage, shouldUseSceneImage } from '@/data/sceneImages'
 import {
   StormScene, FairwindScene, DoldrumsScene, CapeScene, FogScene, MeteorScene,
   IslandScene, WhaleScene, DolphinScene, SchoolScene, VolcanoScene, SirenScene, KrakenScene,
@@ -61,18 +61,33 @@ export default function EventScene({ sceneKey, className = '' }: EventSceneProps
   // 有 GPT 真实插图的场景优先用插图（风暴/海盗/海怪/幽灵船 + 火山/浓雾/庆典/藏宝/塞壬/走私），
   // 其余仍走手绘 SVG；插图加载失败时回退 SVG，两条路都不空。
   const imgSrc = sceneImage(sceneKey)
-  const [imgFailed, setImgFailed] = useState(false)
+  /**
+   * 记录「加载失败的是哪个 URL」，而不是场景键，也不是一个全局布尔值。
+   *
+   * 失败是 URL 的属性，不是场景的属性——同一个地址 404，换个场景来用也一样拿不到。
+   * 所以按 URL 记最贴合实际：
+   *   · 不会跨场景污染：别的场景用的是别的 URL，不受影响；
+   *   · 素材补齐后能自动恢复：路径一变（开发时补图、或 CDN 换资源），
+   *     新 URL 不在失败名单里，真图重新生效，不必刷新整页。
+   * 早期版本用的是全局布尔值 imgFailed，一旦某个场景加载失败就会置 true，
+   * 之后**所有**场景都被误判为失败而退化成手绘 SVG（风暴/海盗/海怪这些
+   * 本来有真图的场景也一起受害）。
+   */
+  const [failedSrc, setFailedSrc] = useState<string | null>(null)
   const Scene = (sceneKey && SCENE_REGISTRY[sceneKey]) || DefaultScene
-  const useImage = !!imgSrc && !imgFailed
+  const useImage = shouldUseSceneImage(failedSrc, imgSrc)
   return (
     <div className={`relative overflow-hidden ${className}`} style={{ aspectRatio: '400 / 140' }}>
       {useImage ? (
         <img
+          // key 让场景切换时重建 <img> 节点：否则 React 复用同一节点，
+          // 换 src 不会重新解码（且旧图的失败状态会跟着节点走）
+          key={`${sceneKey ?? 'none'}-${imgSrc}`}
           src={imgSrc}
           alt=""
           aria-hidden="true"
           className="w-full h-full block object-cover"
-          onError={() => setImgFailed(true)}
+          onError={() => setFailedSrc(imgSrc)}
         />
       ) : (
         <svg

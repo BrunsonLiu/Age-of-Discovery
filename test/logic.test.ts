@@ -34,7 +34,7 @@ import {
 import { useGameStore } from '../src/store/useGameStore'
 import { SHIP_SPRITES, SPECIAL_SPRITES, shipSprite } from '../src/data/shipSprites'
 import { crewPortrait, officerPortrait, rivalPortrait } from '../src/data/portraits'
-import { sceneImage } from '../src/data/sceneImages'
+import { sceneImage, shouldUseSceneImage } from '../src/data/sceneImages'
 import { UI_ASSETS } from '../src/data/uiAssets'
 import { getStatusColor } from '../src/utils/resourceColor'
 import { FX_ASSETS, BG_ASSETS } from '../src/data/envAssets'
@@ -879,8 +879,32 @@ console.log('== 27. 肖像与事件场景资产 ==')
   for (const key of ['chart', 'navy', 'island', 'tavern']) {
     assert(!!sceneImage(key), `场景 ${key} 有真实插图（第二批 P1）`)
   }
-  assert(sceneImage('fairwind') === undefined, '未生成的场景（顺风）回退手绘 SVG')
-  assert(sceneImage('mutiny') === undefined, '未生成的场景（哗变）回退手绘 SVG')
+  // 第三批 P1：最后 11 个场景（顺风/海豚/渔获/商队/鲸群/流星/坏血病/暗礁/无风带/好望角/叛乱）
+  // 映射已提前写好，素材交付后零改动生效。
+  // 素材尚未交付时 <img> 加载失败 → onError → 回退手绘 SVG，不会白屏；
+  // 该回退行为由 test/e2e/scene-img-failed-reset.mjs 与 scene-missing-prod.mjs 守住。
+  const THIRD_BATCH = ['fairwind', 'dolphin', 'school', 'market', 'whale', 'meteor', 'disease', 'reef', 'doldrums', 'cape', 'mutiny']
+  for (const key of THIRD_BATCH) {
+    assert(!!sceneImage(key), `场景 ${key} 映射已就位（第三批 P1，素材交付后自动生效）`)
+  }
+  // 插图失败状态机：失败是「URL 的属性」，不是「场景的属性」。
+  // 早期版本用全局布尔值，一张图失败会让所有场景（含本该有真图的）
+  // 一起退化成手绘 SVG。这几条断言把「不跨场景污染」钉死。
+  {
+    const storm = sceneImage('storm')!
+    const chart = sceneImage('chart')!
+    assert(storm !== chart, 'storm 与 chart 指向不同素材地址')
+    assert(shouldUseSceneImage(null, storm), '尚未失败过时显示真图')
+    assert(!shouldUseSceneImage(storm, storm), '失败的地址回退手绘 SVG')
+    assert(shouldUseSceneImage(storm, chart), '一次失败不污染别的场景（chart 仍显示真图）')
+    assert(shouldUseSceneImage(storm, storm) === false, '失败地址不会因为别的场景成功而复活')
+    // 素材补齐后地址改变 → 新地址不在失败名单里 → 真图自动恢复，无需刷新页面
+    const patched = storm.replace(/d01\.png$/, 'd01-v2.png')
+    assert(patched !== storm, '构造一个「补齐后的新地址」')
+    assert(shouldUseSceneImage(storm, patched), '素材补齐（地址变化）后真图自动恢复')
+    assert(!shouldUseSceneImage(null, undefined), '无素材的场景直接走手绘 SVG')
+    assert(!shouldUseSceneImage('x', undefined), '无素材的场景不受失败状态影响')
+  }
   // D1-D14：全部为 1200×675 高清事件图（D1-D4 来自事件大图包；D5-D10 为主包升级版，取代旧图鉴切片；
   //          D11-D14 为第二批 P1 补充的四个高频场景）
   for (let i = 1; i <= 14; i++) {
@@ -909,13 +933,19 @@ console.log('== 27. 肖像与事件场景资产 ==')
 console.log('== 29. 环境资产：海面/港口/天气层/结局背景 ==')
 {
   const pubDir = process.cwd()
-  // B 组海面：两季无缝 tile（ocean_waves 晴 / ocean_deep 暴风），1024² 不透明
+  // B 组海面：两季无缝 tile（ocean_waves 晴 / ocean_deep 暴风），512² 不透明
+  //
+  // 尺寸说明：这里断言 512×512 而不是 1024×1024，是有意为之。
+  // MapView 以 `backgroundSize: '512px 512px'` 渲染海面，512² 素材与显示尺寸
+  // 正好 1:1 像素映射——不放大、不模糊、无重采样损失。
+  // 若换成 1024² 素材而仍按 512px 显示，反而是把高分辨率图缩到一半，白白浪费。
+  // 平铺无缝性另由 scripts/gen_sea_texture.py 的溢出裁剪保证（实测边缘亮度差 < 5/255）。
   for (const [file, label] of [['sea-tile.png', '常规海面'], ['sea-tile-storm.png', '暴风海面']] as const) {
     const p = join(pubDir, 'public', 'assets', 'sea', file)
     assert(existsSync(p), `海面 ${file} 存在（${label}）`)
     const buf = readFileSync(p)
     const w = buf.readUInt32BE(16); const h = buf.readUInt32BE(20)
-    assert(w === 1024 && h === 1024, `海面 ${file} 为 1024×1024（实际 ${w}×${h}）`)
+    assert(w === 512 && h === 512, `海面 ${file} 为 512×512（实际 ${w}×${h}）`)
     assert(buf[24] === 8 && buf[25] === 2, `海面 ${file} 为 8bit RGB`)
   }
   // C 组港口：五张 1600×900 场景图

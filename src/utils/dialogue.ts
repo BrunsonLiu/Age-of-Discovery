@@ -10,6 +10,8 @@
  */
 import { officerPortrait } from '@/data/portraits'
 
+const BASE = (import.meta as unknown as { env?: { BASE_URL?: string } }).env?.BASE_URL || '/'
+
 export interface Speaker {
   id: string
   /** 名牌上的名字 */
@@ -35,7 +37,17 @@ export const SPEAKERS: Record<string, Speaker> = {
 export interface DialogueScript {
   id: string
   speakerId: string
+  /**
+   * 逐句的立绘覆盖（可选）。
+   *
+   * 台词的情绪是变的：宽慰 → 严肃 → 期许，用同一张脸说三句话，
+   * 感染力就丢了一半。老领航员的三张表情差分（calm/serious/hope）
+   * 早就画好了，只是从没接进来——这个字段就是给它们用的。
+   * 未指定的句子沿用 speaker.portrait。
+   */
   lines: string[]
+  /** 与 lines 等长：每句用哪张立绘（下标对应）。空缺表示用默认立绘 */
+  portraits?: (string | undefined)[]
 }
 
 export const DIALOGUE_SCRIPTS: DialogueScript[] = [
@@ -46,6 +58,13 @@ export const DIALOGUE_SCRIPTS: DialogueScript[] = [
       '风向西南，潮信未起——今天是出海的好日子，船长。',
       '记住：罗盘指向野心，而帆指向风。这两样，从来不是一回事。',
       '去吧。等你的故事传回这条海岸，我会第一个登上灯塔望你。',
+    ],
+    // 三句对应三种表情：宽慰 → 严肃 → 期许。
+    // 立绘差分素材（第二批 P3）在 assets/portraits/ 下，早已存在但一直没用上。
+    portraits: [
+      `${BASE}assets/portraits/officer_pilot_calm.png`,
+      `${BASE}assets/portraits/officer_pilot_serious.png`,
+      `${BASE}assets/portraits/officer_pilot_hope.png`,
     ],
   },
 ]

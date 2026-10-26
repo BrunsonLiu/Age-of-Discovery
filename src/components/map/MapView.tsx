@@ -83,10 +83,17 @@ function MapController() {
   return null
 }
 
-const landStyle = { fillColor: '#d4b884', fillOpacity: 0.55, color: '#7a5a30', weight: 0.8, opacity: 0.75 }
-const coastlineStyle = { fillColor: 'transparent', fillOpacity: 0, color: '#3d2810', weight: 1.4, opacity: 0.85 }
-const bordersStyle = { fillColor: 'transparent', fillOpacity: 0, color: '#6b4a2a', weight: 0.6, opacity: 0.35, dashArray: '3 2' }
-const oceanStyle = { fillColor: '#7d9a82', fillOpacity: 0.18, color: '#5a7a5a', weight: 0.5, opacity: 0.3 }
+/**
+ * 海陆配色：靠"冷色海面 vs 暖色陆地"承担，玩家一眼就能分辨能不能开船。
+ *
+ * 【为什么陆地要近乎不透明】
+ * 底图是手绘海浪（sea-tile.png），深蓝绿。如果陆地还半透明，
+ * 羊皮纸色压在海浪上会变成浑浊的中间色——海陆又糊成一片。
+ * 所以陆地是接近不透明的羊皮纸，海岸线再压一道深褐描边定边界。
+ */
+const landStyle = { fillColor: '#e7d5ab', fillOpacity: 0.94, color: '#8a6a38', weight: 0.6, opacity: 0.55 }
+const coastlineStyle = { fillColor: 'transparent', fillOpacity: 0, color: '#3d2810', weight: 1.3, opacity: 0.9 }
+const bordersStyle = { fillColor: 'transparent', fillOpacity: 0, color: '#7a5a30', weight: 0.6, opacity: 0.4, dashArray: '3 2' }
 
 export default function MapView() {
   const mapCenter = useMapStore(s => s.center)
@@ -99,8 +106,7 @@ export default function MapView() {
     land: GeoJSON.GeoJsonObject | null
     coastline: GeoJSON.GeoJsonObject | null
     borders: GeoJSON.GeoJsonObject | null
-    ocean: GeoJSON.GeoJsonObject | null
-  }>({ land: null, coastline: null, borders: null, ocean: null })
+  }>({ land: null, coastline: null, borders: null })
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState(false)
 
@@ -108,19 +114,22 @@ export default function MapView() {
     setLoading(true)
     try {
       const base = import.meta.env.BASE_URL
+      // 注意：这里不再加载 ocean.geojson。
+      // 那份文件在仓库里就是截断的（354112B，JSON 解析直接失败），
+      // 而它原本只给海洋区叠一层 18% 的绿色微调——海面的表达已由
+      // 手绘海浪纹理（sea-tile.png）承担，这层微调只会把海洗浑。
+      // 一个永远加载失败的图层，除了白占 350KB 带宽没有任何价值。
       const results = await Promise.allSettled([
         fetch(`${base}data/land.geojson`).then(r => r.ok ? r.json() : Promise.reject('land load fail')),
         fetch(`${base}data/coastline.geojson`).then(r => r.ok ? r.json() : Promise.reject('coastline load fail')),
         fetch(`${base}data/borders.geojson`).then(r => r.ok ? r.json() : Promise.reject('borders load fail')),
-        fetch(`${base}data/ocean.geojson`).then(r => r.ok ? r.json() : Promise.reject('ocean load fail')),
       ])
 
-      const [land, coastline, borders, ocean] = results
+      const [land, coastline, borders] = results
       setGeoData({
         land: land.status === 'fulfilled' ? land.value : null,
         coastline: coastline.status === 'fulfilled' ? coastline.value : null,
         borders: borders.status === 'fulfilled' ? borders.value : null,
-        ocean: ocean.status === 'fulfilled' ? ocean.value : null,
       })
 
       if (land.status === 'rejected' && coastline.status === 'rejected') {
@@ -156,26 +165,38 @@ export default function MapView() {
       )}
 
       <MapErrorBoundary>
+        {/*
+          海面单独成层，不放在 MapContainer 的 background 上。
+          理由：滤镜要分开给。
+          - 海面：手绘海浪原图偏"现代油画"的高饱和蓝，压成古海图的青灰
+          - 陆地：羊皮纸填充，本就该是暖色，不能被同一层滤镜染冷
+          以前两者共用一个容器背景 + 容器级 sepia，结果海浪被洗成土黄、
+          陆地被染灰，海陆糊成一片。现在海是冷、海岸线是深褐、陆地是暖黄，
+          玩家的第一判断是"哪里能开船"。
+        */}
+        <div
+          className="absolute inset-0 pointer-events-none"
+          style={{
+            backgroundColor: '#3d5a5e',
+            backgroundImage: `url(${seaBg})`,
+            backgroundRepeat: 'repeat',
+            backgroundSize: '512px 512px',
+          }}
+          aria-hidden="true"
+        />
         <MapContainer
           center={mapCenter}
           zoom={mapZoom}
           style={{
             width: '100%',
             height: '100%',
-            // 程序化海面纹理（无缝平铺），暴风雨版自动切换
-            backgroundColor: '#0a1219',
-            backgroundImage: `url(${seaBg})`,
-            backgroundRepeat: 'repeat',
+            backgroundColor: 'transparent',
           }}
           zoomControl={true}
           minZoom={2}
           maxZoom={10}
           attributionControl={false}
         >
-          {geoData.ocean && (
-            <GeoJSON key="ocean" data={geoData.ocean} style={oceanStyle} interactive={false} />
-          )}
-
           {geoData.land && (
             <GeoJSON key="land" data={geoData.land} style={landStyle} interactive={false} />
           )}

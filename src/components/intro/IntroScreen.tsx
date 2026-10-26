@@ -101,24 +101,32 @@ export default function IntroScreen() {
     {
       content: (
         <>
-          <h2 className="pirate-title text-3xl text-gold-300 mb-6">航海指南</h2>
-          <div className="space-y-3 font-serif text-gold-200 text-sm leading-relaxed max-w-md">
-            <div className="flex items-start gap-3">
-              <span className="text-gold-400 mt-0.5">◀</span>
-              <p><span className="text-gold-300">左侧栏</span>：舰队状态、航线选择、任务、日志与成就</p>
+          <h2 className="pirate-title text-3xl text-gold-300 mb-4">开船前的最后一眼</h2>
+          <div className="space-y-3 font-serif text-gold-200 text-sm leading-relaxed max-w-md text-left">
+            <div className="bg-ocean-800/40 border border-gold-700/25 rounded-lg p-3 space-y-1.5">
+              <div className="flex justify-between">
+                <span className="text-gold-500">座船</span>
+                <span className="text-gold-200">「圣玛利亚号」· 塞维利亚港</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gold-500">天赋</span>
+                <span className="text-gold-200">
+                  {traits.find(t => t.id === selectedTrait)?.name ?? '商界血脉'}
+                  <span className="text-gold-600 text-xs ml-1.5">
+                    {traits.find(t => t.id === selectedTrait)?.effect}
+                  </span>
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gold-500">你的目标</span>
+                <span className="text-gold-200">发现 20 座港口 · 写满 10 段冒险</span>
+              </div>
             </div>
-            <div className="flex items-start gap-3">
-              <span className="text-gold-400 mt-0.5">▶</span>
-              <p><span className="text-gold-300">右侧栏</span>：港口详情、贸易面板、造船厂</p>
-            </div>
-            <div className="flex items-start gap-3">
-              <span className="text-gold-400 mt-0.5">▼</span>
-              <p><span className="text-gold-300">底部栏</span>：时间推进、资源一览、地图图层</p>
-            </div>
-            <div className="flex items-start gap-3">
-              <span className="text-gold-400 mt-0.5">●</span>
-              <p><span className="text-gold-300">地图</span>：点击地图上任何位置设定航向，自由探索世界</p>
-            </div>
+            <p>点击海图上的任何一点，就能规划第一条航线——先看距离、危险与补给，再升起旗帜。</p>
+            <p className="text-gold-500 text-xs">
+              航行中每段航程开始都要选一次方针、并亲手掌舵 15 秒；这是全游戏最要紧的两件事。
+              完整规则随时按 <span className="text-gold-300">?</span> 或点右侧「帮助」查看。
+            </p>
           </div>
         </>
       ),

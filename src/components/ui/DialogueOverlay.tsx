@@ -31,6 +31,15 @@ export default function DialogueOverlay() {
   const speaker = script ? getSpeaker(script) : undefined
   const line = script && lineIndex < script.lines.length ? script.lines[lineIndex] : ''
 
+  /**
+   * 本句的立绘：剧本可逐句覆盖（情绪差分），未覆盖则用角色默认立绘。
+   *
+   * 关键：换立绘时必须重挂 key，否则 React 会复用同一个 img 节点，
+   * 浏览器换了 src 也不会重新解码、还会闪一下旧的图。
+   */
+  const portrait = (script?.portraits?.[lineIndex]) ?? speaker?.portrait
+  const portraitKey = `${script?.id ?? ''}-${lineIndex}`
+
   // 打字机：换句/换剧本时重新开始
   useEffect(() => {
     if (!script) {
@@ -98,14 +107,14 @@ export default function DialogueOverlay() {
       <div className="absolute inset-0 bg-black/45" />
 
       {/* 立绘：外层负责滑入，内层负责待机浮动（两层 transform 互不覆盖） */}
-      {speaker.portrait && (
+      {portrait && (
         <div
-          key={script.id}
+          key={portraitKey}
           className={`absolute bottom-0 h-[72%] ${fromLeft ? 'dlg-slide-in' : 'dlg-slide-in-right'}`}
           style={fromLeft ? { left: '5%' } : { right: '5%' }}
         >
           <img
-            src={speaker.portrait}
+            src={portrait}
             alt={speaker.name}
             className="h-full w-auto dlg-float drop-shadow-lg"
           />

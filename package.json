@@ -10,7 +10,11 @@
     "preview": "vite preview",
     "check": "tsc -b --noEmit",
     "test": "esbuild test/logic.test.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/logic.test.mjs --log-level=warning && node node_modules/.cache/logic.test.mjs",
-    "test:e2e": "node test/e2e/voyage-smoke.mjs"
+    "test:e2e": "node test/e2e/voyage-smoke.mjs",
+    "test:e2e:scenes": "node test/e2e/scene-survey.mjs && node test/e2e/scene-fallback-check.mjs && node test/e2e/scene-img-failed-reset.mjs",
+    "test:e2e:audio": "node test/e2e/audio-live.mjs",
+    "test:e2e:map": "node test/e2e/map-legibility.mjs",
+    "test:e2e:all": "npm run test:e2e && npm run test:e2e:scenes && npm run test:e2e:audio && npm run test:e2e:map"
   },
   "dependencies": {
     "clsx": "^2.1.1",

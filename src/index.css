@@ -41,23 +41,29 @@ body {
   color: var(--parchment);
 }
 
+/*
+ * 地图容器不再自带背景色。
+ *
+ * 【为什么撤掉这里的 background】
+ * 之前这里写死了一组米黄/灰绿的 linear-gradient 并带 !important，
+ * 结果把 MapView 内联挂上的 sea-tile.png（手绘海浪）整个盖掉——
+ * 海面纹理从未出现在屏幕上。而 land.geojson 的陆地填充也是米黄，
+ * 于是海和陆渲染成同一种颜色，玩家在地图上根本分不清哪里能开船。
+ *
+ * 现在背景交给 MapView 的内联 style：
+ *   海 = public/assets/sea/sea-tile.png（手绘海浪，按天候切暴风雨版）
+ *   陆 = land.geojson 的羊皮纸填充（见 MapView 的 landStyle）
+ * 海陆对比由「冷色海面 vs 暖色陆地」承担，不靠滤镜。
+ */
 .leaflet-container {
   width: 100% !important;
   height: 100% !important;
-  background:
-    radial-gradient(ellipse at 30% 20%, rgba(244, 228, 193, 0.08) 0%, transparent 50%),
-    radial-gradient(ellipse at 70% 80%, rgba(212, 184, 132, 0.06) 0%, transparent 50%),
-    linear-gradient(180deg,
-      #b8c4a8 0%,
-      #a8b8a0 25%,
-      #9eb098 50%,
-      #a8b8a0 75%,
-      #b8c4a8 100%
-    ) !important;
   cursor: crosshair !important;
   font-family: 'Crimson Text', Georgia, serif;
-  filter: sepia(0.35) saturate(0.85) hue-rotate(-8deg) contrast(1.05);
 }
+
+/* 容器级 sepia 滤镜会把手绘海浪洗成一片土黄，一并撤掉；
+   古地图的年代感改由 VintageMapOverlay 的羊皮纸/暗角承担。 */
 
 .leaflet-tile-pane {
   filter: sepia(0.45) saturate(0.7) hue-rotate(-10deg) contrast(1.1) brightness(0.95);
@@ -103,9 +109,33 @@ body {
   background: radial-gradient(ellipse at center, transparent 55%, rgba(9,15,25,0.5) 100%);
 }
 
+/*
+ * 复古装饰层必须压在 Leaflet 的矢量图层之上，但要在标记之下。
+ *
+ * Leaflet 的 pane 用 z-index 400/600（overlay-pane / marker-pane），
+ * 而 .leaflet-container 本身 z-index: auto、不构成层叠上下文，
+ * 所以这些 pane 的层级是和我们这张装饰层在同一个上下文里比较的。
+ * 装饰层原来写 z-index: 5 → 永远被压在底下：
+ * 罗盘玫瑰、海怪、图框、羊皮纸暗角从来就没出现在玩家屏幕上。
+ *
+ * 现在：装饰 700（高于矢量 600），标记 750（高于装饰）。
+ * 分层的理由是"标记要永远清晰"——羊皮纸纹用的是 mix-blend-mode: multiply，
+ * 若压在标记之上，船与港口图标会被整片压暗；船在海上时最难辨认的
+ * 恰恰就是那一点颜色。装饰是氛围，标记是信息，信息优先。
+ */
 .vintage-map-overlay {
-  z-index: 5;
+  z-index: 700;
   filter: drop-shadow(0 0 0.5px rgba(43, 30, 14, 0.3));
+}
+
+/* 标记层提到装饰之上：船、港口、航路终点是玩家每一眼都要读的东西 */
+.leaflet-marker-pane {
+  z-index: 750 !important;
+}
+
+/* 矢量图层（陆地/海岸线/国界）保持在装饰之下，装饰只做氛围 */
+.leaflet-overlay-pane {
+  z-index: 400 !important;
 }
 
 .vintage-paper {
