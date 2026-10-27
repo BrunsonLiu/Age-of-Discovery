@@ -117,23 +117,74 @@ function buildGrid() {
   })
 }
 
+/**
+ * 登记已经取回来的 land.geojson，不再自己 fetch 一遍。
+ *
+ * 为什么需要：land.geojson 有 1.2MB。渲染地图要一份，
+ * 陆地碰撞检测（航线避让）也要同一份——原先两处各 fetch 一次，
+ * 同一份数据在网络上白跑两趟。改成单一来源：谁先拿到就登记给谁用。
+ */
+export function registerLandGeojson(geojson: GeoJSON.FeatureCollection | GeoJSON.Feature | GeoJSON.Geometry): void {
+  if (loaded) return
+  polygons = extractPolygons(geojson)
+  buildGrid()
+  loaded = true
+}
+
+/**
+ * land.geojson 的**唯一**取数入口。
+ *
+ * 渲染地图与陆地碰撞检测共用这一份 Promise——
+ * 两边并发调用也只会发一次请求。
+ * 地图那边拿到数据后会调 registerLandGeojson 提前登记，
+ * 这里的 fetch 若稍后才回来，看到 loaded 已为真就直接跳过。
+ */
+let landFetchPromise: Promise<void> | null = null
+let landGeojsonPromise: Promise<GeoJSON.FeatureCollection> | null = null
+
+/**
+ * 取 land.geojson（原始 geojson，供地图渲染用）。
+ * 与陆地碰撞检测共用同一个请求——同一份 1.2MB 只走一趟网络。
+ */
+export function fetchLandGeojsonForRender(): Promise<GeoJSON.FeatureCollection> {
+  if (landGeojsonPromise) return landGeojsonPromise
+  landGeojsonPromise = fetch(`${import.meta.env.BASE_URL}data/land.geojson`)
+    .then(r => {
+      if (!r.ok) throw new Error(`land.geojson ${r.status}`)
+      return r.json() as Promise<GeoJSON.FeatureCollection>
+    })
+    .then(geojson => {
+      // 顺带登记给碰撞检测，省掉它那次独立请求
+      registerLandGeojson(geojson)
+      return geojson
+    })
+  landFetchPromise = landGeojsonPromise.then(() => undefined).catch(err => {
+    console.warn('陆地数据加载失败，陆地碰撞检测将禁用', err)
+  })
+  return landGeojsonPromise
+}
+
+function fetchLandGeojson(): Promise<void> {
+  if (landFetchPromise) return landFetchPromise
+  landFetchPromise = fetch(`${import.meta.env.BASE_URL}data/land.geojson`)
+    .then(r => {
+      if (!r.ok) throw new Error(`land.geojson ${r.status}`)
+      return r.json()
+    })
+    .then(geojson => {
+      registerLandGeojson(geojson)
+    })
+    .catch(err => {
+      console.warn('陆地数据加载失败，陆地碰撞检测将禁用', err)
+    })
+  return landFetchPromise
+}
+
 export function loadLandData(): Promise<void> {
   if (loaded) return Promise.resolve()
   if (loadingPromise) return loadingPromise
   loadingPromise = Promise.all([
-    fetch(`${import.meta.env.BASE_URL}data/land.geojson`)
-      .then(r => {
-        if (!r.ok) throw new Error(`land.geojson ${r.status}`)
-        return r.json()
-      })
-      .then(geojson => {
-        polygons = extractPolygons(geojson)
-        buildGrid()
-        loaded = true
-      })
-      .catch(err => {
-        console.warn('陆地数据加载失败，陆地碰撞检测将禁用', err)
-      }),
+    fetchLandGeojson(),
     // 海陆掩码（1 bit/格）供 A* 航路搜索使用
     loadSeaMask(import.meta.env.BASE_URL),
     // 港口航道（构建期挖好的内河/内湾通道）

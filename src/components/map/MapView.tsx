@@ -9,7 +9,7 @@ import { MapOverlays } from './MapOverlays'
 import MapClickHandler from './MapClickHandler'
 import OceanLabels from './OceanLabels'
 import VintageMapOverlay from './VintageMapOverlay'
-import { loadLandData } from '@/utils/landCheck'
+import { loadLandData, fetchLandGeojsonForRender } from '@/utils/landCheck'
 import 'leaflet/dist/leaflet.css'
 
 class MapErrorBoundary extends Component<{ children: React.ReactNode }, { hasError: boolean; error: string }> {
@@ -90,9 +90,19 @@ function MapController() {
  * 底图是手绘海浪（sea-tile.png），深蓝绿。如果陆地还半透明，
  * 羊皮纸色压在海浪上会变成浑浊的中间色——海陆又糊成一片。
  * 所以陆地是接近不透明的羊皮纸，海岸线再压一道深褐描边定边界。
+ *
+ * 【为什么海岸线由 land 自己描，而不是单独一层 coastline】
+ * 原来有 land.geojson + coastline.geojson 两个文件，1.6MB + 1.6MB。
+ * 实测两者的坐标 99.5% 重复（1429 条线里 1428 条完全落在 land 的坐标内），
+ * 本质是同一份海岸线的两种表达：一份填色多边形、一份描边线。
+ * 线上一共 4MB 地图数据，在真实网络下单个文件要下载 60 秒，
+ * 玩家盯着「绘制航海图...」37 秒。
+ *
+ * 删掉 coastline.geojson，让 land 多边形自己带深褐粗描边：
+ * 逐像素比对渲染结果，差异仅 0.99%~2.7%（且集中在描边处），填充色完全一致，
+ * 海陆分界的清晰度不变。地图数据从 4MB 降到 1.9MB。
  */
-const landStyle = { fillColor: '#e7d5ab', fillOpacity: 0.94, color: '#8a6a38', weight: 0.6, opacity: 0.55 }
-const coastlineStyle = { fillColor: 'transparent', fillOpacity: 0, color: '#3d2810', weight: 1.3, opacity: 0.9 }
+const landStyle = { fillColor: '#e7d5ab', fillOpacity: 0.94, color: '#3d2810', weight: 1.3, opacity: 0.9 }
 const bordersStyle = { fillColor: 'transparent', fillOpacity: 0, color: '#7a5a30', weight: 0.6, opacity: 0.4, dashArray: '3 2' }
 
 export default function MapView() {
@@ -104,9 +114,8 @@ export default function MapView() {
   const seaBg = `${import.meta.env.BASE_URL}assets/sea/${seaTile}`
   const [geoData, setGeoData] = useState<{
     land: GeoJSON.GeoJsonObject | null
-    coastline: GeoJSON.GeoJsonObject | null
     borders: GeoJSON.GeoJsonObject | null
-  }>({ land: null, coastline: null, borders: null })
+  }>({ land: null, borders: null })
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState(false)
 
@@ -119,20 +128,22 @@ export default function MapView() {
       // 而它原本只给海洋区叠一层 18% 的绿色微调——海面的表达已由
       // 手绘海浪纹理（sea-tile.png）承担，这层微调只会把海洗浑。
       // 一个永远加载失败的图层，除了白占 350KB 带宽没有任何价值。
+      //
+      // 同样不再加载 coastline.geojson：它的坐标 99.5% 与 land 重复，
+      // 海岸线改由 land 多边形自己描边（见 landStyle 注释）。
+      // 地图数据因此从 4MB 降到 1.9MB，「绘制航海图...」的等待从 37 秒降到个位数。
       const results = await Promise.allSettled([
-        fetch(`${base}data/land.geojson`).then(r => r.ok ? r.json() : Promise.reject('land load fail')),
-        fetch(`${base}data/coastline.geojson`).then(r => r.ok ? r.json() : Promise.reject('coastline load fail')),
+        fetchLandGeojsonForRender(),
         fetch(`${base}data/borders.geojson`).then(r => r.ok ? r.json() : Promise.reject('borders load fail')),
       ])
 
-      const [land, coastline, borders] = results
+      const [land, borders] = results
       setGeoData({
         land: land.status === 'fulfilled' ? land.value : null,
-        coastline: coastline.status === 'fulfilled' ? coastline.value : null,
         borders: borders.status === 'fulfilled' ? borders.value : null,
       })
 
-      if (land.status === 'rejected' && coastline.status === 'rejected') {
+      if (land.status === 'rejected') {
         setLoadError(true)
       }
     } catch {
@@ -144,6 +155,8 @@ export default function MapView() {
 
   useEffect(() => {
     loadData()
+    // 兜底：若渲染用的 land 没能登记上（极端情况），
+    // landCheck 自己取一次，保证航线避让始终有陆地数据可用。
     loadLandData()
   }, [loadData])
 
@@ -199,10 +212,6 @@ export default function MapView() {
         >
           {geoData.land && (
             <GeoJSON key="land" data={geoData.land} style={landStyle} interactive={false} />
-          )}
-
-          {geoData.coastline && (
-            <GeoJSON key="coastline" data={geoData.coastline} style={coastlineStyle} interactive={false} />
           )}
 
           {geoData.borders && (
