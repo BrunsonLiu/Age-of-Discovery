@@ -101,7 +101,7 @@ export default function FleetPanel() {
   }
 
   return (
-    <div className="w-80 animate-slide-in-left">
+    <div className="w-full md:w-80 animate-slide-in-left">
       <ParchmentCard title="舰队状态" onClose={() => setActivePanel(null)}>
         <div className="space-y-3">
           <div className="flex items-center justify-between">

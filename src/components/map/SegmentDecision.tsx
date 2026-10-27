@@ -117,13 +117,13 @@ function StanceCard({
     <button
       onClick={() => onPick(id)}
       disabled={disabled}
-      className={`relative flex-1 min-w-0 text-left rounded-lg border ${tone.border} ${tone.glow}
+      className={`relative w-full md:flex-1 md:w-auto min-w-0 text-left rounded-lg border ${tone.border} ${tone.glow}
         bg-ocean-800/70 backdrop-blur-sm px-3 py-3 press
         transition-all duration-[90ms] ease-out
         hover:bg-ocean-700/70 hover:-translate-y-0.5
         focus:outline-none focus-visible:ring-2 focus-visible:ring-gold-400/70
         disabled:opacity-45 disabled:hover:translate-y-0 disabled:cursor-not-allowed`}
-      style={{ animation: prefersReducedMotion() ? undefined : `slide-in-up 380ms ${EASE_SPRING} both` }}
+      style={{ animation: prefersReducedMotion() ? undefined : `fade-in-up 380ms ${EASE_SPRING} both` }}
       aria-label={`${s.name}方针，${days} 天，食物 ${food} 份，淡水 ${water} 份，船损 ${wear} 点，遇事 ${events} 次`}
     >
       {/* 键盘序号 */}
@@ -269,11 +269,11 @@ export default function SegmentDecision() {
 
   return (
     <div
-      className="fixed inset-0 flex items-center justify-center bg-black/60 backdrop-blur-[2px] px-4"
+      className="fixed inset-0 flex items-start justify-center bg-black/60 backdrop-blur-[2px] px-3 md:px-4 py-3 md:py-4 overflow-y-auto"
       style={{ zIndex: 85 }}
     >
       <div
-        className="w-[46rem] max-w-[94vw] rounded-lg border border-gold-700/40 bg-ocean-900/95
+        className="my-auto w-[46rem] max-w-[94vw] rounded-lg border border-gold-700/40 bg-ocean-900/95
           shadow-2xl overflow-hidden"
         style={{ animation: prefersReducedMotion() ? undefined : `fade-in-scale 420ms ${EASE_SPRING} both` }}
       >
@@ -292,7 +292,7 @@ export default function SegmentDecision() {
               {' · '}约 {pending.daysLeft} 天
             </p>
           </div>
-          <div className="ml-auto text-right shrink-0">
+          <div className="ml-auto text-right shrink-0 hidden md:block">
             <p className="text-gold-600 font-serif text-[10px] leading-tight">
               选之前，账都摊在你面前
             </p>
@@ -302,9 +302,13 @@ export default function SegmentDecision() {
           </div>
         </div>
 
-        {/* 三张方针卡 */}
         <div className="p-4">
-          <div className="flex gap-3">
+        {/* 三张方针卡：
+            桌面并排（每张卡的账要能横向比较）；
+            移动端竖排——三张 320px 宽的卡并排在 360px 屏上，
+            每张只剩 110px，"食物 32 份"这种数字全被挤成两行，
+            玩家根本没法比较。竖排后每张卡都是整行宽，账照样看得清。 */}
+          <div className="flex flex-col md:flex-row gap-2 md:gap-3">
             {STANCE_ORDER.map((id, i) => {
               const l = byId(id)
               if (!l) return null

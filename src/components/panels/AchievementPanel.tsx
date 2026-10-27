@@ -13,7 +13,7 @@ export default function AchievementPanel() {
   const total = achievements.length
 
   return (
-    <div className="w-80 animate-slide-in-left">
+    <div className="w-full md:w-80 animate-slide-in-left">
       <ParchmentCard
         title="成就殿堂"
         onClose={() => setActivePanel(null)}

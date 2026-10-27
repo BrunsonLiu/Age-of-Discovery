@@ -3,6 +3,7 @@ import { useDialogueStore } from '@/store/useDialogueStore'
 import { getScript, getSpeaker } from '@/utils/dialogue'
 import { onUiCommand } from '@/utils/uiBus'
 import { playCue } from '@/utils/audio'
+import { useIsMobile, useIsTouchPrimary } from '@/hooks/useIsMobile'
 
 /** 打字机步进（毫秒/字） */
 const TYPE_MS = 42
@@ -22,6 +23,12 @@ export default function DialogueOverlay() {
   const lineIndex = useDialogueStore(s => s.lineIndex)
   const advance = useDialogueStore(s => s.advance)
   const skip = useDialogueStore(s => s.skip)
+  /**
+   * 触屏没有 Esc 键：跳过致辞必须给一个能点的按钮，
+   * 否则玩家只能一段段点完。
+   */
+  const isTouch = useIsTouchPrimary()
+  const isMobile = useIsMobile()
 
   const [shown, setShown] = useState(0)
   const [typing, setTyping] = useState(false)
@@ -91,9 +98,24 @@ export default function DialogueOverlay() {
   if (!script || !speaker) return null
 
   const fromLeft = speaker.side === 'left'
-  const boxSideStyle = fromLeft
-    ? { left: '8%', right: '34%' }
-    : { right: '8%', left: '34%' }
+  /**
+   * 对话框位置。
+   *
+   * 桌面：台词框压在立绘的一侧（这是它的设计意图）。
+   * 移动：立绘和台词框**没法分列两侧**——390px 宽的屏上，
+   * 一边留 34% 给立绘，台词框就只剩 226px，字要挤成两行三行。
+   * 所以移动端改成"立绘在上、台词框在下"的竖排，
+   * 并且整体抬到底部标签栏之上，别被标签栏压住。
+   */
+  const boxSideStyle = isMobile
+    ? {
+        left: '4%',
+        right: '4%',
+        bottom: 'calc(92px + env(safe-area-inset-bottom))',
+      }
+    : fromLeft
+      ? { left: '8%', right: '34%' }
+      : { right: '8%', left: '34%' }
 
   return (
     <div
@@ -110,7 +132,7 @@ export default function DialogueOverlay() {
       {portrait && (
         <div
           key={portraitKey}
-          className={`absolute bottom-0 h-[72%] ${fromLeft ? 'dlg-slide-in' : 'dlg-slide-in-right'}`}
+          className={`absolute bottom-0 h-[52%] md:h-[72%] ${fromLeft ? 'dlg-slide-in' : 'dlg-slide-in-right'}`}
           style={fromLeft ? { left: '5%' } : { right: '5%' }}
         >
           <img
@@ -122,7 +144,7 @@ export default function DialogueOverlay() {
       )}
 
       {/* 对话框：名牌 + 羊皮纸台词框（事件卡同款配色） */}
-      <div className="absolute bottom-10 dlg-box-in" style={boxSideStyle}>
+      <div className={`absolute dlg-box-in ${isMobile ? '' : 'bottom-10'}`} style={boxSideStyle}>
         <div className="inline-block bg-[#2a1c10] border border-gold-600/70 rounded-md px-3 py-1 mb-1.5">
           <span className="text-gold-300 text-sm font-medium">{speaker.name}</span>
           <span className="text-gold-600 text-xs ml-2">{speaker.title}</span>
@@ -144,11 +166,23 @@ export default function DialogueOverlay() {
               ))}
             </div>
             {!typing && (
-              <span className="text-[#8a6c2a] text-xs dlg-caret">Enter 继续 ▸</span>
+              <span className="text-[#8a6c2a] text-xs dlg-caret">
+                {isTouch ? '点一下继续 ▸' : 'Enter 继续 ▸'}
+              </span>
             )}
           </div>
         </div>
-        <p className="text-gold-600/70 text-xs mt-1.5 text-right">Esc 跳过致辞</p>
+        {isTouch ? (
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); skip() }}
+            className="mt-1.5 w-full text-center text-gold-300/80 text-xs py-1"
+          >
+            跳过这段致辞
+          </button>
+        ) : (
+          <p className="text-gold-600/70 text-xs mt-1.5 text-right">Esc 跳过致辞</p>
+        )}
       </div>
     </div>
   )

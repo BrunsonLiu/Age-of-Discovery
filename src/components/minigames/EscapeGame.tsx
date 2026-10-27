@@ -14,6 +14,14 @@ import {
 import { arrowToDir, useMiniGameLoop } from '@/hooks/useMiniGameLoop'
 import { useFxStore as useFx } from '@/store/useFxStore'
 
+/** 方向 → 实际派发的键盘 key（与 arrowToDir 认识的键完全一致） */
+const DIR_KEY: Record<EscapeDir, string> = {
+  up: 'ArrowUp',
+  down: 'ArrowDown',
+  left: 'ArrowLeft',
+  right: 'ArrowRight',
+}
+
 /**
  * 逃脱：方向键闪避。
  *
@@ -31,7 +39,7 @@ export default function EscapeGame({ modifiers, onDone }: {
   const [hint, setHint] = useState('')
 
   // DOM 直改引用
-  const arrowRefs = useRef<(HTMLDivElement | null)[]>([])
+  const arrowRefs = useRef<(HTMLElement | null)[]>([])
   const timerBarRef = useRef<HTMLDivElement>(null)
   const countRef = useRef<HTMLSpanElement>(null)
   const dodgedRef = useRef<HTMLSpanElement>(null)
@@ -101,7 +109,9 @@ export default function EscapeGame({ modifiers, onDone }: {
         <div className="absolute inset-0 m-auto w-16 h-16 rounded-full border-2 border-gold-600/60 bg-ocean-800/70 flex items-center justify-center">
           <span className="text-2xl">🧍</span>
         </div>
-        {/* 四个来袭方向 */}
+        {/* 四个来袭方向。
+            触屏上直接点箭头即可：这里派发的就是方向键，
+            与键盘玩家走同一条 onKey 路径，判定完全一致。 */}
         {ESCAPE_DIRS.map((dir, i) => {
           const pos: Record<EscapeDir, string> = {
             up: 'left-1/2 -translate-x-1/2 top-0',
@@ -110,14 +120,26 @@ export default function EscapeGame({ modifiers, onDone }: {
             right: 'right-0 top-1/2 -translate-y-1/2',
           }
           return (
-            <div
+            <button
               key={dir}
+              type="button"
+              data-testid={`escape-dir-${dir}`}
+              aria-label={`${dir === 'up' ? '上' : dir === 'down' ? '下' : dir === 'left' ? '左' : '右'}方向格挡`}
+              onPointerDown={(e) => {
+                e.preventDefault()
+                window.dispatchEvent(new KeyboardEvent('keydown', {
+                  key: DIR_KEY[dir],
+                  bubbles: true,
+                  cancelable: true,
+                }))
+              }}
+              onContextMenu={(e) => e.preventDefault()}
               ref={el => { arrowRefs.current[i] = el }}
-              className={`absolute w-14 h-14 rounded-lg border-2 flex items-center justify-center text-xl transition-none ${pos[dir]}`}
+              className={`absolute w-14 h-14 rounded-lg border-2 flex items-center justify-center text-xl transition-none touch-none select-none active:scale-95 ${pos[dir]}`}
               style={{ opacity: '0.22' }}
             >
               {ESCAPE_DIR_KEY[dir]}
-            </div>
+            </button>
           )
         })}
       </div>
@@ -135,7 +157,7 @@ export default function EscapeGame({ modifiers, onDone }: {
         <span className="text-gold-500">
           已格挡 <span ref={dodgedRef} className="text-emerald-300">0</span> 次
         </span>
-        <span className="text-gold-600">方向键或 WASD</span>
+        <span className="text-gold-600">方向键或 WASD（触屏：直接点亮的那一格）</span>
       </div>
 
       <p className="text-gold-300 text-xs font-serif text-center h-4">{hint}</p>

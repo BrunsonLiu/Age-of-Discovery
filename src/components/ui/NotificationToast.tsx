@@ -1,6 +1,7 @@
 import { useGameStore } from '@/store/useGameStore'
 import { Compass, Scroll, Trophy, AlertTriangle, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
+import { useIsMobile } from '@/hooks/useIsMobile'
 
 const iconMap = {
   discovery: Compass,
@@ -51,6 +52,7 @@ export default function NotificationToast() {
   const removeNotification = useGameStore(s => s.removeNotification)
   const [visible, setVisible] = useState<VisibleNotification[]>([])
   const visibleRef = useRef<VisibleNotification[]>([])
+  const isMobile = useIsMobile()
 
   useEffect(() => {
     visibleRef.current = visible
@@ -100,13 +102,20 @@ export default function NotificationToast() {
   const overflow = visible.length - shown.length
   // 右侧面板（贸易/港口/船厂）就在通知所在的这一块。面板打开时把整叠通知
   // 滑到面板左边去——成就提示挪个位置照样看得见，但不会压在玩家正要操作的东西上。
-  const shifted = activePanel != null
+  //
+  // 移动端不做这个位移：面板是底部抽屉，通知在顶部，本来就不打架；
+  // 而横移会把通知推出屏幕。
+  const shifted = activePanel != null && !isMobile
 
   return (
     // pointer-events-none：通知是纯展示，**绝不能挡住玩家的点击**。
     // 视觉上它可能压在右侧面板上，但下面的按钮照样能点。
     <div
-      className="absolute top-14 right-4 flex flex-col gap-2 max-w-[320px] pointer-events-none"
+      className={`absolute flex flex-col gap-2 pointer-events-none ${
+        isMobile
+          ? 'top-11 left-2 right-2 max-w-none'
+          : 'top-14 right-4 max-w-[320px]'
+      }`}
       style={{
         transform: shifted ? 'translateX(calc(-100% - 1rem))' : 'translateX(0)',
         transition: 'transform 300ms cubic-bezier(0.4, 0, 0.2, 1)',

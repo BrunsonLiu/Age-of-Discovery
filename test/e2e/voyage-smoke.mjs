@@ -71,6 +71,18 @@ await clickIn('塞维利亚港', '继续')
 await sleep(400)
 await clickIn('你的航程', '继续')
 await sleep(500)
+// 玩法模式页（新增页，位于「你的航程」与「天赋」之间）：显式选船长模式
+const modePicked = await page.evaluate(() => {
+  const card = document.querySelector('button[data-mode="captain"]')
+  if (card instanceof HTMLElement) { card.click(); return 'captain' }
+  return null
+})
+check(!!modePicked, `选择了玩法模式（${modePicked}）`)
+const modeCount = await page.evaluate(() => document.querySelectorAll('button[data-mode]').length)
+check(modeCount === 2, `模式页给出 ${modeCount} 个选项（应为 2：船长/参观）`)
+await sleep(400)
+await clickIn('你想怎么玩', '继续')
+await sleep(700)
 // 特质页：点第一张卡（商界血脉/铁壁舰长/魅力领袖/天生探险家/随船医生）
 const traitPicked = await page.evaluate(() => {
   const o = [...document.querySelectorAll('div.fixed.inset-0')].find(x => /选择你的天赋/.test(x.textContent || ''))
@@ -88,11 +100,12 @@ await sleep(1500)
 let st = await page.evaluate(() => {
   const s = window.__gameStore.getState()
   return {
-    phase: s.gamePhase, day: s.fleet.day, gold: s.fleet.gold,
+    phase: s.gamePhase, day: s.fleet.day, gold: s.fleet.gold, mode: s.gameMode,
     crew: s.fleet.ships.reduce((a, x) => a + (x.crew || 0), 0), ships: s.fleet.ships.length,
   }
 })
 check(st.phase === 'playing', `向导完成进入 playing（实际 ${st.phase}）`)
+check(st.mode === 'captain', `开局模式为船长（实际 ${st.mode}）`)
 check(st.crew > 0 && st.ships > 0, `初始舰队就绪（船员 ${st.crew} / 船 ${st.ships}）`)
 phasesSeen.add('start')
 

@@ -92,8 +92,8 @@ export default function VoyagePlanModal() {
   })()
 
   return (
-    <div className="fixed inset-0 flex items-center justify-center bg-black/70 backdrop-blur-sm" style={{ zIndex: 80 }}>
-      <div className="w-[26rem] max-w-[92vw] bg-ocean-900/95 border border-gold-700/40 rounded-lg shadow-2xl overflow-hidden animate-slide-in-right">
+    <div className="fixed inset-0 flex items-start justify-center bg-black/70 backdrop-blur-sm p-3 md:p-4 overflow-y-auto" style={{ zIndex: 80 }}>
+      <div className="my-auto w-[26rem] max-w-[92vw] bg-ocean-900/95 border border-gold-700/40 rounded-lg shadow-2xl overflow-hidden animate-slide-in-right">
         {/* 标题 */}
         <div className="px-4 py-3 border-b border-gold-700/30 bg-ocean-800/50 flex items-center gap-3">
           <img

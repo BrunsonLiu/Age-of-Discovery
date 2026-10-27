@@ -301,6 +301,26 @@ body {
     background: #c9a96e;
     border-radius: 3px;
   }
+
+  /*
+    移动端底部抽屉里的面板：改为「从下往上」滑入。
+
+    桌面版的面板是左右滑入的（animate-slide-in-left / -right）。
+    放到抽屉里还沿用横向动画会很怪——面板会从屏幕左侧横着飞进来，
+    像是没对齐。所以这里按父级上下文覆盖动画方向。
+
+    特异性：.drawer-panel .animate-slide-in-left 是两个类，
+    高于 Tailwind 单个工具类 .animate-slide-in-left，所以覆盖一定生效。
+  */
+  .drawer-panel .animate-slide-in-left,
+  .drawer-panel .animate-slide-in-right {
+    animation: slideUpDrawer 300ms cubic-bezier(0.32, 0.72, 0, 1) both;
+  }
+}
+
+@keyframes slideUpDrawer {
+  from { transform: translateY(28px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
 }
 
 @keyframes slideInLeft {

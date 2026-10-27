@@ -21,6 +21,7 @@ import Compass from '@/components/ui/Compass'
 import WeatherBadge from '@/components/ui/WeatherBadge'
 import TimelineBar from '@/components/ui/TimelineBar'
 import NotificationToast from '@/components/ui/NotificationToast'
+import MobileTabBar from '@/components/ui/MobileTabBar'
 import FxLayer from '@/components/ui/FxLayer'
 import BgmController from '@/components/ui/BgmController'
 import IntroScreen from '@/components/intro/IntroScreen'
@@ -31,6 +32,7 @@ import HelmModal from '@/components/map/HelmModal'
 import DialogueOverlay from '@/components/ui/DialogueOverlay'
 import WindParticles from '@/components/map/WindParticles'
 import { useKeyboardControls } from '@/hooks/useKeyboardControls'
+import { useIsMobile } from '@/hooks/useIsMobile'
 import { prevailingWindBearing } from '@/utils/navigation'
 import type { PanelType } from '@/types'
 import { tasks } from '@/data/tasks'
@@ -67,6 +69,8 @@ const Z = {
   BOTTOM_BAR: 40,
   TIMELINE: 50,
   NOTIFICATION: 60,
+  /** 移动端底部抽屉：必须压过底栏（40）与通知（60），但让位给事件卡（70）与小游戏 */
+  DRAWER: 65,
   OVERLAY: 70,
 }
 
@@ -93,6 +97,14 @@ export default function MainMap() {
   const notoriety = useGameStore(s => s.notoriety)
   const crewRoster = useGameStore(s => s.crewRoster)
   const captainTitle = currentTitle(notoriety)
+
+  /**
+   * 移动端布局：侧栏变底部标签栏、面板变底部抽屉。
+   *
+   * 这是**结构**上的切换，不是样式——所以必须用 JS 判断，
+   * 不能靠 Tailwind 的 md: 断点把侧栏"藏起来"（那样面板容器还留在原地）。
+   */
+  const isMobile = useIsMobile()
 
   // 全键盘控制：1-8 面板 / Space 暂停 / H 操舵 / Esc 关闭 / ? 帮助 / 剧情致辞
   useKeyboardControls()
@@ -135,6 +147,45 @@ export default function MainMap() {
     setActivePanel(activePanel === panel ? null : panel)
   }
 
+  /**
+   * 移动端底部抽屉。
+   *
+   * 结构刻意做得像手机上的模态面板：
+   *   · 遮罩 + 从底部升起的面板 + 顶部一条把手
+   *   · 点遮罩关闭（手指最容易够到的关闭方式）
+   *   · 面板自身滚动，overscroll-contain 防止滚到底后把地图一起滚走
+   *
+   * 高度用 dvh（动态视口高度）而不是 vh：手机浏览器地址栏收放时
+   * vh 不会变，抽屉会顶出屏幕或留一条缝。
+   */
+  const drawer = (content: React.ReactNode, onClose: () => void) => (
+    <div className="fixed inset-0" style={{ zIndex: Z.DRAWER }} data-testid="mobile-drawer">
+      <div
+        className="absolute inset-0 bg-black/65"
+        onClick={onClose}
+        data-testid="mobile-drawer-backdrop"
+      />
+      <div
+        className="drawer-panel absolute bottom-0 left-0 right-0 max-h-[82dvh] overflow-y-auto
+          overscroll-contain rounded-t-2xl border-t border-gold-700/40 bg-ocean-900/85
+          backdrop-blur-sm"
+        style={{ paddingBottom: 'max(10px, env(safe-area-inset-bottom))' }}
+      >
+        {/* 把手条：做成按钮，手机上"往下一划就关"是肌肉记忆，
+            但不会划的人也得有条能点的路——所以把条本身做成关闭按钮。 */}
+        <button
+          onClick={onClose}
+          aria-label="关闭面板"
+          data-testid="mobile-drawer-handle"
+          className="block w-full pt-2 pb-1 cursor-pointer"
+        >
+          <span className="block mx-auto h-1 w-10 rounded-full bg-gold-700/60" />
+        </button>
+        {content}
+      </div>
+    </div>
+  )
+
   const activeLeftPanel = activePanel && LEFT_PANELS.includes(activePanel) ? activePanel : null
   const activeRightPanel = activePanel && RIGHT_PANELS.includes(activePanel) ? activePanel : null
 
@@ -147,12 +198,27 @@ export default function MainMap() {
         <WeatherFx />
       </div>
 
-      <div className="absolute top-14 left-3" style={{ zIndex: Z.COMPASS }}>
-        <Compass windBearing={windBearing} />
+      {/*
+        罗盘 + 天候徽章（左上角）。
+
+        【移动端为什么要缩小罗盘】
+        桌面端罗盘 96px、徽章排在罗盘正下方（top-14 + 96 ≈ 152px，徽章 156px）。
+        手机竖屏照搬的话，徽章会直接压在罗盘盘面上（实测截图证实），
+        指针和方位字母全被盖住。所以移动端把罗盘缩到 64px，
+        徽章再排到 114px —— 关系和桌面端一致（徽章永远在罗盘下方），只是整体更紧凑。
+      */}
+      <div
+        className={isMobile ? 'absolute top-11 left-2' : 'absolute top-14 left-3'}
+        style={{ zIndex: Z.COMPASS }}
+      >
+        <Compass windBearing={windBearing} size={isMobile ? 'w-16 h-16' : 'w-24 h-24'} />
       </div>
 
       {/* 天候徽章：当前天气 + 风速 + 航速影响，点击展开三日预报 */}
-      <div className="absolute top-[9.75rem] left-3" style={{ zIndex: Z.COMPASS }}>
+      <div
+        className={isMobile ? 'absolute top-[7.1rem] left-2' : 'absolute top-[9.75rem] left-3'}
+        style={{ zIndex: Z.COMPASS }}
+      >
         <WeatherBadge />
       </div>
 
@@ -162,7 +228,7 @@ export default function MainMap() {
       </div>
 
       {/*
-        侧栏按钮：图标 + 常驻可见的中文标签。
+        侧栏按钮（桌面）：图标 + 常驻可见的中文标签。
 
         【为什么必须有文字】
         原来只有 lucide 图标，中文名藏在 title 里——那是"鼠标悬停才出现"的
@@ -171,114 +237,181 @@ export default function MainMap() {
 
         标签横向排（图标在左、文字在右，左侧栏反之），整列看起来像船上的
         仪表盘开关条，而不是一排猜谜图标。文字用 font-serif 与全局基调一致。
+
+        【移动端不用这两列】
+        竖排在 360-430px 宽的屏上会把地图挤没。移动端走底部标签栏
+        （见下方 MobileTabBar）。
       */}
-      <div
-        className="absolute left-0 flex flex-col justify-center gap-1.5 px-1.5"
-        style={{ zIndex: Z.SIDE_BUTTONS, top: '60px', bottom: '52px' }}
-      >
-        {panelButtons.filter(b => b.side === 'left').map(btn => (
-          <button
-            key={btn.type}
-            onClick={() => togglePanel(btn.type)}
-            data-tut={btn.type}
-            className={`flex items-center gap-2 pl-2.5 pr-3 py-2 rounded-lg transition-all duration-200 ${
-              activePanel === btn.type
-                ? 'bg-gold-700/60 text-gold-100 shadow-lg shadow-gold-900/30 border-gold-500/50'
-                : 'bg-ocean-900/85 text-gold-400 hover:text-gold-200 hover:bg-ocean-800/90'
-            } backdrop-blur-sm border border-gold-700/25`}
-            title={btn.label}
-            aria-label={btn.label}
-            aria-pressed={activePanel === btn.type}
-          >
-            <span className="shrink-0 flex items-center justify-center w-4">{btn.icon}</span>
-            <span className="font-serif text-xs whitespace-nowrap leading-none">{btn.label}</span>
-          </button>
-        ))}
-      </div>
-
-      <div
-        className="absolute right-0 flex flex-col justify-center gap-1.5 px-1.5"
-        style={{ zIndex: Z.SIDE_BUTTONS, top: '60px', bottom: '52px' }}
-      >
-        {panelButtons.filter(b => b.side === 'right').map(btn => (
-          <button
-            key={btn.type}
-            onClick={() => togglePanel(btn.type)}
-            data-tut={btn.type}
-            className={`flex items-center gap-2 pl-3 pr-2.5 py-2 rounded-lg transition-all duration-200 ${
-              activePanel === btn.type
-                ? 'bg-gold-700/60 text-gold-100 shadow-lg shadow-gold-900/30 border-gold-500/50'
-                : 'bg-ocean-900/85 text-gold-400 hover:text-gold-200 hover:bg-ocean-800/90'
-            } backdrop-blur-sm border border-gold-700/25`}
-            title={btn.label}
-            aria-label={btn.label}
-            aria-pressed={activePanel === btn.type}
-          >
-            <span className="font-serif text-xs whitespace-nowrap leading-none">{btn.label}</span>
-            <span className="shrink-0 flex items-center justify-center w-4">{btn.icon}</span>
-          </button>
-        ))}
-        <button
-          onClick={() => {
-            if (activePanel) setActivePanel(null)
-            setShowHelp(!showHelp)
-          }}
-          className={`flex items-center gap-2 pl-3 pr-2.5 py-2 rounded-lg transition-all duration-200 ${
-            showHelp
-              ? 'bg-gold-700/60 text-gold-100 shadow-lg shadow-gold-900/30 border-gold-500/50'
-              : 'bg-ocean-900/85 text-gold-400 hover:text-gold-200 hover:bg-ocean-800/90'
-          } backdrop-blur-sm border border-gold-700/25`}
-          title="帮助"
-          aria-label="帮助"
-          aria-pressed={showHelp}
-        >
-          <span className="font-serif text-xs whitespace-nowrap leading-none">帮助</span>
-          <span className="shrink-0 flex items-center justify-center w-4"><HelpCircle size={18} /></span>
-        </button>
-      </div>
-
-      {activeLeftPanel && (
+      {!isMobile && (
+        <>
         <div
-          className="absolute left-[5.75rem] top-12 bottom-12 w-80"
-          style={{ zIndex: Z.PANEL }}
+          className="absolute left-0 flex flex-col justify-center gap-1.5 px-1.5"
+          style={{ zIndex: Z.SIDE_BUTTONS, top: '60px', bottom: '52px' }}
         >
-          {activeLeftPanel === 'fleet' && <FleetPanel />}
-          {activeLeftPanel === 'task' && <TaskPanel />}
-          {activeLeftPanel === 'event' && <EventLog />}
-          {activeLeftPanel === 'achievement' && <AchievementPanel />}
-          {activeLeftPanel === 'rival' && <RivalPanel />}
+          {panelButtons.filter(b => b.side === 'left').map(btn => (
+            <button
+              key={btn.type}
+              onClick={() => togglePanel(btn.type)}
+              data-tut={btn.type}
+              className={`flex items-center gap-2 pl-2.5 pr-3 py-2 rounded-lg transition-all duration-200 ${
+                activePanel === btn.type
+                  ? 'bg-gold-700/60 text-gold-100 shadow-lg shadow-gold-900/30 border-gold-500/50'
+                  : 'bg-ocean-900/85 text-gold-400 hover:text-gold-200 hover:bg-ocean-800/90'
+              } backdrop-blur-sm border border-gold-700/25`}
+              title={btn.label}
+              aria-label={btn.label}
+              aria-pressed={activePanel === btn.type}
+            >
+              <span className="shrink-0 flex items-center justify-center w-4">{btn.icon}</span>
+              <span className="font-serif text-xs whitespace-nowrap leading-none">{btn.label}</span>
+            </button>
+          ))}
         </div>
+
+        <div
+          className="absolute right-0 flex flex-col justify-center gap-1.5 px-1.5"
+          style={{ zIndex: Z.SIDE_BUTTONS, top: '60px', bottom: '52px' }}
+        >
+          {panelButtons.filter(b => b.side === 'right').map(btn => (
+            <button
+              key={btn.type}
+              onClick={() => togglePanel(btn.type)}
+              data-tut={btn.type}
+              className={`flex items-center gap-2 pl-3 pr-2.5 py-2 rounded-lg transition-all duration-200 ${
+                activePanel === btn.type
+                  ? 'bg-gold-700/60 text-gold-100 shadow-lg shadow-gold-900/30 border-gold-500/50'
+                  : 'bg-ocean-900/85 text-gold-400 hover:text-gold-200 hover:bg-ocean-800/90'
+              } backdrop-blur-sm border border-gold-700/25`}
+              title={btn.label}
+              aria-label={btn.label}
+              aria-pressed={activePanel === btn.type}
+            >
+              <span className="font-serif text-xs whitespace-nowrap leading-none">{btn.label}</span>
+              <span className="shrink-0 flex items-center justify-center w-4">{btn.icon}</span>
+            </button>
+          ))}
+          <button
+            onClick={() => {
+              if (activePanel) setActivePanel(null)
+              setShowHelp(!showHelp)
+            }}
+            className={`flex items-center gap-2 pl-3 pr-2.5 py-2 rounded-lg transition-all duration-200 ${
+              showHelp
+                ? 'bg-gold-700/60 text-gold-100 shadow-lg shadow-gold-900/30 border-gold-500/50'
+                : 'bg-ocean-900/85 text-gold-400 hover:text-gold-200 hover:bg-ocean-800/90'
+            } backdrop-blur-sm border border-gold-700/25`}
+            title="帮助"
+            aria-label="帮助"
+            aria-pressed={showHelp}
+          >
+            <span className="font-serif text-xs whitespace-nowrap leading-none">帮助</span>
+            <span className="shrink-0 flex items-center justify-center w-4"><HelpCircle size={18} /></span>
+          </button>
+        </div>
+        </>
+      )}
+
+      {/*
+        面板容器。
+
+        桌面：左右两侧各挂一块 320px 宽的侧板。
+        移动：改成**底部抽屉**——从屏幕底部升起、占满宽度。
+        抽屉不是"把侧板挪到下面"，是换了一套结构：
+          · 侧板固定在 `left-[5.75rem]`，在手机上会溢出屏幕；
+          · 侧板高度写死 `top-12 bottom-12`，在抽屉里需要自适应内容；
+          · 侧板是横向滑入的动画，抽屉应该从下往上滑。
+        所以移动端走独立的渲染分支，而不是靠 CSS 挪位置。
+      */}
+      {activeLeftPanel && (
+        isMobile ? (
+          drawer(
+            activeLeftPanel === 'fleet' ? <FleetPanel />
+              : activeLeftPanel === 'task' ? <TaskPanel />
+              : activeLeftPanel === 'event' ? <EventLog />
+              : activeLeftPanel === 'achievement' ? <AchievementPanel />
+              : <RivalPanel />,
+            () => setActivePanel(null),
+          )
+        ) : (
+          <div
+            className="absolute left-[5.75rem] top-12 bottom-12 w-80"
+            style={{ zIndex: Z.PANEL }}
+          >
+            {activeLeftPanel === 'fleet' && <FleetPanel />}
+            {activeLeftPanel === 'task' && <TaskPanel />}
+            {activeLeftPanel === 'event' && <EventLog />}
+            {activeLeftPanel === 'achievement' && <AchievementPanel />}
+            {activeLeftPanel === 'rival' && <RivalPanel />}
+          </div>
+        )
       )}
 
       {activeRightPanel && (
-        <div
-          className="absolute right-[5.75rem] top-12 bottom-12 w-80"
-          style={{ zIndex: Z.PANEL }}
-        >
-          {activeRightPanel === 'port' && <PortDetail />}
-          {activeRightPanel === 'trade' && <TradePanel />}
-          {activeRightPanel === 'shipyard' && <ShipyardPanel />}
-        </div>
+        isMobile ? (
+          drawer(
+            activeRightPanel === 'port' ? <PortDetail />
+              : activeRightPanel === 'trade' ? <TradePanel />
+              : <ShipyardPanel />,
+            () => setActivePanel(null),
+          )
+        ) : (
+          <div
+            className="absolute right-[5.75rem] top-12 bottom-12 w-80"
+            style={{ zIndex: Z.PANEL }}
+          >
+            {activeRightPanel === 'port' && <PortDetail />}
+            {activeRightPanel === 'trade' && <TradePanel />}
+            {activeRightPanel === 'shipyard' && <ShipyardPanel />}
+          </div>
+        )
       )}
 
       {showHelp && (
-        <div
-          className="absolute right-[5.75rem] top-12 bottom-12 w-80"
-          style={{ zIndex: Z.PANEL }}
-        >
-          <HelpPanel />
-        </div>
+        isMobile ? (
+          drawer(<HelpPanel />, () => setShowHelp(false))
+        ) : (
+          <div
+            className="absolute right-[5.75rem] top-12 bottom-12 w-80"
+            style={{ zIndex: Z.PANEL }}
+          >
+            <HelpPanel />
+          </div>
+        )
       )}
 
-      <div className="absolute bottom-0 left-0 right-0" style={{ zIndex: Z.BOTTOM_BAR }}>
-        <BottomBar />
-      </div>
+      {/*
+        底部区。
+        桌面：只有一条状态/操作栏（速度、+1天、资源、图层开关）。
+        移动：状态栏**压缩成一行**，下面再叠一排面板入口标签栏。
+        两者放进同一个 fixed 容器，免得用魔法数字互相错位。
+      */}
+      {isMobile ? (
+        <div className="fixed bottom-0 left-0 right-0" style={{ zIndex: Z.BOTTOM_BAR }}>
+          <BottomBar />
+          <MobileTabBar
+            buttons={panelButtons.map(b => ({ type: b.type, icon: b.icon, label: b.label }))}
+            activePanel={activePanel}
+            onToggle={togglePanel}
+            showHelp={showHelp}
+            onToggleHelp={() => {
+              if (activePanel) setActivePanel(null)
+              setShowHelp(!showHelp)
+            }}
+          />
+        </div>
+      ) : (
+        <div className="absolute bottom-0 left-0 right-0" style={{ zIndex: Z.BOTTOM_BAR }}>
+          <BottomBar />
+        </div>
+      )}
 
       <div className="absolute top-0 left-0 right-0" style={{ zIndex: Z.TIMELINE }}>
         <TimelineBar />
       </div>
 
-      <div className="absolute top-14 right-4" style={{ zIndex: Z.NOTIFICATION }}>
+      {/* 通知自己定位（桌面右上 / 移动端顶部通栏），这里只给层级。
+          容器必须 pointer-events-none，否则这层会盖住整张地图的点击。 */}
+      <div className="absolute inset-0 pointer-events-none" style={{ zIndex: Z.NOTIFICATION }}>
         <NotificationToast />
       </div>
 

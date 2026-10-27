@@ -33,7 +33,7 @@ export default function WeatherBadge() {
   const windArrowRotation = weather.windDir
 
   return (
-    <div className="pointer-events-auto select-none">
+    <div data-testid="weather-badge" className="pointer-events-auto select-none">
       <button
         onClick={() => setOpen(o => !o)}
         className="flex items-center gap-2 px-2.5 py-1.5 rounded-md bg-ocean-800/70 border border-gold-700/30 hover:border-gold-600/50 transition-colors shadow-lg"

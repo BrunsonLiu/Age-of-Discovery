@@ -27,7 +27,7 @@ export default function RivalPanel() {
   const bestRivalPorts = Math.max(myPorts, ...rivals.map(r => r.portsFound))
 
   return (
-    <div className="w-80 animate-slide-in-right">
+    <div className="w-full md:w-80 animate-slide-in-right">
       <ParchmentCard title="航海见闻" subtitle="竞争船长" onClose={() => setActivePanel(null)}>
         <div className="space-y-3">
           <p className="text-gold-500 font-serif text-xs italic">

@@ -92,7 +92,7 @@ export default function PortDetail() {
   }
 
   return (
-    <div className="w-80 animate-slide-in-right">
+    <div className="w-full md:w-80 animate-slide-in-right">
       <ParchmentCard title={port.nameCn} onClose={() => setActivePanel(null)}>
         {/* 港口场景插图（C 组）：到港第一眼——按区域/建筑风格选图 */}
         {portImg && (

@@ -7,9 +7,15 @@ import { UI_ASSETS } from '@/data/uiAssets'
 interface CompassProps {
   /** 当前风带风向（风吹去的罗盘方位角）；传入时在罗盘角上显示风向标 */
   windBearing?: number | null
+  /**
+   * 表盘尺寸（Tailwind 类）。默认 96px；移动端传 64px——
+   * 手机竖屏上 96px 的罗盘加上天候徽章会吃掉左上角一大块地图视野，
+   * 而且徽章必须排在罗盘正下方，缩小罗盘才能让两者不互相遮挡。
+   */
+  size?: string
 }
 
-export default function Compass({ windBearing = null }: CompassProps) {
+export default function Compass({ windBearing = null, size = 'w-24 h-24' }: CompassProps) {
   const fleet = useGameStore(s => s.fleet)
   const currentRoute = useGameStore(s => s.currentRoute)
   const waypoint = useGameStore(s => s.waypoint)
@@ -96,7 +102,7 @@ export default function Compass({ windBearing = null }: CompassProps) {
   }, [])
 
   return (
-    <div className="relative w-24 h-24 pointer-events-none select-none">
+    <div data-testid="compass" className={`relative ${size} pointer-events-none select-none`}>
       {/* 真罗盘玫瑰（F3）作表盘：自带星芒与鸢尾花北向标；加载失败则由 SVG 深盘兜底 */}
       {!roseFailed && (
         <img

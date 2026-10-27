@@ -8,7 +8,7 @@ export default function EventLog() {
   const setActivePanel = useGameStore(s => s.setActivePanel)
 
   return (
-    <div className="w-80 animate-slide-in-left">
+    <div className="w-full md:w-80 animate-slide-in-left">
       <ParchmentCard title="航海日志" onClose={() => setActivePanel(null)}>
         {eventLog.length === 0 ? (
           <div className="text-center py-6">

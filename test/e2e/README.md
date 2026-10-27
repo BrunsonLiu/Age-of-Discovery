@@ -28,6 +28,7 @@ npm run test:e2e:audio    # 音频实跑
 npm run test:e2e:map      # 地图可辨性
 npm run test:e2e:trade    # 贸易报价一致性
 npm run test:e2e:notify   # 通知横幅不挡玩家操作
+npm run test:e2e:mobile   # 移动端布局（390×844 触屏）
 npm run test:e2e:all      # 以上全部
 ```
 
@@ -51,6 +52,7 @@ npm run test:e2e:all      # 以上全部
 | `online-check.mjs` | 线上站点能否打开、有无控制台错误、地图是否渲染 | 无（直连线上） |
 | `online-load-time.mjs` | 线上端到端加载耗时（含每个关键资源大小） | 无（直连线上） |
 | `notification-overlap.mjs` | 通知堆叠时面板按钮仍点得动（真实鼠标点击） | dev server |
+| `mobile-layout.mjs` | 移动端（390×844 触屏）：无横向溢出、九个入口齐全、底部抽屉、参观模式退路、罗盘与天候徽章不重叠 | dev server |
 
 ## 写 e2e 时容易踩的坑
 
@@ -61,6 +63,13 @@ npm run test:e2e:all      # 以上全部
   `dialogueSeen: ['opening_pilot']` 跳过开场对话。
 - 排查「点不到」用 `document.elementFromPoint(x, y)` 看真正命中的是谁，
   比猜 CSS 层级快得多。
+- **移动端是「结构级响应」不是「样式级响应」**：侧栏按钮在窄屏下是**根本不渲染**
+  （`{!isMobile && ...}`），不是被 CSS 藏起来。所以用 `[data-tut="fleet"]` 在移动端
+  永远查不到——这不是 bug，是设计。移动端入口一律走底部标签栏
+  `[data-testid="mobile-tab-bar"]`。
+- **开场致辞是全屏模态（z=75），会盖住底部标签栏**。桌面端能按 Esc 跳过，
+  触屏没有 Esc 键，所以 `DialogueOverlay` 专门加了「跳过这段致辞」按钮。
+  移动端 e2e 必须先点掉它，否则后面所有「点底部标签栏」的步骤都会被它截胡。
 
 ## 构造「缺图」的两种方式
 

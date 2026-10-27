@@ -119,8 +119,7 @@ function ResourceChip({
       onClick={onClick}
       title={tip}
       aria-label={`${label} ${Math.round(value)}${daysText ? `，${daysText}` : ''}`}
-      className="flex items-center gap-1.5 rounded px-1.5 py-1 transition-colors hover:bg-ocean-700/60 focus:outline-none focus-visible:ring-1 focus-visible:ring-gold-500/60"
-      style={{ minWidth: daysText ? 100 : 72 }}
+      className="flex items-center gap-1 md:gap-1.5 rounded px-1 md:px-1.5 py-1 transition-colors hover:bg-ocean-700/60 focus:outline-none focus-visible:ring-1 focus-visible:ring-gold-500/60 min-w-[62px] md:min-w-[86px]"
     >
       {/* 图标：危急时脉冲——不需要玩家去读数字就知道出事了 */}
       <span
@@ -133,14 +132,14 @@ function ResourceChip({
       {/* 数值：等宽右对齐——三个片的条才能落在同一条竖线上，
           否则 46 / 88 / 52 会左冲右突，看起来像没排过版。 */}
       <span
-        className="min-w-[22px] text-right font-mono text-[11px] leading-none tabular-nums"
+        className="min-w-[20px] md:min-w-[22px] text-right font-mono text-[11px] leading-none tabular-nums"
         style={{ color: level === 'critical' ? color : '#e5c35c' }}
       >
         {Math.round(rolled)}
       </span>
 
       {/* 迷你条：宽度即余量，颜色即水位 */}
-      <span className="relative h-1 w-10 shrink-0 overflow-hidden rounded-full bg-ocean-900/80">
+      <span className="relative h-1 w-8 md:w-10 shrink-0 overflow-hidden rounded-full bg-ocean-900/80">
         <span
           className="absolute inset-y-0 left-0 rounded-full"
           style={{ width: `${barPct}%`, background: color, transition: TRANSITION }}
@@ -154,12 +153,25 @@ function ResourceChip({
       </span>
 
       {daysText && (
-        <span
-          className="min-w-[30px] font-serif text-[10px] leading-none tabular-nums"
-          style={{ color }}
-        >
-          {daysText}
-        </span>
+        <>
+          {/* 桌面：完整的天数说明（含"还剩 N 天"） */}
+          <span
+            className="hidden md:inline min-w-[30px] font-serif text-[10px] leading-none tabular-nums"
+            style={{ color }}
+          >
+            {daysText}
+          </span>
+          {/* 移动端：只在危急时露出"差 N 天"——底栏太窄，
+              但"撑不到目的港"这句话绝不能丢。 */}
+          {level === 'critical' && (
+            <span
+              className="md:hidden font-serif text-[10px] leading-none tabular-nums whitespace-nowrap"
+              style={{ color }}
+            >
+              {daysText}
+            </span>
+          )}
+        </>
       )}
     </button>
   )

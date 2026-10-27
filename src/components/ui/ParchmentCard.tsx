@@ -57,7 +57,11 @@ export default function ParchmentCard({ title, subtitle, children, className = '
             </button>
           )}
         </div>
-        <div className="max-h-[60vh] overflow-y-auto scroll-parchment">
+        {/* 内容区高度：
+            桌面端被放在 top-12/bottom-12 的容器里，60vh 刚好；
+            移动端面板是底部抽屉（最高 82dvh），要给到 68dvh 才填得下，
+            否则抽屉里会套着一条更矮的内滚动区，出现两层滚动条。 */}
+        <div className="max-h-[68dvh] md:max-h-[60vh] overflow-y-auto scroll-parchment">
           {children}
         </div>
       </div>

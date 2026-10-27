@@ -13,6 +13,8 @@ import {
 } from '@/utils/miniGame'
 import { arrowToDir, useMiniGameLoop } from '@/hooks/useMiniGameLoop'
 import { useFxStore as useFx } from '@/store/useFxStore'
+import TouchKeyPad from '@/components/ui/TouchKeyPad'
+import { useIsTouchPrimary } from '@/hooks/useIsMobile'
 
 /**
  * 瞭望：灯号记忆序列。
@@ -35,6 +37,9 @@ export default function LookoutGame({ modifiers, onDone }: {
   const slotRefs = useRef<(HTMLDivElement | null)[]>([])
   const seqTextRef = useRef<HTMLSpanElement>(null)
   const timerBarRef = useRef<HTMLDivElement>(null)
+
+  /** 触屏：复现阶段需要一套方向键 */
+  const isTouch = useIsTouchPrimary()
 
   useEffect(() => {
     stateRef.current = createLookoutState()
@@ -187,6 +192,19 @@ export default function LookoutGame({ modifiers, onDone }: {
       <p className="text-[10px] font-serif text-gold-600 text-center">
         {showInput ? '方向键或 WASD · 顺序不能错' : '灯号亮起时不要按键'}
       </p>
+
+      {/* 触屏：复现阶段给一套方向键。
+          没有它，瞭望（记灯号）在手机上完全没法玩——它是纯键盘玩法。 */}
+      {showInput && isTouch && (
+        <TouchKeyPad
+          keys={[
+            { key: 'ArrowUp', label: '↑', hint: '上' },
+            { key: 'ArrowLeft', label: '←', hint: '左' },
+            { key: 'ArrowDown', label: '↓', hint: '下' },
+            { key: 'ArrowRight', label: '→', hint: '右' },
+          ]}
+        />
+      )}
     </div>
   )
 }

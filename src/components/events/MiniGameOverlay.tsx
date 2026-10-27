@@ -116,12 +116,12 @@ export default function MiniGameOverlay({ gameId, onFinish }: MiniGameOverlayPro
   // （剧情对白层 z-index 75 会盖住事件卡，若小游戏挂在事件卡内部同样会被遮）
   return createPortal(
     <div
-      className="fixed inset-0 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 overflow-y-auto"
+      className="fixed inset-0 flex items-start justify-center bg-black/80 backdrop-blur-sm p-3 md:p-4 overflow-y-auto"
       style={{ zIndex: 200 }}
       role="dialog"
       aria-label="事件小游戏"
     >
-      <div className="w-[30rem] max-w-[94vw] bg-ocean-900/95 border border-gold-700/40 rounded-xl shadow-2xl overflow-hidden animate-fade-in-scale">
+      <div className="my-auto w-[30rem] max-w-[94vw] bg-ocean-900/95 border border-gold-700/40 rounded-xl shadow-2xl overflow-hidden animate-fade-in-scale">
         {/* 标题栏 */}
         <div className="px-4 py-3 border-b border-gold-700/30 bg-ocean-800/50 flex items-center justify-between">
           <div>

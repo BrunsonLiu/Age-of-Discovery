@@ -176,7 +176,7 @@ export default function TradePanel() {
   }
 
   return (
-    <div className="w-80 animate-slide-in-right" data-testid="trade-panel">
+    <div className="w-full md:w-80 animate-slide-in-right" data-testid="trade-panel">
       <ParchmentCard title="商品交易" onClose={() => setActivePanel(null)}>
         <div className="space-y-3">
           <div className="flex items-center justify-between text-xs text-gold-400 font-serif">

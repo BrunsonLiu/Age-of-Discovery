@@ -3,7 +3,10 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- viewport-fit=cover：让页面铺到刘海/圆角屏的安全区之外，
+         再由 CSS 用 env(safe-area-inset-*) 给底栏/标签栏留出安全边距。
+         不写 maximum-scale/user-scalable：允许玩家放大，禁缩放是无障碍问题。 -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>大航海时代 - Age of Discovery</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
