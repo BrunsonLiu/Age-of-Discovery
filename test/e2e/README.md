@@ -27,6 +27,7 @@ npm run test:e2e:scenes   # 场景插图三件套
 npm run test:e2e:audio    # 音频实跑
 npm run test:e2e:map      # 地图可辨性
 npm run test:e2e:trade    # 贸易报价一致性
+npm run test:e2e:notify   # 通知横幅不挡玩家操作
 npm run test:e2e:all      # 以上全部
 ```
 
@@ -45,6 +46,17 @@ npm run test:e2e:all      # 以上全部
 | `map-check.mjs` / `map-diag.mjs` | 地图视觉复核与诊断（辅助脚本） | dev server |
 | `audio-live.mjs` | 真实音频能量、BGM 情绪跟随、总开关、静音恢复 | dev server |
 | `trade-quote.mjs` | 面板显示价 == 实际结算价；本港不收的货能折价卖掉 | dev server |
+| `notification-overlap.mjs` | 通知堆叠时面板按钮仍点得动（真实鼠标点击） | dev server |
+
+## 写 e2e 时容易踩的坑
+
+- **开场对话会锁住整个地图**。`DialogueOverlay` 铺了一层 `absolute inset-0 bg-black/45`，
+  对话期间地图上的一切都点不到——这是**正常设计**（对话中不该能操作地图），
+  但用 `__gameStore.setState({gamePhase:'playing'})` 直接跳进地图时，对话会被触发，
+  于是「面板按钮点不动」，看着像 bug。构造场景时一并设
+  `dialogueSeen: ['opening_pilot']` 跳过开场对话。
+- 排查「点不到」用 `document.elementFromPoint(x, y)` 看真正命中的是谁，
+  比猜 CSS 层级快得多。
 
 ## 构造「缺图」的两种方式
 
@@ -70,6 +82,8 @@ npm run test:e2e:all      # 以上全部
   chart 场景被误伤退化成 SVG。
 - 旧写法（`selectBuyPrice` 漏乘 `priceMultiplier`，结算仍用完整系数）→
   `trade-quote.mjs` 报「屏幕写 195，实际扣 176」，逐行核对同时报出多行不一致。
+- 旧写法（`NotificationToast` 去掉 `pointer-events-none` 与让位）→
+  `notification-overlap.mjs` 的「出售按钮依然点得动」失败，命中的是通知卡片本身。
 
 > 注意 `trade-quote.mjs` 把声望设成 100：价格系数在 fame=0 时恰为 1，
 > 显示价与结算价**必然**相等——那样的测试是永远通过的假测试。系数 ≠1 时才有区分力。
