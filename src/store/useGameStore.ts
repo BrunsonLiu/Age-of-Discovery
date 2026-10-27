@@ -316,6 +316,52 @@ export function dynamicSellPrice(pg: { price: number; priceModifier: number }, c
   return Math.round(pg.price * pg.priceModifier * surge * 0.85 / priceMultiplier(fleet, opts))
 }
 
+/**
+ * 本港不经营某商品时的折价收购比例（相对全局基准价）。
+ *
+ * 为什么必须有这条退路：商品的经营覆盖极不均匀——雪茄只在哈瓦那（1 号港）
+ * 经营，其余港口都不收。若这里直接拒绝出售，玩家一旦带着雪茄离开哈瓦那，
+ * 货舱里就多了一份**永远换不成钱**的死货，白占容量、无法处置。
+ */
+export const OFFER_PRICE_RATIO = 0.5
+
+/**
+ * 买入报价 —— 面板显示价与实际结算价的**唯一来源**。
+ *
+ * 以前 TradePanel 自己抄了一份公式（漏乘 priceMultiplier、也漏掉 surge），
+ * 于是面板上写的价和真正结算的价能差到 67 金：玩家照着面板的价做买卖
+ * 决策，看到的却不是真实世界。现在面板与结算共用同一个函数，数字不可能再分叉。
+ *
+ * @returns 单价；null = 本港不经营该商品
+ */
+export function selectBuyPrice(state: GameState, portId: number, goodId: number): number | null {
+  const pg = portGoods.find(p => p.portId === portId && p.goodId === goodId)
+  if (!pg) return null
+  const stock = state.marketStock[`${portId}:${goodId}`] ?? pg.stock
+  return dynamicBuyPrice(pg, stock, pg.stock, state.fleet, priceOpts(state))
+}
+
+/**
+ * 卖出报价 —— 面板显示价与实际结算价的**唯一来源**。
+ *
+ * 本港不经营该商品时走折价收购（见 OFFER_PRICE_RATIO），而不是拒绝：
+ * 拒绝会让货变成死货，而面板此前却显示着折价和可点的按钮，玩家点了
+ * 货不减、钱不加、屏幕毫无反应——那是最坏的一种「数字在骗人」。
+ */
+export function selectSellPrice(state: GameState, portId: number, goodId: number): number | null {
+  const good = goods.find(g => g.id === goodId)
+  if (!good) return null
+  const pg = portGoods.find(p => p.portId === portId && p.goodId === goodId)
+  const opts = priceOpts(state)
+  if (!pg) {
+    // 本港不收：按全局基准价折价出清。声望/特质系数同样生效
+    //（系数 <1 表示对玩家有利，除以它等于折价收得更高）。
+    return Math.round((good.basePrice * OFFER_PRICE_RATIO) / priceMultiplier(state.fleet, opts))
+  }
+  const stock = state.marketStock[`${portId}:${goodId}`] ?? pg.stock
+  return dynamicSellPrice(pg, stock, pg.stock, state.fleet, opts)
+}
+
 /** 库存回补：与 advanceDay / restAtPort 共用同一套市场节奏 */
 function advanceMarketStock(stock: Record<string, number>): Record<string, number> {
   const updated: Record<string, number> = { ...stock }
@@ -1112,7 +1158,9 @@ export const useGameStore = create<GameStore>()(
         const key = `${portId}:${goodId}`
         const stock = state.marketStock[key] ?? pg.stock
         if (stock < quantity) return state
-        const buyPrice = dynamicBuyPrice(pg, stock, pg.stock, state.fleet, priceOpts(state))
+        // 报价走唯一来源：面板显示的就是这里真正扣的钱
+        const buyPrice = selectBuyPrice(state, portId, goodId)
+        if (buyPrice == null) return state
         if (!canAfford(state.fleet.gold, buyPrice, quantity)) return state
         if (!hasCargoSpace(state.fleet, quantity)) return state
         const newCargo = updateCargo(state.fleet.cargo, goodId, quantity)
@@ -1138,20 +1186,23 @@ export const useGameStore = create<GameStore>()(
         if (state.fleet.currentPortId !== portId || state.fleet.isSailing) return state
         const cargoItem = state.fleet.cargo.find(c => c.goodId === goodId)
         if (!cargoItem || cargoItem.quantity < quantity) return state
-        const pg = portGoods.find(p => p.portId === portId && p.goodId === goodId)
-        if (!pg) return state
         const good = goods.find(g => g.id === goodId)
         if (!good) return state
+        // 报价走唯一来源：本港不经营时会给折价价，而不是静默拒绝
+        // （静默拒绝会让货变成死货，面板却显示着可点的按钮）
+        const sellPrice = selectSellPrice(state, portId, goodId)
+        if (sellPrice == null) return state
+        const pg = portGoods.find(p => p.portId === portId && p.goodId === goodId)
         const key = `${portId}:${goodId}`
-        const stock = state.marketStock[key] ?? pg.stock
-        const sellPrice = dynamicSellPrice(pg, stock, pg.stock, state.fleet, priceOpts(state))
+        const stock = pg ? (state.marketStock[key] ?? pg.stock) : 0
         const newCargo = updateCargo(state.fleet.cargo, goodId, -quantity)
         const total = sellPrice * quantity
         // 大额贸易赢得商会好感（第二条线）
         const guildGain = total >= GAME_BALANCE.GUILD_DEAL_MIN ? GAME_BALANCE.GUILD_DEAL_FAME : 0
         return withAchievements(state, {
           fleet: syncUsedCapacity({ ...state.fleet, gold: state.fleet.gold + total, cargo: newCargo }),
-          marketStock: { ...state.marketStock, [key]: stock + quantity },
+          // 折价出清时本港没有这个市场，库存不动
+          marketStock: pg ? { ...state.marketStock, [key]: stock + quantity } : state.marketStock,
           factionRep: guildGain
             ? { ...state.factionRep, guild: Math.min(100, state.factionRep.guild + guildGain) }
             : state.factionRep,

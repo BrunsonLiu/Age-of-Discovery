@@ -22,7 +22,7 @@ import {
   STANCES, forecastSegment, stanceLedgers, segmentCountFor, segmentIndexFor, nextSegmentBoundary,
   dailyFoodUse, dailyWaterUse, dailyWearRate, settleWear,
 } from '../src/utils/segment'
-import { generateRouteIntel, settleOfficerWages, advanceRivals } from '../src/store/useGameStore'
+import { generateRouteIntel, settleOfficerWages, advanceRivals, selectBuyPrice, selectSellPrice, OFFER_PRICE_RATIO } from '../src/store/useGameStore'
 import { FACTIONS, factionAttitude, portFaction } from '../src/data/factions'
 import { CREW_CHARS, CREW_CHAR_MAP } from '../src/data/crewChars'
 import { TITLES, currentTitle, dominantAxis } from '../src/data/titles'
@@ -110,7 +110,8 @@ import {
 } from '../src/utils/miniGame'
 import type { OfficerId } from '../src/types'
 import { emitUiCommand, onUiCommand } from '../src/utils/uiBus'
-import { ports } from '../src/data/ports'
+import { ports, portGoods } from '../src/data/ports'
+import { goods } from '../src/data/goods'
 import {
   TUTORIAL_STEPS,
   TUTORIAL_STEP_COUNT,
@@ -2630,6 +2631,150 @@ console.log('== 50. 特质与成就的完整性 ==')
   for (const a of achievements) {
     assert(!!a.id && !!a.title && !!a.description && !!a.icon && typeof a.check === 'function',
       `成就 ${a.id} 字段齐全（含判定函数）`)
+  }
+}
+
+console.log('== 51. 贸易报价：面板显示价必须等于实际结算价 ==')
+{
+  // 这条测试守的是项目最核心的那条规矩：**屏幕上显示的数字 = 实际发生的变化**。
+  //
+  // 旧实现里 TradePanel 自己抄了一份价格公式（漏乘 priceMultiplier、
+  // 也漏掉 surge），面板写的价和真正结算的价因此分叉——实测在 fame=100 时
+  // 99 个条目里 97 个对不上，最大差 67 金（丝绸：面板 286 / 实收 336）。
+  // 现在面板与结算共用 store 的 selectBuyPrice / selectSellPrice，
+  // 这条测试就是防止它们再次分叉。
+  const shipT = {
+    id: 1, name: '测试船', type: 'caravel' as const, speed: 5, durability: 50,
+    maxDurability: 100, capacity: 500, usedCapacity: 0, crew: 30, maxCrew: 40,
+  }
+  const baseFleet: Fleet = {
+    id: 1, name: '测试舰队', gold: 999999, fame: 0, morale: 60, food: 100, water: 100,
+    currentPortId: 1, isSailing: false, day: 1, ships: [shipT], cargo: [],
+    flagshipId: 1, trait: null, durabilityCarry: 0,
+  }
+
+  const portIds = [...new Set(portGoods.map(p => p.portId))]
+  let buyChecked = 0, buyBad = 0, buyWorst = 0
+  let sellChecked = 0, sellBad = 0, sellWorst = 0
+  let cargoBad = 0
+  const badSamples: string[] = []
+
+  for (const fame of [0, 60, 100]) {
+    for (const portId of portIds) {
+      for (const pg of portGoods.filter(p => p.portId === portId)) {
+        const goodName = goods.find(g => g.id === pg.goodId)?.nameCn ?? String(pg.goodId)
+
+        // --- 买：报价必须等于实际扣掉的金币 ---
+        useGameStore.setState({
+          fleet: { ...baseFleet, fame, currentPortId: portId },
+          marketStock: {},
+        })
+        const quote = selectBuyPrice(useGameStore.getState(), portId, pg.goodId)
+        if (quote == null) continue
+        const goldBefore = useGameStore.getState().fleet.gold
+        useGameStore.getState().buyGood(portId, pg.goodId, 1)
+        const spent = goldBefore - useGameStore.getState().fleet.gold
+        buyChecked++
+        if (spent !== quote) {
+          buyBad++
+          buyWorst = Math.max(buyWorst, Math.abs(spent - quote))
+          if (badSamples.length < 6) badSamples.push(`  买 港${portId} ${goodName} 名声${fame}: 报价 ${quote} 实扣 ${spent}`)
+        }
+
+        // --- 卖：报价 × 数量 必须等于实际到手的金币 ---
+        useGameStore.setState({
+          fleet: { ...baseFleet, fame, currentPortId: portId, cargo: [{ goodId: pg.goodId, quantity: 3 }] },
+          marketStock: {},
+        })
+        const sellQuote = selectSellPrice(useGameStore.getState(), portId, pg.goodId)
+        if (sellQuote == null) continue
+        const goldBefore2 = useGameStore.getState().fleet.gold
+        useGameStore.getState().sellGood(portId, pg.goodId, 2)
+        const after = useGameStore.getState()
+        const earned = after.fleet.gold - goldBefore2
+        sellChecked++
+        if (earned !== sellQuote * 2) {
+          sellBad++
+          sellWorst = Math.max(sellWorst, Math.abs(earned - sellQuote * 2))
+          if (badSamples.length < 6) badSamples.push(`  卖 港${portId} ${goodName} 名声${fame}: 报价 ${sellQuote} 实收 ${earned}`)
+        }
+        const left = after.fleet.cargo.find(c => c.goodId === pg.goodId)
+        if (left === undefined || left.quantity !== 1) cargoBad++
+      }
+    }
+  }
+  assert(buyBad === 0, `买入报价 = 实扣金币（核对 ${buyChecked} 组，不一致 ${buyBad} 组，最大差 ${buyWorst}）`)
+  assert(sellBad === 0, `卖出报价 = 实收金币（核对 ${sellChecked} 组，不一致 ${sellBad} 组，最大差 ${sellWorst}）`)
+  assert(cargoBad === 0, `卖出后货舱数量正确（异常 ${cargoBad} 组）`)
+  badSamples.forEach(s => console.log(s))
+
+  // 上面三百多次大额买卖把商会好感刷到了 60 以上，价格系数因此整体下移。
+  // 后面的断言要测「系数如何起作用」，必须先把第二��线状态归零，
+  // 否则测到的是残留状态而不是设计。
+  const resetPricingState = () => useGameStore.setState({
+    officers: [],
+    crewRoster: [],
+    factionRep: { crown: 0, guild: 0, scholars: 0, brethren: 0 },
+    notoriety: { cruel: 0, mercy: 0, greed: 0, bold: 0, secret: 0 },
+    fleet: { ...baseFleet },
+    marketStock: {},
+  })
+
+  // --- 声望/特质系数必须真的生效，而不是摆设 ---
+  {
+    const portId = portIds[0]
+    // 选该港最贵的商品：低价商品的四舍五入会把系数差异吞掉，
+    // 那会让这条断言偶尔「测不出差异」而不是「测出问题」
+    const pg = [...portGoods.filter(p => p.portId === portId)]
+      .sort((a, b) => b.price * b.priceModifier - a.price * a.priceModifier)[0]
+    resetPricingState()
+    const q0 = selectBuyPrice(useGameStore.getState(), portId, pg.goodId)!
+    resetPricingState()
+    useGameStore.setState({ fleet: { ...baseFleet, fame: 100, trait: null } })
+    const q100 = selectBuyPrice(useGameStore.getState(), portId, pg.goodId)!
+    assert(q100 < q0, `声望 100 的买价低于声望 0（${q100} < ${q0}）——声望系数真的作用在报价上`)
+
+    resetPricingState()
+    useGameStore.setState({ fleet: { ...baseFleet, fame: 0, trait: 'merchant' } })
+    const qMerchant = selectBuyPrice(useGameStore.getState(), portId, pg.goodId)!
+    assert(qMerchant <= q0, `商人特质的买价不高于普通船长（${qMerchant} ≤ ${q0}）`)
+  }
+
+  // --- 本港不经营的商品：必须有出路，否则货舱里出现永远换不成钱的死货 ---
+  {
+    resetPricingState()
+    const noWayOut: string[] = []
+    for (const g of goods) {
+      for (const portId of portIds) {
+        if (selectSellPrice(useGameStore.getState(), portId, g.id) == null) {
+          noWayOut.push(`${g.nameCn}@港${portId}`)
+        }
+      }
+    }
+    assert(noWayOut.length === 0, `任意商品在任意港口都有出路（无出路 ${noWayOut.length} 组）`)
+
+    // 雪茄只在 1 个港口经营——离开那个港口就是死货
+    const cigar = goods.find(g => g.nameCn === '雪茄')!
+    const cigarPort = portGoods.find(p => p.goodId === cigar.id)!.portId
+    const otherPort = portIds.find(p => p !== cigarPort)!
+    resetPricingState()
+    useGameStore.setState({
+      fleet: { ...baseFleet, currentPortId: otherPort, cargo: [{ goodId: cigar.id, quantity: 2 }] },
+    })
+    const quote = selectSellPrice(useGameStore.getState(), otherPort, cigar.id)
+    assert(quote !== null, '本港不经营的商品也有报价（折价出清，而不是拒绝）')
+    assert(quote! <= cigar.basePrice, `折价不超过基准价（${quote} ≤ ${cigar.basePrice}）`)
+    // 折价的算法必须写死在这里：基准价 × OFFER_PRICE_RATIO ÷ 价格系数
+    const expectedOffer = Math.round((cigar.basePrice * OFFER_PRICE_RATIO) / priceMultiplier(useGameStore.getState().fleet))
+    assert(quote === expectedOffer, `折价 = 基准价 × ${OFFER_PRICE_RATIO} ÷ 价格系数（期望 ${expectedOffer}，实际 ${quote}）`)
+    // 折价必须明显低于本经营港的正常收购价，否则「折价」两个字是骗人的
+    const normalQuote = selectSellPrice(useGameStore.getState(), cigarPort, cigar.id)!
+    assert(quote! < normalQuote, `折价出清比本港正常收购便宜（${quote} < ${normalQuote}）`)
+    const goldBefore = useGameStore.getState().fleet.gold
+    useGameStore.getState().sellGood(otherPort, cigar.id, 2)
+    const after = useGameStore.getState()
+    assert(after.fleet.gold === goldBefore + quote! * 2, `折价出售真实入账（报价 ${quote} × 2）`)
+    assert(after.fleet.cargo.find(c => c.goodId === cigar.id) === undefined, '折价出售后货物离开货舱（不再是死货）')
   }
 }
 

@@ -14,7 +14,8 @@
     "test:e2e:scenes": "node test/e2e/scene-survey.mjs && node test/e2e/scene-fallback-check.mjs && node test/e2e/scene-img-failed-reset.mjs",
     "test:e2e:audio": "node test/e2e/audio-live.mjs",
     "test:e2e:map": "node test/e2e/map-legibility.mjs",
-    "test:e2e:all": "npm run test:e2e && npm run test:e2e:scenes && npm run test:e2e:audio && npm run test:e2e:map"
+    "test:e2e:trade": "node test/e2e/trade-quote.mjs",
+    "test:e2e:all": "npm run test:e2e && npm run test:e2e:scenes && npm run test:e2e:audio && npm run test:e2e:map && npm run test:e2e:trade"
   },
   "dependencies": {
     "clsx": "^2.1.1",

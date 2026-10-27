@@ -26,6 +26,7 @@ npm run test:e2e          # voyage-smoke：全流程航行冒烟
 npm run test:e2e:scenes   # 场景插图三件套
 npm run test:e2e:audio    # 音频实跑
 npm run test:e2e:map      # 地图可辨性
+npm run test:e2e:trade    # 贸易报价一致性
 npm run test:e2e:all      # 以上全部
 ```
 
@@ -43,6 +44,7 @@ npm run test:e2e:all      # 以上全部
 | `map-legibility.mjs` | 海陆明度差、图层 z-index、复古装饰不被压住 | dev server |
 | `map-check.mjs` / `map-diag.mjs` | 地图视觉复核与诊断（辅助脚本） | dev server |
 | `audio-live.mjs` | 真实音频能量、BGM 情绪跟随、总开关、静音恢复 | dev server |
+| `trade-quote.mjs` | 面板显示价 == 实际结算价；本港不收的货能折价卖掉 | dev server |
 
 ## 构造「缺图」的两种方式
 
@@ -62,9 +64,14 @@ npm run test:e2e:all      # 以上全部
 
 ## 验证测试本身有效
 
-改坏代码后测试必须**失败**。改 `EventScene` 的失败状态写法就能验：
+改坏代码后测试必须**失败**。已验证过的注入点：
 
-- 旧写法（全局布尔值 `imgFailed`）→ `scene-img-failed-reset.mjs` 第②条断言失败，
+- 旧写法（`EventScene` 用全局布尔值 `imgFailed`）→ `scene-img-failed-reset.mjs` 第②条断言失败，
   chart 场景被误伤退化成 SVG。
+- 旧写法（`selectBuyPrice` 漏乘 `priceMultiplier`，结算仍用完整系数）→
+  `trade-quote.mjs` 报「屏幕写 195，实际扣 176」，逐行核对同时报出多行不一致。
+
+> 注意 `trade-quote.mjs` 把声望设成 100：价格系数在 fame=0 时恰为 1，
+> 显示价与结算价**必然**相等——那样的测试是永远通过的假测试。系数 ≠1 时才有区分力。
 
 这一步别省。全绿的测试可能只是测了个寂寞。
