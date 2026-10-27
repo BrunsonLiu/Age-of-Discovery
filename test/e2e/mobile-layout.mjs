@@ -210,6 +210,31 @@ console.log('\n=== 移动端布局（390×844）===')
   await page.screenshot({ path: `${SHOTS}/mobile-topleft.png`, clip: { x: 0, y: 30, width: 240, height: 180 } })
 }
 
+// --- 窄屏开局视野必须包含玩家自己的港口 ---
+// 地图初始视野写死在大西洋中部 [25,-20]、zoom 5：1440px 桌面下塞维利亚落在
+// x=497 还在屏内，390px 手机上只剩约 17° 经度 → 港口标记被推出屏幕，
+// 玩家开局看到一片空海，连"我在哪"都不知道。窄屏必须把视野对准玩家自己。
+{
+  const marker = await page.evaluate(() => {
+    const tip = document.querySelector('.port-tooltip')
+    const el = document.querySelector('[class*="port-marker-icon"]')
+    const t = tip?.getBoundingClientRect()
+    const m = el?.getBoundingClientRect()
+    return {
+      name: tip?.textContent?.trim() ?? null,
+      tip: t && { x: t.x, y: t.y, w: t.width, h: t.height },
+      marker: m && { x: m.x, y: m.y, w: m.width, h: m.height },
+    }
+  })
+  check(!!marker.tip, '开局视野里有港口标记（塞维利亚）')
+  if (marker.tip && marker.marker) {
+    check(marker.marker.x >= 0 && marker.marker.x + marker.marker.w <= VW,
+      `港口标记横向在视口内（${Math.round(marker.marker.x)} → ${Math.round(marker.marker.x + marker.marker.w)}，视口 ${VW}）`)
+    check(marker.marker.y >= 0 && marker.marker.y + marker.marker.h <= VH,
+      `港口标记纵向在视口内（${Math.round(marker.marker.y)} → ${Math.round(marker.marker.y + marker.marker.h)}，视口 ${VH}）`)
+  }
+}
+
 // --- ④⑤ 底部抽屉 ---
 {
   const tradeTab = await page.$('[data-testid="mobile-tab-bar"] button[aria-label="贸易"]')

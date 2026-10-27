@@ -1,7 +1,9 @@
-import { useEffect, useState, useCallback, Component } from 'react'
+import { useEffect, useState, useCallback, Component, useMemo } from 'react'
 import { MapContainer, GeoJSON, useMap } from 'react-leaflet'
 import { useMapStore } from '@/store/useMapStore'
 import { useGameStore } from '@/store/useGameStore'
+import { useIsMobile } from '@/hooks/useIsMobile'
+import { ports } from '@/data/ports'
 import { PortMarker } from './PortMarker'
 import { RouteLine } from './RouteLine'
 import { ShipAnimation } from './ShipAnimation'
@@ -39,20 +41,64 @@ class MapErrorBoundary extends Component<{ children: React.ReactNode }, { hasErr
   }
 }
 
+/**
+ * 地图写死的初始视野：大西洋中部。
+ *
+ * 这个值在 1440px 的桌面上能容下塞维利亚（实测标记落在 x=497，还在屏内），
+ * 但 390px 的手机上只剩约 17° 经度 → 塞维利亚被推到屏幕右侧外面，
+ * **屏幕上一个港口标记都没有**。而出航的唯一入口就是点地图上的港口，
+ * 于是手机上打开游戏看到的是一片空海，不知道该点哪儿。
+ *
+ * 所以窄屏时不直接用这个值，而是换成玩家自己的位置（见 MapController）。
+ */
+const DEFAULT_CENTER: [number, number] = [25, -20]
+
 function MapController() {
   const map = useMap()
-  const center = useMapStore((s) => s.center)
+  const storeCenter = useMapStore((s) => s.center)
   const zoom = useMapStore((s) => s.zoom)
+  const isMobile = useIsMobile()
+  const shipPosition = useGameStore((s) => s.shipPosition)
+  const currentPortId = useGameStore((s) => s.fleet.currentPortId)
+
+  /** 玩家此刻在哪：港内是所在港口，航行中是船位 */
+  const here = useMemo<[number, number] | null>(() => {
+    if (shipPosition && isFinite(shipPosition[0]) && isFinite(shipPosition[1])) {
+      return [shipPosition[0], shipPosition[1]]
+    }
+    const p = ports.find(p => p.id === currentPortId)
+    return p ? [p.latitude, p.longitude] : null
+  }, [shipPosition, currentPortId])
+
+  /**
+   * 实际要显示的中心。
+   *
+   * 【为什么不"事后"把地图挪过去】
+   * 先试过在挂载后调 map.fitBounds 把视野拉到玩家位置——视野被拉回去了：
+   * center effect 用的是**上一次渲染的闭包**（那个写死的默认中心），
+   * StrictMode 的双调用让它在 fitBounds 之后又跑一次，把地图拽回大西洋中部。
+   *
+   * 现在改成**不做事后修正**：窄屏且地图还停在写死的默认视野时，
+   * 直接把"要显示的中心"换成玩家位置——center effect 本来就要把地图
+   * 设到这个中心，于是两者天然一致，不用抢方向盘。
+   *
+   * `isDefaultView` 的含义是"玩家还没拖过地图"（拖过就持久化成别的值了）。
+   */
+  const isDefaultView = storeCenter[0] === DEFAULT_CENTER[0] && storeCenter[1] === DEFAULT_CENTER[1]
+  const center = (isMobile && isDefaultView && here) ? here : storeCenter
+  // 拆成标量再进依赖数组：center 是数组，每次渲染都是新引用
+  const centerLat = center[0]
+  const centerLng = center[1]
 
   useEffect(() => {
-    if (!isFinite(center[0]) || !isFinite(center[1]) || !isFinite(zoom)) return
+    if (!isFinite(centerLat) || !isFinite(centerLng) || !isFinite(zoom)) return
     const cur = map.getCenter()
-    if (Math.abs(cur.lat - center[0]) > 0.0001 || Math.abs(cur.lng - center[1]) > 0.0001) {
-      map.setView(center, zoom, { animate: true })
+    if (Math.abs(cur.lat - centerLat) > 0.0001 || Math.abs(cur.lng - centerLng) > 0.0001) {
+      map.setView([centerLat, centerLng], zoom, { animate: true })
     } else if (map.getZoom() !== zoom) {
       map.setZoom(zoom)
     }
-  }, [center, zoom, map])
+  }, [centerLat, centerLng, zoom, map])
 
   useEffect(() => {
     let cancelled = false
