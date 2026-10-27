@@ -57,9 +57,21 @@ export default function BottomBar() {
   ]
 
   return (
-    <div data-tut="bottombar" className="bg-ocean-800/90 backdrop-blur-sm border-t border-gold-700/30 px-3 py-1.5 flex items-center justify-between gap-3">
+    /*
+      桌面：一条横栏（状态 | 速度/方针 | 天数/资源/图层）。
+      移动：同一个 DOM，靠 flex-wrap 自动折成三行：
+        行1 状态 / 行2 速度与方针 / 行3 天数、资源、图层
+      为什么用折行而不是另写一套移动端 DOM：
+      折行后每一行的内容与桌面**完全同源**，不会出现"移动端少了某个按钮"
+      这种只有实测才能发现的差异。
+    */
+    <div
+      data-tut="bottombar"
+      className="bg-ocean-800/90 backdrop-blur-sm border-t border-gold-700/30 px-2 md:px-3 py-1
+        flex flex-wrap items-center justify-between gap-x-3 gap-y-0.5 md:flex-nowrap md:py-1.5"
+    >
 
-      <div className="flex items-center gap-2 text-gold-300 min-w-0">
+      <div className="flex items-center gap-2 text-gold-300 min-w-0 basis-full md:basis-auto md:flex-none order-1">
         {fleet.isSailing ? (
           <div className="flex items-center gap-2 min-w-0">
             <Navigation size={14} className="text-blue-400 shrink-0 animate-pulse" />
@@ -69,7 +81,7 @@ export default function BottomBar() {
             <span className="text-xs text-gold-500 shrink-0">
               {progressPct}%
             </span>
-            <div className="w-16 h-1.5 bg-ocean-700 rounded-full overflow-hidden shrink-0">
+            <div className="w-16 h-1.5 bg-ocean-700 rounded-full overflow-hidden shrink-0 hidden sm:block">
               <div
                 className="h-full bg-blue-400 rounded-full transition-all duration-300"
                 style={{ width: `${progressPct}%` }}
@@ -92,7 +104,7 @@ export default function BottomBar() {
           <div className="flex items-center gap-1.5">
             <Anchor size={14} className="text-gold-400 shrink-0" />
             <span className="font-serif text-sm text-gold-300">{currentPort.nameCn}</span>
-            <span className="text-xs text-gold-600">· 点击地图出航</span>
+            <span className="text-xs text-gold-600 hidden sm:inline">· 点击地图出航</span>
           </div>
         ) : (
           <div className="flex items-center gap-1.5">
@@ -102,13 +114,13 @@ export default function BottomBar() {
         )}
       </div>
 
-      <div className="flex items-center gap-1.5">
+      <div className="flex items-center gap-1.5 shrink-0 order-2">
         {/* 航段方针：唯一的速度/风险旋钮。
             它在航段开始时选定（见 SegmentDecision），此处只读展示——
             展示「现在正以什么姿态航行」比展示一堆可点的按钮更有用。 */}
         {fleet.isSailing && (
           <div
-            className="flex items-center gap-1 px-2 py-1 rounded-md border border-gold-700/30 bg-ocean-700/50"
+            className="hidden sm:flex items-center gap-1 px-2 py-1 rounded-md border border-gold-700/30 bg-ocean-700/50"
             title={`当前方针：${stanceProfile.name}——${stanceProfile.hint}`}
           >
             <Sailboat size={12} className="text-gold-400 shrink-0" />
@@ -118,12 +130,12 @@ export default function BottomBar() {
             </span>
           </div>
         )}
-        {/* 第三条线：操舵挑战（实时操作小游戏，每段航程一次） */}
+        {/* 第三条线：操舵挑战（实时操作小游戏，每段航程一次，可跳过） */}
         {fleet.isSailing && (() => {
           return (
             <span
-              className="px-2 py-1 text-xs font-serif rounded-md border border-sky-700/30 bg-sky-900/20 text-sky-300/80"
-              title="操舵挑战是每段起航前的必经环节——选完方针就会自动进入"
+              className="hidden md:inline px-2 py-1 text-xs font-serif rounded-md border border-sky-700/30 bg-sky-900/20 text-sky-300/80"
+              title="操舵挑战是每段起航后的可选加餐——不想玩可以「交给水手」跳过"
             >
               🧭 段 {segmentIndex + 1}/{segmentCount} · {stanceProfile.name}
             </span>
@@ -157,7 +169,12 @@ export default function BottomBar() {
         </button>
       </div>
 
-      <div className="flex items-center gap-3">
+      {/*
+        天数/金币 + 资源条。
+        order：移动端排到图标组之后（见下面的图标组注释），
+        桌面端回到原位（md:order-3）。
+      */}
+      <div className="flex items-center gap-2 md:gap-3 shrink-0 order-4 md:order-3">
         <div className="flex items-center gap-2 text-xs text-gold-300">
           <span className="text-gold-500 font-serif">第{fleet.day}天</span>
           <span className="flex items-center gap-0.5"><Coins size={11} />{fleet.gold}</span>
@@ -165,8 +182,21 @@ export default function BottomBar() {
         {/* 常驻资源条：粮/水/士气带余量条、可撑天数与短缺预警。
             金币不在这里——它是货币不是消耗品，画成进度条没有意义。 */}
         <ResourceCluster />
-        <div className="w-px h-4 bg-gold-700/30" />
-        <div className="flex items-center gap-0.5">
+        <div className="hidden md:block w-px h-4 bg-gold-700/30" />
+      </div>
+
+      {/*
+        图层开关 + 声音 + 重开。
+        【为什么单独拆出来，还带 order】
+        这一组约 92px 宽，和"天数/资源"组（≈318px）加在一起是 410px，
+        在 390px 的手机上放不下——flex-wrap 会把它挤到第四行，底栏变得很厚。
+        用 order 把它挪到速度组那一行：
+          移动端  状态 / 速度+图层开关 / 天数+资源     （三行）
+          桌面端  状态 / 速度 / 天数+资源 / 图层开关  （一行，与原版一致）
+        order 只影响 flex 容器的排列顺序，不影响内容，
+        所以桌面端的观感完全没变。
+      */}
+      <div className="flex items-center gap-0.5 shrink-0 order-3 md:order-4">
           <button
             onClick={toggleWindOverlay}
             className={`p-1 rounded press transition-all ${
@@ -200,9 +230,9 @@ export default function BottomBar() {
           >
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 8v4m0 4h.01"/></svg>
           </button>
-          <div className="w-px h-3 bg-gold-700/30" />
+          <div className="hidden md:block w-px h-3 bg-gold-700/30" />
           <SoundToggle />
-          <div className="w-px h-3 bg-gold-700/30" />
+          <div className="hidden md:block w-px h-3 bg-gold-700/30" />
           <button
             onClick={resetGame}
             className="p-1 rounded text-gold-500 hover:text-gold-300 hover:bg-gold-700/30 press transition-all"
@@ -211,7 +241,6 @@ export default function BottomBar() {
           >
             <RotateCcw size={12} aria-hidden="true" />
           </button>
-        </div>
       </div>
     </div>
   )

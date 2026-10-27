@@ -8,8 +8,19 @@ import {
 
 const sections = [
   {
-    title: '游戏目标',
+    title: '玩法模式',
     icon: <HelpCircle size={14} />,
+    items: [
+      '**船长模式**：完整玩法。有十步教学、任务传闻、实时操舵，也有输赢。',
+      '**参观模式**：只看世界。没有教学、没有任务、不会输；操舵可以交给水手，遇事可以袖手旁观。',
+      '没有强制任务：任务面板里的传闻**只是建议**，不接、不做都不影响你把船开到任何地方。',
+      '操舵永远可以跳过：跳过的唯一代价是那一段拿不到操舵奖励（不省里程、不加士气）。',
+      '想换模式？在「帮助」面板底部点「换个玩法」即可重开一局。',
+    ],
+  },
+  {
+    title: '游戏目标',
+    icon: <Globe size={14} />,
     items: [
       '自由航行于大航海时代的世界，探索你感兴趣的每一个角落。',
       '发现新港口、完成冒险传闻、积累财富——三条路都通向"传奇船长"结局。',
@@ -75,7 +86,7 @@ const sections = [
       '左侧一列按钮：舰队 / 任务 / 日志 / 成就 / 见闻——每个按钮都带中文名，不用猜图标',
       '右侧一列按钮：港口 / 贸易 / 帮助；造船厂在港口面板里进入',
       '点击地图设定航向后，在「出航计划」里确认才升起旗帜',
-      '起航后每段航程开始时先选一次「航段方针」，再进「操舵挑战」——这是你唯一的速度旋钮',
+      '起航后每段航程开始时先选一次「航段方针」，再进「操舵挑战」——方针是你唯一的速度旋钮，操舵可以跳过',
       '底部速度档（⏸/1x/3x/8x）控制**模拟快慢**（游戏跑得多快），"+1天"直接推进一天',
       '顺风方向航行更快——低纬度向东、中纬度向西，开风带图层查看',
     ],
@@ -127,14 +138,15 @@ const sections = [
     ],
   },
   {
-    title: '🧭 操舵挑战（每段必经）',
+    title: '🧭 操舵挑战（可跳过）',
     icon: <Compass size={14} />,
     items: [
-      '每段起航前自动进入：15 秒实时掌舵，船会停下等你',
+      '每段起航后弹出：15 秒实时掌舵，船会停下等你',
       '让船首向尽量对准风向，待在仪表盘绿色风区里；风向会摆，阵风不定期来袭',
       '帆收得紧（W）舵响应更快；评级越高，本段少走的航程越多（至多省 15%）',
       '传奇舵手还提振士气、小幅涨声望；操作太莽会在浪里颠掉旗舰耐久',
       '按 Enter 可提前收舵（至少掌舵 3 秒）——手起风落，各安其位',
+      '不想玩就点「交给水手」（或按 Esc）跳过：唯一的代价是**本段拿不到操舵奖励**，不扣士气、不磨损船',
     ],
   },
   {
@@ -144,8 +156,8 @@ const sections = [
       { icon: <Coins size={12} />, text: '金币：购买商品、修理、补给、招募、购船、发工资' },
       { icon: <Utensils size={12} />, text: '食物：航行中每日消耗，耗尽后士气下降' },
       { icon: <Droplets size={12} />, text: '淡水：航行中每日消耗，耗尽后士气下降' },
-      { icon: <Heart size={12} />, text: '士气：低于 45 有哗变风险，降至 0 则游戏结束' },
-      { icon: <Shield size={12} />, text: '耐久：船只生命值，全部归零则游戏结束' },
+      { icon: <Heart size={12} />, text: '士气：低于 45 有哗变风险，降至 0 则游戏结束（参观模式不会结束）' },
+      { icon: <Shield size={12} />, text: '耐久：船只生命值，全部归零则游戏结束（参观模式不会结束）' },
       { icon: <Users size={12} />, text: '船员：人手不足会掉速，死亡会削弱舰队' },
       { icon: <Trophy size={12} />, text: '声望：港口交易优惠的源头，也是部分结局的门槛' },
     ],
@@ -202,9 +214,11 @@ const sections = [
 
 export default function HelpPanel() {
   const setShowHelp = useGameStore(s => s.setShowHelp)
+  const resetGame = useGameStore(s => s.resetGame)
+  const gameMode = useGameStore(s => s.gameMode)
 
   return (
-    <div className="w-80 animate-slide-in-right">
+    <div className="w-full md:w-80 animate-slide-in-right">
       <ParchmentCard title="航海指南" onClose={() => setShowHelp(false)}>
         <div className="scroll-parchment max-h-[70vh] space-y-4 pr-1">
           {sections.map((section) => (
@@ -232,6 +246,19 @@ export default function HelpPanel() {
               </div>
             </div>
           ))}
+        </div>
+
+        {/* 换模式：重开一局会清掉当前进度，所以话说在前面 */}
+        <div className="mt-3 pt-3 border-t border-gold-700/30">
+          <button
+            onClick={() => { setShowHelp(false); resetGame() }}
+            className="w-full py-2 text-xs font-serif text-gold-400 hover:text-gold-200 border border-gold-700/25 rounded-lg press transition-all"
+          >
+            🔄 换个玩法（重开一局 · 当前进度会清空）
+          </button>
+          <p className="text-gold-600 text-[10px] font-serif text-center mt-1">
+            当前：{gameMode === 'visitor' ? '参观模式' : '船长模式'}
+          </p>
         </div>
       </ParchmentCard>
     </div>

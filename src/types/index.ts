@@ -435,6 +435,24 @@ export interface GameState {
   weather: WeatherState
   /** 剧情线：已播过的致辞 id（防刷新重播；新开局清空） */
   dialogueSeen: string[]
+  /**
+   * 玩法模式。
+   *
+   * - `captain` 船长模式：完整玩法。有教学、有失败、有硬核的实时操舵。
+   * - `visitor` 参观模式：**只为看看世界**。不做任务、不会输、操舵可以交给水手、
+   *   遇事可以袖手旁观。给那些只想看看这张大航海时代海图的人。
+   *
+   * 为什么要分模式而不是「全都可选」：全都可选等于没有玩法——
+   * 事件不参与、操舵不玩、任务不做，那航行就只剩一个进度条。
+   * 分成两个模式，玩家在**开局那一秒**就知道自己会经历什么，
+   * 而不是玩到一半才发现"原来这一整段是强制的"。
+   */
+  gameMode: GameMode
 }
+
+/**
+ * 玩法模式（见 GameState.gameMode）。
+ */
+export type GameMode = 'captain' | 'visitor'
 
 export type PanelType = 'fleet' | 'port' | 'event' | 'task' | 'trade' | 'shipyard' | 'achievement' | 'rival' | null

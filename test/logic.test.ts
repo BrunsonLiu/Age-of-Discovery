@@ -2855,5 +2855,150 @@ console.log('== 52. 贸易颜色提示：标绿必是全港最低价 ==')
   }
 }
 
+console.log('== 53. 自由世界：模式、跳过操舵、参观模式不输 ==')
+{
+  // --- 1) 开局模式：默认船长，参观模式显式指定 ---
+  useGameStore.getState().initGame('merchant')
+  assert(useGameStore.getState().gameMode === 'captain', '默认是船长模式')
+  assert(useGameStore.getState().tutorialStep === 0, '船长模式开局进教学')
+
+  useGameStore.getState().initGame('merchant', 'visitor')
+  assert(useGameStore.getState().gameMode === 'visitor', '可指定参观模式')
+  assert(useGameStore.getState().tutorialStep === -1,
+    '参观模式不弹教学——只想看世界的人不该被 10 步引导按着走')
+
+  // --- 2) 操舵不再是硬门槛：任何模式都能跳过，且代价只有"没有奖励" ---
+  const skipShip = { id: 1, name: '圣玛利亚号', type: 'caravel' as const, speed: 5, durability: 50, maxDurability: 100, capacity: 100, usedCapacity: 0, crew: 30, maxCrew: 40 }
+  const skipFleet: Fleet = { id: 1, name: '测试舰队', gold: 500, fame: 0, morale: 60, food: 100, water: 100, currentPortId: null, isSailing: true, day: 10, ships: [skipShip], cargo: [], flagshipId: 1, trait: null, durabilityCarry: 0 }
+  const skipRoute: Route = { id: -42, fromPortId: 6, toPortId: 7, distance: 1000, dangerLevel: 3, windFavor: 1 }
+  useGameStore.setState({
+    fleet: skipFleet,
+    currentRoute: skipRoute,
+    waypoint: { latitude: 40, longitude: -10, portId: 7 },
+    shipPosition: [20, -20],
+    segmentCount: 4,
+    segmentIndex: 0,
+    pendingSegment: { index: 0, total: 4, hazard: '风浪渐起', segmentNm: 250, remainingNm: 1000, daysLeft: 5 },
+    pendingHelm: null,
+    helmAdvance: null,
+    gameMode: 'captain',
+    gamePhase: 'segment',
+  })
+  useGameStore.getState().chooseStance('rush')
+  assert(useGameStore.getState().gamePhase === 'helm', '船长模式：选完方针仍进入操舵')
+  assert(!!useGameStore.getState().pendingHelm, '船长模式：操舵待办已挂上')
+
+  // 跳过：唯一代价是没有奖励
+  const beforeSkip = useGameStore.getState()
+  useGameStore.getState().skipHelmRun()
+  const afterSkip = useGameStore.getState()
+  assert(afterSkip.pendingHelm === null, '跳过后清掉待操舵')
+  assert(afterSkip.gamePhase === 'playing', '跳过后恢复航行（不卡在模态里）')
+  assert(afterSkip.helmAdvance === beforeSkip.helmAdvance, '跳过不递交里程——没玩就没有奖励')
+  assert(afterSkip.fleet.morale === beforeSkip.fleet.morale, '跳过不加也不扣士气')
+  assert(afterSkip.fleet.ships[0].durability === beforeSkip.fleet.ships[0].durability, '跳过不磨损船体')
+
+  // 无待操舵时跳过 = no-op（不能顺手把航行状态改掉）
+  useGameStore.setState({ gamePhase: 'playing', pendingHelm: null })
+  useGameStore.getState().skipHelmRun()
+  assert(useGameStore.getState().gamePhase === 'playing', '没有待操舵时跳过不改游戏阶段')
+
+  // --- 3) 参观模式：选完方针直接开走，不弹操舵 ---
+  useGameStore.setState({
+    fleet: skipFleet,
+    currentRoute: skipRoute,
+    waypoint: { latitude: 40, longitude: -10, portId: 7 },
+    shipPosition: [20, -20],
+    segmentCount: 4,
+    segmentIndex: 0,
+    pendingSegment: { index: 1, total: 4, hazard: '风浪渐起', segmentNm: 250, remainingNm: 750, daysLeft: 4 },
+    pendingHelm: null,
+    gameMode: 'visitor',
+    gamePhase: 'segment',
+  })
+  useGameStore.getState().chooseStance('steady')
+  const visitorAfterStance = useGameStore.getState()
+  assert(visitorAfterStance.gamePhase === 'playing', '参观模式：选完方针直接开走')
+  assert(visitorAfterStance.pendingHelm === null, '参观模式：不强制操舵')
+
+  // --- 4) 参观模式：不吃不喝、不会输 ---
+  useGameStore.setState({
+    fleet: { ...skipFleet, food: 100, water: 100, morale: 60 },
+    currentRoute: skipRoute,
+    gameMode: 'visitor',
+    gamePhase: 'playing',
+    segmentCount: 0,
+    segmentIndex: 0,
+    pendingSegment: null,
+    pendingHelm: null,
+  })
+  useGameStore.getState().advanceDay()
+  const vDay = useGameStore.getState()
+  assert(vDay.fleet.food === 100 && vDay.fleet.water === 100,
+    `参观模式不扣补给（粮 ${vDay.fleet.food} / 水 ${vDay.fleet.water}）`)
+  assert(vDay.gamePhase !== 'gameover', '参观模式不会因为一天就结束')
+
+  // 船长模式：同样的天数是要扣补给的（证明上一条不是"恰好没扣"）
+  useGameStore.setState({
+    fleet: { ...skipFleet, food: 100, water: 100, morale: 60 },
+    currentRoute: skipRoute,
+    gameMode: 'captain',
+    gamePhase: 'playing',
+    segmentCount: 0,
+    segmentIndex: 0,
+    pendingSegment: null,
+    pendingHelm: null,
+  })
+  useGameStore.getState().advanceDay()
+  const cDay = useGameStore.getState()
+  assert(cDay.fleet.food < 100, `船长模式照常扣补给（粮 ${cDay.fleet.food}）`)
+
+  // 士气归零：船长模式结束，参观模式不结束
+  useGameStore.setState({
+    fleet: { ...skipFleet, morale: 0 },
+    currentRoute: skipRoute,
+    gameMode: 'captain',
+    gamePhase: 'playing',
+  })
+  useGameStore.getState().advanceDay()
+  assert(useGameStore.getState().gamePhase === 'gameover', '船长模式：士气归零 → 航行终结')
+
+  useGameStore.setState({
+    fleet: { ...skipFleet, morale: 0 },
+    currentRoute: skipRoute,
+    gameMode: 'visitor',
+    gamePhase: 'playing',
+  })
+  useGameStore.getState().advanceDay()
+  assert(useGameStore.getState().gamePhase !== 'gameover', '参观模式：士气归零也不结束')
+
+  // 事件结算：参观模式不因"归零"而终结（耐久/士气留 1 点底）
+  useGameStore.setState({
+    fleet: { ...skipFleet, morale: 5, ships: [{ ...skipShip, durability: 3 }] },
+    gameMode: 'visitor',
+    gamePhase: 'event',
+  })
+  useGameStore.getState().applyEventOutcome({
+    goldChange: 0, foodChange: 0, waterChange: 0, moraleChange: -50, durabilityChange: -10,
+  })
+  const vEvent = useGameStore.getState()
+  assert(vEvent.gamePhase !== 'gameover', '参观模式：事件重创也不会结束这一局')
+  assert(vEvent.fleet.morale >= 1, `参观模式士气留底（${vEvent.fleet.morale}）`)
+  assert(vEvent.fleet.ships[0].durability >= 1, `参观模式耐久留底（${vEvent.fleet.ships[0].durability}）`)
+
+  useGameStore.setState({
+    fleet: { ...skipFleet, morale: 5, ships: [{ ...skipShip, durability: 3 }] },
+    gameMode: 'captain',
+    gamePhase: 'event',
+  })
+  useGameStore.getState().applyEventOutcome({
+    goldChange: 0, foodChange: 0, waterChange: 0, moraleChange: -50, durabilityChange: -10,
+  })
+  assert(useGameStore.getState().gamePhase === 'gameover', '船长模式：同样的重创会结束这一局')
+
+  // 复位，避免影响后续用例
+  useGameStore.getState().initGame('merchant', 'captain')
+}
+
 console.log(`\n最终结果：${passed} 通过 / ${failed} 失败`)
 if (failed > 0) process.exit(1)

@@ -23,6 +23,7 @@ export default function EventCard() {
   const applyEventOutcome = useGameStore(s => s.applyEventOutcome)
   const addEventLog = useGameStore(s => s.addEventLog)
   const clearCurrentEvent = useGameStore(s => s.clearCurrentEvent)
+  const gameMode = useGameStore(s => s.gameMode)
 
   const [outcome, setOutcome] = useState<EventOutcome | null>(null)
   const [choiceIndex, setChoiceIndex] = useState<number | null>(null)
@@ -140,14 +141,33 @@ export default function EventCard() {
     clearCurrentEvent()
   }
 
+  /**
+   * 袖手旁观：什么都不做，让这件事过去。
+   *
+   * 只在参观模式下提供。船长模式里每个事件都必须做个决定——
+   * 那正是航海的核心张力；参观模式的人只是路过看风景，
+   * 凭什么非得替一条陌生的商船做道德抉择？
+   *
+   * 旁观**不结算任何得失**（不加不减），也不写进航海日志——
+   * 你没参与，就不该有战绩。
+   */
+  const handleObserve = () => {
+    setOutcome(null)
+    setChoiceIndex(null)
+    setPerformance(null)
+    clearCurrentEvent()
+  }
+
   const bgGradient = EVENT_TYPE_BG[currentEvent.type] || 'from-gold-900/30 to-slate-900/30'
 
   return (
     <>
-      <div className="fixed inset-0 flex items-center justify-center bg-black/70 backdrop-blur-sm animate-fade-in-scale p-4 overflow-y-auto"
+      <div className="fixed inset-0 flex items-start justify-center bg-black/70 backdrop-blur-sm animate-fade-in-scale p-3 md:p-4 overflow-y-auto"
         style={{ zIndex: 80 }}
       >
-        <div className={`w-[26rem] max-w-[92vw] bg-gradient-to-b ${bgGradient} animate-fade-in-scale overflow-hidden`}
+        {/* my-auto：内容比视口高时从顶部开始排（flex 居中会把超出部分裁到屏幕外，
+            玩家就看不到事件标题了） */}
+        <div className={`my-auto w-[26rem] max-w-[92vw] bg-gradient-to-b ${bgGradient} animate-fade-in-scale overflow-hidden`}
           style={{
             animationDelay: '0.05s',
             // 金质华丽边框（F2）：border-image 九宫格切片随卡片伸缩。
@@ -221,6 +241,15 @@ export default function EventCard() {
                       onSelect={handleSelectChoice}
                     />
                   ))}
+                  {/* 参观模式：一条"我不管"的路。站着看热闹也是参与世界的方式。 */}
+                  {gameMode === 'visitor' && (
+                    <button
+                      onClick={handleObserve}
+                      className="w-full mt-1 py-2 text-xs font-serif text-gold-500 hover:text-gold-300 border border-gold-700/25 rounded-lg press transition-all"
+                    >
+                      🚶 站在一边看（不参与，也不结算得失）
+                    </button>
+                  )}
                 </div>
               </>
             ) : (

@@ -4,11 +4,52 @@ import { startAmbience } from '@/utils/audio'
 import { traits, DEFAULT_TRAIT } from '@/data/traits'
 import { BG_ASSETS } from '@/data/envAssets'
 import Badge from '@/components/ui/Badge'
+import type { GameMode } from '@/types'
+
+/**
+ * 两种玩法模式的开局说明。
+ *
+ * 为什么必须在**开局就选**，而不是把一切都做成"随时可跳过"：
+ * 全都可选等于没有玩法——事件不参与、操舵不玩、任务不做，
+ * 航行就只剩一根进度条。所以本作把两种体验分成两局，
+ * 玩家在第一秒就知道自己会遇到什么，而不是玩到一半才发现被卡住。
+ */
+const MODE_CARDS: {
+  id: GameMode
+  icon: string
+  title: string
+  tagline: string
+  points: string[]
+}[] = [
+  {
+    id: 'captain',
+    icon: '🧭',
+    title: '我要当船长',
+    tagline: '完整玩法：有任务、有操舵、有输赢',
+    points: [
+      '十步教学带你走一遍基本操作',
+      '每段航程可选航段方针，还能亲自掌舵抢时间',
+      '断粮会掉士气，船会沉——有输赢才有故事',
+    ],
+  },
+  {
+    id: 'visitor',
+    icon: '👀',
+    title: '我只是来逛逛',
+    tagline: '参观模式：只看，不被逼着做任何事',
+    points: [
+      '没有教学，没有任务，逛到哪算哪',
+      '不会输：断粮沉船都与你无关',
+      '操舵可以交给水手，遇事可以袖手旁观',
+    ],
+  },
+]
 
 export default function IntroScreen() {
   const [currentPage, setCurrentPage] = useState(0)
   const [fade, setFade] = useState(true)
   const [selectedTrait, setSelectedTrait] = useState<string>(DEFAULT_TRAIT)
+  const [gameMode, setGameMode] = useState<GameMode>('captain')
   const initGame = useGameStore(s => s.initGame)
   const fadeTimerRef = useRef<number | null>(null)
 
@@ -59,6 +100,47 @@ export default function IntroScreen() {
             <p>💰 买卖商品，低买高卖，积累财富</p>
             <p>⛈️ 在风暴与奇遇中体验航海的浪漫</p>
             <p>📜 道听途说的冒险线索，随心而行</p>
+          </div>
+        </>
+      ),
+      button: '继续',
+    },
+    {
+      content: (
+        <>
+          <h2 className="pirate-title text-3xl text-gold-300 mb-2">你想怎么玩？</h2>
+          <p className="font-serif text-gold-500 text-sm leading-relaxed max-w-md mb-4">
+            没有对错，选一个就好。
+          </p>
+          <div className="grid grid-cols-1 gap-2.5 w-full max-w-md">
+            {MODE_CARDS.map(m => {
+              const selected = gameMode === m.id
+              return (
+                <button
+                  key={m.id}
+                  onClick={() => setGameMode(m.id)}
+                  data-mode={m.id}
+                  aria-pressed={selected}
+                  className={`text-left rounded-lg border p-3 transition-all ${
+                    selected
+                      ? 'border-gold-400 bg-gold-700/30 shadow-lg shadow-gold-900/40'
+                      : 'border-gold-700/30 bg-ocean-800/40 hover:border-gold-500/50 hover:bg-ocean-700/40'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="text-xl leading-none">{m.icon}</span>
+                    <span className={`pirate-title text-lg ${selected ? 'text-gold-200' : 'text-gold-400'}`}>{m.title}</span>
+                    {selected && <span className="ml-auto text-gold-300 text-xs font-serif">已选</span>}
+                  </div>
+                  <p className="text-gold-500 text-xs font-serif mt-1">{m.tagline}</p>
+                  <ul className="mt-1.5 space-y-0.5">
+                    {m.points.map(p => (
+                      <li key={p} className="text-gold-600 text-[11px] font-serif">· {p}</li>
+                    ))}
+                  </ul>
+                </button>
+              )
+            })}
           </div>
         </>
       ),
@@ -118,13 +200,25 @@ export default function IntroScreen() {
                 </span>
               </div>
               <div className="flex justify-between">
-                <span className="text-gold-500">你的目标</span>
-                <span className="text-gold-200">发现 20 座港口 · 写满 10 段冒险</span>
+                <span className="text-gold-500">{gameMode === 'visitor' ? '你的目标' : '你的目标'}</span>
+                <span className="text-gold-200">
+                  {gameMode === 'visitor'
+                    ? '没有目标，看够了就下船'
+                    : '发现 20 座港口 · 写满 10 段冒险'}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gold-500">玩法</span>
+                <span className="text-gold-200">
+                  {gameMode === 'visitor' ? '参观模式 · 只逛逛' : '船长模式 · 完整玩法'}
+                </span>
               </div>
             </div>
             <p>点击海图上的任何一点，就能规划第一条航线——先看距离、危险与补给，再升起旗帜。</p>
             <p className="text-gold-500 text-xs">
-              航行中每段航程开始都要选一次方针、并亲手掌舵 15 秒；这是全游戏最要紧的两件事。
+              {gameMode === 'visitor'
+                ? '航行中每段航程开始要选一次方针；操舵随时可以交给水手（不玩就没有奖励），遇事也可以袖手旁观。没人催你做任何事。'
+                : '航行中每段航程开始都要选一次方针、并亲手掌舵 15 秒；这是全游戏最要紧的两件事。'}
               完整规则随时按 <span className="text-gold-300">?</span> 或点右侧「帮助」查看。
             </p>
           </div>
@@ -136,7 +230,7 @@ export default function IntroScreen() {
 
   const page = pages[currentPage]
   if (!page) {
-    initGame(selectedTrait)
+    initGame(selectedTrait, gameMode)
     return null
   }
 
@@ -154,7 +248,7 @@ export default function IntroScreen() {
     } else {
       // 用户手势中启动环境音（满足浏览器自动播放策略）
       startAmbience()
-      initGame(selectedTrait)
+      initGame(selectedTrait, gameMode)
     }
   }
 

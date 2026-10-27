@@ -3,7 +3,7 @@ import { persist } from 'zustand/middleware'
 import type {
   Fleet, Ship, GameState, GameEvent, EventOutcome, EventLogEntry,
   Route, PanelType, CargoItem, Waypoint, GameStats, RouteIntel, OfficerId, Rival, RivalNews,
-  FactionId, CrewCharId, CrewMember, NotorietyAxis, StanceId,
+  FactionId, CrewCharId, CrewMember, NotorietyAxis, StanceId, GameMode,
 } from '@/types'
 import { ports, portGoods, localDemands } from '@/data/ports'
 import { events } from '@/data/events'
@@ -194,6 +194,8 @@ const initialGameState: GameState = {
   weather: createInitialWeather(),
   /** 剧情线：已播过的致辞 id（防刷新重播；新开局清空） */
   dialogueSeen: [],
+  /** 默认船长模式；参观模式由 initGame(mode) 写入 */
+  gameMode: 'captain',
 }
 
 interface GameStore extends GameState {
@@ -241,7 +243,13 @@ interface GameStore extends GameState {
   recruitOfficer: (id: OfficerId) => void
   /** 第二条线：招募名船员（一次性招募费，有名字、忠诚与个人事件的人） */
   recruitCrewMember: (id: CrewCharId) => void
-  initGame: (trait?: string) => void
+  /**
+   * 开新局。
+   *
+   * @param trait  天赋 id
+   * @param mode   玩法模式：captain = 完整玩法；visitor = 只逛逛（不被迫）
+   */
+  initGame: (trait?: string, mode?: GameMode) => void
   setGamePhase: (phase: GameState['gamePhase']) => void
   setCurrentEvent: (event: GameEvent) => void
   clearCurrentEvent: () => void
@@ -267,6 +275,17 @@ interface GameStore extends GameState {
   holdFeast: () => void
   /** 第三条线：操舵挑战结算——沿当前航线真实推进一段航程，并按评级结算士气/耐久/声望 */
   finishHelmRun: (result: HelmRunResult) => void
+  /**
+   * 跳过本段操舵：把这节拍交给水手，自己不碰舵轮。
+   *
+   * 为什么必须有这条路：操舵一度是**每段必经**的硬门槛——
+   * 选完方针就被弹进一个必须玩 15 秒实时操作的模态，不想玩也得玩。
+   * 对"只想看看这张海图"的人说，那不是游戏，是路障。
+   *
+   * 跳过的代价只有一条：**本段拿不到操舵奖励**（省里程 / 士气 / 声望）。
+   * 不扣任何东西、不掉士气、不磨损船体——纯粹的"不参与，就没有回报"。
+   */
+  skipHelmRun: () => void
   /** 剧情线：标记一段致辞已播过（幂等） */
   markDialogueSeen: (scriptId: string) => void
   setActivePanel: (panel: PanelType) => void
@@ -549,8 +568,10 @@ function withAchievements(state: GameState & { notifications?: StoreNotification
 function checkVictory(state: GameState): string | null {  if (state.discoveredPorts.length >= GAME_BALANCE.VICTORY_DISCOVER_ALL) {
     return '你发现了世上全部 20 座港口——每一片海岸都记得你的帆影。'
   }
-  // "完成全部任务"按任务总数动态判定，随任务线扩充自动生效
-  if (state.completedTasks.length >= tasks.length) {
+  // "完成全部任务"按任务总数动态判定，随任务线扩充自动生效。
+  // 参观模式跳过这一条：只看世界的人不该被"任务做完没"判定输赢，
+  // 他们的结束条件只有一个——把 20 座港口都看过。
+  if (state.completedTasks.length >= tasks.length && state.gameMode !== 'visitor') {
     return `${tasks.length} 段冒险全部写进了你的航海日志——传奇船长，实至名归。`
   }
   if (state.fleet.gold >= GAME_BALANCE.VICTORY_GOLD) {
@@ -682,10 +703,15 @@ export const useGameStore = create<GameStore>()(
           //
           // 之前操舵是可选加分项（按 H 才开，每段一次），于是「最有操作感
           // 的环节」恰恰是玩家最容易被跳过的环节。现在它跟方针绑定：
-          // 每段起航前都必须掌舵，评级决定这一段能少走多少海里。
+          // 每段起航前都会弹出操舵，评级决定这一段能少走多少海里。
           // gamePhase 切到 'helm'，SailingController 会停船等玩家。
-          pendingHelm: { segmentIndex: state.pendingSegment.index },
-          gamePhase: 'helm',
+          //
+          // 【参观模式例外】只想看看世界的人不该被逼着玩实时操作，
+          // 所以 visitor 模式直接放行——操舵随时可以在面板里手动补做。
+          pendingHelm: state.gameMode === 'visitor'
+            ? null
+            : { segmentIndex: state.pendingSegment.index },
+          gamePhase: state.gameMode === 'visitor' ? 'playing' : 'helm',
         }
       }),
 
@@ -824,7 +850,7 @@ export const useGameStore = create<GameStore>()(
         }
       }),
 
-      initGame: (trait) => {
+      initGame: (trait, mode = 'captain') => {
         const startPort = ports.find(p => p.id === 6)
         set({
           fleet: { ...createStartingFleet(), trait: trait ?? DEFAULT_TRAIT },
@@ -846,7 +872,9 @@ export const useGameStore = create<GameStore>()(
           currentEvent: null,
           gamePhase: 'playing',
           activePanel: null,
-          tutorialStep: 0,
+          // 参观模式**不弹教学**：只想看看世界的人，一上来就被 10 步引导
+          // 按着走一遍，是本作最劝退的开局。船长模式才需要教。
+          tutorialStep: mode === 'visitor' ? -1 : 0,
           showHelp: false,
           notifications: [],
           seenHistoricalEvents: [],
@@ -868,6 +896,7 @@ export const useGameStore = create<GameStore>()(
           notoriety: createInitialNotoriety(),
           weather: createInitialWeather(),
           dialogueSeen: [],
+          gameMode: mode,
         })
       },
 
@@ -919,6 +948,19 @@ export const useGameStore = create<GameStore>()(
         let newStats = { ...state.stats }
         let newEventFlags = state.eventFlags
 
+        /**
+         * 参观模式：**只看，不受苦**。
+         *
+         * 具体说：不吃不喝（不扣粮水）、不会因为断粮士气崩、
+         * 船体不会被啃到报废。这里不是把难度调低，而是把
+         * "生存压力"整个拿掉——只想看看这张海图的人，
+         * 不该被一根粮草的余量逼着做决定。
+         *
+         * 事件造成的金币/士气/耐久变化**照常显示**（数字仍然是真的），
+         * 只是不再有"归零即结束"的死亡线。
+         */
+        const isVisitor = state.gameMode === 'visitor'
+
         // 军官工资结算：付不起全员工资时，按名单顺序辞退到付得起为止
         let newOfficers = state.officers
         if (newOfficers.length > 0) {
@@ -937,7 +979,7 @@ export const useGameStore = create<GameStore>()(
         }
 
         // 港内：消耗极低但仍存在（船员上岸自给一部分），库存缓慢回补
-        if (!fleet.isSailing) {
+        if (!fleet.isSailing && !isVisitor) {
           const consumption = calculateDailyConsumption(fleet)
           const newFood = Math.max(0, fleet.food - Math.ceil(consumption.food / 4))
           const newWater = Math.max(0, fleet.water - Math.ceil(consumption.water / 4))
@@ -992,10 +1034,16 @@ export const useGameStore = create<GameStore>()(
           const cookRelief = state.crewRoster.some(m => m.id === 'cook') ? 0.8 : 1
           // 取整口径与 segment.forecastSegment 完全一致（dailyFoodUse / dailyWaterUse），
           // 这样"抉择面板预测 32 份粮"与"实际扣 32 份"是同一个数。
-          const newFood = Math.max(0, fleet.food - dailyFoodUse(consumption.food, supplyMul, cookRelief))
-          const newWater = Math.max(0, fleet.water - dailyWaterUse(consumption.water, supplyMul))
+          //
+          // 参观模式不吃不喝：粮水保持原样，士气也不会因为断粮而崩。
+          const newFood = isVisitor
+            ? fleet.food
+            : Math.max(0, fleet.food - dailyFoodUse(consumption.food, supplyMul, cookRelief))
+          const newWater = isVisitor
+            ? fleet.water
+            : Math.max(0, fleet.water - dailyWaterUse(consumption.water, supplyMul))
           let newMorale = fleet.morale
-          if (newFood === 0 || newWater === 0) {
+          if (!isVisitor && (newFood === 0 || newWater === 0)) {
             // 船医与随船神甫让绝望来得慢一些
             const relief = (newOfficers.includes('surgeon') ? 2 : 0) + (state.crewRoster.some(m => m.id === 'chaplain') ? 2 : 0)
             const decay = Math.max(1, GAME_BALANCE.MORALE_DECAY_PER_DAY - relief)
@@ -1013,11 +1061,14 @@ export const useGameStore = create<GameStore>()(
             const { points, carry } = settleWear(newFleet.durabilityCarry, dailyWearRate(profile), 1)
             newFleet = { ...newFleet, durabilityCarry: carry }
             if (points > 0) {
+              // 参观模式：船体不会被啃到报废（下限 1 点），
+              // 但磨损照常显示——玩家仍看得见"这一路花了多少船板"。
+              const floor = isVisitor ? 1 : 0
               newFleet = {
                 ...newFleet,
                 ships: newFleet.ships.map(ship => ({
                   ...ship,
-                  durability: Math.max(0, ship.durability - points),
+                  durability: Math.max(floor, ship.durability - points),
                 })),
               }
             }
@@ -1061,17 +1112,18 @@ export const useGameStore = create<GameStore>()(
         // 暴风雨的日常代价：啃船底、压士气（放在航行块之后，避免被断粮士气结算覆盖）
         if (fleet.isSailing && newWeather.kind === 'storm') {
           const wi = WEATHER_INFO.storm
+          const floor = isVisitor ? 1 : 0
           if (wi.wearAdd > 0) {
             newFleet = {
               ...newFleet,
               ships: newFleet.ships.map(ship => ({
                 ...ship,
-                durability: Math.max(0, ship.durability - wi.wearAdd),
+                durability: Math.max(floor, ship.durability - wi.wearAdd),
               })),
             }
           }
           if (wi.moraleHit > 0) {
-            newFleet = { ...newFleet, morale: Math.max(0, newFleet.morale - wi.moraleHit) }
+            newFleet = { ...newFleet, morale: Math.max(floor, newFleet.morale - wi.moraleHit) }
           }
         }
 
@@ -1105,7 +1157,9 @@ export const useGameStore = create<GameStore>()(
         }
 
         const allShipsDestroyed = newFleet.ships.every(s => s.durability <= 0)
-        if (allShipsDestroyed || newFleet.morale <= 0) {
+        // 参观模式没有"输"这回事：船不会报废、士气不会归零，
+        // 于是没有什么能终结这一局——想逛多久逛多久。
+        if (!isVisitor && (allShipsDestroyed || newFleet.morale <= 0)) {
           newGamePhase = 'gameover'
         }
 
@@ -1364,16 +1418,19 @@ export const useGameStore = create<GameStore>()(
         // 如果在这里再加工一次，数字会被放大两遍，
         // 玩家看到的就会和实际扣减对不上账。
         const quartered = outcome
+        // 参观模式：数字照常变（这是真的），但不设"归零即完蛋"的线。
+        // 耐久与士气留 1 点底，事件再怎么狠也不会把这一局结束掉。
+        const floor = state.gameMode === 'visitor' ? 1 : 0
         const newFleet = {
           ...state.fleet,
           gold: Math.max(0, state.fleet.gold + quartered.goldChange),
           food: Math.max(0, state.fleet.food + quartered.foodChange),
           water: Math.max(0, state.fleet.water + quartered.waterChange),
-          morale: Math.max(0, Math.min(GAME_BALANCE.MORALE_MAX, state.fleet.morale + quartered.moraleChange)),
+          morale: Math.max(floor, Math.min(GAME_BALANCE.MORALE_MAX, state.fleet.morale + quartered.moraleChange)),
           fame: Math.max(0, state.fleet.fame + (quartered.fameChange ?? 0)),
           ships: state.fleet.ships.map(ship => ({
             ...ship,
-            durability: Math.max(0, Math.min(ship.maxDurability, ship.durability + quartered.durabilityChange)),
+            durability: Math.max(floor, Math.min(ship.maxDurability, ship.durability + quartered.durabilityChange)),
             crew: Math.max(0, Math.min(ship.maxCrew, ship.crew + quartered.crewChange)),
           })),
         }
@@ -1432,7 +1489,7 @@ export const useGameStore = create<GameStore>()(
         }
         return withAchievements({ ...state, eventFlags: newFlags, factionRep: newFactionRep, notoriety: newNotoriety, crewRoster: newRoster }, {
           fleet: newFleet,
-          gamePhase: allShipsDestroyed || newFleet.morale <= 0 ? 'gameover' : state.gamePhase,
+          gamePhase: (state.gameMode !== 'visitor' && (allShipsDestroyed || newFleet.morale <= 0)) ? 'gameover' : state.gamePhase,
           eventFlags: newFlags,
           factionRep: newFactionRep,
           notoriety: newNotoriety,
@@ -1674,6 +1731,29 @@ export const useGameStore = create<GameStore>()(
           : { dialogueSeen: [...state.dialogueSeen, scriptId] }
       )),
 
+      /**
+       * 把这一段的操舵交给水手（跳过）。
+       *
+       * 唯一的代价是**没有操舵奖励**——不递交 helmAdvance，
+       * 所以船不会因为这一段而少走任何海里（这正是"没玩就没赚"）。
+       * 不扣士气、不磨损船体、不影响任何结算。
+       */
+      skipHelmRun: () => set((state) => {
+        if (!state.pendingHelm) return state
+        const seg = state.pendingHelm.segmentIndex
+        return {
+          pendingHelm: null,
+          gamePhase: 'playing',
+          notifications: [...state.notifications, {
+            id: `helm-skip-${seg}-${Date.now()}`,
+            type: 'history' as const,
+            title: '🧭 舵轮交给水手',
+            message: `第 ${seg + 1} 段由水手操舵。没人盯舵，风就白白吹过去了——这一段没有操舵奖励。`,
+            timestamp: Date.now(),
+          }],
+        }
+      }),
+
       setActivePanel: (panel) => set({ activePanel: panel }),
       addNotification: (notification) => set((state) => ({ notifications: [...state.notifications, { ...notification, timestamp: Date.now() }] })),
       removeNotification: (id) => set((state) => ({ notifications: state.notifications.filter(n => n.id !== id) })),
@@ -1695,7 +1775,7 @@ export const useGameStore = create<GameStore>()(
     }),
     {
       name: 'age-of-discovery-save',
-      version: 14,
+      version: 15,
       onRehydrateStorage: () => (state, error) => {
         if (error) {
           console.warn('存档数据损坏，已重置', error)
@@ -1815,6 +1895,11 @@ export const useGameStore = create<GameStore>()(
             pState.gamePhase = 'playing'
           }
         }
+        // v14→v15: 玩法模式（captain 完整玩法 / visitor 只逛逛）。
+        // 老存档一律按船长模式读入——不要把老玩家突然扔进参观模式。
+        if (version < 15) {
+          if (pState.gameMode === undefined) pState.gameMode = 'captain'
+        }
         return persistedState
       },
       partialize: (state) => ({
@@ -1851,6 +1936,7 @@ export const useGameStore = create<GameStore>()(
         helmAdvance: state.helmAdvance,
         weather: state.weather,
         dialogueSeen: state.dialogueSeen,
+        gameMode: state.gameMode,
       }),
       // 存档软锁修复：存档里若停在事件阶段但事件未持久化，重开时落回 playing
       merge: (persisted, current) => {

@@ -18,6 +18,8 @@ import {
 } from '@/utils/helm'
 import { shipSprite } from '@/data/shipSprites'
 import { STANCES } from '@/utils/segment'
+import TouchKeyPad from '@/components/ui/TouchKeyPad'
+import { useIsTouchPrimary } from '@/hooks/useIsMobile'
 
 type Phase = 'intro' | 'running' | 'done'
 
@@ -66,6 +68,7 @@ export default function HelmModal() {
   const shipPosition = useGameStore((s) => s.shipPosition)
   const currentRoute = useGameStore((s) => s.currentRoute)
   const finishHelmRun = useGameStore((s) => s.finishHelmRun)
+  const skipHelmRun = useGameStore((s) => s.skipHelmRun)
   // 操舵用的是旗舰的精绘精灵
   const shipType = useGameStore((s) => {
     const f = s.fleet
@@ -73,6 +76,13 @@ export default function HelmModal() {
     return flagship?.type || 'galleon'
   })
   const spriteUrl = useMemo(() => shipSprite(shipType), [shipType])
+
+  /**
+   * 触屏设备：没有物理键盘，操舵就完全没法玩。
+   * 所以给一套虚拟按键——它派发的就是键盘事件，
+   * 与键盘玩家走**完全同一段代码**（见 TouchKeyPad 的说明）。
+   */
+  const isTouch = useIsTouchPrimary()
 
   const [phase, setPhase] = useState<Phase>('intro')
   const [result, setResult] = useState<HelmRunResult | null>(null)
@@ -241,6 +251,8 @@ export default function HelmModal() {
   // 准备屏：Enter/Space 掌舵启程。
   // 按钮文案写着「（Enter）」就必须真有这个键——否则键盘玩家
   // 盯着一个按不动的开始按钮，而鼠标玩家根本发现不了这件事。
+  //
+  // Esc = 交给水手（跳过）。跳过的唯一代价是本段拿不到操舵奖励。
   useEffect(() => {
     if (phase !== 'intro') return
     const kd = (e: KeyboardEvent) => {
@@ -248,6 +260,9 @@ export default function HelmModal() {
       if (k === 'enter' || k === ' ') {
         e.preventDefault()
         startRun()
+      } else if (k === 'escape') {
+        e.preventDefault()
+        skipHelmRun()
       }
     }
     window.addEventListener('keydown', kd)
@@ -298,12 +313,12 @@ export default function HelmModal() {
 
   return (
     <div
-      className="fixed inset-0 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 overflow-y-auto"
+      className="fixed inset-0 flex items-start justify-center bg-black/75 backdrop-blur-sm p-3 md:p-4 overflow-y-auto"
       style={{ zIndex: 85 }}
       role="dialog"
       aria-label="操舵挑战"
     >
-      <div className="w-[30rem] max-w-[94vw] bg-ocean-900/95 border border-gold-700/40 rounded-xl shadow-2xl overflow-hidden animate-fade-in-scale">
+      <div className="my-auto w-[30rem] max-w-[94vw] bg-ocean-900/95 border border-gold-700/40 rounded-xl shadow-2xl overflow-hidden animate-fade-in-scale">
         {/* 标题 */}
         <div className="px-4 py-3 border-b border-gold-700/30 bg-ocean-800/50 flex items-center justify-between">
           <div>
@@ -331,6 +346,9 @@ export default function HelmModal() {
                 <li><span className="text-gold-200">W / S</span>（或 ↑ / ↓）：收帆 / 松帆——帆收得紧，舵响应更快</li>
                 <li>风向会缓慢摆动，每隔几秒还有一阵突如其来的阵风</li>
                 <li>坚持 <span className="text-gold-200">{HELM_DURATION} 秒</span>，或按 <span className="text-gold-200">Enter</span> 提前收舵（至少 3 秒）</li>
+                {isTouch && (
+                  <li className="text-gold-300">没有键盘？操作界面下方有一套虚拟按键，作用完全一样</li>
+                )}
               </ul>
             </div>
             <div className="flex justify-center">
@@ -352,6 +370,15 @@ export default function HelmModal() {
               className="w-full py-2.5 text-sm font-serif text-gold-100 bg-gold-700/70 hover:bg-gold-600/80 rounded-lg press transition-all"
             >
               ⚓ 掌舵启程（Enter）
+            </button>
+            {/* 交给水手：不是"失败"，是"不玩"。
+                跳过的唯一代价是本段没有操舵奖励（不省里程、不加士气、不掉耐久），
+                船照常往前开。不想玩实时操作的人不该被卡在这一步。 */}
+            <button
+              onClick={skipHelmRun}
+              className="w-full py-2 text-xs font-serif text-gold-500 hover:text-gold-300 border border-gold-700/25 rounded-lg press transition-all"
+            >
+              🙋 交给水手，跳过本段（Esc）——本段没有操舵奖励
             </button>
           </div>
         )}
@@ -461,6 +488,29 @@ export default function HelmModal() {
               <span>Enter 收舵</span>
             </div>
             {hint && <p className="text-danger-400 text-xs font-serif text-center">{hint}</p>}
+
+            {/* 触屏虚拟按键：没有物理键盘时，操舵必须能用手玩。
+                派发的就是键盘事件，所以与键盘玩法完全同源。 */}
+            {isTouch && (
+              <div className="space-y-2 pt-1">
+                <TouchKeyPad
+                  keys={[
+                    { key: 'ArrowLeft', label: '◀', hint: '左转', hold: true },
+                    { key: 'ArrowUp', label: '▲', hint: '收帆', hold: true },
+                    { key: 'ArrowRight', label: '▶', hint: '右转', hold: true },
+                    { key: 'ArrowDown', label: '▼', hint: '松帆', hold: true },
+                  ]}
+                />
+                <button
+                  type="button"
+                  data-testid="touch-helm-finish"
+                  onPointerDown={(e) => { e.preventDefault(); finishRun(true) }}
+                  className="w-full py-2 text-xs font-serif text-gold-300 border border-gold-700/30 rounded-lg press transition-all"
+                >
+                  ⛵ 收舵（Enter）
+                </button>
+              </div>
+            )}
           </div>
         )}
 

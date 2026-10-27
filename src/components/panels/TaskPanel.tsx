@@ -17,6 +17,7 @@ export default function TaskPanel() {
   const acceptTask = useGameStore(s => s.acceptTask)
   const completeTask = useGameStore(s => s.completeTask)
   const setActivePanel = useGameStore(s => s.setActivePanel)
+  const gameMode = useGameStore(s => s.gameMode)
 
   const nameOf = (id: number) => goods.find(g => g.id === id)?.nameCn ?? ''
   const cargoOf = (goodId: number) => fleet.cargo.find(c => c.goodId === goodId)?.quantity ?? 0
@@ -44,10 +45,12 @@ export default function TaskPanel() {
   const progress = `${completedTasks.length}/${tasks.length}`
 
   return (
-    <div className="w-80 animate-slide-in-left">
+    <div className="w-full md:w-80 animate-slide-in-left">
       <ParchmentCard title="冒险笔记" onClose={() => setActivePanel(null)}>
         <p className="text-gold-500 text-xs font-serif italic mb-2">
-          这些只是建议，你可以自由探索任何地方
+          {gameMode === 'visitor'
+            ? '参观模式：这些都是听说过的事，不接也没关系——船照开，世界照走'
+            : '这些只是建议，你可以自由探索任何地方'}
         </p>
         <div className="flex items-center justify-between text-xs text-gold-400 font-serif mb-3 border-b border-gold-700/20 pb-2">
           <span className="flex items-center gap-1"><CheckCircle2 size={12} /> 冒险进度</span>
