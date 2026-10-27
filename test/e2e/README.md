@@ -46,6 +46,10 @@ npm run test:e2e:all      # 以上全部
 | `map-check.mjs` / `map-diag.mjs` | 地图视觉复核与诊断（辅助脚本） | dev server |
 | `audio-live.mjs` | 真实音频能量、BGM 情绪跟随、总开关、静音恢复 | dev server |
 | `trade-quote.mjs` | 面板显示价 == 实际结算价；本港不收的货能折价卖掉 | dev server |
+| `notification-overlap.mjs` | 成就通知堆叠时不挡玩家点击（真实鼠标点击） | dev server |
+| `measure-map-load.mjs` | 实测「绘制航海图...」占屏时长 + geojson 请求次数 | dev server 或静态服务器 |
+| `online-check.mjs` | 线上站点能否打开、有无控制台错误、地图是否渲染 | 无（直连线上） |
+| `online-load-time.mjs` | 线上端到端加载耗时（含每个关键资源大小） | 无（直连线上） |
 | `notification-overlap.mjs` | 通知堆叠时面板按钮仍点得动（真实鼠标点击） | dev server |
 
 ## 写 e2e 时容易踩的坑
