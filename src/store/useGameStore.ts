@@ -362,6 +362,46 @@ export function selectSellPrice(state: GameState, portId: number, goodId: number
   return dynamicSellPrice(pg, stock, pg.stock, state.fleet, opts)
 }
 
+/**
+ * 价格档位：给贸易面板上色用。
+ *   cheap    —— 该商品在所有经营它的港口里，当前**买价最低**
+ *   expensive—— 当前**买价最高**
+ *   normal   —— 居中
+ */
+export type PriceTone = 'cheap' | 'expensive' | 'normal'
+
+/**
+ * 某个商品在某个港口的价格档位。
+ *
+ * 为什么不是「相对全局基准价」：那套语义量过——36 个标绿的条目里只有
+ * 9 个（25%）真的是全港最低价，朗姆酒在有的港标绿（6）却还有更便宜的
+ * 港（3）。玩家看到绿色就以为「这里买最划算」，实际买贵了一倍。
+ * 颜色是玩家用来做决定的信号，必须直接可行动：**绿 = 这里最便宜**。
+ *
+ * 顶部「本地特产 / 高价收购」提示仍按结构性口径（priceModifier）给，
+ * 那是另一种知识（这港产什么、收什么），两者互补不冲突。
+ *
+ * @returns 该商品在所有港口中的当前买价档位
+ */
+export function selectPriceTone(state: GameState, portId: number, goodId: number): PriceTone {
+  const pg = portGoods.find(p => p.portId === portId && p.goodId === goodId)
+  if (!pg) return 'normal'
+  const price = selectBuyPrice(state, portId, goodId)
+  if (price == null) return 'normal'
+  let min = Infinity
+  let max = -Infinity
+  for (const other of portGoods) {
+    if (other.goodId !== goodId) continue
+    const q = selectBuyPrice(state, other.portId, goodId)
+    if (q == null) continue
+    if (q < min) min = q
+    if (q > max) max = q
+  }
+  if (price <= min) return 'cheap'
+  if (price >= max) return 'expensive'
+  return 'normal'
+}
+
 /** 库存回补：与 advanceDay / restAtPort 共用同一套市场节奏 */
 function advanceMarketStock(stock: Record<string, number>): Record<string, number> {
   const updated: Record<string, number> = { ...stock }

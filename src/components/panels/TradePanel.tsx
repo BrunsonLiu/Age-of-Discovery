@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Coins, Package, TrendingUp, TrendingDown, Sprout, HandCoins } from 'lucide-react'
-import { useGameStore, selectBuyPrice, selectSellPrice } from '@/store/useGameStore'
+import { useGameStore, selectBuyPrice, selectSellPrice, selectPriceTone } from '@/store/useGameStore'
 import { portGoods, localSpecialties, localDemands } from '@/data/ports'
 import { goods } from '@/data/goods'
 import ParchmentCard from '@/components/ui/ParchmentCard'
@@ -25,27 +25,31 @@ function BuyRow({ portId, pg, fleet, usedCapacity, totalCapacity, onBuy }: {
   onBuy: (goodId: number, qty: number) => void
 }) {
   const buyPrice = useGameStore(s => selectBuyPrice(s, portId, pg.goodId))
+  const tone = useGameStore(s => selectPriceTone(s, portId, pg.goodId))
   const stock = useGameStore(s => s.marketStock[`${portId}:${pg.goodId}`] ?? pg.stock)
   const good = goods.find(g => g.id === pg.goodId)
   if (!good || buyPrice == null) return null
 
-  // 与全局基准价比较，回答的是「这个港口相对便宜吗」
-  const priceDiff = buyPrice - good.basePrice
-  const isCheap = priceDiff < 0
-  const isExpensive = priceDiff > 0
+  // 颜色 = 可行动的市场信号：绿 = 全港最低价，红 = 全港最高价
+  const TONE_CLASS = { cheap: 'text-safe-400', expensive: 'text-danger-400', normal: 'text-gold-400' }
+  const TONE_HINT = {
+    cheap: '全港最低价——要买这个，就在这里买',
+    expensive: '全港最高价——别在这里买',
+    normal: '价格居中',
+  }
 
   return (
     <div className="bg-ocean-800/30 rounded p-2" data-testid="trade-buy-row" data-good-id={pg.goodId}>
       <div className="flex items-center justify-between mb-1">
         <span className="text-gold-200 text-xs font-serif">{good.nameCn}</span>
         <span
-          className={`flex items-center gap-0.5 text-xs font-serif ${
-            isCheap ? 'text-safe-400' : isExpensive ? 'text-danger-400' : 'text-gold-400'
-          }`}
+          className={`flex items-center gap-0.5 text-xs font-serif ${TONE_CLASS[tone]}`}
           data-price={buyPrice}
+          data-tone={tone}
+          title={TONE_HINT[tone]}
         >
-          {isCheap && <TrendingDown size={10} />}
-          {isExpensive && <TrendingUp size={10} />}
+          {tone === 'cheap' && <TrendingDown size={10} />}
+          {tone === 'expensive' && <TrendingUp size={10} />}
           <Coins size={10} /> {buyPrice}
         </span>
       </div>
@@ -185,13 +189,13 @@ export default function TradePanel() {
               {specialties.length > 0 && (
                 <p className="text-safe-400 text-xs font-serif flex items-start gap-1">
                   <Sprout size={11} className="mt-0.5 shrink-0" />
-                  <span>本地特产：{specialties.join('、')}（买入最便宜）</span>
+                  <span>本地出产：{specialties.join('、')}（价格通常偏低）</span>
                 </p>
               )}
               {demands.length > 0 && (
                 <p className="text-gold-300 text-xs font-serif flex items-start gap-1">
                   <HandCoins size={11} className="mt-0.5 shrink-0" />
-                  <span>高价收购：{demands.slice(0, 3).join('、')}</span>
+                  <span>高价收购：{demands.slice(0, 3).join('、')}（在这里卖更划算）</span>
                 </p>
               )}
               {sellableHigh.length > 0 && (

@@ -107,6 +107,11 @@ if (buy2) {
   check(buy2.spent === buy2.shown, `再次买入：屏幕写 ${buy2.shown}，实际扣 ${buy2.spent}`)
 }
 await sleep(300)
+// 关掉右上角的成就横幅——它们会盖住贸易面板，截图和点击都要让开
+await page.evaluate(() => {
+  document.querySelectorAll('button[aria-label="关闭通知"]').forEach(b => b.click())
+})
+await sleep(300)
 await page.screenshot({ path: `${SHOTS}/trade-buy.png` })
 
 // —— B) 换到不收雪茄的港口，走「本港不收 → 折价出清」路径 ——

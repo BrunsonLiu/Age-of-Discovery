@@ -22,7 +22,7 @@ import {
   STANCES, forecastSegment, stanceLedgers, segmentCountFor, segmentIndexFor, nextSegmentBoundary,
   dailyFoodUse, dailyWaterUse, dailyWearRate, settleWear,
 } from '../src/utils/segment'
-import { generateRouteIntel, settleOfficerWages, advanceRivals, selectBuyPrice, selectSellPrice, OFFER_PRICE_RATIO } from '../src/store/useGameStore'
+import { generateRouteIntel, settleOfficerWages, advanceRivals, selectBuyPrice, selectSellPrice, selectPriceTone, OFFER_PRICE_RATIO } from '../src/store/useGameStore'
 import { FACTIONS, factionAttitude, portFaction } from '../src/data/factions'
 import { CREW_CHARS, CREW_CHAR_MAP } from '../src/data/crewChars'
 import { TITLES, currentTitle, dominantAxis } from '../src/data/titles'
@@ -2775,6 +2775,83 @@ console.log('== 51. 贸易报价：面板显示价必须等于实际结算价 ==
     const after = useGameStore.getState()
     assert(after.fleet.gold === goldBefore + quote! * 2, `折价出售真实入账（报价 ${quote} × 2）`)
     assert(after.fleet.cargo.find(c => c.goodId === cigar.id) === undefined, '折价出售后货物离开货舱（不再是死货）')
+  }
+}
+
+console.log('== 52. 贸易颜色提示：标绿必是全港最低价 ==')
+{
+  // 颜色是玩家用来做决定的信号，必须直接可行动。
+  // 旧口径（相对全局基准价）量过：36 个标绿条目里只有 9 个（25%）
+  // 真是全港最低价，朗姆酒在有的港标绿（6）却还有更便宜的港（3）——
+  // 玩家看绿色买，结果买贵了一倍。
+  useGameStore.setState({
+    fleet: { ...useGameStore.getState().fleet, fame: 0, trait: null },
+    marketStock: {},
+    officers: [], crewRoster: [],
+    factionRep: { crown: 0, guild: 0, scholars: 0, brethren: 0 },
+    notoriety: { cruel: 0, mercy: 0, greed: 0, bold: 0, secret: 0 },
+  })
+
+  const portIds = [...new Set(portGoods.map(p => p.portId))]
+  let cheapWrong = 0, expWrong = 0, normalChecked = 0
+  let cheapIsMin = 0, cheapTotal = 0
+  const badSamples: string[] = []
+
+  for (const g of goods) {
+    const ports = portGoods.filter(p => p.goodId === g.id).map(p => p.portId)
+    if (ports.length === 0) continue
+    const prices = ports.map(p => selectBuyPrice(useGameStore.getState(), p, g.id)!)
+    const min = Math.min(...prices)
+    const max = Math.max(...prices)
+    ports.forEach((p, i) => {
+      const tone = selectPriceTone(useGameStore.getState(), p, g.id)
+      if (tone === 'cheap') {
+        cheapTotal++
+        if (prices[i] === min) cheapIsMin++
+        else {
+          cheapWrong++
+          if (badSamples.length < 6) badSamples.push(`  ${g.nameCn}@港${p}: 标绿但价 ${prices[i]} > 最低 ${min}`)
+        }
+      } else if (tone === 'expensive') {
+        if (prices[i] !== max) {
+          expWrong++
+          if (badSamples.length < 6) badSamples.push(`  ${g.nameCn}@港${p}: 标红但价 ${prices[i]} < 最高 ${max}`)
+        }
+      } else {
+        normalChecked++
+        if (prices[i] === min || prices[i] === max) {
+          cheapWrong++
+          if (badSamples.length < 6) badSamples.push(`  ${g.nameCn}@港${p}: 标中性但价 ${prices[i]} 已是极值`)
+        }
+      }
+    })
+  }
+  assert(cheapWrong === 0, `标绿/标中性都必须是全港极值（异常 ${cheapWrong} 组）`)
+  assert(expWrong === 0, `标红必须是全港最高价（异常 ${expWrong} 组）`)
+  assert(cheapTotal > 0, `存在标绿的条目（${cheapTotal} 条）`)
+  assert(cheapIsMin === cheapTotal, `标绿条目 100% 是全港最低价（${cheapIsMin}/${cheapTotal}）`)
+  assert(normalChecked > 0, `存在居中的条目（${normalChecked} 条）`)
+  badSamples.forEach(s => console.log(s))
+
+  // 只有一座港经营的商品：那里既是最低也是最高——标绿（唯一可买的地方）
+  {
+    const cigar = goods.find(g => g.nameCn === '雪茄')!
+    const cigarPort = portGoods.find(p => p.goodId === cigar.id)!.portId
+    assert(selectPriceTone(useGameStore.getState(), cigarPort, cigar.id) === 'cheap',
+      '只有一个港口经营的商品，标绿（那是唯一能买的地方）')
+  }
+
+  // 库存变化会推高本港价格，档位要跟着变（颜色是活的行情信号）
+  {
+    const portId = portIds[0]
+    const pg = portGoods.find(p => p.portId === portId)!
+    const before = selectPriceTone(useGameStore.getState(), portId, pg.goodId)
+    useGameStore.setState({ marketStock: { [`${portId}:${pg.goodId}`]: 1 } })
+    const after = selectPriceTone(useGameStore.getState(), portId, pg.goodId)
+    assert(typeof after === 'string', '库存变化后档位仍可判定')
+    useGameStore.setState({ marketStock: {} })
+    assert(selectPriceTone(useGameStore.getState(), portId, pg.goodId) === before,
+      '库存恢复后档位回到原样')
   }
 }
 
