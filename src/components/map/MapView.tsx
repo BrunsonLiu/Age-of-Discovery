@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, Component, useMemo } from 'react'
+import { useEffect, useState, useCallback, Component, useMemo, lazy, Suspense } from 'react'
 import { MapContainer, GeoJSON, useMap } from 'react-leaflet'
 import { useMapStore } from '@/store/useMapStore'
 import { useGameStore } from '@/store/useGameStore'
@@ -52,6 +52,9 @@ class MapErrorBoundary extends Component<{ children: React.ReactNode }, { hasErr
  * 所以窄屏时不直接用这个值，而是换成玩家自己的位置（见 MapController）。
  */
 const DEFAULT_CENTER: [number, number] = [25, -20]
+
+/** 2.5D 立体海图：懒加载，three.js 单独成 chunk，不进主包 */
+const Map3DView = lazy(() => import('@/components/map3d/Map3DView'))
 
 function MapController() {
   const map = useMap()
@@ -154,6 +157,9 @@ const bordersStyle = { fillColor: 'transparent', fillOpacity: 0, color: '#7a5a30
 export default function MapView() {
   const mapCenter = useMapStore(s => s.center)
   const mapZoom = useMapStore(s => s.zoom)
+  // 2D（Leaflet 矢量图）/ 3D（three.js 立体海图）两种视图，默认 2D
+  const renderMode = useMapStore(s => s.renderMode)
+  const setRenderMode = useMapStore(s => s.setRenderMode)
   // 海面纹理：暴风雨天换更暗的版本——底图也参与天候叙事
   const weatherKind = useGameStore(s => s.weather.kind)
   const seaTile = weatherKind === 'storm' ? 'sea-tile-storm.png' : 'sea-tile.png'
@@ -200,81 +206,109 @@ export default function MapView() {
   }, [])
 
   useEffect(() => {
-    loadData()
-    // 兜底：若渲染用的 land 没能登记上（极端情况），
-    // landCheck 自己取一次，保证航线避让始终有陆地数据可用。
+    // 碰撞检测要的数据在两种视图下都得要（航线避让靠它）
     loadLandData()
-  }, [loadData])
+    // 渲染数据只有 2D 视图需要；3D 视图自己取（且与碰撞检测共用同一个 Promise）
+    if (renderMode === '2d') loadData()
+  }, [loadData, renderMode])
 
   return (
     <div className="relative" style={{ width: '100%', height: '100%' }}>
-      {loading && (
-        <div className="absolute inset-0 z-10 flex items-center justify-center text-[#5a3e1a] font-serif" style={{ fontSize: 18, letterSpacing: 3, background: 'linear-gradient(180deg, #e8d4a8 0%, #d4b884 50%, #e8d4a8 100%)' }}>
-          <div className="text-center">
-            <div className="text-4xl mb-4" style={{ animation: 'loadPulse 1.5s ease-in-out infinite' }}>⛵</div>
-            <div>绘制航海图...</div>
+      {/* 视图切换：2D 矢量海图 / 3D 立体海图 */}
+      <button
+        type="button"
+        onClick={() => setRenderMode(renderMode === '3d' ? '2d' : '3d')}
+        className="absolute top-3 right-3 z-[700] px-2.5 py-1 rounded text-[11px] font-serif
+                   bg-[#1b1408]/75 border border-[#8b6f3e]/60 text-[#e8d4a8]
+                   hover:bg-[#2a1f0c]/85 active:scale-95 transition-colors"
+        title={renderMode === '3d' ? '切回 2D 平面海图' : '切换到 3D 立体海图'}
+        data-testid="map-mode-toggle"
+      >
+        {renderMode === '3d' ? '🗺️ 2D 海图' : '🧭 3D 海图'}
+      </button>
+
+      {renderMode === '3d' ? (
+        // 懒加载：three.js 有 500KB，静态 import 会把它拖进主包、
+        // 让首屏下载量涨一大截。2.5D 是可选视图，不该为此买单。
+        <Suspense fallback={(
+          <div className="absolute inset-0 z-10 flex items-center justify-center text-[#e8d4a8] font-serif"
+               style={{ letterSpacing: 3, background: 'linear-gradient(180deg,#16212e 0%,#0d1620 100%)' }}>
+            装配立体海图...
           </div>
-        </div>
-      )}
-
-      {loadError && (
-        <div className="absolute bottom-4 left-4 z-10 bg-red-900/80 text-red-200 px-3 py-1.5 rounded text-xs font-serif">
-          GeoJSON 数据加载失败，地图将以简化模式显示
-        </div>
-      )}
-
-      <MapErrorBoundary>
-        {/*
-          海面单独成层，不放在 MapContainer 的 background 上。
-          理由：滤镜要分开给。
-          - 海面：手绘海浪原图偏"现代油画"的高饱和蓝，压成古海图的青灰
-          - 陆地：羊皮纸填充，本就该是暖色，不能被同一层滤镜染冷
-          以前两者共用一个容器背景 + 容器级 sepia，结果海浪被洗成土黄、
-          陆地被染灰，海陆糊成一片。现在海是冷、海岸线是深褐、陆地是暖黄，
-          玩家的第一判断是"哪里能开船"。
-        */}
-        <div
-          className="absolute inset-0 pointer-events-none"
-          style={{
-            backgroundColor: '#3d5a5e',
-            backgroundImage: `url(${seaBg})`,
-            backgroundRepeat: 'repeat',
-            backgroundSize: '512px 512px',
-          }}
-          aria-hidden="true"
-        />
-        <MapContainer
-          center={mapCenter}
-          zoom={mapZoom}
-          style={{
-            width: '100%',
-            height: '100%',
-            backgroundColor: 'transparent',
-          }}
-          zoomControl={true}
-          minZoom={2}
-          maxZoom={10}
-          attributionControl={false}
-        >
-          {geoData.land && (
-            <GeoJSON key="land" data={geoData.land} style={landStyle} interactive={false} />
+        )}>
+          <Map3DView />
+        </Suspense>
+      ) : (
+        <>
+          {loading && (
+            <div className="absolute inset-0 z-10 flex items-center justify-center text-[#5a3e1a] font-serif" style={{ fontSize: 18, letterSpacing: 3, background: 'linear-gradient(180deg, #e8d4a8 0%, #d4b884 50%, #e8d4a8 100%)' }}>
+              <div className="text-center">
+                <div className="text-4xl mb-4" style={{ animation: 'loadPulse 1.5s ease-in-out infinite' }}>⛵</div>
+                <div>绘制航海图...</div>
+              </div>
+            </div>
           )}
 
-          {geoData.borders && (
-            <GeoJSON key="borders" data={geoData.borders} style={bordersStyle} interactive={false} />
+          {loadError && (
+            <div className="absolute bottom-4 left-4 z-10 bg-red-900/80 text-red-200 px-3 py-1.5 rounded text-xs font-serif">
+              GeoJSON 数据加载失败，地图将以简化模式显示
+            </div>
           )}
 
-          <MapController />
-          <MapOverlays />
-          <MapClickHandler />
-          <OceanLabels />
-          <RouteLine />
-          <PortMarker />
-          <ShipAnimation />
-        </MapContainer>
-      </MapErrorBoundary>
+          <MapErrorBoundary>
+            {/*
+              海面单独成层，不放在 MapContainer 的 background 上。
+              理由：滤镜要分开给。
+              - 海面：手绘海浪原图偏"现代油画"的高饱和蓝，压成古海图的青灰
+              - 陆地：羊皮纸填充，本就该是暖色，不能被同一层滤镜染冷
+              以前两者共用一个容器背景 + 容器级 sepia，结果海浪被洗成土黄、
+              陆地被染灰，海陆糊成一片。现在海是冷、海岸线是深褐、陆地是暖黄，
+              玩家的第一判断是"哪里能开船"。
+            */}
+            <div
+              className="absolute inset-0 pointer-events-none"
+              style={{
+                backgroundColor: '#3d5a5e',
+                backgroundImage: `url(${seaBg})`,
+                backgroundRepeat: 'repeat',
+                backgroundSize: '512px 512px',
+              }}
+              aria-hidden="true"
+            />
+            <MapContainer
+              center={mapCenter}
+              zoom={mapZoom}
+              style={{
+                width: '100%',
+                height: '100%',
+                backgroundColor: 'transparent',
+              }}
+              zoomControl={true}
+              minZoom={2}
+              maxZoom={10}
+              attributionControl={false}
+            >
+              {geoData.land && (
+                <GeoJSON key="land" data={geoData.land} style={landStyle} interactive={false} />
+              )}
 
-      <VintageMapOverlay />
+              {geoData.borders && (
+                <GeoJSON key="borders" data={geoData.borders} style={bordersStyle} interactive={false} />
+              )}
+
+              <MapController />
+              <MapOverlays />
+              <MapClickHandler />
+              <OceanLabels />
+              <RouteLine />
+              <PortMarker />
+              <ShipAnimation />
+            </MapContainer>
+          </MapErrorBoundary>
+        </>
+      )}
+
+      <VintageMapOverlay dimmed={renderMode === '3d'} />
     </div>
   )
 }

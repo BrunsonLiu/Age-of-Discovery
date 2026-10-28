@@ -610,3 +610,21 @@ body {
   0%, 100% { filter: brightness(1); }
   50% { filter: brightness(1.55); }
 }
+
+/* ========== 2.5D 立体海图（实验视图） ========== */
+/* 港口名：跟随 3D 投影的 DOM 标签 */
+.map3d-port-label {
+  position: absolute;
+  transform: translate(-50%, -100%);
+  color: #f2e2b4;
+  font: 12px/1.2 serif;
+  white-space: nowrap;
+  pointer-events: none;
+  text-shadow: 0 1px 3px #000, 0 0 9px #000, 0 0 2px #000;
+}
+
+/* 2.5D 视图下弱化羊皮纸装饰层：
+   .vintage-paper 用 mix-blend-mode: multiply，在明亮的 2D 羊皮纸底图上只是"年代感"，
+   但压在受光照的 3D 画面上会把陆地亮度压到只剩 20%（实测 p90 203 → 41）。 */
+.vintage-map-overlay--dimmed .vintage-paper { opacity: 0.14; }
+.vintage-map-overlay--dimmed .vintage-vignette { opacity: 0.32; }

@@ -14,13 +14,14 @@
     "test:e2e:scenes": "node test/e2e/scene-survey.mjs && node test/e2e/scene-fallback-check.mjs && node test/e2e/scene-img-failed-reset.mjs",
     "test:e2e:audio": "node test/e2e/audio-live.mjs",
     "test:e2e:map": "node test/e2e/map-legibility.mjs",
+    "test:e2e:map3d": "node test/e2e/map3d-check.mjs",
     "test:e2e:trade": "node test/e2e/trade-quote.mjs",
     "test:e2e:notify": "node test/e2e/notification-overlap.mjs",
     "test:e2e:mobile": "node test/e2e/mobile-layout.mjs",
     "test:e2e:mobile:prod": "node test/e2e/mobile-prod.mjs",
     "test:e2e:load": "node test/e2e/measure-map-load.mjs",
     "test:e2e:online": "node test/e2e/online-load-time.mjs",
-    "test:e2e:all": "npm run test:e2e && npm run test:e2e:scenes && npm run test:e2e:audio && npm run test:e2e:map && npm run test:e2e:trade && npm run test:e2e:notify && npm run test:e2e:mobile"
+    "test:e2e:all": "npm run test:e2e && npm run test:e2e:scenes && npm run test:e2e:audio && npm run test:e2e:map && npm run test:e2e:map3d && npm run test:e2e:trade && npm run test:e2e:notify && npm run test:e2e:mobile"
   },
   "dependencies": {
     "clsx": "^2.1.1",

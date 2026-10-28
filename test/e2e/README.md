@@ -26,6 +26,7 @@ npm run test:e2e          # voyage-smoke：全流程航行冒烟
 npm run test:e2e:scenes   # 场景插图三件套
 npm run test:e2e:audio    # 音频实跑
 npm run test:e2e:map      # 地图可辨性
+npm run test:e2e:map3d    # 2.5D 立体海图（切换/港口标签/切回 2D/运行时错误）
 npm run test:e2e:trade    # 贸易报价一致性
 npm run test:e2e:notify   # 通知横幅不挡玩家操作
 npm run test:e2e:mobile   # 移动端布局（390×844 触屏，dev）
@@ -45,6 +46,7 @@ npm run test:e2e:all      # 以上全部（不含 mobile:prod）
 | `scene-player-views.mjs` | 25 场景玩家视角大图对比（素材观感验收） | dev server |
 | `player-survey.mjs` | 每个界面截一张图，看画面好不好（体验巡检） | dev server |
 | `map-legibility.mjs` | 海陆明度差、图层 z-index、复古装饰不被压住 | dev server |
+| `map3d-check.mjs` | 2.5D 视图：能切进切出、20 个港口标签都在、切回 2D 后 Leaflet 恢复正常、运行时错误为 0 | dev server |
 | `map-check.mjs` / `map-diag.mjs` | 地图视觉复核与诊断（辅助脚本） | dev server |
 | `audio-live.mjs` | 真实音频能量、BGM 情绪跟随、总开关、静音恢复 | dev server |
 | `trade-quote.mjs` | 面板显示价 == 实际结算价；本港不收的货能折价卖掉 | dev server |

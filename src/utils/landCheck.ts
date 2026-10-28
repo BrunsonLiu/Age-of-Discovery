@@ -166,14 +166,14 @@ export function fetchLandGeojsonForRender(): Promise<GeoJSON.FeatureCollection> 
 
 function fetchLandGeojson(): Promise<void> {
   if (landFetchPromise) return landFetchPromise
-  landFetchPromise = fetch(`${import.meta.env.BASE_URL}data/land.geojson`)
-    .then(r => {
-      if (!r.ok) throw new Error(`land.geojson ${r.status}`)
-      return r.json()
-    })
-    .then(geojson => {
-      registerLandGeojson(geojson)
-    })
+  // 直接复用渲染侧的 Promise，保证"无论谁先跑，全局只发一次请求"。
+  //
+  // 原来这里自己 fetch：一旦碰撞检测先于渲染启动（2.5D 视图就是这个顺序——
+  // 碰撞数据在游戏开局就要，渲染数据切到 3D 模式才取），
+  // 渲染侧之后调 fetchLandGeojsonForRender() 会看到 landGeojsonPromise 仍为 null，
+  // 于是**同一份 1.2MB 发两趟**。这正是本文件注释想避免的事。
+  landFetchPromise = fetchLandGeojsonForRender()
+    .then(() => undefined)
     .catch(err => {
       console.warn('陆地数据加载失败，陆地碰撞检测将禁用', err)
     })

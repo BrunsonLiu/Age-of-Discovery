@@ -94,9 +94,20 @@ function CompassStar({ className = '' }: { className?: string }) {
   )
 }
 
-export default function VintageMapOverlay() {
+/**
+ * 羊皮纸装饰层（罗盘、海怪、纸纹、暗角）。
+ *
+ * dimmed=true 时把纸纹与暗角压到三成——2.5D 立体海图用。
+ * 原因：.vintage-paper 是 mix-blend-mode: multiply，
+ * 在 2D 的纯色羊皮纸底图上只是"年代感"，
+ * 但压在受光照的 3D 画面上会把陆地亮度压到只剩 20%（实测 p90 203 → 41）。
+ */
+export default function VintageMapOverlay({ dimmed = false }: { dimmed?: boolean }) {
   return (
-    <div className="vintage-map-overlay pointer-events-none absolute inset-0" aria-hidden="true">
+    <div
+      className={`vintage-map-overlay pointer-events-none absolute inset-0${dimmed ? ' vintage-map-overlay--dimmed' : ''}`}
+      aria-hidden="true"
+    >
       <div className="vintage-paper" />
       <div className="vintage-vignette" />
 
