@@ -166,6 +166,233 @@ check(multi.overlaps.length === 0, `多港口标签互不重叠（重叠：${mul
 await page.screenshot({ path: `${SHOTS}/map3d-桌面.png` })
 console.log('截图: map3d-桌面.png')
 
+// ===================================================================
+// 叠加图层：底栏开关在 3D 里真的生效
+// ===================================================================
+//
+// 【为什么必须单独测】
+// 底栏的图层开关（风向/洋流/海盗区域）在 3D 模式下**照样可见可点**
+// ——BottomBar 是无条件渲染的。3D 里如果没有对应实现，
+// 玩家按下去什么都不会发生：这就是"承诺不兑现"。
+//
+// 【怎么证明"真的生效"而不是"对象存在"】
+// 分三层：
+//   ① 场景里有对应 group（对象存在）
+//   ② 底栏点击后 group.visible 真的翻转（开关驱动）
+//   ③ 同帧内开/关的 WebGL 像素差（画面真的变了）
+// 第③层是关键——前两层都可能在"东西被画成全透明"的情况下照样通过。
+await page.evaluate(() => {
+  // 先关掉三个图层，回到干净基线
+  const st = window.__mapStore
+  if (!st) return
+  const s = st.getState()
+  if (s.showWindOverlay) st.getState().toggleWindOverlay()
+  if (s.showCurrentOverlay) st.getState().toggleCurrentOverlay()
+  if (s.showPirateZones) st.getState().togglePirateZones()
+})
+await sleep(600)
+
+const layerBaseline = await page.evaluate(() => {
+  const sc = window.__map3d?.scene
+  if (!sc) return { error: 'no scene' }
+  const read = n => {
+    const g = sc.getObjectByName(n)
+    if (!g) return null
+    let line2 = 0, mesh = 0, inst = 0, other = 0
+    g.traverse(o => {
+      // 【顺序要紧】Line2 / LineSegments2 是 Mesh 的子类（isMesh 为 true），
+      // 所以必须先判线、再判 mesh，否则所有折线都会被算成"填充块"。
+      if (o.type === 'Line2' || o.type === 'LineSegments2') line2++
+      else if (o.isInstancedMesh) inst++
+      else if (o.isMesh) mesh++
+      else other++
+    })
+    return { visible: g.visible, line2, mesh, inst, other, children: g.children.length }
+  }
+  return {
+    currents: read('map3d-currents'),
+    pirates: read('map3d-pirates'),
+    winds: read('map3d-winds'),
+    borders: (() => {
+      const b = sc.getObjectByName('map3d-borders')
+      if (!b) return null
+      return {
+        visible: b.visible,
+        type: b.type,
+        segments: b.geometry?.attributes?.instanceStart?.count ?? null,
+        dashed: b.material?.dashed ?? null,
+      }
+    })(),
+  }
+})
+console.log('图层基线:', JSON.stringify(layerBaseline))
+check(!!layerBaseline.currents, '场景里有洋流图层 group')
+check(!!layerBaseline.pirates, '场景里有海盗区图层 group')
+check(!!layerBaseline.winds, '场景里有风带图层 group')
+check(layerBaseline.currents?.line2 === 7, `洋流 7 条折线（实得 ${layerBaseline.currents?.line2}）`)
+check(layerBaseline.pirates?.line2 === 3 && layerBaseline.pirates?.mesh === 3,
+  `海盗区 3 条环 + 3 块填充（实得 ${layerBaseline.pirates?.line2} 环 / ${layerBaseline.pirates?.mesh} 填充）`)
+check(layerBaseline.winds?.inst === 1, `风带箭头是 1 个 InstancedMesh（实得 ${layerBaseline.winds?.inst}）`)
+check(layerBaseline.borders?.segments > 10000,
+  `国界线合并成 1 个 LineSegments2，含 ${layerBaseline.borders?.segments} 段`)
+check(layerBaseline.borders?.dashed === true, '国界线是虚线')
+
+// 逐个点击底栏按钮，验证 visible 跟着翻转
+const toggleByLabel = async ariaLabel => {
+  await page.evaluate(lbl => {
+    const b = [...document.querySelectorAll('button')].find(x => x.getAttribute('aria-label') === lbl)
+    b?.click()
+  }, ariaLabel)
+  await sleep(450)
+}
+const readVisible = () => page.evaluate(() => {
+  const sc = window.__map3d?.scene
+  const g = n => sc?.getObjectByName(n)?.visible ?? null
+  const st = window.__mapStore?.getState?.()
+  return {
+    currents: g('map3d-currents'),
+    pirates: g('map3d-pirates'),
+    winds: g('map3d-winds'),
+    store: st ? {
+      wind: st.showWindOverlay, current: st.showCurrentOverlay, pirate: st.showPirateZones,
+    } : null,
+  }
+})
+
+const before = await readVisible()
+await toggleByLabel('风向')
+await toggleByLabel('洋流')
+await toggleByLabel('海盗区域')
+const after = await readVisible()
+console.log('开关前:', JSON.stringify(before))
+console.log('开关后:', JSON.stringify(after))
+check(before.currents === false && before.pirates === false && before.winds === false,
+  '图层初始为隐藏')
+check(after.currents === true && after.pirates === true && after.winds === true,
+  '底栏三个开关点击后，3D 里对应图层都变为显示')
+check(after.store?.wind === true && after.store?.current === true && after.store?.pirate === true,
+  '底栏开关确实写进了 store（不是只改了场景）')
+
+// 同帧内开/关的 WebGL 像素差 —— 证明"画面真的变了"
+const glDelta = await page.evaluate(() => {
+  const m = window.__map3d
+  if (!m) return { error: 'no __map3d' }
+  const gl = m.renderer.getContext()
+  const c = m.renderer.domElement
+  const W = c.width, H = c.height
+  const grab = () => {
+    m.renderer.render(m.scene, m.camera)
+    const b = new Uint8Array(W * H * 4)
+    gl.readPixels(0, 0, W, H, gl.RGBA, gl.UNSIGNED_BYTE, b)
+    return b
+  }
+  const count = (a, b) => {
+    let n = 0
+    for (let i = 0; i < a.length; i += 4) {
+      const d = Math.abs(a[i] - b[i]) + Math.abs(a[i + 1] - b[i + 1]) + Math.abs(a[i + 2] - b[i + 2])
+      if (d > 12) n++
+    }
+    return n
+  }
+  // 噪声基线：同一帧内连续两次 render（相机不动，画面应当完全一致）
+  const n0 = grab(), n1 = grab()
+  const noise = count(n0, n1)
+
+  // 信号：同一帧内把三个图层全关掉再抓一次
+  const names = ['map3d-currents', 'map3d-pirates', 'map3d-winds']
+  const objs = names.map(n => m.scene.getObjectByName(n)).filter(Boolean)
+  const prev = objs.map(o => o.visible)
+  objs.forEach(o => { o.visible = false })
+  const off = grab()
+  objs.forEach((o, i) => { o.visible = prev[i] })
+  const on = grab()
+
+  // 国界线单独测。
+  // 【为什么必须单独测】国界线没有底栏开关，只能靠场景对象控制。
+  // 如果只断言「场景里有这个对象 + 段数对 + 是虚线」，
+  // 那把它沉到海面以下（完全看不见）测试照样全绿——这是实测过的假测试。
+  // 所以国界线必须有自己的像素断言。
+  const bd = m.scene.getObjectByName('map3d-borders')
+  let borderSignal = -1
+  if (bd) {
+    const bdPrev = bd.visible
+    bd.visible = false
+    const bOff = grab()
+    bd.visible = true
+    const bOn = grab()
+    bd.visible = bdPrev
+    borderSignal = count(bOn, bOff)
+  }
+
+  return { noise, signal: count(on, off), borderSignal, total: W * H }
+})
+console.log('WebGL 差分:', JSON.stringify(glDelta))
+check(!glDelta.error, '能读到 WebGL framebuffer')
+// 噪声必须接近 0 —— 否则这个测量方法本身没有区分力
+check(glDelta.noise === 0, `同帧两次 render 无差异（噪声 ${glDelta.noise} 像素）`)
+check(glDelta.signal > 500,
+  `三个图层在画面上真的贡献了像素（信号 ${glDelta.signal} 像素）`)
+check(glDelta.borderSignal > 500,
+  `国界线在画面上真的画出来了（像素 ${glDelta.borderSignal}）`)
+
+await page.screenshot({ path: `${SHOTS}/map3d-图层全开.png` })
+console.log('截图: map3d-图层全开.png')
+
+// 关回去，保持后面的截图干净
+await toggleByLabel('风向')
+await toggleByLabel('洋流')
+await toggleByLabel('海盗区域')
+await sleep(400)
+
+// ===================================================================
+// 区域名（海名 + 洲名）
+// ===================================================================
+const areaProbe = await page.evaluate(() => {
+  const areaEls = [...document.querySelectorAll('.map3d-area-label')]
+  const oceanEls = [...document.querySelectorAll('.map3d-area-label--ocean')]
+  const regionEls = [...document.querySelectorAll('.map3d-area-label--region')]
+  const portEls = [...document.querySelectorAll('.map3d-port-label')]
+  const rectOf = l => {
+    const r = l.getBoundingClientRect()
+    return { text: l.textContent, x: r.x, y: r.y, w: r.width, h: r.height, vis: l.style.display !== 'none' }
+  }
+  const visArea = areaEls.filter(l => l.style.display !== 'none').map(rectOf)
+  const visPort = portEls.filter(l => l.style.display !== 'none').map(rectOf)
+  const all = [...visArea.map(r => ({ ...r, tag: 'area' })), ...visPort.map(r => ({ ...r, tag: 'port' }))]
+  const overlaps = []
+  for (let i = 0; i < all.length; i++) {
+    for (let j = i + 1; j < all.length; j++) {
+      const a = all[i], b = all[j]
+      const ox = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x)
+      const oy = Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y)
+      if (ox > 0 && oy > 0) overlaps.push(`${a.text}/${b.text}`)
+    }
+  }
+  return {
+    areaTotal: areaEls.length,
+    oceanTotal: oceanEls.length,
+    regionTotal: regionEls.length,
+    portTotal: portEls.length,
+    areaVisible: visArea.length,
+    areaZeroSized: visArea.filter(r => r.w < 4 || r.h < 4).map(r => r.text),
+    areaOffscreen: visArea.filter(r => r.x < -2 || r.y < -2 || r.x + r.w > innerWidth + 2 || r.y + r.h > innerHeight + 2).map(r => r.text),
+    overlaps,
+    oceanColor: oceanEls[0] ? getComputedStyle(oceanEls[0]).color : null,
+    regionColor: regionEls[0] ? getComputedStyle(regionEls[0]).color : null,
+  }
+})
+console.log('区域名探针:', JSON.stringify(areaProbe))
+check(areaProbe.areaTotal === 28, `区域名 28 个（海名 18 + 洲名 10，实得 ${areaProbe.areaTotal}）`)
+check(areaProbe.oceanTotal === 18, `海名 18 个（实得 ${areaProbe.oceanTotal}）`)
+check(areaProbe.regionTotal === 10, `洲名 10 个（实得 ${areaProbe.regionTotal}）`)
+check(areaProbe.areaVisible > 0, `有可见的区域名（实得 ${areaProbe.areaVisible}）`)
+check(areaProbe.areaZeroSized.length === 0,
+  `可见区域名都有实际尺寸（零尺寸：${areaProbe.areaZeroSized.join(',') || '无'}）`)
+check(areaProbe.areaOffscreen.length === 0,
+  `可见区域名完整落在视口内（越界：${areaProbe.areaOffscreen.join(',') || '无'}）`)
+check(areaProbe.overlaps.length === 0,
+  `区域名与港口名互不重叠（重叠：${areaProbe.overlaps.join(',') || '无'}）`)
+
 // 拖拽转视角 + 滚轮缩放
 await page.mouse.move(700, 450)
 await page.mouse.down()

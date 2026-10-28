@@ -2,15 +2,23 @@ import { useMemo } from 'react'
 import { Polyline, Marker } from 'react-leaflet'
 import L from 'leaflet'
 import { useMapStore } from '@/store/useMapStore'
-import { prevailingWindBearing } from '@/utils/navigation'
+import {
+  OCEAN_CURRENTS, PIRATE_ZONES, WIND_BAND_LATS,
+  pirateZonePolygon, windArrowSites,
+} from '@/data/mapLayers'
 
 /**
  * 地图图层组：风向 / 洋流 / 海盗区域。
  * 风向使用真实风带模型（低纬信风向东、中纬西风带向西），
  * 与航行速度计算同源——玩家看到的箭头方向就是顺风方向。
+ *
+ * 【数据来源】
+ * 洋流 / 海盗区 / 风带网格的定义在 `@/data/mapLayers`，
+ * 因为 2.5D 立体海图要显示**同样**的这三个图层——
+ * 底栏的图层开关在 3D 模式下照样可见可点，
+ * 数据各写一份就会变成"按了没反应"。
  */
 
-const WIND_GRID_STEP = 15
 
 function createWindArrowIcon(angleDeg: number) {
   // SVG 箭头默认朝上（北 = 0° 罗盘方位），rotate(bearing) 即指向该方位
@@ -26,34 +34,8 @@ function createWindArrowIcon(angleDeg: number) {
   return L.divIcon({ html, className: 'wind-arrow-icon', iconSize: [22, 22], iconAnchor: [11, 11] })
 }
 
-/** 主要洋流（史实简化）：暖流红色、寒流蓝色 */
-const OCEAN_CURRENTS: { name: string; points: [number, number][]; warm: boolean }[] = [
-  { name: '湾流', warm: true, points: [[24, -80], [30, -75], [37, -65], [43, -50], [48, -35]] },
-  { name: '北赤道流', warm: true, points: [[12, -60], [15, -45], [18, -30], [20, -18]] },
-  { name: '加那利寒流', warm: false, points: [[45, -20], [35, -14], [25, -12], [14, -16]] },
-  { name: '本格拉寒流', warm: false, points: [[-30, 12], [-22, 10], [-12, 8], [-2, 6]] },
-  { name: '阿古拉斯暖流', warm: true, points: [[-36, 20], [-28, 26], [-20, 32], [-12, 40]] },
-  { name: '南赤道流', warm: true, points: [[-8, 30], [-10, 55], [-12, 75], [-14, 90]] },
-  { name: '季风漂流', warm: true, points: [[8, 60], [10, 72], [13, 82], [15, 92]] },
-]
-
-/** 海盗威胁区域（史实据点周边海域） */
-const PIRATE_ZONES: { name: string; center: [number, number]; radiusDeg: number }[] = [
-  { name: '加勒比海盗水域', center: [18, -74], radiusDeg: 7 },
-  { name: '马六甲海峡', center: [3, 101], radiusDeg: 5 },
-  { name: '几内亚湾', center: [2, 4], radiusDeg: 5 },
-]
-
 function WindLayer() {
-  const arrows = useMemo(() => {
-    const list: { lat: number; lng: number; bearing: number }[] = []
-    for (let lat = -60; lat <= 60; lat += WIND_GRID_STEP) {
-      for (let lng = -100; lng <= 120; lng += WIND_GRID_STEP) {
-        list.push({ lat, lng, bearing: prevailingWindBearing(lat) })
-      }
-    }
-    return list
-  }, [])
+  const arrows = useMemo(() => windArrowSites(), [])
 
   return (
     <>
@@ -78,7 +60,7 @@ function WindLayer() {
 function WindBands() {
   return (
     <>
-      {[30, -30].map(lat => (
+      {WIND_BAND_LATS.map(lat => (
         <Polyline
           key={`band-${lat}`}
           positions={[[lat, -120], [lat, -60], [lat, 0], [lat, 60], [lat, 120]]}
@@ -114,24 +96,14 @@ function CurrentLayer() {
 function PirateLayer() {
   return (
     <>
-      {PIRATE_ZONES.map((zone, i) => {
-        const points: [number, number][] = []
-        for (let a = 0; a <= 360; a += 20) {
-          const rad = a * Math.PI / 180
-          const dLat = Math.sin(rad) * zone.radiusDeg
-          const dLng = (Math.cos(rad) * zone.radiusDeg) / Math.max(0.3, Math.cos(zone.center[0] * Math.PI / 180))
-          points.push([zone.center[0] + dLat, zone.center[1] + dLng])
-        }
-        points.push(points[0])
-        return (
-          <Polyline
-            key={`pirate-${i}`}
-            positions={points}
-            pathOptions={{ color: '#a03030', weight: 2, opacity: 0.6, dashArray: '8 6', fill: true, fillColor: '#a03030', fillOpacity: 0.08 }}
-            interactive={false}
-          />
-        )
-      })}
+      {PIRATE_ZONES.map((zone, i) => (
+        <Polyline
+          key={`pirate-${i}`}
+          positions={pirateZonePolygon(zone)}
+          pathOptions={{ color: '#a03030', weight: 2, opacity: 0.6, dashArray: '8 6', fill: true, fillColor: '#a03030', fillOpacity: 0.08 }}
+          interactive={false}
+        />
+      ))}
     </>
   )
 }

@@ -15,6 +15,13 @@ import {
 } from '@/utils/mapProjection'
 import { buildLandGeometry, PLATE_THICKNESS } from './landGeometry'
 import { createPortModelKit, createShipModelKit, makePortModel, makeShipModel } from './models'
+import { buildMap3DLayers } from './mapLayers3d'
+import { buildMap3DBorders } from './mapBorders3d'
+import { fetchBordersGeojson } from '@/utils/mapGeoJson'
+import {
+  createAreaLabels, createPortLabel, measureLabels, placeLabels, remeasureWhenFontsReady,
+  type ScreenLabel,
+} from './mapLabels3d'
 import type { Waypoint } from '@/types'
 
 /**
@@ -69,6 +76,16 @@ export default function Map3DView() {
         loadTexture(`${base}data/painted-land.png`, false),
         loadTexture(`${base}data/painted-sea.png`, false),
       ])
+      if (disposed) return
+
+      // ---- 国界线数据 ----
+      //
+      // 【为什么不跟上面一起 Promise.all】
+      // borders.geojson 有 640KB，是国界线的全部内容。
+      // 它是**可选图层**：加载失败不该挡住地图出场。
+      // 所以单独 await 且失败返回 null（见 utils/mapGeoJson.ts）。
+      // 与 2D 的 MapView 共用同一个 Promise，不会下载两趟。
+      const bordersGeojson = await fetchBordersGeojson()
       if (disposed) return
 
       const width = mount.clientWidth || 800
@@ -172,19 +189,28 @@ export default function Map3DView() {
       )
 
       const portGroup = new THREE.Group()
-      const portObjects: { group: THREE.Group; id: number; label: HTMLDivElement }[] = []
+      const portObjects: { group: THREE.Group; id: number; label: ScreenLabel }[] = []
       for (const p of ports) {
         const g = makePortModel(portKit)
         g.position.set(lonToWorldX(p.longitude), 0, latToWorldZ(p.latitude))
         g.userData.portId = p.id
         portGroup.add(g)
-        const label = document.createElement('div')
-        label.className = 'map3d-port-label'
-        label.textContent = p.nameCn
-        mount.appendChild(label)
+        const label = createPortLabel(mount, p.nameCn, g.position.x, g.position.z)
         portObjects.push({ group: g, id: p.id, label })
       }
       scene.add(portGroup)
+
+      // ---- 区域名（海名 + 洲名）----
+      //
+      // 【为什么 3D 也要有】
+      // 2D 的 OceanLabels 一直显示这 28 个名字。3D 里没有的话，
+      // 玩家切到立体海图就失去了"我在哪个大洋/哪块大陆"的方位感——
+      // 而这恰恰是斜俯视地图最难自己读出来的信息。
+      // 数据来自 @/data/mapLayers，与 2D 同一份定义。
+      const areaLabels = createAreaLabels(mount)
+      const allLabels: ScreenLabel[] = [...portObjects.map(p => p.label), ...areaLabels]
+      measureLabels(allLabels)
+      remeasureWhenFontsReady(allLabels)
 
       // ---- 玩家船 ----
       const ship = makeShipModel(shipKit)
@@ -205,6 +231,32 @@ export default function Map3DView() {
       // 距离属性在每次 setPositions 之后再算（见 tick 里���。
       scene.add(routeLine)
       disposables.push(routeGeo, routeMat)
+
+      // ---- 叠加图层：洋流 / 海盗区 / 风带 ----
+      //
+      // 【为什么 3D 也要有这三个图层】
+      // 底栏的图层开关（风向/洋流/海盗区域）在 3D 模式下**照样可见可点**——
+      // BottomBar 是无条件渲染的。3D 里没有对应图层的话，
+      // 玩家按下去就什么都不会发生：这是"承诺不兑现"。
+      //
+      // 数据来自 @/data/mapLayers，与 2D 完全同一份。
+      const layers = buildMap3DLayers()
+      scene.add(layers.currents, layers.pirates, layers.winds)
+      for (const m of layers.lineMaterials) m.resolution.set(width, height)
+
+      // ---- 国界线 ----
+      //
+      // 【为什么 3D 也要有】
+      // 2D 地图画了 borders.geojson。3D 里没有的话，
+      // 玩家切视图就少了一层地理信息（大洲内部的政治分界）。
+      //
+      // 393 段合并成**一个** LineSegments2 ——一次 draw call，
+      // 逐段建 Line2 的话是 393 个 draw call，移动端会掉帧。
+      const borders = bordersGeojson ? buildMap3DBorders(bordersGeojson) : null
+      if (borders) {
+        scene.add(borders.lines)
+        borders.material.resolution.set(width, height)
+      }
 
       // ---- 光照 ----
       const key = new THREE.DirectionalLight(0xffe4b8, 3.0)
@@ -363,6 +415,8 @@ export default function Map3DView() {
         camera.updateProjectionMatrix()
         renderer!.setSize(w, h)
         routeMat.resolution.set(w, h)
+        for (const m of layers.lineMaterials) m.resolution.set(w, h)
+        borders?.material.resolution.set(w, h)
       }
       window.addEventListener('resize', onResize)
 
@@ -415,7 +469,7 @@ export default function Map3DView() {
         for (const po of portObjects) {
           const found = state.discoveredPorts.includes(po.id)
           po.group.visible = found
-          po.label.style.display = found ? 'block' : 'none'
+          po.label.shown = found
         }
 
         // 航线：与 2D 虚线共用 getRouteGeometry
@@ -440,7 +494,21 @@ export default function Map3DView() {
           routeLine.visible = false
         }
 
-        // 港口标签投影到屏幕
+        // 叠加图层可见性：跟着底栏的开关走
+        //
+        // 【为什么在帧循环里读而不是用 React state】
+        // 开关状态在 useMapStore 里，而 3D 场景是命令式构建的
+        // （three.js 对象不经过 React 渲染）。每帧读一次 getState()
+        // 既不用重建场景，也不用引入订阅，代价可以忽略。
+        //
+        // 这样玩家在 3D 模式里点底栏的图层开关，画面会立刻跟着变——
+        // 开关在 2D 和 3D 里指的是**同一件事**。
+        const mapState = useMapStore.getState()
+        layers.currents.visible = mapState.showCurrentOverlay
+        layers.pirates.visible = mapState.showPirateZones
+        layers.winds.visible = mapState.showWindOverlay
+
+        // 标签投影到屏幕（港口名 + 海名 + 洲名，共用一套机制）
         //
         // 【为什么要做标签避让】
         // 直接把投影坐标写进 left/top，重叠必然发生：
@@ -448,64 +516,10 @@ export default function Map3DView() {
         // 这些港口在地图上本来就挨得近，标签文字会互相压住。
         // 实测：8 个已发现港口有 **4 对重叠**（e2e 抓出来的）。
         //
-        // 做法：按屏幕 y 排序，从上往下依次放置；
-        // 候选位置有「正上方 / 正下方 / 右上 / 左上 / 右下 / 左下」六档，
-        // 挑第一个与已放置标签都不相交的档位。全都不行就隐藏——
-        // **宁可少一个标签，也不要叠在一起的字**。
-        type LabelCand = {
-          anchorX: number; anchorY: number
-          w: number; h: number
-          label: HTMLDivElement
-        }
-        const cand: LabelCand[] = []
-        for (const po of portObjects) {
-          if (!po.group.visible) continue
-          tmpV.set(po.group.position.x, 0.30, po.group.position.z)
-          tmpV.project(camera)
-          const visible = tmpV.z < 1
-          po.label.style.display = visible ? 'block' : 'none'
-          if (!visible) continue
-          // 先 display:block 再量尺寸 —— 读 offsetWidth 会触发同步布局
-          const tw = po.label.offsetWidth || po.label.textContent!.length * 13 + 6
-          const th = po.label.offsetHeight || 16
-          cand.push({
-            anchorX: ((tmpV.x + 1) / 2) * width,
-            anchorY: ((-tmpV.y + 1) / 2) * height,
-            w: tw, h: th, label: po.label,
-          })
-        }
-        // 从上往下放（屏幕 y 小的先放），这样下面的标签会主动让开上面的
-        cand.sort((a, b) => a.anchorY - b.anchorY)
-        const placedRects: { x: number; y: number; w: number; h: number }[] = []
-        for (const c of cand) {
-          // transform 是 translate(-50%,-100%) → 默认锚点在标签底边中点
-          const baseX = c.anchorX - c.w / 2
-          const baseY = c.anchorY - c.h
-          const offsets: [number, number][] = [
-            [0, 0],                 // 正上方（默认）
-            [0, c.h + 3],           // 正下方
-            [c.w * 0.62, -2],       // 右上
-            [-c.w * 0.62, -2],      // 左上
-            [c.w * 0.62, c.h + 1],  // 右下
-            [-c.w * 0.62, c.h + 1], // 左下
-          ]
-          let best: { x: number; y: number; w: number; h: number } | null = null
-          for (const [dx, dy] of offsets) {
-            const box = { x: baseX + dx, y: baseY + dy, w: c.w, h: c.h }
-            const hit = placedRects.some(p =>
-              box.x < p.x + p.w && box.x + box.w > p.x &&
-              box.y < p.y + p.h && box.y + box.h > p.y)
-            if (!hit) { best = box; break }
-          }
-          if (!best) {
-            // 无处可放 → 隐藏该标签（宁缺勿叠）
-            c.label.style.display = 'none'
-            continue
-          }
-          placedRects.push(best)
-          c.label.style.left = `${best.x + c.w / 2}px`
-          c.label.style.top = `${best.y + c.h}px`
-        }
+        // 【为什么挪到独立模块】
+        // 现在有三类标签（港口 20 + 海名 18 + 洲名 10 = 48 个）要互相避让，
+        // 逻辑写在帧循环里会越来越臃肿。见 mapLabels3d.ts。
+        placeLabels(allLabels, camera, width, height, tmpV)
 
         renderer!.render(scene, camera)
       }
@@ -522,11 +536,15 @@ export default function Map3DView() {
         el.removeEventListener('pointerup', onPointerUp)
         el.removeEventListener('pointercancel', onPointerUp)
         el.removeEventListener('wheel', onWheel)
-        for (const po of portObjects) po.label.remove()
+        for (const po of portObjects) po.label.el.remove()
+        for (const l of areaLabels) l.el.remove()
         scene.traverse((o) => {
           if (o instanceof THREE.Mesh) o.geometry.dispose()
         })
         for (const d of disposables) d.dispose()
+        // 图层组里的 Line2 / 填充 / 箭头资源不在 disposables 里，单独释放
+        layers.dispose()
+        borders?.dispose()
         renderer?.dispose()
         if (renderer && renderer.domElement.parentNode === mount) {
           mount.removeChild(renderer.domElement)

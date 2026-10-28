@@ -12,6 +12,7 @@ import MapClickHandler from './MapClickHandler'
 import OceanLabels from './OceanLabels'
 import VintageMapOverlay from './VintageMapOverlay'
 import { loadLandData, fetchLandGeojsonForRender } from '@/utils/landCheck'
+import { fetchBordersGeojson } from '@/utils/mapGeoJson'
 import 'leaflet/dist/leaflet.css'
 
 class MapErrorBoundary extends Component<{ children: React.ReactNode }, { hasError: boolean; error: string }> {
@@ -174,7 +175,6 @@ export default function MapView() {
   const loadData = useCallback(async () => {
     setLoading(true)
     try {
-      const base = import.meta.env.BASE_URL
       // 注意：这里不再加载 ocean.geojson。
       // 那份文件在仓库里就是截断的（354112B，JSON 解析直接失败），
       // 而它原本只给海洋区叠一层 18% 的绿色微调——海面的表达已由
@@ -186,7 +186,7 @@ export default function MapView() {
       // 地图数据因此从 4MB 降到 1.9MB，「绘制航海图...」的等待从 37 秒降到个位数。
       const results = await Promise.allSettled([
         fetchLandGeojsonForRender(),
-        fetch(`${base}data/borders.geojson`).then(r => r.ok ? r.json() : Promise.reject('borders load fail')),
+        fetchBordersGeojson(),
       ])
 
       const [land, borders] = results

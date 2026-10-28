@@ -57,3 +57,18 @@ export const useMapStore = create<MapState>()(
     }
   )
 )
+
+/**
+ * 开发调试钩子：仅在 dev 构建下暴露 store，便于自动化验证（生产构建会被 tree-shake 掉）。
+ *
+ * 【为什么需要】
+ * 图层开关（风向/洋流/海盗区域）在 2D 与 3D 两个视图里都生效，
+ * e2e 要验证"在 3D 里点开关 → 场景里对应图层真的出现"，
+ * 就需要一个能在测试里读图层状态的入口。
+ * 之前 e2e 里写的是 `window.__mapStore?.getState?.()`，
+ * 但这个钩子**从来没存在过**——可选链一直在静默返回 undefined，
+ * 那条断言等于没查（典型的假测试）。
+ */
+if (typeof import.meta !== 'undefined' && import.meta.env?.DEV && typeof window !== 'undefined') {
+  ;(window as unknown as { __mapStore: typeof useMapStore }).__mapStore = useMapStore
+}

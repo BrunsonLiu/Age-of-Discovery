@@ -46,7 +46,7 @@ npm run test:e2e:all      # 以上全部（不含 mobile:prod）
 | `scene-player-views.mjs` | 25 场景玩家视角大图对比（素材观感验收） | dev server |
 | `player-survey.mjs` | 每个界面截一张图，看画面好不好（体验巡检） | dev server |
 | `map-legibility.mjs` | 海陆明度差、图层 z-index、复古装饰不被压住 | dev server |
-| `map3d-check.mjs` | 2.5D 视图：能切进切出、20 个港口标签都在、**可见标签有尺寸/在视口内/互不重叠**（含 8 港口密集场景）、切回 2D 后 Leaflet 恢复正常、运行时错误为 0 | dev server |
+| `map3d-check.mjs` | 2.5D 视图：能切进切出、20 个港口标签都在、**可见标签有尺寸/在视口内/互不重叠**（含 8 港口密集场景）、**底栏图层开关在 3D 里真的生效**（对象存在 + visible 翻转 + store 一致 + 同帧 WebGL 像素差）、**国界线真的画出来了**（同帧像素差）、**区域名 28 个有尺寸/不越界/不与港口名重叠**、切回 2D 后 Leaflet 恢复正常、运行时错误为 0 | dev server |
 | `map-check.mjs` / `map-diag.mjs` | 地图视觉复核与诊断（辅助脚本） | dev server |
 | `audio-live.mjs` | 真实音频能量、BGM 情绪跟随、总开关、静音恢复 | dev server |
 | `trade-quote.mjs` | 面板显示价 == 实际结算价；本港不收的货能折价卖掉 | dev server |
@@ -101,8 +101,33 @@ npm run test:e2e:all      # 以上全部（不含 mobile:prod）
   `trade-quote.mjs` 报「屏幕写 195，实际扣 176」，逐行核对同时报出多行不一致。
 - 旧写法（`NotificationToast` 去掉 `pointer-events-none` 与让位）→
   `notification-overlap.mjs` 的「出售按钮依然点得动」失败，命中的是通知卡片本身。
+- 国界线沉到海面以下（`BORDER_Y = -0.5`，完全不可见）→
+  `map3d-check.mjs` 的「国界线在画面上真的画出来了」失败，`borderSignal = 0`。
+  只断言「对象存在 + 段数对 + 是虚线」的话，测试**照样全绿**——那是假测试。
+- 标签去掉越界/重叠检查 → `map3d-check.mjs` 报 3 条失败
+  （「日本海」「澳大利亚」越界 + 9 对重叠）。
 
 > 注意 `trade-quote.mjs` 把声望设成 100：价格系数在 fame=0 时恰为 1，
 > 显示价与结算价**必然**相等——那样的测试是永远通过的假测试。系数 ≠1 时才有区分力。
 
-这一步别省。全绿的测试可能只是测了个寂寞。
+### 像素级取证的两个坑（`map3d-check.mjs`）
+
+要证明「图层真的画在画面上」，必须做像素差分。整屏截图差分**不可信**：
+页面有持续重绘的动画层（风带箭头 `mix-blend-mode: screen`、船体动画、相机缓动），
+实测噪声基线高达 10.5%——信号被噪声淹没。
+
+可行的做法是 **WebGL `readPixels`**，且有两个必须遵守的条件：
+
+1. **必须在同一个 `page.evaluate` 里连续 render + readPixels**，中间不跨 rAF 帧。
+   相机是指数缓动（`fx += (target.x - fx) * 0.12`），数学上**永不收敛到完全相等**，
+   200ms 内 x 实测从 14.7012 → 14.6656，画面持续位移 → 11.6% 差分噪声。
+   同一帧内开/关差分，噪声基线降到 **0 像素**。
+
+2. **`readPixels` 必须在 `render()` 之后立即读**。
+   `preserveDrawingBuffer: false` 时，合成后 back buffer 内容未定义，
+   隔 200ms 再读会读到已清空的缓冲 → 差分恒为 0（无效测量）。
+
+另外 `readPixels` 的**行 0 是画布底部**，反投影时 NDC y = `(py/H)*2-1`（不取负）；
+反投影必须复用项目自己的 `mapProjection.ts`，手写公式会错。
+
+> 这条别省。全绿的测试可能只是测了个寂寞。

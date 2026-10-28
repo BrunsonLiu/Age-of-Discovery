@@ -623,6 +623,40 @@ body {
   text-shadow: 0 1px 3px #000, 0 0 9px #000, 0 0 2px #000;
 }
 
+/*
+  区域名（海名 / 洲名）：跟随 3D 投影的 DOM 标签。
+  【配色必须与 2D 完全不同】
+  2D 用的是羊皮纸底上的深绿（洋名）/ 深棕（洲名），配浅色光晕。
+  3D 的底色变了：海面是**深青绿**、陆地是**受光的暖黄褐**。
+  照抄 2D 的深绿深棕会直接糊进底色里（实测洋名几乎看不见）。
+  所以按各自脚下的底色重新配：
+    洋名 → 浅青灰字 + 暗色描边（浮在深色海面上）
+    洲名 → 深褐字 + 暖色光晕（压在受光的暖色陆地上）
+  洲名用光晕而不是纯色：斜俯视下同一块陆地在受光面和阴影面
+  亮度差很大，固定深色字在阴影上会消失。
+*/
+.map3d-area-label {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  white-space: nowrap;
+  pointer-events: none;
+  user-select: none;
+}
+.map3d-area-label--ocean {
+  color: rgba(190, 220, 230, 0.62);
+  font: italic 13px/1.2 serif;
+  letter-spacing: 4px;
+  text-shadow: 0 1px 3px rgba(0, 20, 28, 0.9), 0 0 8px rgba(0, 20, 28, 0.7);
+}
+.map3d-area-label--region {
+  color: rgba(58, 38, 16, 0.62);
+  font: bold 13px/1.2 serif;
+  letter-spacing: 6px;
+  text-shadow:
+    0 0 6px rgba(240, 226, 190, 0.85),
+    0 1px 2px rgba(255, 244, 214, 0.6);
+}
+
 /* 2.5D 视图下弱化羊皮纸装饰层：
    .vintage-paper 用 mix-blend-mode: multiply，在明亮的 2D 羊皮纸底图上只是"年代感"，
    但压在受光照的 3D 画面上会把陆地亮度压到只剩 20%（实测 p90 203 → 41）。 */
