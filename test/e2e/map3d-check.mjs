@@ -480,6 +480,56 @@ check(vMinor > 0 && vMajor / vMinor > 1.5,
 check(portProbe.rotations >= 6,
   `港口朝向有多样性（不同朝向 ${portProbe.rotations} 种，要求 ≥6）`)
 
+// 停泊时船不能把港口模型盖住
+//
+// 【为什么这条必须有】港口辨识度做完后，线上实测发现：船停在港口时
+// 帆船模型（刻意放大）**把港口整个盖住**，只露出一个港口名标签——
+// 刚做的三档规模/干船坞在玩家最常看的位置完全失效。
+// 处理是停泊时把船挪开并缩小。这条断言防的就是"哪天又挪回港口中心"。
+const dockProbe = await page.evaluate(() => {
+  const sc = window.__map3d?.scene
+  if (!sc) return { error: 'no scene' }
+  const ship = sc.getObjectByName('map3d-ship')
+  if (!ship) return { error: 'no ship' }
+  const ports = []
+  sc.traverse(o => {
+    if (o.isGroup && o.userData?.portId && o.userData?.portScale) ports.push(o)
+  })
+  let nearest = Infinity
+  for (const p of ports) {
+    const d = Math.hypot(ship.position.x - p.position.x, ship.position.z - p.position.z)
+    if (d < nearest) nearest = d
+  }
+  return {
+    scale: +ship.scale.x.toFixed(2),
+    nearestPortDist: +nearest.toFixed(2),
+  }
+})
+console.log('停泊船探针:', JSON.stringify(dockProbe))
+check(dockProbe.scale < 0.7,
+  `停泊时船已缩小（scale ${dockProbe.scale}，要求 <0.7）`)
+// 港口底座半径最大 0.19×1.2×0.8 ≈ 0.18，船半长 0.92×0.55/2 ≈ 0.25
+// → 中心距 > 0.4 才保证两者不重叠
+check(dockProbe.nearestPortDist > 0.4,
+  `停泊时船与最近港口不重叠（中心距 ${dockProbe.nearestPortDist}，要求 >0.4）`)
+
+// 反向断言：出港后船必须恢复原尺寸。
+// 少了这条，"停泊缩小"很容易写成"永远缩小"——航行中的船一直只有 55% 大小。
+const sailingProbe = await page.evaluate(async () => {
+  const st = window.__gameStore.getState()
+  window.__gameStore.setState({ fleet: { ...st.fleet, currentPortId: null } })
+  await new Promise(r => setTimeout(r, 400))
+  const ship = window.__map3d?.scene?.getObjectByName('map3d-ship')
+  const scale = +ship.scale.x.toFixed(2)
+  // 还原
+  window.__gameStore.setState({ fleet: { ...st.fleet } })
+  await new Promise(r => setTimeout(r, 400))
+  return { scale }
+})
+console.log('出港船探针:', JSON.stringify(sailingProbe))
+check(sailingProbe.scale >= 0.75,
+  `出港后船恢复原尺寸（scale ${sailingProbe.scale}，要求 ≥0.75）`)
+
 // 拖拽转视角 + 滚轮缩放
 await page.mouse.move(700, 450)
 await page.mouse.down()

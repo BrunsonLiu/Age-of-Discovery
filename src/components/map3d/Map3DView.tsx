@@ -220,6 +220,8 @@ export default function Map3DView() {
 
       // ---- 玩家船 ----
       const ship = makeShipModel(shipKit)
+      // 起个名字，供 e2e 找到它（验证停泊时不会把港口模型盖住）
+      ship.name = 'map3d-ship'
       scene.add(ship)
 
       // ---- 航线（与 2D 的虚线同一份几何） ----
@@ -450,8 +452,21 @@ export default function Map3DView() {
         }
 
         if (shipLat !== null && shipLng !== null) {
-          const sx = lonToWorldX(shipLng), sz = latToWorldZ(shipLat)
+          // 【停泊时的偏移与缩小：否则船把港口模型整个盖住】
+          // 港内时船位就是港口坐标，而帆船模型（放大到不真实的大小，
+          // 参考 Age of Sail 的刻意风格）比港口大一圈——
+          // 线上实测：停在塞维利亚时港口**完全看不见**，只露出一个"塞维利亚"标签。
+          // 刚做完的港口辨识度（三档规模 + 干船坞）在玩家最常看的位置失效，等于白做。
+          // 处理：停泊时把船挪到港口一侧并缩小，读作"船停在码头边"。
+          // 【判据不能用 !state.shipPosition】开局时 shipPosition 就被写成
+          // 所在港口坐标（非空），那样判断会让"停泊"永远为假、修复等于没做
+          // （e2e 的断言当场抓到这个：scale 仍是 0.8、中心距 0）。
+          // 正确的判据是"在港内 且 没在航行"。
+          const docked = !!fleet.currentPortId && !fleet.isSailing
+          const sx = lonToWorldX(shipLng) + (docked ? 0.45 : 0)
+          const sz = latToWorldZ(shipLat)
           ship.position.set(sx, -PLATE_THICKNESS + 0.02, sz)
+          ship.scale.setScalar(docked ? 0.55 : 0.8)
           const wp = state.waypoint
           if (fleet.isSailing && wp) {
             const bearing = calculateBearing(shipLat, shipLng, wp.latitude, wp.longitude)
