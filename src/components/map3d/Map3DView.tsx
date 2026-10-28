@@ -463,10 +463,13 @@ export default function Map3DView() {
           // （e2e 的断言当场抓到这个：scale 仍是 0.8、中心距 0）。
           // 正确的判据是"在港内 且 没在航行"。
           const docked = !!fleet.currentPortId && !fleet.isSailing
-          const sx = lonToWorldX(shipLng) + (docked ? 0.45 : 0)
+          // 偏移 0.6 / 缩放 0.5 是实测调出来的：
+          // 船半长 0.92×0.5/2 = 0.23，港口底座半径约 0.18 → 中心距 0.6 时
+          // 两者投影不再交叠；再小就又会压住港口右侧的房子（0.45 时实测仍遮挡）。
+          const sx = lonToWorldX(shipLng) + (docked ? 0.6 : 0)
           const sz = latToWorldZ(shipLat)
           ship.position.set(sx, -PLATE_THICKNESS + 0.02, sz)
-          ship.scale.setScalar(docked ? 0.55 : 0.8)
+          ship.scale.setScalar(docked ? 0.5 : 0.8)
           const wp = state.waypoint
           if (fleet.isSailing && wp) {
             const bearing = calculateBearing(shipLat, shipLng, wp.latitude, wp.longitude)
