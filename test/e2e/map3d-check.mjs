@@ -68,12 +68,38 @@ const probe = await page.evaluate(() => {
   const canvases = [...document.querySelectorAll('canvas')]
   const labels = [...document.querySelectorAll('.map3d-port-label')]
   const store = window.__gameStore?.getState?.()
+  // 【为什么要取 rect 而不是只数个数】
+  // 光断言「DOM 里有 20 个 .map3d-port-label」区分力不够：
+  // 标签元素是全部无条件创建的，未发现的港口靠 style.display='none' 隐藏。
+  // 如果投影逻辑坏了（left/top 没更新、相机矩阵错），元素照样存在 20 个，
+  // 但全部堆在 (0,0) 或跑到视口外 —— 那种情况下旧断言照样通过。
+  // 所以必须量**可见标签**的实际矩形：尺寸非 0、位置在视口内、互不重叠。
+  const rects = labels
+    .filter(l => l.style.display !== 'none')
+    .map(l => {
+      const r = l.getBoundingClientRect()
+      return { text: l.textContent, x: r.x, y: r.y, w: r.width, h: r.height }
+    })
+  const overlaps = []
+  for (let i = 0; i < rects.length; i++) {
+    for (let j = i + 1; j < rects.length; j++) {
+      const a = rects[i], b = rects[j]
+      const ox = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x)
+      const oy = Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y)
+      if (ox > 0 && oy > 0) overlaps.push(`${a.text}/${b.text}`)
+    }
+  }
   return {
     canvasCount: canvases.length,
     canvasSize: canvases.map(c => `${c.width}x${c.height}`),
     labelCount: labels.length,
     labelTexts: labels.slice(0, 6).map(l => l.textContent),
-    labelVisible: labels.filter(l => l.style.display !== 'none').length,
+    labelVisible: rects.length,
+    labelRects: rects.map(r => `${r.text} ${Math.round(r.w)}x${Math.round(r.h)} @(${Math.round(r.x)},${Math.round(r.y)})`),
+    labelZeroSized: rects.filter(r => r.w < 4 || r.h < 4).map(r => r.text),
+    labelOffscreen: rects.filter(r => r.x < -8 || r.y < -8 || r.x + r.w > innerWidth + 8 || r.y + r.h > innerHeight + 8).map(r => r.text),
+    labelOverlaps: overlaps,
+    viewport: `${innerWidth}x${innerHeight}`,
     dimmedOverlay: !!document.querySelector('.vintage-map-overlay--dimmed'),
     mode: window.__mapStore?.getState?.().renderMode,
     discovered: store?.discoveredPorts,
@@ -84,6 +110,58 @@ console.log('探针:', JSON.stringify(probe))
 check(probe.canvasCount >= 1, '3D canvas 已渲染', probe.canvasCount)
 check(probe.dimmedOverlay, '羊皮纸装饰层已弱化（3D 模式）')
 check(probe.labelCount === 20, `港口标签 20 个（实得 ${probe.labelCount}）`)
+// 已发现的港口必须有可见标签（数量对得上）
+const discoveredCount = Array.isArray(probe.discovered) ? probe.discovered.length : 0
+check(probe.labelVisible === discoveredCount,
+  `可见标签数 = 已发现港口数（可见 ${probe.labelVisible} / 已发现 ${discoveredCount}）`)
+check(probe.labelZeroSized.length === 0,
+  `可见标签都有实际尺寸（零尺寸：${probe.labelZeroSized.join(',') || '无'}）`)
+check(probe.labelOffscreen.length === 0,
+  `可见标签都在视口内（越界：${probe.labelOffscreen.join(',') || '无'}）`)
+check(probe.labelOverlaps.length === 0,
+  `可见标签互不重叠（重叠：${probe.labelOverlaps.join(',') || '无'}）`)
+
+// ---- 多港口场景 ----
+//
+// 【为什么必须单独测】
+// 开局只发现了 1 个港口，「重叠」断言在只有 1 个标签时**必然通过** ——
+// 那是永远为真的假测试。把已发现港口扩到多个，
+// 才能真正检验投影定位逻辑与标签避让。
+await page.evaluate(() => {
+  const st = window.__gameStore
+  if (!st) return
+  st.setState({ discoveredPorts: [1, 2, 3, 4, 5, 6, 7, 8] })
+})
+await sleep(1200)
+const multi = await page.evaluate(() => {
+  const labels = [...document.querySelectorAll('.map3d-port-label')]
+    .filter(l => l.style.display !== 'none')
+    .map(l => {
+      const r = l.getBoundingClientRect()
+      return { text: l.textContent, x: r.x, y: r.y, w: r.width, h: r.height }
+    })
+  const overlaps = []
+  for (let i = 0; i < labels.length; i++) {
+    for (let j = i + 1; j < labels.length; j++) {
+      const a = labels[i], b = labels[j]
+      const ox = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x)
+      const oy = Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y)
+      if (ox > 0 && oy > 0) overlaps.push(`${a.text}/${b.text}(${Math.round(ox)}x${Math.round(oy)})`)
+    }
+  }
+  return {
+    n: labels.length,
+    texts: labels.map(l => l.text),
+    zeroSized: labels.filter(l => l.w < 4 || l.h < 4).map(l => l.text),
+    offscreen: labels.filter(l => l.x < -8 || l.y < -8 || l.x + l.w > innerWidth + 8 || l.y + l.h > innerHeight + 8).map(l => l.text),
+    overlaps,
+  }
+})
+console.log('多港口探针:', JSON.stringify(multi))
+check(multi.n >= 5, `扩到多港口后可见标签 ≥5 个（实得 ${multi.n}）`)
+check(multi.zeroSized.length === 0, `多港口标签都有尺寸（零尺寸：${multi.zeroSized.join(',') || '无'}）`)
+check(multi.offscreen.length === 0, `多港口标签都在视口内（越界：${multi.offscreen.join(',') || '无'}）`)
+check(multi.overlaps.length === 0, `多港口标签互不重叠（重叠：${multi.overlaps.join(',') || '无'}）`)
 
 await page.screenshot({ path: `${SHOTS}/map3d-桌面.png` })
 console.log('截图: map3d-桌面.png')

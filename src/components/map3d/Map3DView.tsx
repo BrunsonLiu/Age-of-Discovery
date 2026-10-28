@@ -441,14 +441,70 @@ export default function Map3DView() {
         }
 
         // 港口标签投影到屏幕
+        //
+        // 【为什么要做标签避让】
+        // 直接把投影坐标写进 left/top，重叠必然发生：
+        // 加勒比（哈瓦那/拿骚/圣胡安）、欧洲（里斯本/伦敦/塞维利亚）
+        // 这些港口在地图上本来就挨得近，标签文字会互相压住。
+        // 实测：8 个已发现港口有 **4 对重叠**（e2e 抓出来的）。
+        //
+        // 做法：按屏幕 y 排序，从上往下依次放置；
+        // 候选位置有「正上方 / 正下方 / 右上 / 左上 / 右下 / 左下」六档，
+        // 挑第一个与已放置标签都不相交的档位。全都不行就隐藏——
+        // **宁可少一个标签，也不要叠在一起的字**。
+        type LabelCand = {
+          anchorX: number; anchorY: number
+          w: number; h: number
+          label: HTMLDivElement
+        }
+        const cand: LabelCand[] = []
         for (const po of portObjects) {
           if (!po.group.visible) continue
           tmpV.set(po.group.position.x, 0.30, po.group.position.z)
           tmpV.project(camera)
           const visible = tmpV.z < 1
           po.label.style.display = visible ? 'block' : 'none'
-          po.label.style.left = `${((tmpV.x + 1) / 2) * width}px`
-          po.label.style.top = `${((-tmpV.y + 1) / 2) * height}px`
+          if (!visible) continue
+          // 先 display:block 再量尺寸 —— 读 offsetWidth 会触发同步布局
+          const tw = po.label.offsetWidth || po.label.textContent!.length * 13 + 6
+          const th = po.label.offsetHeight || 16
+          cand.push({
+            anchorX: ((tmpV.x + 1) / 2) * width,
+            anchorY: ((-tmpV.y + 1) / 2) * height,
+            w: tw, h: th, label: po.label,
+          })
+        }
+        // 从上往下放（屏幕 y 小的先放），这样下面的标签会主动让开上面的
+        cand.sort((a, b) => a.anchorY - b.anchorY)
+        const placedRects: { x: number; y: number; w: number; h: number }[] = []
+        for (const c of cand) {
+          // transform 是 translate(-50%,-100%) → 默认锚点在标签底边中点
+          const baseX = c.anchorX - c.w / 2
+          const baseY = c.anchorY - c.h
+          const offsets: [number, number][] = [
+            [0, 0],                 // 正上方（默认）
+            [0, c.h + 3],           // 正下方
+            [c.w * 0.62, -2],       // 右上
+            [-c.w * 0.62, -2],      // 左上
+            [c.w * 0.62, c.h + 1],  // 右下
+            [-c.w * 0.62, c.h + 1], // 左下
+          ]
+          let best: { x: number; y: number; w: number; h: number } | null = null
+          for (const [dx, dy] of offsets) {
+            const box = { x: baseX + dx, y: baseY + dy, w: c.w, h: c.h }
+            const hit = placedRects.some(p =>
+              box.x < p.x + p.w && box.x + box.w > p.x &&
+              box.y < p.y + p.h && box.y + box.h > p.y)
+            if (!hit) { best = box; break }
+          }
+          if (!best) {
+            // 无处可放 → 隐藏该标签（宁缺勿叠）
+            c.label.style.display = 'none'
+            continue
+          }
+          placedRects.push(best)
+          c.label.style.left = `${best.x + c.w / 2}px`
+          c.label.style.top = `${best.y + c.h}px`
         }
 
         renderer!.render(scene, camera)
