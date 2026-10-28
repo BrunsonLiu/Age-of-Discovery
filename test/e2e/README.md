@@ -46,7 +46,7 @@ npm run test:e2e:all      # 以上全部（不含 mobile:prod）
 | `scene-player-views.mjs` | 25 场景玩家视角大图对比（素材观感验收） | dev server |
 | `player-survey.mjs` | 每个界面截一张图，看画面好不好（体验巡检） | dev server |
 | `map-legibility.mjs` | 海陆明度差、图层 z-index、复古装饰不被压住 | dev server |
-| `map3d-check.mjs` | 2.5D 视图：能切进切出、20 个港口标签都在、**可见标签有尺寸/在视口内/互不重叠**（含 8 港口密集场景）、**底栏图层开关在 3D 里真的生效**（对象存在 + visible 翻转 + store 一致 + 同帧 WebGL 像素差）、**国界线真的画出来了**（同帧像素差）、**区域名 28 个有尺寸/不越界/不与港口名重叠**、切回 2D 后 Leaflet 恢复正常、运行时错误为 0 | dev server |
+| `map3d-check.mjs` | 2.5D 视图：能切进切出、20 个港口标签都在、**可见标签有尺寸/在视口内/互不重叠**（含 8 港口密集场景）、**底栏图层开关在 3D 里真的生效**（对象存在 + visible 翻转 + store 一致 + 同帧 WebGL 像素差）、**国界线真的画出来了**（同帧像素差）、**区域名 28 个有尺寸/不越界/不与港口名重叠**、**港口三档规模 8/9/3 + 干船坞 9 座 + 大港/小港体积比 >1.5**、切回 2D 后 Leaflet 恢复正常、运行时错误为 0 | dev server |
 | `map-check.mjs` / `map-diag.mjs` | 地图视觉复核与诊断（辅助脚本） | dev server |
 | `audio-live.mjs` | 真实音频能量、BGM 情绪跟随、总开关、静音恢复 | dev server |
 | `trade-quote.mjs` | 面板显示价 == 实际结算价；本港不收的货能折价卖掉 | dev server |
@@ -106,6 +106,22 @@ npm run test:e2e:all      # 以上全部（不含 mobile:prod）
   只断言「对象存在 + 段数对 + 是虚线」的话，测试**照样全绿**——那是假测试。
 - 标签去掉越界/重叠检查 → `map3d-check.mjs` 报 3 条失败
   （「日本海」「澳大利亚」越界 + 9 对重叠）。
+- 港口三档全部退化成 `major` + 删掉干船坞 → `map3d-check.mjs` 报 **5 条失败**
+  （大港 8→20、中港/小港变 undefined、干船坞 9→0、体积比 N/A）。
+  只断言「场景里有 20 个港口 group」的话，这两处退化测试照样全绿。
+
+## 判定元素可见性：别用 `offsetParent`
+
+`offsetParent` 对 `position: fixed` 的元素**恒为 null**。
+用它过滤「可见按钮」会把浮层（标题页 z=9999、对话层 z=70）里的按钮全部误判成不可见，
+于是「点掉开场对话」的循环一次都没点，后续所有交互被浮层截胡——
+现象是「滚轮缩放无效」「按钮点不动」，很容易误判成功能坏了。
+
+**改用 `getBoundingClientRect()` 的宽高是否 > 0。** 本轮实测踩到这个，
+排查了很久（以为滚轮监听或 pointer-events 有问题）。
+
+> 注意：`position: absolute` 的元素 offsetParent 是最近的定位祖先，一般非 null，
+> 所以这个坑只在 fixed 元素上出现——更难联想到。
 
 > 注意 `trade-quote.mjs` 把声望设成 100：价格系数在 fame=0 时恰为 1，
 > 显示价与结算价**必然**相等——那样的测试是永远通过的假测试。系数 ≠1 时才有区分力。

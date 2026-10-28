@@ -183,7 +183,11 @@ export default function Map3DView() {
       const shipKit = createShipModelKit()
       disposables.push(
         portKit.base, portKit.house, portKit.roof, portKit.pole, portKit.flag,
-        portKit.baseMat, portKit.houseMat, portKit.roofMat, portKit.poleMat, portKit.flagMat,
+        portKit.tower, portKit.towerTop, portKit.unit,
+        portKit.baseMat, portKit.houseMat, portKit.poleMat, portKit.flagMat,
+        portKit.towerMat, portKit.woodMat, portKit.deckMat,
+        // 屋顶材质按 region 分四套（Record），要展开成单个材质再登记
+        ...Object.values(portKit.roofMat),
         shipKit.hull, shipKit.deck, shipKit.mast, shipKit.sail, shipKit.bowsprit,
         shipKit.hullMat, shipKit.deckMat, shipKit.mastMat, shipKit.sailMat,
       )
@@ -191,7 +195,9 @@ export default function Map3DView() {
       const portGroup = new THREE.Group()
       const portObjects: { group: THREE.Group; id: number; label: ScreenLabel }[] = []
       for (const p of ports) {
-        const g = makePortModel(portKit)
+        // 模型按港口自身的 services 分三档规模 + 只有能修船的港才有干船坞
+        // （见 models.ts 的 portScaleOf / makePortModel）
+        const g = makePortModel(portKit, p)
         g.position.set(lonToWorldX(p.longitude), 0, latToWorldZ(p.latitude))
         g.userData.portId = p.id
         portGroup.add(g)

@@ -393,6 +393,93 @@ check(areaProbe.areaOffscreen.length === 0,
 check(areaProbe.overlaps.length === 0,
   `区域名与港口名互不重叠（重叠：${areaProbe.overlaps.join(',') || '无'}）`)
 
+// ===================================================================
+// 港口辨识度：三档规模 + 干船坞
+// ===================================================================
+//
+// 【为什么必须单独测】
+// "20 个港口长得一样"是玩家能直接看到的问题。改完后如果只断言
+// 「场景里有 20 个港口 group」，那把三档全部退化成同一档、把所有干船坞删掉，
+// 测试照样全绿——又一个假测试。
+//
+// 所以这里断言三件事：
+//   ① 档位分布（8 大 / 9 中 / 3 小）——对应真实的 services 分布
+//   ② 干船坞数量 == 有 shipyard 的港口数（9）
+//   ③ **几何尺度真的不同**（大港包围盒体积 > 小港，且差距 >1.5 倍）——
+//      前两条只证明"标记打对了"，第③条才证明"画面上真的不一样"
+const portProbe = await page.evaluate(() => {
+  const sc = window.__map3d?.scene
+  if (!sc) return { error: 'no scene' }
+  // 港口 group 挂在场景下，靠 userData.portScale 认出来
+  const groups = []
+  sc.traverse(o => {
+    if (o.isGroup && o.userData?.portScale) groups.push(o)
+  })
+  const byScale = {}
+  let drydocks = 0
+  for (const g of groups) {
+    const s = g.userData.portScale
+    byScale[s] = (byScale[s] ?? 0) + 1
+    if (g.getObjectByName('drydock')) drydocks++
+  }
+  const sizeOf = g => {
+    let minX = Infinity, minY = Infinity, minZ = Infinity
+    let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity
+    g.updateMatrixWorld(true)
+    g.traverse(o => {
+      if (!o.isMesh || !o.geometry) return
+      const pos = o.geometry.attributes.position
+      if (!pos) return
+      const v = { x: 0, y: 0, z: 0 }
+      for (let i = 0; i < pos.count; i++) {
+        v.x = pos.getX(i); v.y = pos.getY(i); v.z = pos.getZ(i)
+        // 手动应用 matrixWorld（不依赖 THREE.Vector3）
+        const m = o.matrixWorld.elements
+        const x = m[0] * v.x + m[4] * v.y + m[8] * v.z + m[12]
+        const y = m[1] * v.x + m[5] * v.y + m[9] * v.z + m[13]
+        const z = m[2] * v.x + m[6] * v.y + m[10] * v.z + m[14]
+        if (x < minX) minX = x; if (x > maxX) maxX = x
+        if (y < minY) minY = y; if (y > maxY) maxY = y
+        if (z < minZ) minZ = z; if (z > maxZ) maxZ = z
+      }
+    })
+    return { dx: maxX - minX, dy: maxY - minY, dz: maxZ - minZ }
+  }
+  // 按档位算平均包围盒体积（体积差异 = 画面上轮廓差异的代理指标）
+  const sum = {}, cnt = {}
+  for (const g of groups) {
+    const s = g.userData.portScale
+    const d = sizeOf(g)
+    sum[s] = (sum[s] ?? 0) + d.dx * d.dy * d.dz
+    cnt[s] = (cnt[s] ?? 0) + 1
+  }
+  const avgVol = {}
+  for (const s of Object.keys(sum)) avgVol[s] = sum[s] / cnt[s]
+  return {
+    total: groups.length,
+    byScale,
+    drydocks,
+    avgVol,
+    // 朝向多样性读的是 town 子组的旋转（整体不转，只转建筑群——
+    // 转整体会把干船坞/栈桥转到背对视角的一侧，实测看不见）
+    rotations: [...new Set(groups.map(g => +(g.userData.townRotation ?? 0).toFixed(3)))].length,
+  }
+})
+console.log('港口模型探针:', JSON.stringify(portProbe))
+check(portProbe.total === 20, `3D 场景里有 20 个港口模型（实得 ${portProbe.total}）`)
+check(portProbe.byScale?.major === 8, `大港 8 个（实得 ${portProbe.byScale?.major}）`)
+check(portProbe.byScale?.medium === 9, `中港 9 个（实得 ${portProbe.byScale?.medium}）`)
+check(portProbe.byScale?.minor === 3, `小港 3 个（实得 ${portProbe.byScale?.minor}）`)
+check(portProbe.drydocks === 9, `干船坞 9 座（= 有 shipyard 的港口数，实得 ${portProbe.drydocks}）`)
+// 几何尺度必须真的不同——否则"分了三档"只是数据结构上的分档，画面上没区别
+const vMajor = portProbe.avgVol?.major ?? 0
+const vMinor = portProbe.avgVol?.minor ?? 0
+check(vMinor > 0 && vMajor / vMinor > 1.5,
+  `大港模型体积显著大于小港（大/小 = ${vMinor > 0 ? (vMajor / vMinor).toFixed(2) : 'N/A'} 倍，要求 >1.5）`)
+// 朝向不能全部一致，否则一眼是复制粘贴
+check(portProbe.rotations >= 6,
+  `港口朝向有多样性（不同朝向 ${portProbe.rotations} 种，要求 ≥6）`)
+
 // 拖拽转视角 + 滚轮缩放
 await page.mouse.move(700, 450)
 await page.mouse.down()
