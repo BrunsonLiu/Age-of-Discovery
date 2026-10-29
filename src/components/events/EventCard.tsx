@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { Eye } from 'lucide-react'
 import { useGameStore } from '@/store/useGameStore'
 import { selectOutcome } from '@/utils/eventEngine'
-import { EVENT_TYPE_BG, renderEventIcon } from '@/utils/eventTypeStyles'
+import { renderEventIcon } from '@/utils/eventTypeStyles'
 import { onUiCommand } from '@/utils/uiBus'
 import { UI_ASSETS } from '@/data/uiAssets'
 import { GAME_BALANCE } from '@/data/gameConfig'
@@ -181,7 +181,17 @@ export default function EventCard() {
     clearCurrentEvent()
   }
 
-  const bgGradient = EVENT_TYPE_BG[currentEvent.type] || 'from-gold-900/30 to-slate-900/30'
+  /**
+   * 卡片底色**不再随事件类型变化**。
+   *
+   * 原先每类一张渐变（风暴卡深蓝、庆典卡深粉、疾病卡深绿…），翻两页像换了三个
+   * 游戏，而外层又是同一副金色雕花边框——牌是同一张牌，却每次换一种纸。
+   * 底色统一成暖褐之后，类型只由标题上方的图标颜色表达（见 eventTypeStyles 的
+   * 五个情绪族），信息没丢，材质统一了。
+   *
+   * 不透明度 92%：低于 85% 时底下的地图标签会透上来，在选项文字上变成重影。
+   */
+  const cardBg = 'from-gold-900/95 to-parchment-900/95'
 
   return (
     <>
@@ -190,7 +200,7 @@ export default function EventCard() {
       >
         {/* my-auto：内容比视口高时从顶部开始排（flex 居中会把超出部分裁到屏幕外，
             玩家就看不到事件标题了） */}
-        <div className={`my-auto w-[26rem] max-w-[92vw] bg-gradient-to-b ${bgGradient} animate-fade-in-scale overflow-hidden`}
+        <div className={`my-auto w-[26rem] max-w-[92vw] bg-gradient-to-b ${cardBg} animate-fade-in-scale overflow-hidden`}
           style={{
             animationDelay: '0.05s',
             // 金质华丽边框（F2）：border-image 九宫格切片随卡片伸缩。
@@ -226,7 +236,15 @@ export default function EventCard() {
 
           <div className="p-5 pt-3">
             <div className="flex flex-col items-center mb-3">
-              <div className="mb-2 opacity-80">{renderEventIcon(currentEvent.type, 34)}</div>
+              {/* 类型徽章：原来是一枚裸图标（34px）飘在插图和缎带之间，
+                  上下都没有依托，看着像漏排。加一个暗底圆盘当"章"，
+                  图标缩到 20px 落进圆里——位置不变，但读起来是徽记而不是残留。 */}
+              <div
+                className="mb-2 flex h-10 w-10 items-center justify-center rounded-full border border-gold-700/45 bg-parchment-900/90"
+                style={{ boxShadow: 'inset 0 1px 0 rgba(255, 238, 186, 0.12), 0 2px 6px rgba(0, 0, 0, 0.45)' }}
+              >
+                {renderEventIcon(currentEvent.type, 20)}
+              </div>
               {bannerFailed ? (
                 <h2 className="pirate-title text-2xl text-center">{currentEvent.title}</h2>
               ) : (
