@@ -183,7 +183,13 @@ export default function BottomBar() {
       <div className="flex items-center gap-2 md:gap-3 shrink-0 order-4 md:order-3">
         <div className="flex items-center gap-2 text-xs text-gold-300">
           <span className="text-gold-500 font-serif">第{fleet.day}天</span>
-          <span className="flex items-center gap-0.5"><Coins size={11} />{fleet.gold}</span>
+          {/* 金币也要带字——和粮/水/士气三个片保持同一种"图标 + 单字 + 数字"
+              的读法，否则底栏右侧是一串无标签数字，玩家得靠位置去猜。 */}
+          <span className="flex items-center gap-0.5" title="金币">
+            <Coins size={11} className="text-gold-500" aria-hidden="true" />
+            <span className="font-serif text-[10px] text-gold-600">金</span>
+            <span className="font-mono tabular-nums">{fleet.gold}</span>
+          </span>
         </div>
         {/* 常驻资源条：粮/水/士气带余量条、可撑天数与短缺预警。
             金币不在这里——它是货币不是消耗品，画成进度条没有意义。 */}

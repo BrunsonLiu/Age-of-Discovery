@@ -81,6 +81,15 @@ function useDelta(value: number, holdMs = 650): 1 | -1 | 0 {
 
 interface ChipProps {
   label: string
+  /**
+   * 底栏里紧贴图标显示的单字/双字标签（粮 / 水 / 士气）。
+   *
+   * 为什么必须有：这三个片原先只有一枚 11px 图标 + 一个裸数字，
+   * 玩家看到的是 `100 104 100`——三个数字长得一样，图标又小到看不清。
+   * 数字不可读时，预警（变红、差 N 天）也就无从下手。
+   * 标签占 12~22px，换掉的是「我得猜这数字是什么」。
+   */
+  short: string
   icon: ReactNode
   value: number
   /** 条的填充百分比 0~100 */
@@ -97,7 +106,7 @@ interface ChipProps {
 }
 
 function ResourceChip({
-  label, icon, value, barPct, level, perDay, days, needDays, tip, onClick,
+  label, short, icon, value, barPct, level, perDay, days, needDays, tip, onClick,
 }: ChipProps) {
   const rolled = useRolledNumber(value)
   const delta = useDelta(value)
@@ -119,7 +128,7 @@ function ResourceChip({
       onClick={onClick}
       title={tip}
       aria-label={`${label} ${Math.round(value)}${daysText ? `，${daysText}` : ''}`}
-      className="flex items-center gap-1 md:gap-1.5 rounded px-1 md:px-1.5 py-1 transition-colors hover:bg-ocean-700/60 focus:outline-none focus-visible:ring-1 focus-visible:ring-gold-500/60 min-w-[62px] md:min-w-[86px]"
+      className="flex items-center gap-1 md:gap-1.5 rounded px-1 md:px-1.5 py-1 transition-colors hover:bg-ocean-700/60 focus:outline-none focus-visible:ring-1 focus-visible:ring-gold-500/60 md:min-w-[96px]"
     >
       {/* 图标：危急时脉冲——不需要玩家去读数字就知道出事了 */}
       <span
@@ -127,6 +136,15 @@ function ResourceChip({
         style={{ color }}
       >
         {icon}
+      </span>
+
+      {/* 单字标签：把「100」变成「粮 100」。桌面与移动端都要——
+          移动端宁可砍掉余量条也要保住它，因为条只是修饰，标签才是含义。
+          颜色用 gold-500 而不是 gold-600：10px 的字在 #2e2212 褐底上，
+          gold-600（#b08d3a）对比只有约 3.4:1，实测几乎融进背景，
+          等于加了个看不见的标签。 */}
+      <span className="shrink-0 font-serif text-[11px] leading-none text-gold-500">
+        {short}
       </span>
 
       {/* 数值：等宽右对齐——三个片的条才能落在同一条竖线上，
@@ -138,8 +156,10 @@ function ResourceChip({
         {Math.round(rolled)}
       </span>
 
-      {/* 迷你条：宽度即余量，颜色即水位 */}
-      <span className="relative h-1 w-8 md:w-10 shrink-0 overflow-hidden rounded-full bg-ocean-900/80">
+      {/* 迷你条：宽度即余量，颜色即水位。
+          移动端隐藏——390px 上三个片各占 32px 的条会把数字挤成两行，
+          而"余量多少"在手机上一眼看数字比一眼看短条更准。 */}
+      <span className="relative hidden md:block h-1 w-10 shrink-0 overflow-hidden rounded-full bg-ocean-900/80">
         <span
           className="absolute inset-y-0 left-0 rounded-full"
           style={{ width: `${barPct}%`, background: color, transition: TRANSITION }}
@@ -268,9 +288,13 @@ export default function ResourceCluster() {
     <div className="flex items-center gap-1">
       <ResourceChip
         label="食物"
+        short="粮"
         icon={<Drumstick size={11} />}
         value={fleet.food}
-        barPct={Math.min(100, (fleet.food / Math.max(100, fleet.food)) * 100)}
+        /* 条 = 相对补给容量（100 份为满仓）。超过 100 就画满：
+           多存的粮有意义（能多走几天），但条的分辨率只到满仓为止，
+           再往上由旁边的「还能撑 N 天」负责说明。 */
+        barPct={Math.min(100, fleet.food)}
         level={foodLevel}
         perDay={rates.foodPerDay}
         days={foodDays}
@@ -280,9 +304,10 @@ export default function ResourceCluster() {
       />
       <ResourceChip
         label="淡水"
+        short="水"
         icon={<Droplets size={11} />}
         value={fleet.water}
-        barPct={Math.min(100, (fleet.water / Math.max(100, fleet.water)) * 100)}
+        barPct={Math.min(100, fleet.water)}
         level={waterLevel}
         perDay={rates.waterPerDay}
         days={waterDays}
@@ -292,6 +317,7 @@ export default function ResourceCluster() {
       />
       <ResourceChip
         label="士气"
+        short="士气"
         icon={<Heart size={11} />}
         value={fleet.morale}
         barPct={fleet.morale}
