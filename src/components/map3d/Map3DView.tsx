@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { Anchor } from 'lucide-react'
 import * as THREE from 'three'
 import { Line2 } from 'three/examples/jsm/lines/Line2.js'
 import { LineGeometry } from 'three/examples/jsm/lines/LineGeometry.js'
@@ -986,7 +987,7 @@ export default function Map3DView() {
         <div className="absolute inset-0 z-10 flex items-center justify-center text-[#e8d4a8] font-serif"
              style={{ letterSpacing: 3, background: 'linear-gradient(180deg,#16212e 0%,#0d1620 100%)' }}>
           <div className="text-center">
-            <div className="text-4xl mb-4" style={{ animation: 'loadPulse 1.5s ease-in-out infinite' }}>⚓</div>
+            <Anchor size={36} className="mx-auto mb-4 text-gold-600" strokeWidth={1.2} style={{ animation: 'loadPulse 1.5s ease-in-out infinite' }} aria-hidden="true" />
             <div>装配立体海图...</div>
           </div>
         </div>

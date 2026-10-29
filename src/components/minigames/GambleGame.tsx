@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { Coins } from 'lucide-react'
 import {
   GAMBLE_ROUNDS,
   GAMBLE_STAKE,
@@ -186,9 +187,10 @@ export default function GambleGame({ modifiers, onDone }: {
 
       <button
         onClick={() => { const s = stateRef.current; if (s && !s.finished) { cashOutGamble(s); setBankroll(s.bankroll); setHint('见好就收，落袋为安') } }}
-        className="w-full py-2 text-xs font-serif text-gold-300 bg-ocean-800/60 hover:bg-gold-700/25 rounded-lg press transition-all"
+        className="w-full flex items-center justify-center gap-1.5 py-2 text-xs font-serif text-gold-300 bg-ocean-800/60 hover:bg-gold-700/25 rounded-lg press transition-all"
       >
-        💰 见好就收（空格）· 带着 {bankroll} 走人
+        <Coins size={12} aria-hidden="true" />
+        见好就收（空格）· 带着 {bankroll} 走人
       </button>
     </div>
   )

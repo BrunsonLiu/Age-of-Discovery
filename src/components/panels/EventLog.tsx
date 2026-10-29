@@ -35,8 +35,9 @@ export default function EventLog() {
                 </p>
                 <p className="text-gold-400 text-xs font-serif">{entry.outcome.description}</p>
                 {entry.outcome.historicalNote && (
-                  <div className="scroll-parchment mt-1.5 text-xs text-gold-300 font-serif rounded">
-                    📜 {entry.outcome.historicalNote}
+                  <div className="scroll-parchment mt-1.5 flex items-start gap-1 text-xs text-gold-300 font-serif rounded">
+                    <Scroll size={11} className="mt-0.5 shrink-0 text-gold-500" aria-hidden="true" />
+                    <span>{entry.outcome.historicalNote}</span>
                   </div>
                 )}
               </div>

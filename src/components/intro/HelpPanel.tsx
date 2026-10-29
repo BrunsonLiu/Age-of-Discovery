@@ -1,10 +1,6 @@
 import { useGameStore } from '@/store/useGameStore'
 import ParchmentCard from '@/components/ui/ParchmentCard'
-import {
-  HelpCircle, Ship, Anchor, Package, Users,
-  Coins, Utensils, Droplets, Heart, Shield,
-  Trophy, Sparkles, Moon, Flame, Wind, Newspaper, Globe, Compass,
-} from 'lucide-react'
+import { Anchor, Coins, RotateCcw, Compass, Droplets, Flame, Globe, Heart, HelpCircle, Keyboard, Moon, Newspaper, Package, Shield, Ship, Sparkles, Tag, Trophy, Users, Utensils, Wind } from 'lucide-react'
 
 const sections = [
   {
@@ -40,7 +36,7 @@ const sections = [
     ],
   },
   {
-    title: '⚓ 航段方针',
+    title: '航段方针',
     icon: <Compass size={14} />,
     items: [
       '一次远航被切成 2-8 个航段，每段开始时你必须选一个方针——这是游戏里**唯一**的速度旋钮',
@@ -69,7 +65,7 @@ const sections = [
     ],
   },
   {
-    title: '🌦️ 天候系统',
+    title: '天候系统',
     icon: <Wind size={14} />,
     items: [
       '天气按海域生成、持续 1-3 天：晴（全速）/ 阴（×0.95）/ 雨（×0.85）/ 暴风雨（×0.55，每日啃 1 点耐久、压 1 点士气）/ 浓雾（×0.75，瞭望半径减半）',
@@ -92,10 +88,10 @@ const sections = [
     ],
   },
   {
-    title: '🌐 四方势力',
+    title: '四方势力',
     icon: <Globe size={14} />,
     items: [
-      '王室 👑 / 商人商会 ⚖️ / 学者公会 📜 / 海盗兄弟会 🏴‍☠️——各有一本记你功过的账',
+      '王室 / 商人商会 / 学者公会 / 海盗兄弟会——各有一本记你功过的账',
       '同一个行为，两副面孔：击退海盗，王室赏识你、兄弟会记恨你；走私赚钱，兄弟会引为知己、王室贴出通缉',
       '声望 ≥30/60/90 逐档解锁势力特权：王家合约、商会折扣、免费情报、黑市与护航',
       '被任一派系敌对（≤-30）会吃到实打实的代价：拒绝服务、交易取消、通缉与追猎',
@@ -103,7 +99,7 @@ const sections = [
     ],
   },
   {
-    title: '🧑‍✈️ 名船员',
+    title: '名船员',
     icon: <Users size={14} />,
     items: [
       '港口码头可寻访八位有名有姓的船员：水手长、炮手、账房、神甫、学者、厨子、见习航海士、黑旗向导',
@@ -114,8 +110,8 @@ const sections = [
     ],
   },
   {
-    title: '🏷️ 海上人称',
-    icon: <Compass size={14} />,
+    title: '海上人称',
+    icon: <Tag size={14} />,
     items: [
       '你的两难选择会累积五种取向：冷酷 / 仁慈 / 贪婪 / 鲁猛 / 守秘',
       '任一取向达到 3 点，海上开始用一个称号称呼你：铁腕者、慈悲心、海上赌徒、守秘人、贪婪者',
@@ -124,8 +120,8 @@ const sections = [
     ],
   },
   {
-    title: '⌨️ 键盘操作',
-    icon: <Wind size={14} />,
+    title: '键盘操作',
+    icon: <Keyboard size={14} />,
     items: [
       '1-8：快速开关舰队/任务/日志/成就/见闻/港口/贸易/船厂面板',
       'Space：暂停 / 恢复时间（恢复回 3x）',
@@ -138,7 +134,7 @@ const sections = [
     ],
   },
   {
-    title: '🧭 操舵挑战（可跳过）',
+    title: '操舵挑战（可跳过）',
     icon: <Compass size={14} />,
     items: [
       '每段起航后弹出：15 秒实时掌舵，船会停下等你',
@@ -195,7 +191,7 @@ const sections = [
     title: '航海见闻',
     icon: <Newspaper size={14} />,
     items: [
-      '左侧 📰 见闻面板实时追踪三位竞争船长的财富、声望与探索',
+      '左侧「见闻」面板实时追踪三位竞争船长的财富、声望与探索',
       '每隔几天就有他们的新传闻飘进酒馆——有人暴富，有人触礁',
       '斜线后的数字是同代最强：被追上就加把劲，甩开了也别松懈',
     ],
@@ -254,7 +250,8 @@ export default function HelpPanel() {
             onClick={() => { setShowHelp(false); resetGame() }}
             className="w-full py-2 text-xs font-serif text-gold-400 hover:text-gold-200 border border-gold-700/25 rounded-lg press transition-all"
           >
-            🔄 换个玩法（重开一局 · 当前进度会清空）
+            <RotateCcw size={11} className="inline -mt-0.5 mr-1" aria-hidden="true" />
+            换个玩法（重开一局 · 当前进度会清空）
           </button>
           <p className="text-gold-600 text-[10px] font-serif text-center mt-1">
             当前：{gameMode === 'visitor' ? '参观模式' : '船长模式'}

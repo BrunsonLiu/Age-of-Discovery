@@ -3,6 +3,7 @@ import { useGameStore } from '@/store/useGameStore'
 import { WEATHER_INFO, weatherForecast } from '@/utils/weather'
 import { prevailingWindBearing } from '@/utils/navigation'
 import { ports } from '@/data/ports'
+import WeatherIcon from '@/components/ui/WeatherIcon'
 
 /**
  * 天候徽章（常驻罗盘下方）：
@@ -41,7 +42,7 @@ export default function WeatherBadge() {
         aria-label={`天候：${info.label}，点击展开预报`}
         aria-expanded={open}
       >
-        <span className="text-base leading-none">{info.icon}</span>
+        <WeatherIcon kind={info.kind} size={16} className="text-gold-300" />
         <span className="text-gold-200 font-serif text-xs">{info.label}</span>
         <span className="text-gold-600 font-serif text-[10px] tabular-nums">{weather.windSpeed}节</span>
         {speedPct !== 0 && (
@@ -65,7 +66,7 @@ export default function WeatherBadge() {
               return (
                 <div key={i} className="flex items-center gap-2 py-0.5">
                   <span className="text-gold-600 font-serif text-[10px] w-8 tabular-nums">第{fleet.day + i}天</span>
-                  <span className="text-xs leading-none">{fi.icon}</span>
+                  <span className="w-4 flex justify-center text-gold-300"><WeatherIcon kind={w.kind} size={12} /></span>
                   <span className="text-gold-200 font-serif text-[11px] flex-1">{fi.label}</span>
                   <span className="text-gold-600 font-serif text-[10px] tabular-nums">{w.windSpeed}节</span>
                   <span className={`font-serif text-[10px] tabular-nums w-10 text-right ${fi.sailMul < 1 ? 'text-red-300/80' : 'text-emerald-300/80'}`}>

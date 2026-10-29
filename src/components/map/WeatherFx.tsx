@@ -2,6 +2,7 @@ import { useGameStore } from '@/store/useGameStore'
 import { WEATHER_INFO } from '@/utils/weather'
 import { FX_ASSETS } from '@/data/envAssets'
 import type { WeatherKind } from '@/types'
+import WeatherIcon from '@/components/ui/WeatherIcon'
 
 /**
  * 天候氛围层：把"环境"这条线直接画在屏幕上。
@@ -148,7 +149,7 @@ export default function WeatherFx() {
 
       {/* 天候名签：让玩家知道屏幕上这场雨叫什么 */}
       <div className="absolute top-3 left-1/2 -translate-x-1/2 flex items-center gap-1.5 px-2.5 py-1 rounded bg-ocean-900/50 border border-gold-700/25">
-        <span className="text-sm">{info.icon}</span>
+        <WeatherIcon kind={info.kind} size={14} />
         <span className="text-gold-200 font-serif text-xs">{info.label}</span>
         <span className="text-gold-600 font-serif text-[10px]">{weather.windSpeed}节</span>
       </div>

@@ -15,7 +15,6 @@ export type { WeatherKind, WeatherState }
 export interface WeatherInfo {
   kind: WeatherKind
   label: string
-  icon: string
   /** 航行速度倍率（作用于 SailingController 的移动与日累计） */
   sailMul: number
   /** 事件触发概率倍率（风暴/雾天更容易出事） */
@@ -32,27 +31,27 @@ export interface WeatherInfo {
 
 export const WEATHER_INFO: Record<WeatherKind, WeatherInfo> = {
   clear: {
-    kind: 'clear', label: '晴朗', icon: '☀️',
+    kind: 'clear', label: '晴朗',
     sailMul: 1.0, eventBias: 0.85, wearAdd: 0, moraleHit: 0, visibility: 1,
     hint: '风顺日丽，正是满帆赶路的时候',
   },
   cloudy: {
-    kind: 'cloudy', label: '阴云', icon: '⛅',
+    kind: 'cloudy', label: '阴云',
     sailMul: 0.95, eventBias: 1.0, wearAdd: 0, moraleHit: 0, visibility: 0.95,
     hint: '云层低压，帆兜不住风，慢半拍',
   },
   rain: {
-    kind: 'rain', label: '落雨', icon: '🌧️',
+    kind: 'rain', label: '落雨',
     sailMul: 0.85, eventBias: 1.25, wearAdd: 0, moraleHit: 0, visibility: 0.85,
     hint: '帆索吃水发沉，淡水舱倒能接一些',
   },
   storm: {
-    kind: 'storm', label: '暴风雨', icon: '⛈️',
+    kind: 'storm', label: '暴风雨',
     sailMul: 0.55, eventBias: 1.8, wearAdd: 1, moraleHit: 1, visibility: 0.7,
     hint: '收帆！每一道浪都在啃船底',
   },
   fog: {
-    kind: 'fog', label: '浓雾', icon: '🌫️',
+    kind: 'fog', label: '浓雾',
     sailMul: 0.75, eventBias: 1.4, wearAdd: 0, moraleHit: 0, visibility: 0.55,
     hint: '白障贴海面，瞭望哨只能听见声音',
   },
@@ -215,5 +214,5 @@ export function isNotableWeather(kind: WeatherKind): boolean {
 /** 天气变化提示文案 */
 export function weatherChangeMessage(next: WeatherState): string {
   const info = WEATHER_INFO[next.kind]
-  return `${info.icon} 天气转为${info.label}：${info.hint}（风力 ${next.windSpeed} 节）`
+  return `天气转为${info.label}：${info.hint}（风力 ${next.windSpeed} 节）`
 }

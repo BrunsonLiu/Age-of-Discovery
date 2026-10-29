@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Ship, Coins, Utensils, Droplets, Heart, Anchor, Wind, Skull, Map, ChevronRight, Star, Users } from 'lucide-react'
+import { Ship, Coins, Utensils, Droplets, Heart, Anchor, Wind, Skull, Map, ChevronRight, Star, Users, Sailboat, Tag, Globe } from 'lucide-react'
 import { useGameStore } from '@/store/useGameStore'
 import { useMapStore } from '@/store/useMapStore'
 import { routes } from '@/data/routes'
@@ -147,7 +147,7 @@ export default function FleetPanel() {
             )}
             {captainTitle && (
               <div className="flex items-center justify-between text-xs font-serif">
-                <span className="text-gold-500 flex items-center gap-1">🏷️ 海上人称</span>
+                <span className="text-gold-500 flex items-center gap-1"><Tag size={11} aria-hidden="true" />海上人称</span>
                 <span className="text-gold-300">{captainTitle.name} · {captainTitle.effect}</span>
               </div>
             )}
@@ -156,7 +156,7 @@ export default function FleetPanel() {
           {/* 派系态度：世界上有人记得你做过什么 */}
           <div className="rounded p-2 bg-ocean-800/40 border border-gold-700/20 space-y-1">
             <div className="flex items-center justify-between text-xs font-serif">
-              <span className="text-gold-500">🌐 四方态度</span>
+              <span className="text-gold-500 flex items-center gap-1"><Globe size={11} aria-hidden="true" />四方态度</span>
               <span className="text-gold-600 text-[10px]">同一行为，两副面孔</span>
             </div>
             {FACTIONS.map(f => {
@@ -390,8 +390,9 @@ export default function FleetPanel() {
 
           {currentRoute && (
             <div className="border-t border-gold-700/30 pt-2">
-              <div className="text-center text-gold-400 font-serif text-sm">
-                ⛵ 航行中... {Math.round(routeProgress * 100)}%
+              <div className="flex items-center justify-center gap-1.5 text-gold-400 font-serif text-sm">
+                <Sailboat size={13} aria-hidden="true" />
+                航行中... {Math.round(routeProgress * 100)}%
               </div>
               <div className="h-1.5 bg-ocean-700 rounded-full mt-1 overflow-hidden">
                 <div className="h-full bg-gold-500 rounded-full transition-all duration-500" style={{ width: `${routeProgress * 100}%` }} />

@@ -1102,7 +1102,7 @@ export const useGameStore = create<GameStore>()(
             newNotifications = [...newNotifications, {
               id: n.id,
               type: 'discovery' as const,
-              title: '⚓ 航海见闻',
+              title: '航海见闻',
               message: n.text,
               timestamp: Date.now(),
             }]
@@ -1581,7 +1581,7 @@ export const useGameStore = create<GameStore>()(
             notifications: [...state.notifications, ...marketNotif, {
               id: `milestone-discover-${Date.now()}`,
               type: 'achievement' as const,
-              title: `⛵ 已探索 ${newlyDiscovered.length} 座港口`,
+              title: `已探索 ${newlyDiscovered.length} 座港口`,
               message: `从塞维利亚启航到今天，你已经成为这条航线上最有经验的船长。（声望+${fameGain}）`,
               timestamp: Date.now(),
             }],
@@ -1623,7 +1623,7 @@ export const useGameStore = create<GameStore>()(
           notifications: [...state.notifications, {
             id: `rest-${Date.now()}`,
             type: 'history' as const,
-            title: '⚓ 休整一日',
+            title: '休整一日',
             message: `水手们上岸休整、晾晒帆布，士气回升至 ${newFleet.morale}。`,
             timestamp: Date.now(),
           }],

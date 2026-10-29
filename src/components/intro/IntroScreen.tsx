@@ -4,6 +4,8 @@ import { startAmbience } from '@/utils/audio'
 import { traits, DEFAULT_TRAIT } from '@/data/traits'
 import { BG_ASSETS } from '@/data/envAssets'
 import Badge from '@/components/ui/Badge'
+import { UI_ASSETS } from '@/data/uiAssets'
+import { Compass, Eye, Map, Coins, CloudLightning, Scroll, type LucideIcon } from 'lucide-react'
 import type { GameMode } from '@/types'
 
 /**
@@ -16,14 +18,14 @@ import type { GameMode } from '@/types'
  */
 const MODE_CARDS: {
   id: GameMode
-  icon: string
+  icon: LucideIcon
   title: string
   tagline: string
   points: string[]
 }[] = [
   {
     id: 'captain',
-    icon: '🧭',
+    icon: Compass,
     title: '我要当船长',
     tagline: '完整玩法：有任务、有操舵、有输赢',
     points: [
@@ -34,7 +36,7 @@ const MODE_CARDS: {
   },
   {
     id: 'visitor',
-    icon: '👀',
+    icon: Eye,
     title: '我只是来逛逛',
     tagline: '参观模式：只看，不被逼着做任何事',
     points: [
@@ -65,7 +67,14 @@ export default function IntroScreen() {
     {
       content: (
         <>
-          <div className="text-7xl mb-6 animate-ship-sway">⛵</div>
+          {/* 首屏主视觉：原来是一个 72px 的彩色 emoji ⛵。
+              换成 ui_compass_rose（金铜手绘罗盘），和整块铜木金边的材质同源。 */}
+          <img
+            src={UI_ASSETS.compassRose}
+            alt=""
+            draggable={false}
+            className="w-28 h-28 mx-auto mb-5 animate-ship-sway select-none drop-shadow-[0_6px_18px_rgba(0,0,0,0.6)]"
+          />
           <h1 className="pirate-title text-6xl text-gold-300 mb-3">大航海时代</h1>
           <p className="text-gold-500 font-serif text-xl tracking-widest mb-8">Age of Discovery</p>
         </>
@@ -96,10 +105,10 @@ export default function IntroScreen() {
         <>
           <h2 className="pirate-title text-3xl text-gold-300 mb-6">你的航程</h2>
           <div className="space-y-3 font-serif text-gold-200 text-base leading-relaxed max-w-md">
-            <p>🗺️ 自由探索世界，没有强制目标</p>
-            <p>💰 买卖商品，低买高卖，积累财富</p>
-            <p>⛈️ 在风暴与奇遇中体验航海的浪漫</p>
-            <p>📜 道听途说的冒险线索，随心而行</p>
+            <p className="flex items-center gap-2"><Map size={14} className="text-gold-400 shrink-0" aria-hidden="true" />自由探索世界，没有强制目标</p>
+            <p className="flex items-center gap-2"><Coins size={14} className="text-gold-400 shrink-0" aria-hidden="true" />买卖商品，低买高卖，积累财富</p>
+            <p className="flex items-center gap-2"><CloudLightning size={14} className="text-gold-400 shrink-0" aria-hidden="true" />在风暴与奇遇中体验航海的浪漫</p>
+            <p className="flex items-center gap-2"><Scroll size={14} className="text-gold-400 shrink-0" aria-hidden="true" />道听途说的冒险线索，随心而行</p>
           </div>
         </>
       ),
@@ -128,7 +137,7 @@ export default function IntroScreen() {
                   }`}
                 >
                   <div className="flex items-center gap-2">
-                    <span className="text-xl leading-none">{m.icon}</span>
+                    <m.icon size={18} strokeWidth={1.6} className={selected ? 'text-gold-200' : 'text-gold-400'} aria-hidden="true" />
                     <span className={`pirate-title text-lg ${selected ? 'text-gold-200' : 'text-gold-400'}`}>{m.title}</span>
                     {selected && <span className="ml-auto text-gold-300 text-xs font-serif">已选</span>}
                   </div>

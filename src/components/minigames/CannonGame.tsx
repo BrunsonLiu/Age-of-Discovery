@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { Bomb, Shield } from 'lucide-react'
 import {
   CANNON_BRACE_MARK,
   CANNON_GRAZE_HALF,
@@ -470,17 +471,19 @@ export default function CannonGame({ modifiers, onDone }: {
           ref={fireBtnRef}
           data-testid="cannon-fire"
           onClick={doFire}
-          className="py-2.5 rounded-lg border border-gold-700/40 bg-ocean-800/60 hover:bg-gold-700/30 press transition-[opacity,transform] font-serif text-sm text-gold-200"
+          className="flex items-center justify-center gap-1.5 py-2.5 rounded-lg border border-gold-700/40 bg-ocean-800/60 hover:bg-gold-700/30 press transition-[opacity,transform] font-serif text-sm text-gold-200"
         >
-          💥 开火（空格）
+          <Bomb size={13} aria-hidden="true" />
+          开火（空格）
         </button>
         <button
           ref={braceBtnRef}
           data-testid="cannon-brace"
           onClick={doBrace}
-          className="py-2.5 rounded-lg border border-gold-700/40 bg-ocean-800/60 hover:bg-gold-700/30 press transition-[opacity,transform] font-serif text-sm text-gold-200"
+          className="flex items-center justify-center gap-1.5 py-2.5 rounded-lg border border-gold-700/40 bg-ocean-800/60 hover:bg-gold-700/30 press transition-[opacity,transform] font-serif text-sm text-gold-200"
         >
-          🛡 架盾（↓）
+          <Shield size={13} aria-hidden="true" />
+          架盾（↓）
         </button>
       </div>
 

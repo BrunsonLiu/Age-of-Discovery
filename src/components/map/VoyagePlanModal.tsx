@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Anchor, CloudSun, Flag, Map as MapIcon } from 'lucide-react'
 import { useGameStore } from '@/store/useGameStore'
 import { UI_ASSETS } from '@/data/uiAssets'
 import { GAME_BALANCE } from '@/data/gameConfig'
@@ -8,6 +9,7 @@ import { shipSprite } from '@/data/shipSprites'
 import { onUiCommand } from '@/utils/uiBus'
 import { WEATHER_INFO, weatherForecast, weatherFavorFactor } from '@/utils/weather'
 import { stanceLedgers } from '@/utils/segment'
+import WeatherIcon from '@/components/ui/WeatherIcon'
 
 function dangerStars(level: number): string {
   return '★'.repeat(level) + '☆'.repeat(5 - level)
@@ -28,11 +30,16 @@ function windLabel(favor: number): { text: string; cls: string } {
  *
  * 【收起时给一行摘要】折叠不等于藏起来。摘要让玩家不必展开
  * 就知道里面大概是什么（"晴 → 小雨 → 多云"），需要细节才点开。
+ *
+ * 【icon 与 title 分开传】标题文字里塞 emoji（🌤️ ⚓）在 Windows 上会被
+ * Segoe UI Emoji 渲染成彩色，和整块铜木金边的配色打架；而 title 又是
+ * 被单测按字符串断言的。所以图标走独立的 icon 槽，title 保持纯文字。
  */
 function Fold({
-  title, summary, children, danger,
+  title, icon, summary, children, danger,
 }: {
   title: string
+  icon?: React.ReactNode
   summary?: string
   children: React.ReactNode
   danger?: boolean
@@ -46,7 +53,8 @@ function Fold({
         aria-expanded={open}
         className="w-full flex items-center gap-2 px-2.5 py-1.5 text-left press"
       >
-        <span className={`font-serif text-[11px] shrink-0 ${danger ? 'text-danger-300' : 'text-gold-400'}`}>
+        <span className={`inline-flex items-center gap-1.5 font-serif text-[11px] shrink-0 ${danger ? 'text-danger-300' : 'text-gold-400'}`}>
+          {icon}
           {title}
         </span>
         {!open && summary && (
@@ -181,9 +189,11 @@ export default function VoyagePlanModal() {
       : 'border-safe-700/40 bg-safe-900/15 text-safe-200'
 
   // 预报摘要（收起时也给一行）
+  // 摘要用「晴朗 → 阴云 → 落雨」代替图标堆叠：三个词合起来 8 个字，
+  // 远比三个彩色天气 emoji 更轻，箭头也比「·」更能说明这是时间推进
   const forecastSummary = forecast
-    .map(w => `${WEATHER_INFO[w.kind].icon}${WEATHER_INFO[w.kind].label}`)
-    .join(' · ')
+    .map(w => WEATHER_INFO[w.kind].label)
+    .join(' → ')
 
   return (
     <div className="fixed inset-0 flex items-start justify-center bg-black/70 backdrop-blur-sm p-3 md:p-4 overflow-y-auto" style={{ zIndex: 80 }}>
@@ -249,14 +259,16 @@ export default function VoyagePlanModal() {
 
           {/* ③ 细节全部折叠：想深究才点开 */}
           {forecast.length > 0 && (
-            <Fold title="🌤️ 未来几天天气" summary={forecastSummary}>
+            <Fold title="未来几天天气" icon={<CloudSun size={11} />} summary={forecastSummary}>
               <div className="grid grid-cols-3 gap-1.5">
                 {forecast.map((w, i) => {
                   const fi = WEATHER_INFO[w.kind]
                   return (
                     <div key={i} className="text-center bg-ocean-900/40 rounded py-1">
                       <div className="text-gold-600 text-[10px] font-serif">第{fleet.day + i}天</div>
-                      <div className="text-sm leading-tight my-0.5">{fi.icon}</div>
+                      <div className="flex justify-center my-1 text-gold-300">
+                        <WeatherIcon kind={w.kind} size={15} />
+                      </div>
                       <div className="text-gold-200 text-[11px] font-serif">{fi.label}</div>
                       <div className={`text-[10px] font-serif tabular-nums ${fi.sailMul < 1 ? 'text-danger-400' : 'text-safe-400'}`}>
                         航速 ×{fi.sailMul.toFixed(2)}
@@ -271,7 +283,10 @@ export default function VoyagePlanModal() {
           {/* 航线情报：只有 3 个数字，买之前只有一行——不需要折叠 */}
           <div className="bg-ocean-800/35 border border-gold-700/20 rounded px-2.5 py-1.5">
             <div className="flex items-center gap-2">
-              <span className="text-gold-400 font-serif text-[11px] shrink-0">🗺️ 航线情报</span>
+              <span className="flex items-center gap-1 text-gold-400 font-serif text-[11px] shrink-0">
+                <MapIcon size={11} aria-hidden="true" />
+                航线情报
+              </span>
               {intel ? (
                 <span className="font-mono text-[10px] tabular-nums text-gold-600">
                   晴 <span className="text-safe-400">{Math.round(intel.fairWeather * 100)}%</span>
@@ -294,7 +309,7 @@ export default function VoyagePlanModal() {
           </div>
 
           {/* 方针总账：这一步不选它，但让想提前规划的玩家能看 */}
-          <Fold title="⚓ 三种方针能差多少" summary="抢行最快最险 · 谨慎最慢最稳">
+          <Fold title="三种方针能差多少" icon={<Anchor size={11} />} summary="抢行最快最险 · 谨慎最慢最稳">
             <div className="space-y-1">
               {ledgers.map(l => {
                 const s = l.stance
@@ -352,9 +367,10 @@ export default function VoyagePlanModal() {
           </button>
           <button
             onClick={confirmDeparture}
-            className="flex-1 py-2 text-xs font-serif text-gold-100 bg-gold-700/70 hover:bg-gold-600/80 rounded transition-colors"
+            className="flex-1 flex items-center justify-center gap-1.5 py-2 text-xs font-serif text-gold-100 bg-gold-700/70 hover:bg-gold-600/80 rounded transition-colors"
           >
-            🏴 出航
+            <Flag size={12} aria-hidden="true" />
+            出航
           </button>
         </div>
       </div>

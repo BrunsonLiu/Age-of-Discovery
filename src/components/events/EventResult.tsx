@@ -1,4 +1,4 @@
-import { Coins, Utensils, Droplets, Heart, Shield, Users, Scroll, Star, Globe, Compass } from 'lucide-react'
+import { Coins, Utensils, Droplets, Heart, Shield, Users, Scroll, Star, Globe, Compass, DoorOpen, Skull } from 'lucide-react'
 import ActionButton from '@/components/ui/ActionButton'
 import Badge from '@/components/ui/Badge'
 import { FACTION_MAP } from '@/data/factions'
@@ -143,14 +143,16 @@ export default function EventResult({ outcome, performance, onContinue }: EventR
       {/* 第二条线：名船员个人事件的回响 */}
       {outcome.crewEvent && (
         <div className="bg-ocean-800/40 rounded-lg p-3">
-          <p className="text-gold-500 text-[10px] font-serif">
-            {outcome.crewEvent.dies
-              ? '⚰️ 全舰默哀。'
-              : outcome.crewEvent.leaves
-                ? '🚪 有人收拾了行李。'
-                : (outcome.crewEvent.loyaltyChange ?? 0) > 0
-                  ? '⚓ 有人把这条船当成了自己的船。'
-                  : '⚓ 有人在心里记下了一笔。'}
+          <p className="flex items-center gap-1.5 text-gold-500 text-[10px] font-serif">
+            {outcome.crewEvent.dies ? (
+              <><Skull size={11} className="shrink-0 text-danger-400" aria-hidden="true" />全舰默哀。</>
+            ) : outcome.crewEvent.leaves ? (
+              <><DoorOpen size={11} className="shrink-0" aria-hidden="true" />有人收拾了行李。</>
+            ) : (outcome.crewEvent.loyaltyChange ?? 0) > 0 ? (
+              '有人把这条船当成了自己的船。'
+            ) : (
+              '有人在心里记下了一笔。'
+            )}
           </p>
         </div>
       )}

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { ChevronsDown } from 'lucide-react'
 import {
   STORM_ROUNDS,
   STORM_ROUND_LIMIT,
@@ -129,9 +130,10 @@ export default function StormGame({ modifiers, onDone }: {
             useFx.getState().cue('impact')
           }
         }}
-        className="w-full py-3 text-base font-serif text-gold-100 bg-gold-700/70 hover:bg-gold-600/80 rounded-lg press transition-all"
+        className="w-full flex items-center justify-center gap-2 py-3 text-base font-serif text-gold-100 bg-gold-700/70 hover:bg-gold-600/80 rounded-lg press transition-all"
       >
-        🪢 收帆（空格）
+        <ChevronsDown size={15} aria-hidden="true" />
+        收帆（空格）
       </button>
     </div>
   )

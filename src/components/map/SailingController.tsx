@@ -244,7 +244,7 @@ export default function SailingController() {
             // 第 5/10/15/20 座港口值得停下来庆祝一下
             if (afterCount >= 5 && afterCount % 5 === 0) {
               useFx.getState().fx(
-                { kind: 'banner', tone: 'gold', text: `⛵ 已探索 ${afterCount} 座港口`, sub: `声望 +5 · 还差 ${Math.max(0, 20 - afterCount)} 座走遍世界` },
+                { kind: 'banner', tone: 'gold', text: `已探索 ${afterCount} 座港口`, sub: `声望 +5 · 还差 ${Math.max(0, 20 - afterCount)} 座走遍世界` },
                 'milestone',
               )
             } else {

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { Anchor, Compass, Hand, Sailboat, Star, Trophy, Waves, Wind } from 'lucide-react'
 import { useGameStore } from '@/store/useGameStore'
 import { useFxStore as useFx } from '@/store/useFxStore'
 import { calculateBearing, prevailingWindBearing } from '@/utils/navigation'
@@ -322,7 +323,10 @@ export default function HelmModal() {
         {/* 标题 */}
         <div className="px-4 py-3 border-b border-gold-700/30 bg-ocean-800/50 flex items-center justify-between">
           <div>
-            <h2 className="pirate-title text-lg text-gold-300">🧭 操舵挑战</h2>
+            <h2 className="pirate-title flex items-center gap-1.5 text-lg text-gold-300">
+              <Compass size={16} strokeWidth={1.6} aria-hidden="true" />
+              操舵挑战
+            </h2>
             <p className="text-gold-500 font-serif text-xs mt-0.5">
               {phase === 'intro' && '把住舵轮——让船咬住风的咽喉'}
               {phase === 'running' && '守在绿色风区里，阵风来袭前提前调向'}
@@ -340,7 +344,10 @@ export default function HelmModal() {
         {phase === 'intro' && (
           <div className="p-5 space-y-4">
             <div className="bg-ocean-800/40 border border-gold-700/20 rounded p-3 space-y-2 text-xs font-serif">
-              <p className="text-gold-200">🌬️ 行星风带此刻吹向 <span className="text-sky-300">{baseWind}°</span>——船首向与风向夹角越小，跑得越快。</p>
+              <p className="flex items-center gap-1.5 text-gold-200">
+                <Wind size={12} className="shrink-0" aria-hidden="true" />
+                <span>行星风带此刻吹向 <span className="text-sky-300">{baseWind}°</span>——船首向与风向夹角越小，跑得越快。</span>
+              </p>
               <ul className="space-y-1.5 text-gold-400">
                 <li><span className="text-gold-200">A / D</span>（或 ← / →）：左转 / 右转舵</li>
                 <li><span className="text-gold-200">W / S</span>（或 ↑ / ↓）：收帆 / 松帆——帆收得紧，舵响应更快</li>
@@ -361,24 +368,29 @@ export default function HelmModal() {
               />
             </div>
             <div className="bg-gold-900/10 border border-gold-700/25 rounded p-3 text-xs font-serif">
-              <p className="text-gold-300 mb-1">🏆 评级即航程</p>
+              <p className="flex items-center gap-1 text-gold-300 mb-1">
+                <Trophy size={11} aria-hidden="true" />
+                评级即航程
+              </p>
               <p className="text-gold-500">传奇舵手可省下至多 <span className="text-gold-200">15%</span> 本段航程（约 <span className="text-gold-200">{Math.round(segmentNm * 0.15)}</span> 海里）并提振士气；操作太莽，船要在浪里颠掉耐久。</p>
             </div>
             {hint && <p className="text-danger-400 text-xs font-serif text-center">{hint}</p>}
             <button
               onClick={startRun}
-              className="w-full py-2.5 text-sm font-serif text-gold-100 bg-gold-700/70 hover:bg-gold-600/80 rounded-lg press transition-all"
+              className="w-full flex items-center justify-center gap-1.5 py-2.5 text-sm font-serif text-gold-100 bg-gold-700/70 hover:bg-gold-600/80 rounded-lg press transition-all"
             >
-              ⚓ 掌舵启程（Enter）
+              <Anchor size={13} aria-hidden="true" />
+              掌舵启程（Enter）
             </button>
             {/* 交给水手：不是"失败"，是"不玩"。
                 跳过的唯一代价是本段没有操舵奖励（不省里程、不加士气、不掉耐久），
                 船照常往前开。不想玩实时操作的人不该被卡在这一步。 */}
             <button
               onClick={skipHelmRun}
-              className="w-full py-2 text-xs font-serif text-gold-500 hover:text-gold-300 border border-gold-700/25 rounded-lg press transition-all"
+              className="w-full flex items-center justify-center gap-1.5 py-2 text-xs font-serif text-gold-500 hover:text-gold-300 border border-gold-700/25 rounded-lg press transition-all"
             >
-              🙋 交给水手，跳过本段（Esc）——本段没有操舵奖励
+              <Hand size={12} aria-hidden="true" />
+              交给水手，跳过本段（Esc）——本段没有操舵奖励
             </button>
           </div>
         )}
@@ -505,9 +517,10 @@ export default function HelmModal() {
                   type="button"
                   data-testid="touch-helm-finish"
                   onPointerDown={(e) => { e.preventDefault(); finishRun(true) }}
-                  className="w-full py-2 text-xs font-serif text-gold-300 border border-gold-700/30 rounded-lg press transition-all"
+                  className="w-full flex items-center justify-center gap-1.5 py-2 text-xs font-serif text-gold-300 border border-gold-700/30 rounded-lg press transition-all"
                 >
-                  ⛵ 收舵（Enter）
+                  <Sailboat size={12} aria-hidden="true" />
+                  收舵（Enter）
                 </button>
               </div>
             )}
@@ -517,7 +530,13 @@ export default function HelmModal() {
         {phase === 'done' && result && reward && (
           <div className="p-5 space-y-4">
             <div className="text-center">
-              <div className="text-3xl mb-1">{reward.grade === 'legend' ? '🌟' : reward.grade === 'poor' ? '🌀' : '🧭'}</div>
+              <div className="flex justify-center mb-1" style={{ color: HELM_GRADE_COLOR[reward.grade] }}>
+                {reward.grade === 'legend'
+                  ? <Star size={30} strokeWidth={1.4} fill="currentColor" aria-hidden="true" />
+                  : reward.grade === 'poor'
+                    ? <Waves size={30} strokeWidth={1.4} aria-hidden="true" />
+                    : <Compass size={30} strokeWidth={1.4} aria-hidden="true" />}
+              </div>
               <h3 className="pirate-title text-2xl" style={{ color: HELM_GRADE_COLOR[reward.grade] }}>{reward.label}</h3>
               <p className="text-gold-400 font-serif text-sm mt-1">{reward.comment}</p>
             </div>
@@ -562,9 +581,10 @@ export default function HelmModal() {
 
             <button
               onClick={closeAndSettle}
-              className="w-full py-2.5 text-sm font-serif text-gold-100 bg-gold-700/70 hover:bg-gold-600/80 rounded-lg press transition-all"
+              className="w-full flex items-center justify-center gap-1.5 py-2.5 text-sm font-serif text-gold-100 bg-gold-700/70 hover:bg-gold-600/80 rounded-lg press transition-all"
             >
-              ⛵ 收起舵轮，继续航程（Enter / Esc）
+              <Sailboat size={13} aria-hidden="true" />
+              收起舵轮，继续航程（Enter / Esc）
             </button>
           </div>
         )}

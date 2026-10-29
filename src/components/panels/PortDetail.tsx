@@ -150,8 +150,9 @@ export default function PortDetail() {
           })()}
 
           {!isAtPort && (
-            <div className="bg-ocean-800/40 border border-gold-700/20 rounded p-2 text-xs text-gold-400 font-serif">
-              ⛵ 你当前不在此港，点击地图航行前往
+            <div className="flex items-center gap-1.5 bg-ocean-800/40 border border-gold-700/20 rounded p-2 text-xs text-gold-400 font-serif">
+              <Ship size={12} aria-hidden="true" className="shrink-0" />
+              你当前不在此港，点击地图航行前往
             </div>
           )}
 

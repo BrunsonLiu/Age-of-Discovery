@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
+import { Eye } from 'lucide-react'
 import { useGameStore } from '@/store/useGameStore'
 import { selectOutcome } from '@/utils/eventEngine'
 import { EVENT_TYPE_BG, renderEventIcon } from '@/utils/eventTypeStyles'
@@ -267,9 +268,10 @@ export default function EventCard() {
                   {gameMode === 'visitor' && (
                     <button
                       onClick={handleObserve}
-                      className="w-full mt-1 py-2 text-xs font-serif text-gold-500 hover:text-gold-300 border border-gold-700/25 rounded-lg press transition-all"
+                      className="w-full flex items-center justify-center gap-1.5 mt-1 py-2 text-xs font-serif text-gold-500 hover:text-gold-300 border border-gold-700/25 rounded-lg press transition-all"
                     >
-                      🚶 站在一边看（不参与，也不结算得失）
+                      <Eye size={12} aria-hidden="true" />
+                      站在一边看（不参与，也不结算得失）
                     </button>
                   )}
                 </div>

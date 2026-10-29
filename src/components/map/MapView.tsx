@@ -14,6 +14,7 @@ import VintageMapOverlay from './VintageMapOverlay'
 import { loadLandData, fetchLandGeojsonForRender } from '@/utils/landCheck'
 import { fetchBordersGeojson } from '@/utils/mapGeoJson'
 import 'leaflet/dist/leaflet.css'
+import { Compass, Map as MapIcon, Sailboat } from 'lucide-react'
 
 class MapErrorBoundary extends Component<{ children: React.ReactNode }, { hasError: boolean; error: string }> {
   constructor(props: { children: React.ReactNode }) {
@@ -31,7 +32,7 @@ class MapErrorBoundary extends Component<{ children: React.ReactNode }, { hasErr
       return (
         <div className="h-full w-full flex items-center justify-center bg-ocean-900 text-gold-400 font-serif">
           <div className="text-center">
-            <div className="text-4xl mb-3">🗺️</div>
+            <MapIcon size={36} className="mx-auto mb-3 text-gold-600" strokeWidth={1.2} aria-hidden="true" />
             <p>地图加载失败</p>
             <p className="text-xs text-gold-700 mt-1">{this.state.error}</p>
           </div>
@@ -224,7 +225,11 @@ export default function MapView() {
         title={renderMode === '3d' ? '切回 2D 平面海图' : '切换到 3D 立体海图'}
         data-testid="map-mode-toggle"
       >
-        {renderMode === '3d' ? '🗺️ 2D 海图' : '🧭 3D 海图'}
+        <span className="inline-flex items-center gap-1.5">
+          {renderMode === '3d'
+            ? <><MapIcon size={12} aria-hidden="true" />2D 海图</>
+            : <><Compass size={12} aria-hidden="true" />3D 海图</>}
+        </span>
       </button>
 
       {renderMode === '3d' ? (
@@ -243,7 +248,7 @@ export default function MapView() {
           {loading && (
             <div className="absolute inset-0 z-10 flex items-center justify-center text-[#5a3e1a] font-serif" style={{ fontSize: 18, letterSpacing: 3, background: 'linear-gradient(180deg, #e8d4a8 0%, #d4b884 50%, #e8d4a8 100%)' }}>
               <div className="text-center">
-                <div className="text-4xl mb-4" style={{ animation: 'loadPulse 1.5s ease-in-out infinite' }}>⛵</div>
+                <Sailboat size={36} className="mx-auto mb-4 text-gold-600" strokeWidth={1.2} style={{ animation: 'loadPulse 1.5s ease-in-out infinite' }} aria-hidden="true" />
                 <div>绘制航海图...</div>
               </div>
             </div>

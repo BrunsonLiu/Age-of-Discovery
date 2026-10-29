@@ -91,7 +91,7 @@ export default function ShipyardPanel() {
                           buyShip(key)
                           if (useGameStore.getState().fleet.ships.length > before) {
                             useFx.getState().fx(
-                              { kind: 'banner', tone: 'gold', text: `⚓ ${template.name} 入列`, sub: `-${template.price} 金币` },
+                              { kind: 'banner', tone: 'gold', text: `${template.name} 入列`, sub: `-${template.price} 金币` },
                               'ship',
                             )
                           }
@@ -109,8 +109,9 @@ export default function ShipyardPanel() {
                       <span className="flex items-center gap-0.5"><Users size={10} /> {template.maxCrew}人</span>
                     </div>
                     {!canBuyRegion && (
-                      <p className="text-gold-600 text-xs mt-1 font-serif">
-                        ⚓ 此型船只在{template.regions.map(r => r === 'europe' ? '欧洲' : r === 'caribbean' ? '加勒比' : r === 'asia' ? '亚洲' : '非洲').join('、')}造船厂才有售
+                      <p className="flex items-start gap-1 text-gold-600 text-xs mt-1 font-serif">
+                        <Anchor size={10} aria-hidden="true" className="mt-0.5 shrink-0" />
+                        <span>此型船只在{template.regions.map(r => r === 'europe' ? '欧洲' : r === 'caribbean' ? '加勒比' : r === 'asia' ? '亚洲' : '非洲').join('、')}造船厂才有售</span>
                       </p>
                     )}
                   </div>
