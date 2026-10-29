@@ -14,7 +14,7 @@ import {
   MAP_WORLD_SIZE, lonToWorldX, latToWorldZ, worldXToLon, worldZToLat,
 } from '@/utils/mapProjection'
 import { buildLandGeometry, PLATE_THICKNESS } from './landGeometry'
-import { createPortModelKit, createShipModelKit, makePortModel, makeShipModel } from './models'
+import { createPortModelKit, createShipModelKit, makePortModel, makeShipModel, portScaleOf } from './models'
 import { buildMap3DLayers } from './mapLayers3d'
 import { buildMap3DBorders } from './mapBorders3d'
 import { fetchBordersGeojson } from '@/utils/mapGeoJson'
@@ -205,6 +205,33 @@ export default function Map3DView() {
         portObjects.push({ group: g, id: p.id, label })
       }
       scene.add(portGroup)
+
+      // ---- 「当前所在港口」的地面光环 ----
+      //
+      // 【为什么必须有】2D 的 PortMarker 用「34px + 发光 + portPulse 脉冲动画」
+      // 标出船所在的港口（未发现/其它港只有 28px 静态图标）。
+      // 3D 里原本没有任何对应信号：玩家只要不记得自己从哪出发，就看不出"我在哪个港"。
+      // 这个缺口在本轮更明显——停泊时为了不遮住港口，船被挪开 0.6 并缩小，
+      // 方位感进一步变弱。
+      //
+      // 做法：平躺的圆环套在港口底座外圈，用 MeshBasicMaterial 不受光照影响（夜里也亮），
+      // 透明度做 2.5s 脉冲——节奏与 2D 的 portPulse 一致，切换视图时观感连贯。
+      //
+      // 【为什么几何是 (1, 1.2) 的"单位环"】三档底座的半径不同（0.228 / 0.19 / 0.144），
+      // 用一个固定尺寸的环会在大港上显得松、小港上显得太宽。
+      // 单位环 × 缩放系数（= 底座半径 + 0.01）就能贴合每一档。
+      const currentPortRing = new THREE.Mesh(
+        new THREE.RingGeometry(1, 1.2, 40).rotateX(-Math.PI / 2),
+        new THREE.MeshBasicMaterial({
+          color: 0xf4e4c1, transparent: true, opacity: 0.5,
+          side: THREE.DoubleSide, depthWrite: false,
+        }),
+      )
+      currentPortRing.name = 'current-port-ring'
+      currentPortRing.visible = false
+      currentPortRing.renderOrder = 4
+      scene.add(currentPortRing)
+      disposables.push(currentPortRing.geometry, currentPortRing.material)
 
       // ---- 区域名（海名 + 洲名）----
       //
@@ -431,6 +458,8 @@ export default function Map3DView() {
       // ---- 帧循环 ----
       const portMap = new Map(ports.map(p => [p.id, p]))
       let routeSig = ''
+      /** 上一次的当前港口 id：只在变化时改 DOM class，不每帧写 */
+      let lastCurrentPortId: number | null | undefined
       const tmpV = new THREE.Vector3()
 
       const tick = () => {
@@ -494,6 +523,44 @@ export default function Map3DView() {
           const found = state.discoveredPorts.includes(po.id)
           po.group.visible = found
           po.label.shown = found
+        }
+
+        // 「当前所在港口」光环：位置 + 脉冲 + 贴合底座尺寸
+        {
+          const cur = fleet.currentPortId
+          const curPort = cur != null ? portMap.get(cur) : null
+          if (curPort) {
+            currentPortRing.visible = true
+            currentPortRing.position.set(
+              lonToWorldX(curPort.longitude), 0.004, latToWorldZ(curPort.latitude),
+            )
+            // 环的内径 = 该港底座底面半径（0.19 × baseR × 0.8）+ 间隙。
+            // 间隙从 0.01 加到 0.04：0.01 时环几乎贴住底座，
+            // 而底座是**立体的圆柱**，斜俯视下它的侧面会把环的远半整个遮住，
+            // 只剩一小段弧露在外面（截图里像渲染残缺）。
+            const baseR = portScaleOf(curPort) === 'major' ? 1.2
+              : portScaleOf(curPort) === 'medium' ? 1.0 : 0.76
+            const fit = 0.19 * baseR * 0.8 + 0.04
+            // 2.5s 一个周期，与 2D 的 portPulse 同节奏
+            const ph = (performance.now() / 2500) * Math.PI * 2
+            currentPortRing.material.opacity = 0.34 + 0.26 * (0.5 + 0.5 * Math.sin(ph))
+            const s = fit * (1 + 0.06 * Math.sin(ph))
+            currentPortRing.scale.set(s, 1, s)
+          } else {
+            currentPortRing.visible = false
+          }
+        }
+
+        // 当前港口的名字也高亮（对应 2D 那个"34px + 发光 + 脉冲"的大图标）
+        //
+        // 【为什么要 DOM 高亮而不只靠地上的环】塞维利亚/里斯本/加的斯三个港口
+        // 模型本来就重叠（间距 0.062~0.22 世界单位），光环套在重叠区里认不出归属。
+        // 名字高亮不受几何重叠影响，是更稳的"你在这里"信号。
+        if (lastCurrentPortId !== fleet.currentPortId) {
+          lastCurrentPortId = fleet.currentPortId
+          for (const po of portObjects) {
+            po.label.el.classList.toggle('map3d-port-label--current', po.id === fleet.currentPortId)
+          }
         }
 
         // 航线：与 2D 虚线共用 getRouteGeometry

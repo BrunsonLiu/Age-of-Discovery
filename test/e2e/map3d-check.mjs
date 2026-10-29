@@ -530,6 +530,66 @@ console.log('出港船探针:', JSON.stringify(sailingProbe))
 check(sailingProbe.scale >= 0.75,
   `出港后船恢复原尺寸（scale ${sailingProbe.scale}，要求 ≥0.75）`)
 
+// 「当前所在港口」的信号：地面光环 + 名字高亮
+//
+// 【为什么必须测】2D 用「34px + 发光 + portPulse」标出船所在的港口。
+// 3D 里原本没有任何对应物——玩家看不出自己停在哪。
+// 而停泊时船还被挪开缩小，方位感更弱，所以这个信号是补欠账，不是装饰。
+const curProbe = await page.evaluate(async () => {
+  const m = window.__map3d
+  const sc = m?.scene
+  if (!sc) return { error: 'no scene' }
+  const ring = sc.getObjectByName('current-port-ring')
+  const read = () => ({
+    visible: !!ring?.visible,
+    opacity: ring ? +ring.material.opacity.toFixed(2) : null,
+    scaleX: ring ? +ring.scale.x.toFixed(3) : null,
+  })
+  const docked = read()
+  // 停泊时：光环可见、位置落在某个港口附近
+  const ports = []
+  sc.traverse(o => {
+    if (o.isGroup && o.userData?.portId && o.userData?.portScale) ports.push(o)
+  })
+  let nearest = Infinity
+  if (ring?.visible) {
+    for (const p of ports) {
+      const d = Math.hypot(ring.position.x - p.position.x, ring.position.z - p.position.z)
+      if (d < nearest) nearest = d
+    }
+  }
+  // 标签高亮
+  const curLabels = [...document.querySelectorAll('.map3d-port-label--current')].map(l => l.textContent)
+  const allLabels = [...document.querySelectorAll('.map3d-port-label')]
+  // 出港后光环应隐藏
+  const st = window.__gameStore.getState()
+  window.__gameStore.setState({ fleet: { ...st.fleet, currentPortId: null } })
+  await new Promise(r => setTimeout(r, 500))
+  const afterUndock = read()
+  window.__gameStore.setState({ fleet: { ...st.fleet } })
+  await new Promise(r => setTimeout(r, 500))
+  return {
+    docked,
+    ringToNearestPort: +nearest.toFixed(3),
+    curLabels,
+    labelTotal: allLabels.length,
+    afterUndock,
+  }
+})
+console.log('当前港口探针:', JSON.stringify(curProbe))
+check(curProbe.docked?.visible === true, '停泊时「当前港口」光环可见')
+// 【必须判 isFinite】光环不可见时 nearest 保持 Infinity，而 JSON 序列化会把
+// Infinity 变成 null，`null < 0.15` 竟然为 true —— 断言会假通过。
+// 这是注入实验（关掉光环）当场暴露出来的。
+check(Number.isFinite(curProbe.ringToNearestPort) && curProbe.ringToNearestPort < 0.15,
+  `光环落在当前港口上（到最近港口 ${curProbe.ringToNearestPort}，要求 <0.15）`)
+check(curProbe.docked?.opacity > 0.2 && curProbe.docked?.opacity < 0.75,
+  `光环透明度在脉冲区间内（${curProbe.docked?.opacity}）`)
+check(curProbe.curLabels?.length === 1, `只有一个港口名被高亮（实得 ${curProbe.curLabels?.length}：${curProbe.curLabels}）`)
+check(curProbe.curLabels?.[0] === '塞维利亚', `高亮的是船所在的塞维利亚（实得 ${curProbe.curLabels?.[0]}）`)
+check(curProbe.labelTotal === 20, `其它港口名仍有 20 个（实得 ${curProbe.labelTotal}）`)
+check(curProbe.afterUndock?.visible === false, '出港后光环隐藏')
+
 // 拖拽转视角 + 滚轮缩放
 await page.mouse.move(700, 450)
 await page.mouse.down()

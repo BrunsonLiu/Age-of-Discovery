@@ -622,6 +622,22 @@ body {
   pointer-events: none;
   text-shadow: 0 1px 3px #000, 0 0 9px #000, 0 0 2px #000;
 }
+/*
+  船所在的港口：名字高亮。
+  【为什么要做】2D 的 PortMarker 用「34px + 发光 + portPulse 脉冲」标出当前港口，
+  3D 里原本没有任何对应信号；而停泊时船为了不遮住港口被挪开 0.6 并缩小，
+  方位感更弱。地面光环在三个港口模型重叠的区域（塞维利亚/里斯本/加的斯）
+  认不出归属，名字高亮不受几何重叠影响。
+*/
+.map3d-port-label--current {
+  color: #ffe9b0;
+  font-weight: 700;
+  text-shadow:
+    0 0 10px rgba(255, 212, 120, 0.95),
+    0 0 18px rgba(255, 190, 90, 0.55),
+    0 1px 3px #000,
+    0 0 2px #000;
+}
 
 /*
   区域名（海名 / 洲名）：跟随 3D 投影的 DOM 标签。
