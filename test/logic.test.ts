@@ -20,7 +20,7 @@ import {
 import { adjustOutcome, clampOutcomeToFleet } from '../src/utils/outcomeAdjust'
 import {
   STANCES, forecastSegment, stanceLedgers, segmentCountFor, segmentIndexFor, nextSegmentBoundary,
-  dailyFoodUse, dailyWaterUse, dailyWearRate, settleWear,
+  dailyFoodUse, dailyWaterUse, dailyWearRate, settleWear, describeStanceTradeoff,
 } from '../src/utils/segment'
 import { generateRouteIntel, settleOfficerWages, advanceRivals, selectBuyPrice, selectSellPrice, selectPriceTone, OFFER_PRICE_RATIO } from '../src/store/useGameStore'
 import { FACTIONS, factionAttitude, portFaction } from '../src/data/factions'
@@ -2998,6 +2998,89 @@ console.log('== 53. 自由世界：模式、跳过操舵、参观模式不输 ==
 
   // 复位，避免影响后续用例
   useGameStore.getState().initGame('merchant', 'captain')
+}
+
+/* ==========================================================================
+ * 方针代价文案：必须与账本完全一致，不能说谎
+ *
+ * 界面上的那行「省粮水 · 伤船 · 事件更重」是玩家选方针时唯一的判断依据。
+ * 如果它和账本数字对不上，玩家就会照着一个假的方向做决定——
+ * 这比不显示更糟。
+ *
+ * 【为什么必须动态算】写死文案在短航段上会变成假话：
+ * days = ceil(distance / (nmPerDay × speedMul))，段短时三个方针的天数
+ * 被取整压成同一个数，而 supplyMul 的 1.5 倍差异照旧 → 抢行反而多耗粮。
+ * 下面第一组断言就是钉住这个反直觉案例：谁把文案改回写死的
+ * "抢行 = 省粮水"，这里立刻失败。
+ * ========================================================================== */
+{
+  const ledgersAt = (dist: number) => stanceLedgers({
+    distanceNm: dist,
+    baseNmPerDay: 192,     // 真实初始舰队实测值
+    dailyFood: 2,
+    dailyWater: 3,
+    cookRelief: 1,
+    dailyEventProb: 0.25,
+    durabilityCarry: 0,
+  })
+
+  // ① 反直觉案例：100 海里段上抢行反而费粮（天数被 ceil 抹平）
+  {
+    const rush = ledgersAt(100).find(l => l.stance.id === 'rush')!
+    const t = describeStanceTradeoff(rush)
+    assert(rush.delta.days === 0, '100 海里段上三个方针天数相同（ceil 取整抹平快慢）')
+    assert(rush.delta.food + rush.delta.water > 0, '100 海里段上抢行反而多耗粮水')
+    assert(t.includes('费粮水'), `100 海里段抢行文案必须说「费粮水」（实得「${t}」）`)
+    assert(t.includes('用时相同'), `100 海里段抢行文案必须说「用时相同」（实得「${t}」）`)
+  }
+
+  // ② 长段上抢行确实又快又省
+  {
+    const rush = ledgersAt(1200).find(l => l.stance.id === 'rush')!
+    const t = describeStanceTradeoff(rush)
+    assert(rush.delta.days < 0, '1200 海里段上抢行更快')
+    assert(rush.delta.food + rush.delta.water < 0, '1200 海里段上抢行更省粮水')
+    assert(t.includes('省粮水'), `1200 海里段抢行文案必须说「省粮水」（实得「${t}」）`)
+    assert(!t.includes('用时相同'), '1200 海里段抢行不应说「用时相同」')
+  }
+
+  // ③ 遍历多个段长：文案的每个方向都必须与账本一致
+  let checked = 0
+  for (const dist of [50, 100, 150, 200, 300, 400, 600, 800, 1200, 2000, 3000, 5000]) {
+    for (const l of ledgersAt(dist)) {
+      const t = describeStanceTradeoff(l)
+      const tag = `${dist}nm ${l.stance.name}`
+
+      if (l.stance.id === 'steady') {
+        assert(t === '基准节奏 · 无额外代价', `steady 文案恒为基准（${tag}）`)
+        continue
+      }
+
+      const supply = l.delta.food + l.delta.water
+      if (supply < 0) {
+        assert(t.includes('省粮水') && !t.includes('费粮水'), `${tag}：账本省粮水，文案必须说省`)
+      } else if (supply > 0) {
+        assert(t.includes('费粮水') && !t.includes('省粮水'), `${tag}：账本费粮水，文案必须说费`)
+      } else {
+        assert(!t.includes('省粮水') && !t.includes('费粮水'), `${tag}：粮水持平，文案不应提方向`)
+      }
+
+      if (l.delta.days === 0) assert(t.includes('用时相同'), `${tag}：天数相同，文案必须说「用时相同」`)
+      else assert(!t.includes('用时相同'), `${tag}：天数不同，文案不应说「用时相同」`)
+
+      if (l.delta.wear > 0) assert(t.includes('伤船'), `${tag}：账本更伤船，文案必须说「伤船」`)
+      else if (l.delta.wear < 0) assert(t.includes('护船'), `${tag}：账本更护船，文案必须说「护船」`)
+
+      // 事件后果是倍率，与段长无关，必须恒成立
+      if (l.stance.eventMagnitudeMul > 1) assert(t.includes('事件更重'), `${tag}：倍率 >1 必须说「事件更重」`)
+      else if (l.stance.eventMagnitudeMul < 1) assert(t.includes('事件更轻'), `${tag}：倍率 <1 必须说「事件更轻」`)
+
+      // 文案里不应残留 + - 号：方向已经用词表达了，数字由细账表格负责
+      assert(!/[+-]\d/.test(t), `${tag}：文案不该出现带符号的数字（实得「${t}」）`)
+      checked++
+    }
+  }
+  assert(checked >= 20, `文案一致性遍历覆盖足够多的账本（实测 ${checked} 条）`)
 }
 
 console.log(`\n最终结果：${passed} 通过 / ${failed} 失败`)

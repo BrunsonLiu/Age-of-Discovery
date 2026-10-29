@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useGameStore } from '@/store/useGameStore'
 import { useDialogueStore } from '@/store/useDialogueStore'
 import { onUiCommand } from '@/utils/uiBus'
-import { STANCES, STANCE_ORDER, stanceLedgers, type StanceId } from '@/utils/segment'
+import { STANCES, STANCE_ORDER, stanceLedgers, describeStanceTradeoff, type StanceId } from '@/utils/segment'
 import { calculateDailyConsumption, dailyDistanceNm } from '@/utils/navigation'
 import { WEATHER_INFO, weatherFavorFactor } from '@/utils/weather'
 import { useRolledNumber } from '@/hooks/useRolledNumber'
@@ -13,19 +13,27 @@ import { useFxStore as useFx } from '@/store/useFxStore'
  * 航段抉择（把连续决策引入航海的核心）。
  *
  * 每段航程结束时弹出，玩家必须为**下一段**选一个航行方针。
- * 三张卡并排放，每个数字都直接可比：
  *
- *     方针          天数      粮水      磨损     遇事     士气
- *     抢行         3 天    省 11 份   多 1.6   多 0.5   -3
- *     按部就班      5 天     基准      基准     基准      0
- *     谨慎         8 天    多 22 份   少 2.0   少 0.7   +3
+ * ## 设计原则：一行一个选择，细账按需展开
  *
- * 设计要点：
- * 1. **选之前就能看见全部后果**——不藏任何乘数，不让玩家心算。
- * 2. **三选一，没有纯赚**——快的更险，稳的更贵，这正是取舍。
- * 3. **数字滚动入场**——数字从 0 滚到目标值（easeOutQuint），
- *    眼睛跟得上变化，而不是"啪"地跳过去。
- * 4. **键盘 1/2/3**——三张卡有明确的序号提示，不用鼠标也能选。
+ * 重构前这里是三张竖排卡片，每张列 5 行明细（航程/食物/淡水/船损/遇事）
+ * 再士气一行，三张卡合计 **33 个数字**。玩家要做的事是"快 / 正常 / 稳"三选一，
+ * 却得先读三张账本、横向比 15 组差值。
+ *
+ * 更关键的是：**三个方针在每个维度上都是同序的**——
+ * 抢行永远最快、最省粮水、最伤船、最易遇事、士气 -3；
+ * 谨慎永远相反。所以摊开 5 个维度并不增加信息量，只是把同一个取舍
+ * （快而险 / 稳而贵）重复了五遍。
+ *
+ * 现在每张卡只留 **天数（唯一真正要权衡的量）** 和一行人话代价，
+ * 完整账本收进下方一张表格——表格比三张竖排卡片更好横向比较，
+ * 想精算的玩家点一下就有。
+ *
+ * 保留的设计要点：
+ * 1. **选之前就能看见后果**——天数和"会断粮"直接标在卡上，不藏。
+ * 2. **三选一，没有纯赚**——快的更险，稳的更贵。
+ * 3. **数字滚动入场**——天数从 0 滚到目标值，眼睛跟得上变化。
+ * 4. **键盘 1/2/3**——三张卡有明确序号。
  */
 
 const TONE_STYLES: Record<'hot' | 'even' | 'calm', { border: string; glow: string; text: string }> = {
@@ -34,30 +42,13 @@ const TONE_STYLES: Record<'hot' | 'even' | 'calm', { border: string; glow: strin
   calm: { border: 'border-safe-600/50', glow: 'shadow-[0_0_24px_-8px_rgba(90,180,140,0.45)]', text: 'text-safe-300' },
 }
 
-/** 差异标签：正数=更多/更坏，负数=更少/更好 */
-function DeltaTag({ value, unit, goodWhenNegative }: { value: number; unit: string; goodWhenNegative?: boolean }) {
-  if (value === 0) {
-    return <span className="font-mono text-[10px] text-gold-700">±0</span>
-  }
-  const good = goodWhenNegative ? value < 0 : value > 0
-  return (
-    <span className={`font-mono text-[10px] tabular-nums ${good ? 'text-safe-400' : 'text-danger-400'}`}>
-      {value > 0 ? '+' : ''}{value}{unit}
-    </span>
-  )
-}
-
-/** 一张方针卡 */
+/** 一张方针卡：天数为主，代价一行 */
 function StanceCard({
   id,
   index,
   days,
-  food,
-  water,
-  wear,
-  events,
-  morale,
-  delta,
+  deltaDays,
+  tradeoff,
   onPick,
   disabled,
   affordable,
@@ -65,117 +56,65 @@ function StanceCard({
   id: StanceId
   index: number
   days: number
-  food: number
-  water: number
-  wear: number
-  events: number
-  morale: number
-  delta: { days: number; food: number; water: number; wear: number; events: number }
+  deltaDays: number
+  /** 从真实账本算出的代价文案（见 utils/segment.describeStanceTradeoff） */
+  tradeoff: string
   onPick: (id: StanceId) => void
   disabled: boolean
   affordable: boolean
 }) {
   const s = STANCES[id]
   const tone = TONE_STYLES[s.tone]
-
-  // 数字滚动：从 0 滚到目标值
   const rollDays = useRolledNumber(days, DURATION.grand)
-  const rollFood = useRolledNumber(food, DURATION.grand)
-  const rollWater = useRolledNumber(water, DURATION.grand)
-  const rollWear = useRolledNumber(wear, DURATION.grand)
-  const rollEvents = useRolledNumber(events, DURATION.grand)
-
-  const rows: { label: string; value: string; delta: React.ReactNode }[] = [
-    {
-      label: '航程',
-      value: `${Math.round(rollDays)} 天`,
-      delta: <DeltaTag value={delta.days} unit=" 天" goodWhenNegative />,
-    },
-    {
-      label: '食物',
-      value: `${Math.round(rollFood)} 份`,
-      delta: <DeltaTag value={delta.food} unit=" 份" goodWhenNegative />,
-    },
-    {
-      label: '淡水',
-      value: `${Math.round(rollWater)} 份`,
-      delta: <DeltaTag value={delta.water} unit=" 份" goodWhenNegative />,
-    },
-    {
-      label: '船损',
-      value: `${Math.round(rollWear)} 点`,
-      delta: <DeltaTag value={delta.wear} unit=" 点" goodWhenNegative />,
-    },
-    {
-      label: '遇事',
-      value: `${rollEvents.toFixed(1)} 次`,
-      delta: <DeltaTag value={delta.events} unit=" 次" goodWhenNegative />,
-    },
-  ]
 
   return (
     <button
       onClick={() => onPick(id)}
       disabled={disabled}
-      className={`relative w-full md:flex-1 md:w-auto min-w-0 text-left rounded-lg border ${tone.border} ${tone.glow}
-        bg-ocean-800/70 backdrop-blur-sm px-3 py-3 press
+      className={`relative w-full text-left rounded-lg border ${tone.border} ${tone.glow}
+        bg-ocean-800/70 backdrop-blur-sm px-3 py-2.5 press
         transition-all duration-[90ms] ease-out
         hover:bg-ocean-700/70 hover:-translate-y-0.5
         focus:outline-none focus-visible:ring-2 focus-visible:ring-gold-400/70
         disabled:opacity-45 disabled:hover:translate-y-0 disabled:cursor-not-allowed`}
       style={{ animation: prefersReducedMotion() ? undefined : `fade-in-up 380ms ${EASE_SPRING} both` }}
-      aria-label={`${s.name}方针，${days} 天，食物 ${food} 份，淡水 ${water} 份，船损 ${wear} 点，遇事 ${events} 次`}
+      aria-label={`${s.name}方针，${days} 天${affordable ? '' : '，补给不足'}`}
     >
-      {/* 键盘序号 */}
-      <span className="absolute top-1.5 right-2 w-5 h-5 rounded border border-gold-700/40 bg-ocean-900/70
-        text-gold-400 font-mono text-[10px] flex items-center justify-center">
-        {index + 1}
-      </span>
-
-      <div className="flex items-center gap-2 mb-1">
-        <span className={`text-base leading-none ${tone.text}`}>{s.icon}</span>
-        <span className="font-serif text-sm text-gold-200">{s.name}</span>
-      </div>
-      <p className="text-gold-600 font-serif text-[10px] leading-snug mb-2 h-7">{s.hint}</p>
-
-      {/* 主数字：这一段要走几天 */}
-      <div className="flex items-baseline gap-1.5 mb-2 pb-2 border-b border-gold-700/20">
-        <span className="font-serif text-2xl text-gold-100 tabular-nums leading-none">
-          {Math.round(rollDays)}
+      <div className="flex items-center gap-3">
+        {/* 键盘序号 */}
+        <span className="w-5 h-5 rounded border border-gold-700/40 bg-ocean-900/70
+          text-gold-400 font-mono text-[10px] flex items-center justify-center shrink-0">
+          {index + 1}
         </span>
-        <span className="text-gold-500 font-serif text-[10px]">天</span>
-        <span className="ml-auto">
-          <DeltaTag value={delta.days} unit=" 天" goodWhenNegative />
-        </span>
-      </div>
 
-      {/* 明细账 */}
-      <div className="space-y-0.5">
-        {rows.slice(1).map(r => (
-          <div key={r.label} className="flex items-baseline justify-between text-[11px]">
-            <span className="text-gold-600 font-serif">{r.label}</span>
-            <span className="flex items-baseline gap-1.5">
-              <span className="font-mono text-gold-200 tabular-nums">{r.value}</span>
-              {r.delta}
-            </span>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-baseline gap-1.5">
+            <span className={`text-sm leading-none ${tone.text}`}>{s.icon}</span>
+            <span className="font-serif text-sm text-gold-200">{s.name}</span>
+            {!affordable && (
+              <span className="font-serif text-[10px] text-danger-400">· 补给不足</span>
+            )}
           </div>
-        ))}
-      </div>
-
-      {/* 士气变化 */}
-      <div className="flex items-center justify-between text-[11px] mt-1.5 pt-1.5 border-t border-gold-700/20">
-        <span className="text-gold-600 font-serif">士气</span>
-        <span className={`font-mono tabular-nums ${morale > 0 ? 'text-safe-400' : morale < 0 ? 'text-danger-400' : 'text-gold-700'}`}>
-          {morale > 0 ? '+' : ''}{morale}
-        </span>
-      </div>
-
-      {/* 补给不足警告 */}
-      {!affordable && (
-        <div className="mt-1.5 text-[10px] font-serif text-danger-400 text-center">
-          补给不足，可能断粮断水
+          <p className="text-gold-600 font-serif text-[10px] leading-snug mt-0.5 truncate">
+            {tradeoff}
+          </p>
         </div>
-      )}
+
+        {/* 主数字：这一段要走几天 —— 唯一真正要权衡的量 */}
+        <div className="text-right shrink-0">
+          <div className="flex items-baseline justify-end gap-0.5">
+            <span className="font-serif text-2xl text-gold-100 tabular-nums leading-none">
+              {Math.round(rollDays)}
+            </span>
+            <span className="text-gold-500 font-serif text-[10px]">天</span>
+          </div>
+          {deltaDays !== 0 && (
+            <div className={`font-mono text-[10px] tabular-nums ${deltaDays < 0 ? 'text-safe-400' : 'text-danger-400'}`}>
+              {deltaDays < 0 ? '快' : '慢'} {Math.abs(deltaDays)} 天
+            </div>
+          )}
+        </div>
+      </div>
     </button>
   )
 }
@@ -193,6 +132,8 @@ export default function SegmentDecision() {
 
   const [picked, setPicked] = useState<StanceId | null>(null)
   const pickedRef = useRef<StanceId | null>(null)
+  /** 细账表格是否展开。默认收起——多数玩家只需要"几天"，不需要五个维度 */
+  const [showLedger, setShowLedger] = useState(false)
 
   // 每次进入新的航段抉择时清空「已选」状态。
   //
@@ -203,6 +144,7 @@ export default function SegmentDecision() {
     if (!pending) return
     pickedRef.current = null
     setPicked(null)
+    setShowLedger(false)
   }, [pending])
 
   // 抉择面板是**阻塞**决策：若此刻有致辞在播（出航后开场致辞正好开始播），
@@ -273,59 +215,40 @@ export default function SegmentDecision() {
       style={{ zIndex: 85 }}
     >
       <div
-        className="my-auto w-[46rem] max-w-[94vw] rounded-lg border border-gold-700/40 bg-ocean-900/95
+        className="my-auto w-[32rem] max-w-[94vw] rounded-lg border border-gold-700/40 bg-ocean-900/95
           shadow-2xl overflow-hidden"
         style={{ animation: prefersReducedMotion() ? undefined : `fade-in-scale 420ms ${EASE_SPRING} both` }}
       >
         {/* 标题区 */}
-        <div className="px-5 py-3 border-b border-gold-700/30 bg-ocean-800/60 flex items-center gap-4">
-          <div className="min-w-0">
-            <div className="flex items-baseline gap-2">
-              <h2 className="pirate-title text-base text-gold-200">航行方针</h2>
-              <span className="text-gold-500 font-serif text-[11px] tabular-nums">
-                第 {pending.index + 1} / {pending.total} 段
-              </span>
-            </div>
-            <p className="text-gold-500 font-serif text-[11px] mt-0.5">
-              下一段 · <span className="text-gold-300">{pending.hazard}</span>
-              {' · '}距港 {Math.round(pending.remainingNm)} 海里
-              {' · '}约 {pending.daysLeft} 天
-            </p>
+        <div className="px-4 py-2.5 border-b border-gold-700/30 bg-ocean-800/60">
+          <div className="flex items-baseline gap-2">
+            <h2 className="pirate-title text-base text-gold-200">航行方针</h2>
+            <span className="text-gold-500 font-serif text-[11px] tabular-nums">
+              第 {pending.index + 1} / {pending.total} 段
+            </span>
           </div>
-          <div className="ml-auto text-right shrink-0 hidden md:block">
-            <p className="text-gold-600 font-serif text-[10px] leading-tight">
-              选之前，账都摊在你面前
-            </p>
-            <p className="text-gold-700 font-serif text-[10px] leading-tight">
-              数字按「按部就班」为基准
-            </p>
-          </div>
+          <p className="text-gold-500 font-serif text-[11px] mt-0.5 truncate">
+            <span className="text-gold-300">{pending.hazard}</span>
+            {' · '}距港 {Math.round(pending.remainingNm)} 海里
+            {' · '}约 {pending.daysLeft} 天
+          </p>
         </div>
 
-        <div className="p-4">
-        {/* 三张方针卡：
-            桌面并排（每张卡的账要能横向比较）；
-            移动端竖排——三张 320px 宽的卡并排在 360px 屏上，
-            每张只剩 110px，"食物 32 份"这种数字全被挤成两行，
-            玩家根本没法比较。竖排后每张卡都是整行宽，账照样看得清。 */}
-          <div className="flex flex-col md:flex-row gap-2 md:gap-3">
+        <div className="p-3">
+          {/* 三张方针卡：竖排（每张一行，天数在右） */}
+          <div className="space-y-1.5">
             {STANCE_ORDER.map((id, i) => {
               const l = byId(id)
               if (!l) return null
-              const affordable =
-                fleet.food >= l.food && fleet.water >= l.water
+              const affordable = fleet.food >= l.food && fleet.water >= l.water
               return (
                 <StanceCard
                   key={id}
                   id={id}
                   index={i}
                   days={l.days}
-                  food={l.food}
-                  water={l.water}
-                  wear={l.wear}
-                  events={l.events}
-                  morale={l.morale}
-                  delta={l.delta}
+                  deltaDays={l.delta.days}
+                  tradeoff={describeStanceTradeoff(l)}
                   onPick={handlePick}
                   disabled={picked !== null}
                   affordable={affordable}
@@ -334,14 +257,70 @@ export default function SegmentDecision() {
             })}
           </div>
 
+          {/* 细账：一张表，比三张卡各列 5 行更好横向比较 */}
+          <div className="mt-2">
+            <button
+              type="button"
+              onClick={() => setShowLedger(v => !v)}
+              aria-expanded={showLedger}
+              className="w-full flex items-center gap-2 px-1 py-1 text-left press"
+            >
+              <span className="font-serif text-[11px] text-gold-500">
+                粮水 / 船损 / 遇事 / 士气 细账
+              </span>
+              {!showLedger && (
+                <span className="font-serif text-[10px] text-gold-700 truncate flex-1">
+                  抢行省粮但伤船
+                </span>
+              )}
+              <span className="ml-auto font-serif text-[10px] text-gold-700 shrink-0">
+                {showLedger ? '收起 ▴' : '▾'}
+              </span>
+            </button>
+
+            {showLedger && (
+              <div className="mt-1 bg-ocean-800/40 border border-gold-700/20 rounded px-2.5 py-2">
+                <div className="grid grid-cols-6 gap-1 font-serif text-[10px] text-gold-600 mb-1">
+                  <span />
+                  <span className="text-right">食物</span>
+                  <span className="text-right">淡水</span>
+                  <span className="text-right">船损</span>
+                  <span className="text-right">遇事</span>
+                  <span className="text-right">士气</span>
+                </div>
+                {ledgers.map(l => (
+                  <div key={l.stance.id} className="grid grid-cols-6 gap-1 font-mono text-[10px] tabular-nums text-gold-300 py-0.5">
+                    <span className="font-serif text-gold-500 truncate">{l.stance.name}</span>
+                    <span className="text-right">{l.food}</span>
+                    <span className="text-right">{l.water}</span>
+                    <span className="text-right">{l.wear}</span>
+                    <span className="text-right">{l.events.toFixed(1)}</span>
+                    <span className={`text-right ${l.morale > 0 ? 'text-safe-400' : l.morale < 0 ? 'text-danger-400' : 'text-gold-600'}`}>
+                      {l.morale > 0 ? '+' : ''}{l.morale}
+                    </span>
+                  </div>
+                ))}
+                <p className="font-serif text-[10px] text-gold-700 mt-1.5 leading-relaxed">
+                  三个方针在每个维度上都是同序的：快的永远省粮水但伤船、代价更重；稳的永远相反。
+                  所以只需要决定一件事——要多快。
+                </p>
+                <p className="font-serif text-[10px] text-gold-700 mt-1 leading-relaxed">
+                  「遇事」是次数。快慢走同一段路的总暴露时间差不多，所以次数差别不大；
+                  真正的差别在<strong className="text-gold-500">单次事件的后果</strong>
+                  ——抢行放大到 1.45 倍，谨慎只有 0.5 倍。
+                </p>
+              </div>
+            )}
+          </div>
+
           {/* 当前库存 */}
-          <div className="mt-3 pt-2.5 border-t border-gold-700/20 flex items-center justify-between text-[11px] font-serif">
+          <div className="mt-2 pt-2 border-t border-gold-700/20 flex items-center justify-between text-[11px] font-serif">
             <span className="text-gold-600">
-              船上现有：粮 <span className="text-gold-300 tabular-nums">{fleet.food}</span>
+              船上：粮 <span className="text-gold-300 tabular-nums">{fleet.food}</span>
               {' · '}水 <span className="text-gold-300 tabular-nums">{fleet.water}</span>
               {' · '}士气 <span className="text-gold-300 tabular-nums">{fleet.morale}</span>
             </span>
-            <span className="text-gold-700 text-[10px]">按 1 / 2 / 3 选择方针</span>
+            <span className="text-gold-700 text-[10px]">按 1 / 2 / 3 选择</span>
           </div>
         </div>
       </div>

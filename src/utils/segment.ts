@@ -439,3 +439,47 @@ export function stanceDays(distanceNm: number, baseNmPerDay: number, stance: Sta
   return Math.max(1, Math.ceil(distanceNm / effective))
 }
 
+
+/**
+ * 把一个方针账本翻译成一句人话代价。
+ *
+ * 【为什么必须从账本算，不能写死文案】
+ * 直觉上「抢行 = 省粮水」，但这个方向**不是恒定的**：
+ * `days = ceil(distance / (nmPerDay × speedMul))`，段短时三个方针的天数
+ * 会被取整压成同一个数，而 supplyMul 的 1.5 倍差异照旧 →
+ * 抢行反而多耗粮，同时船损和事件后果的代价一分不少，变成纯亏选项。
+ *
+ * 实测（真实初始舰队，192 海里/天，每日 2 粮 3 水）：
+ *   段长 100 海里 → 抢行 1 天 / 3 粮，基准 1 天 / 2 粮  = 纯亏
+ *   段长 200 海里 → 抢行 1 天 / 3 粮，基准 2 天 / 4 粮  = 又快又省
+ *   段长 600 海里 → 抢行 2 天 / 6 粮，基准 4 天 / 8 粮  = 又快又省
+ *
+ * 同一句静态文案不可能同时说对这三种情况。所以只能从 delta 算。
+ * 副产物是好的：短段上界面会如实显示「用时相同 · 费粮水」，
+ * 玩家一眼就知道这段不该抢，而不是被一句"省粮水"骗着去付船损。
+ *
+ * 天数快慢不在返回值里——它由卡片右侧的彩色标签表达，避免同一句话说两遍。
+ * 唯一显式写出的是「用时相同」：那种情况右侧没有标签，
+ * 不说的话玩家会以为抢行至少快了一点。
+ */
+export function describeStanceTradeoff(l: StanceLedger): string {
+  if (l.stance.id === 'steady') return '基准节奏 · 无额外代价'
+  const d = l.delta
+  const parts: string[] = []
+
+  if (d.days === 0) parts.push('用时相同')
+
+  // 粮水合并成一档：分开说会变成"粮-1 · 水-4"，两个字不如一个方向清楚
+  const supply = d.food + d.water
+  if (supply < 0) parts.push('省粮水')
+  else if (supply > 0) parts.push('费粮水')
+
+  if (d.wear > 0) parts.push('伤船')
+  else if (d.wear < 0) parts.push('护船')
+
+  // 事件后果是倍率，不随段长变——短段上它是抢行主要（甚至唯一）的代价
+  if (l.stance.eventMagnitudeMul > 1) parts.push('事件更重')
+  else if (l.stance.eventMagnitudeMul < 1) parts.push('事件更轻')
+
+  return parts.join(' · ')
+}

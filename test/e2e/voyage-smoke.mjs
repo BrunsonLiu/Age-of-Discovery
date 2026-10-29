@@ -155,20 +155,24 @@ const plan = await page.evaluate(() => {
   if (!o) return null
   const t = o.textContent || ''
   return {
-    hasLedger: /抢行|按部就班|谨慎/.test(t),
-    hasSupply: /补给评估/.test(t),
-    hasShortage: /中途断水|中途断粮/.test(t),
+    // 三种方针的完整总账现在收在折叠区里（首屏只留折叠标题），
+    // 因为这一步**并不选方针**——摊开三套账只增加阅读量。
+    // 所以断言"有入口"，而不再断言"首屏列出三个方针名"。
+    hasLedger: /三种方针/.test(t),
+    // 一句话结论（原「补给评估」那三行数字已被它替代）
+    hasVerdict: /补给充足|补给偏紧|粮食不够|淡水不够|粮水都不够/.test(t),
+    hasShortage: /只够 \d+ 天/.test(t),
     hasIntel: /航线情报/.test(t),
   }
 })
 check(!!plan, '出航计划面板弹出')
-check(!!plan && plan.hasLedger, '面板显示三种方针的航段总账')
-check(!!plan && plan.hasSupply, '面板显示补给评估')
-check(!!plan && !plan.hasShortage, '补给评估无断粮断水警告')
+check(!!plan && plan.hasLedger, '面板有「三种方针能差多少」入口')
+check(!!plan && plan.hasVerdict, '面板直接给出补给结论（够/不够）')
+check(!!plan && !plan.hasShortage, '补给结论无断粮断水警告')
 await page.screenshot({ path: `${SHOTS}/voyage-plan.png` })
-// 点「🏴 升起旗帜，出航！」
-const departed = await clickIn('出航计划', '升起旗帜')
-check(!!departed, '点击「升起旗帜，出航！」')
+// 点「🏴 出航」
+const departed = await clickIn('出航计划', '出航')
+check(!!departed, '点击「出航」')
 await sleep(900)
 const voyage = await page.evaluate(() => {
   const s = window.__gameStore.getState()

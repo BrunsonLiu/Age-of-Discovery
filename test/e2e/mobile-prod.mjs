@@ -225,8 +225,8 @@ console.log('\n=== 移动端 · 生产产物冒烟 ===')
   }
   check(planShown, '点海面 → 出航计划面板弹出')
   if (planShown) {
-    const depart = await clickIn('出航计划', '升起旗帜')
-    check(!!depart, '点「升起旗帜，出航！」')
+    const depart = await clickIn('出航计划', '出航')
+    check(!!depart, '点「出航」')
     await sleep(2000)
   }
 
