@@ -43,7 +43,7 @@ export default function EventChoice({ choice, index, summary, onSelect }: EventC
   return (
     <button
       onClick={() => onSelect(index)}
-      className="w-full group relative overflow-hidden rounded-lg border border-gold-700/40 bg-ocean-800/50 px-4 py-3 text-left press transition-all hover:border-gold-500/60 hover:bg-ocean-700/50"
+      className="w-full group relative overflow-hidden rounded-lg border border-gold-700/40 bg-black/25 px-4 py-3 text-left press transition-all hover:border-gold-500/60 hover:bg-black/35"
     >
       <div className="absolute inset-0 bg-gradient-to-r from-gold-700/0 via-gold-700/5 to-gold-700/0 opacity-0 group-hover:opacity-100 transition-opacity" />
       <div className="relative flex items-center justify-between gap-2">

@@ -62,7 +62,7 @@ export default function EventResult({ outcome, performance, onContinue }: EventR
         </div>
       )}
 
-      <div className="bg-ocean-800/40 rounded-lg p-3 space-y-1.5">
+      <div className="bg-black/22 rounded-lg p-3 space-y-1.5">
         <h4 className="text-gold-400 font-serif text-xs mb-1">资源变化</h4>
         <ChangeIndicator value={outcome.goldChange} icon={<Coins size={12} />} label="金币" />
         <ChangeIndicator value={outcome.foodChange} icon={<Utensils size={12} />} label="食物" />
@@ -88,7 +88,7 @@ export default function EventResult({ outcome, performance, onContinue }: EventR
 
       {/* 第二条线：派系态度变化——世界上有人记住了你的所作所为 */}
       {outcome.factionChange && Object.keys(outcome.factionChange).length > 0 && (
-        <div className="bg-ocean-800/40 rounded-lg p-3 space-y-1.5">
+        <div className="bg-black/22 rounded-lg p-3 space-y-1.5">
           <h4 className="text-gold-400 font-serif text-xs mb-1 flex items-center gap-1">
             <Globe size={12} /> 四方态度
           </h4>
@@ -120,7 +120,7 @@ export default function EventResult({ outcome, performance, onContinue }: EventR
 
       {/* 第二条线：身份取向——你正在成为哪种船长 */}
       {outcome.notoriety && Object.keys(outcome.notoriety).length > 0 && (
-        <div className="bg-ocean-800/40 rounded-lg p-3 space-y-1.5">
+        <div className="bg-black/22 rounded-lg p-3 space-y-1.5">
           <h4 className="text-gold-400 font-serif text-xs mb-1 flex items-center gap-1">
             <Compass size={12} /> 海上人称
           </h4>
@@ -142,7 +142,7 @@ export default function EventResult({ outcome, performance, onContinue }: EventR
 
       {/* 第二条线：名船员个人事件的回响 */}
       {outcome.crewEvent && (
-        <div className="bg-ocean-800/40 rounded-lg p-3">
+        <div className="bg-black/22 rounded-lg p-3">
           <p className="flex items-center gap-1.5 text-gold-500 text-[10px] font-serif">
             {outcome.crewEvent.dies ? (
               <><Skull size={11} className="shrink-0 text-danger-400" aria-hidden="true" />全舰默哀。</>
