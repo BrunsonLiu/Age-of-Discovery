@@ -332,18 +332,62 @@ export default function Map3DView() {
       const camState = { fx: 10, fz: 0, dist: 15, az: 0.42, el: 0.62 }
       const camTarget = { x: 10, z: 0 }
 
-      // ---- 交互：拖拽转视角 / 滚轮缩放 / 点击选点 ----
+      // ---- 交互：拖拽转视角 / 滚轮或双指捏合缩放 / 点击选点 ----
+      //
+      // 【为什么要处理多指】桌面靠 wheel 缩放，手机没有 wheel。
+      // 实测（CDP 发真实触摸序列，390×844）：双指捏合对相机高度的影响 Δ=0.000，
+      // 也就是手机上根本不能缩放 —— 只能看 dist=15 那一个画面，
+      // 既进不了近景（看不清港口三档差异），也拉不到远景（看不到自己在世界哪一块）。
+      //
+      // 【为什么要设 touch-action: none】canvas 默认 touch-action:auto，
+      // 浏览器会把单指拖拽当成页面滚动。实测：横拖 96px 只收到 2 个 pointermove
+      // 就 pointercancel —— 旋转到一半被浏览器抢走，手感像"转不动"。
+      // 只设在这块 canvas 上，不影响 2D 与周围可滚动区域。
+      const el = renderer.domElement
+      el.style.touchAction = 'none'
+
+      /** 当前按下的所有指针（触摸/鼠标统一走 Pointer Events） */
+      const pointers = new Map<number, { x: number; y: number }>()
       let dragging = false
       let moved = 0
       let lastX = 0, lastY = 0
-      const el = renderer.domElement
+      /** 上一次的两指间距，捏合时用相邻两帧的比值算缩放 */
+      let pinchDist = 0
+
+      /** 用两指间距的比值缩放（不依赖绝对像素，高分屏/不同机身一致） */
+      const applyPinch = () => {
+        const [p1, p2] = [...pointers.values()]
+        const d = Math.hypot(p1.x - p2.x, p1.y - p2.y)
+        if (pinchDist > 0 && d > 1) {
+          // 手指张开 → d 变大 → 比值 <1 → dist 变小 = 拉近。
+          // 与地图 App 的习惯一致（张开放大/拉近），不是反向。
+          camState.dist = Math.min(40, Math.max(3, camState.dist * (pinchDist / d)))
+        }
+        pinchDist = d
+      }
 
       const onPointerDown = (e: PointerEvent) => {
-        dragging = true; moved = 0; lastX = e.clientX; lastY = e.clientY
-        el.setPointerCapture(e.pointerId)
+        pointers.set(e.pointerId, { x: e.clientX, y: e.clientY })
+        try { el.setPointerCapture(e.pointerId) } catch { /* 指针已释放 */ }
+        if (pointers.size === 1) {
+          dragging = true; moved = 0; lastX = e.clientX; lastY = e.clientY
+        } else if (pointers.size === 2) {
+          // 进入捏合：停掉旋转，否则第二根手指落下时画面会跳一下
+          dragging = false
+          const [p1, p2] = [...pointers.values()]
+          pinchDist = Math.hypot(p1.x - p2.x, p1.y - p2.y)
+          // 捏合不算点击：否则松手会误触发"点地图出航"
+          moved = 999
+        }
       }
       const onPointerMove = (e: PointerEvent) => {
+        const p = pointers.get(e.pointerId)
+        if (!p) return
+        p.x = e.clientX; p.y = e.clientY
+
+        if (pointers.size >= 2) { applyPinch(); return }
         if (!dragging) return
+
         const dx = e.clientX - lastX, dy = e.clientY - lastY
         lastX = e.clientX; lastY = e.clientY
         moved += Math.abs(dx) + Math.abs(dy)
@@ -351,9 +395,24 @@ export default function Map3DView() {
         camState.el = Math.min(1.35, Math.max(0.16, camState.el + dy * 0.004))
       }
       const onPointerUp = (e: PointerEvent) => {
-        dragging = false
+        const wasSingle = pointers.size === 1
+        pointers.delete(e.pointerId)
         try { el.releasePointerCapture(e.pointerId) } catch { /* 指针已释放 */ }
-        if (moved < 5) handleClick(e)
+
+        if (pointers.size === 0) {
+          dragging = false
+          pinchDist = 0
+          // pointercancel（浏览器抢走触摸、手势被系统接管）不该当成点击：
+          // 它没有可靠的坐标，且玩家的本意不是点。
+          if (wasSingle && moved < 5 && e.type === 'pointerup') handleClick(e)
+        } else if (pointers.size === 1) {
+          // 从双指退回单指：把剩下那根手指当新的基准，
+          // 否则 dt 会从"上一根手指的位置"算，画面跳一大截
+          const [rest] = [...pointers.values()]
+          lastX = rest.x; lastY = rest.y
+          dragging = true
+          pinchDist = 0
+        }
       }
       const onWheel = (e: WheelEvent) => {
         e.preventDefault()
