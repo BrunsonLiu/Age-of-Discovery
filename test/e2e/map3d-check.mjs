@@ -590,6 +590,188 @@ check(curProbe.curLabels?.[0] === '塞维利亚', `高亮的是船所在的塞�
 check(curProbe.labelTotal === 20, `其它港口名仍有 20 个（实得 ${curProbe.labelTotal}）`)
 check(curProbe.afterUndock?.visible === false, '出港后光环隐藏')
 
+// ===================================================================
+// 3D 点击交互：点港口开面板 / 点海面设航向
+// ===================================================================
+//
+// 【为什么必须测】这是玩家在 3D 视图里的主要操作方式，逻辑虽然是从 2D 的
+// MapClickHandler 逐条复刻的，但 raycaster 那条路径（先打港口模型、打不中再打海面）
+// 从未被验证过——此前 e2e 里 grep `mouse.click` 命中 0 次。
+//
+// 顺带确认了一件容易误判的事：Three.js 的 Raycaster **不检查 visible**，
+// 未发现的港口虽然 group.visible=false 仍会被射线命中。
+// 查过 2D 的 MapClickHandler 后确认这不是 bug——它同样有「2° 内吸附到港口」
+// 的规则，且同样只在 alreadyDiscovered 时才开面板，所以不会泄露未发现港口的信息。
+await page.evaluate(() => {
+  const st = window.__gameStore.getState()
+  window.__gameStore.setState({
+    activePanel: null,
+    waypoint: null,
+    shipPosition: [37.3886, -5.9823],           // 塞维利亚
+    fleet: { ...st.fleet, currentPortId: 6, isSailing: false },
+  })
+})
+await sleep(2500)   // 等相机缓动跟上
+
+const portScreen = await page.evaluate(() => {
+  const m = window.__map3d
+  if (!m) return null
+  let t = null
+  m.scene.traverse(o => {
+    if (o.isGroup && o.userData?.portId === 6 && o.userData?.portScale) t = o
+  })
+  if (!t) return null
+  const v = new m.camera.position.constructor().set(t.position.x, 0.05, t.position.z)
+  v.project(m.camera)
+  // 【必须用 canvas 自己的 rect】project 得到的是 NDC，换成点击坐标要基于
+  // canvas 的实际位置与尺寸（顶栏占了视口上方约 40px）。
+  // 用 innerWidth/innerHeight 会整体偏移几十像素，模型只有 ~30px 大 → 点空。
+  // 本轮第一次就是这么写错的，4 条点击断言全红。
+  const c = m.renderer.domElement
+  const r = c.getBoundingClientRect()
+  return {
+    x: Math.round(r.left + (v.x + 1) / 2 * r.width),
+    y: Math.round(r.top + (-v.y + 1) / 2 * r.height),
+    z: +v.z.toFixed(2),
+  }
+})
+console.log('塞维利亚屏幕坐标:', JSON.stringify(portScreen))
+check(!!portScreen && portScreen.z < 1,
+  `塞维利亚在相机前方（ndc.z=${portScreen?.z}）`)
+
+// 点击语义①：点**自己所在的港口**应当什么都不做
+//
+// 这是 applyWaypoint 里 `if (nearbyPort.id === fleet.currentPortId) return` 的行为，
+// 2D 的 MapClickHandler 同样如此。断言它，是为了防"误触弹出港口面板"。
+if (portScreen && portScreen.z < 1) {
+  await page.mouse.click(portScreen.x, portScreen.y)
+  await sleep(700)
+  const afterSelfClick = await page.evaluate(() => {
+    const st = window.__gameStore.getState()
+    return {
+      panel: st.activePanel,
+      waypoint: st.waypoint ? [st.waypoint.latitude, st.waypoint.longitude] : null,
+      pendingVoyage: !!st.pendingVoyage,
+    }
+  })
+  console.log('点「当前所在港口」后:', JSON.stringify(afterSelfClick))
+  check(afterSelfClick.panel === null,
+    `点当前所在港口不弹面板（实得 ${afterSelfClick.panel}）`)
+  check(!afterSelfClick.waypoint,
+    `点当前所在港口不设航点（实得 ${JSON.stringify(afterSelfClick.waypoint)}）`)
+}
+
+// 点击语义②：点海面会设定航点
+//
+// 【为什么每次点完都要彻底清理】点海面或点别的港口会让船**直接出航**
+// （applyWaypoint 里 sailToWaypoint），而游戏随即弹出 VoyagePlanModal
+// （`fixed inset-0`、z=80、全屏遮罩）。那个弹窗会把后续所有点击吃掉——
+// 本轮第一次写这条测试时就是被它挡住的，4 条断言全红，
+// 排查了半天以为 raycast 坏了，其实是测试没处理"点击会触发出航流程"。
+const resetForClick = async () => {
+  await page.evaluate(() => {
+    const st = window.__gameStore.getState()
+    st.cancelVoyage?.()
+    window.__gameStore.setState({
+      activePanel: null, waypoint: null, pendingVoyage: null,
+      shipPosition: [37.3886, -5.9823],
+      fleet: { ...st.fleet, currentPortId: 6, isSailing: false },
+    })
+  })
+  // 关掉可能弹出的对话层（`absolute inset-0 bg-black/45`）。
+  // 【为什么必须处理】对话遮罩会锁住整个地图——这是**正常设计**
+  // （对话中不该能操作地图），但对测试来说就是"点了没反应"。
+  // 本项目 e2e 的已知坑，README 里也写了。
+  for (let i = 0; i < 12; i++) {
+    const state = await page.evaluate(() => {
+      const mask = [...document.querySelectorAll('div.absolute.inset-0')].find(d =>
+        (d.className?.toString?.() || '').includes('bg-black/45') &&
+        d.offsetWidth > innerWidth * 0.8 && d.offsetHeight > innerHeight * 0.6)
+      if (!mask) return 'closed'
+      const b = [...document.querySelectorAll('button')]
+        .filter(x => {
+          const r = x.getBoundingClientRect()
+          return r.width > 0 && r.height > 0
+        })
+        .find(x => /继续|跳过|下一步|结束/.test(x.textContent || ''))
+      if (b) { b.click(); return 'clicked' }
+      return 'no-button'
+    })
+    if (state === 'closed') break
+    if (state === 'no-button') await page.keyboard.press('Escape')
+    await sleep(500)
+  }
+  await sleep(300)
+}
+await resetForClick()
+
+// 点海面：拿大西洋中部（lon -30 / lat 25，确定是海）投影到屏幕
+const seaScreen = await page.evaluate(() => {
+  const m = window.__map3d
+  if (!m) return null
+  // 与 utils/mapProjection 同一套公式（这里手算，避免动态 import 的模块实例问题）
+  const SIZE = 20
+  const mercNorm = lat => (1 - Math.log(Math.tan(Math.PI / 4 + lat * Math.PI / 360)) / Math.PI) / 2
+  const wx = (-30 + 180) / 360 * SIZE
+  const wz = mercNorm(25) * SIZE - SIZE / 2
+  const v = new m.camera.position.constructor().set(wx, -0.089, wz)
+  v.project(m.camera)
+  // 同样基于 canvas 的 rect（见上面港口投影处的说明）
+  const c = m.renderer.domElement
+  const r = c.getBoundingClientRect()
+  return {
+    x: Math.round(r.left + (v.x + 1) / 2 * r.width),
+    y: Math.round(r.top + (-v.y + 1) / 2 * r.height),
+    z: +v.z.toFixed(2),
+  }
+})
+console.log('大西洋中部屏幕坐标:', JSON.stringify(seaScreen))
+// 点击前先确认那块屏幕位置确实能点到 canvas（没被弹窗/面板盖住）
+const seaHitIsCanvas = await page.evaluate((pt) => {
+  const c = window.__map3d?.renderer?.domElement
+  const top = document.elementFromPoint(pt.x, pt.y)
+  return { isCanvas: top === c, topTag: top?.tagName, topClass: (top?.className?.toString?.() || '').slice(0, 60) }
+}, { x: seaScreen?.x ?? 0, y: seaScreen?.y ?? 0 })
+console.log('海面命中元素:', JSON.stringify(seaHitIsCanvas))
+check(seaHitIsCanvas.isCanvas,
+  `海面点击位置没有被浮层遮挡（命中 ${seaHitIsCanvas.topTag}.${seaHitIsCanvas.topClass}）`)
+
+if (seaScreen && seaScreen.z < 1 && seaHitIsCanvas.isCanvas) {
+  await page.mouse.click(seaScreen.x, seaScreen.y)
+  await sleep(700)
+  const afterSeaClick = await page.evaluate(() => {
+    const st = window.__gameStore.getState()
+    return {
+      panel: st.activePanel,
+      waypoint: st.waypoint ? [+st.waypoint.latitude.toFixed(1), +st.waypoint.longitude.toFixed(1)] : null,
+      pendingVoyage: !!st.pendingVoyage,
+    }
+  })
+  console.log('点海面后:', JSON.stringify(afterSeaClick))
+  check(!!afterSeaClick.waypoint, '点海面 → 设定了航点')
+  check(afterSeaClick.panel !== 'port', `点海面不应打开港口面板（实得 ${afterSeaClick.panel}）`)
+  // 大西洋中部 lon≈-30：若误命中陆地被贴岸改道，经度会明显偏移
+  check(afterSeaClick.waypoint && Math.abs(afterSeaClick.waypoint[1] + 30) < 8,
+    `航点落在大西洋中部而非被吸到港口（经度 ${afterSeaClick.waypoint?.[1]}）`)
+  // 点海面出航 → 应弹航段计划（这是既有流程，顺带断言一下，避免以后改坏）
+  check(afterSeaClick.pendingVoyage,
+    `点海面出航会弹出航段计划（pendingVoyage=${afterSeaClick.pendingVoyage}）`)
+} else {
+  console.log('  跳过点海面断言：大西洋中部不在当前视野内或被遮挡')
+}
+
+// 收拾现场：关面板、清航点、取消出航流程、回到停泊状态
+await page.evaluate(() => {
+  const st = window.__gameStore.getState()
+  st.cancelVoyage?.()
+  window.__gameStore.setState({
+    activePanel: null, waypoint: null, pendingVoyage: null,
+    fleet: { ...st.fleet, currentPortId: 6, isSailing: false },
+    shipPosition: [37.3886, -5.9823],
+  })
+})
+await sleep(400)
+
 // 拖拽转视角 + 滚轮缩放
 await page.mouse.move(700, 450)
 await page.mouse.down()

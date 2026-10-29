@@ -75,6 +75,23 @@ npm run test:e2e:all      # 以上全部（不含 mobile:prod）
   触屏没有 Esc 键，所以 `DialogueOverlay` 专门加了「跳过这段致辞」按钮。
   移动端 e2e 必须先点掉它，否则后面所有「点底部标签栏」的步骤都会被它截胡。
 
+### 在 3D 视图里点地图：三个必踩的坑
+
+`map3d-check.mjs` 的点击断言（点港口 / 点海面）踩过三个坑，**都不是代码 bug**：
+
+1. **算点击坐标必须用 canvas 自己的 `getBoundingClientRect()`**。
+   `project()` 出来的是 NDC，换成屏幕坐标要基于 canvas 的实际位置与尺寸
+   （顶栏占了视口上方约 40px）。用 `innerWidth/innerHeight` 会整体偏移几十像素，
+   而港口模型只有 ~30px 大 → 直接点空。
+2. **点地图会让船直接出航，并弹出 `VoyagePlanModal`**（`fixed inset-0`、z=80、全屏遮罩）。
+   那个弹窗会把后续所有点击吃掉。所以每次点击后都要
+   `cancelVoyage()` + `setState({pendingVoyage:null, waypoint:null, fleet:{...isSailing:false}})`。
+3. **对话遮罩 `div.absolute.inset-0.bg-black/45` 也会锁住地图**（正常设计）。
+   点之前循环点掉「继续」/按 Esc，直到 `elementFromPoint` 命中 CANVAS。
+
+> 判定点击位置是否可用，直接断言 `document.elementFromPoint(x, y) === canvas`，
+> 比猜层级快得多。
+
 ## 构造「缺图」的两种方式
 
 素材一旦全部交付，「某文件恰好不存在」这种前提就失效了——脚本会变成测一个
