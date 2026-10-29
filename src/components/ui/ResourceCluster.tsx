@@ -221,7 +221,7 @@ export default function ResourceCluster() {
         id: `no-supply-${what}-${Date.now()}`,
         type: 'warning',
         title: `海上无处补给${what}`,
-        message: `${what}只能在港口补充。出航前看清「出航计划」里的补给评估，别让余量小于到港天数。`,
+        message: `${what}只能在港口补充。出航计划的顶部会直接告诉你补给够不够走到——不够就回港补，别硬走。`,
       })
       return
     }
