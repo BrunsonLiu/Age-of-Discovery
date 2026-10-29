@@ -1,6 +1,34 @@
-@import url('https://fonts.googleapis.com/css2?family=Pirata+One&family=Crimson+Text:ital,wght@0,400;0,600;0,700;1,400&display=swap');
+/* 字体由 index.html 的 <link> 引入。
+   原先这里还有一条等价的 @import —— 同一份 CSS 请求了两次，
+   而 @import 会阻塞 CSS 解析（性能反模式）。已在 index.html 统一。 */
 
 @tailwind base;
+
+/* ==========================================================================
+ * 中文正文衬线：思源宋体子集（自托管）
+ *
+ * 【为什么要自带字体】原来的字体栈是 'Crimson Text', Georgia, serif，
+ * 前两个都不含中文字形 → 中文**落到浏览器默认 serif**，Windows 上就是宋体
+ * SimSun：小字号点阵感明显、字间距松散、笔画发虚。
+ * 实测 11px 下 SimSun 与思源宋体差距一眼可见（截图对比过）。
+ *
+ * 【为什么不用 Google Fonts】它的中文方案是 303 个 unicode-range 分片
+ * + 225KB 的 CSS，且国内访问不了——对 Windows 玩家等于没改。
+ * 自托管一个子集：单文件、无外部依赖、国内可用。
+ *
+ * 【体积】完整思源宋体 25MB → 子集 411KB（2440 个字符，
+ * 由 scripts/extract_font_chars.py 从 src/ 全量提取）。
+ * 只声明 400 一个字重：600/700 由浏览器合成伪粗体，中文小字号下几乎看不出，
+ * 但省下 380KB（多字重子集 795KB）。重新提取字符后重跑 subset 脚本即可。
+ * ========================================================================== */
+@font-face {
+  font-family: 'Noto Serif SC';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('./assets/fonts/noto-serif-sc-subset.woff2') format('woff2');
+}
+
 @tailwind components;
 @tailwind utilities;
 
@@ -36,7 +64,7 @@ html, body, #root {
 }
 
 body {
-  font-family: 'Crimson Text', Georgia, serif;
+  font-family: 'Crimson Text', 'Noto Serif SC', Georgia, serif;
   background-color: var(--ocean-deep);
   color: var(--parchment);
 }
@@ -59,7 +87,7 @@ body {
   width: 100% !important;
   height: 100% !important;
   cursor: crosshair !important;
-  font-family: 'Crimson Text', Georgia, serif;
+  font-family: 'Crimson Text', 'Noto Serif SC', Georgia, serif;
 }
 
 /* 容器级 sepia 滤镜会把手绘海浪洗成一片土黄，一并撤掉；
@@ -227,7 +255,7 @@ body {
   }
 
   .ink-text {
-    font-family: 'Crimson Text', Georgia, serif;
+    font-family: 'Crimson Text', 'Noto Serif SC', Georgia, serif;
     color: #2b1e0e;
   }
 
@@ -352,7 +380,7 @@ body {
   z-index: 2;
   background: linear-gradient(180deg, #0d2a45, #091e35);
   color: #c9a96e;
-  font-family: 'Crimson Text', Georgia, serif;
+  font-family: 'Crimson Text', 'Noto Serif SC', Georgia, serif;
   font-size: 18px;
   letter-spacing: 3px;
 }

@@ -10,6 +10,22 @@
     <title>大航海时代 - Age of Discovery</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <!--
+      字体：
+        Pirata One    标题（手写风）
+        Crimson Text  英文/数字正文
+        Noto Serif SC 中文正文 ← 关键
+
+      【为什么必须显式指定中文衬线】
+      原来字体栈是 'Crimson Text', Georgia, serif。Crimson Text 和 Georgia 都
+      不含中文字形，于是中文**落到浏览器默认 serif**——Windows 上就是宋体 SimSun：
+      小字号点阵感明显、字间距松散、笔画发虚。截图对比（11/13px）差异一眼可见。
+      Noto Serif SC 保留宋体的古籍骨架，但笔画匀称、间距紧凑，小字也清晰。
+
+      中文（Noto Serif SC）改走**自托管子集**（见 src/index.css 的 @font-face）：
+      Google 的中文方案是 303 个分片 + 225KB CSS，且国内访问不了，
+      对 Windows 玩家等于没改。自托管单文件 411KB、无外部依赖。
+    -->
     <link href="https://fonts.googleapis.com/css2?family=Pirata+One&family=Crimson+Text:ital,wght@0,400;0,600;0,700;1,400&display=swap" rel="stylesheet">
   </head>
   <body>

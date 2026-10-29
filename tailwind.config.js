@@ -72,7 +72,9 @@ export default {
       },
       fontFamily: {
         pirate: ['"Pirata One"', 'cursive'],
-        serif: ['"Crimson Text"', 'Georgia', 'serif'],
+        // 中文字形不在 Crimson Text 里，必须显式给一个中文衬线，
+        // 否则回退到浏览器默认 serif（Windows = 宋体 SimSun，小字发虚）
+        serif: ['"Crimson Text"', '"Noto Serif SC"', 'Georgia', 'serif'],
       },
       // 时长与曲线对齐 src/utils/motion.ts 的 DURATION/EASE_* 档位
       // （config 是 JS 无法 import TS，改动需同步）
