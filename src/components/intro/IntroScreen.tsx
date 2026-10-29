@@ -133,7 +133,7 @@ export default function IntroScreen() {
                   className={`text-left rounded-lg border p-3 transition-all ${
                     selected
                       ? 'border-gold-400 bg-gold-700/30 shadow-lg shadow-gold-900/40'
-                      : 'border-gold-700/30 bg-ocean-800/40 hover:border-gold-500/50 hover:bg-ocean-700/40'
+                      : 'border-gold-700/30 bg-black/25 hover:border-gold-500/50 hover:bg-black/32'
                   }`}
                 >
                   <div className="flex items-center gap-2">
@@ -172,7 +172,7 @@ export default function IntroScreen() {
                   className={`text-left rounded-lg border p-2.5 transition-all ${
                     selected
                       ? 'border-gold-400 bg-gold-700/30 shadow-lg shadow-gold-900/40'
-                      : 'border-gold-700/30 bg-ocean-800/40 hover:border-gold-500/50 hover:bg-ocean-700/40'
+                      : 'border-gold-700/30 bg-black/25 hover:border-gold-500/50 hover:bg-black/32'
                   }`}
                 >
                   <div className="flex items-center gap-2.5">
@@ -194,7 +194,7 @@ export default function IntroScreen() {
         <>
           <h2 className="pirate-title text-3xl text-gold-300 mb-4">开船前的最后一眼</h2>
           <div className="space-y-3 font-serif text-gold-200 text-sm leading-relaxed max-w-md text-left">
-            <div className="bg-ocean-800/40 border border-gold-700/25 rounded-lg p-3 space-y-1.5">
+            <div className="bg-black/22 border border-gold-700/25 rounded-lg p-3 space-y-1.5">
               <div className="flex justify-between">
                 <span className="text-gold-500">座船</span>
                 <span className="text-gold-200">「圣玛利亚号」· 塞维利亚港</span>
