@@ -292,7 +292,8 @@ export default function PortDetail() {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between mb-0.5">
                           <span className="text-gold-200 text-xs font-serif">
-                            {o.icon} {o.name} <span className="text-gold-600">· {o.title}</span>
+                            <o.icon size={11} className="inline -mt-0.5 mr-1" aria-hidden="true" />
+                            {o.name} <span className="text-gold-600">· {o.title}</span>
                           </span>
                           {hired ? (
                             <span className="text-safe-400 text-xs font-serif">已在编</span>
@@ -342,7 +343,8 @@ export default function PortDetail() {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between mb-0.5">
                           <span className="text-gold-200 text-xs font-serif">
-                            {c.icon} {c.name} <span className="text-gold-600">· {c.title}</span>
+                            <c.icon size={11} className="inline -mt-0.5 mr-1" aria-hidden="true" />
+                            {c.name} <span className="text-gold-600">· {c.title}</span>
                           </span>
                           {hired ? (
                             <span className="text-safe-400 text-xs font-serif">已在船</span>

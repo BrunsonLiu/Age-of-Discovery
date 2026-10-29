@@ -136,17 +136,9 @@ export default function BottomBar() {
             </span>
           </div>
         )}
-        {/* 第三条线：操舵挑战（实时操作小游戏，每段航程一次，可跳过） */}
-        {fleet.isSailing && (() => {
-          return (
-            <span
-              className="hidden md:inline px-2 py-1 text-xs font-serif rounded-md border border-sky-700/30 bg-sky-900/20 text-sky-300/80"
-              title="操舵挑战是每段起航后的可选加餐——不想玩可以「交给水手」跳过"
-            >
-              🧭 段 {segmentIndex + 1}/{segmentCount} · {stanceProfile.name}
-            </span>
-          )
-        })()}
+        {/* 这里原本还有一枚「🧭 段 N/M · 方针」的蓝色小牌。
+            它和左边状态行里的「段N/M」、右边方针 chip 里的方针名**三重重复**，
+            又是底栏唯一一块 sky 蓝，已删。 */}
         <div className="flex items-center bg-ocean-700/60 rounded-md overflow-hidden border border-gold-700/20">
           {speedOptions.map(opt => (
             <button

@@ -1,4 +1,4 @@
-import { Coins, Star, Map as MapIcon, Ship } from 'lucide-react'
+import { Coins, Star, Map as MapIcon, Ship, Scroll } from 'lucide-react'
 import { useGameStore } from '@/store/useGameStore'
 import ParchmentCard from '@/components/ui/ParchmentCard'
 import { rivalPortrait } from '@/data/portraits'
@@ -119,7 +119,7 @@ export default function RivalPanel() {
 
           {/* 见闻流 */}
           <div>
-            <div className="text-gold-300 font-serif text-xs mb-1.5">📜 最新见闻</div>
+            <div className="flex items-center gap-1 text-gold-300 font-serif text-xs mb-1.5"><Scroll size={11} aria-hidden="true" />最新见闻</div>
             {rivalNews.length === 0 ? (
               <p className="text-gold-600 text-xs font-serif text-center py-3">
                 还没有传闻。每隔几天，酒馆里就会有新消息。

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Ship, Coins, Utensils, Droplets, Heart, Anchor, Wind, Skull, Map, ChevronRight, Star, Users, Sailboat, Tag, Globe } from 'lucide-react'
+import { Ship, Coins, Utensils, Droplets, Heart, Anchor, Wind, Skull, Map, ChevronRight, Star, Users, Sailboat, Tag, Globe, Award, Crown } from 'lucide-react'
 import { useGameStore } from '@/store/useGameStore'
 import { useMapStore } from '@/store/useMapStore'
 import { routes } from '@/data/routes'
@@ -183,7 +183,7 @@ export default function FleetPanel() {
           {officers.length > 0 && (
             <div className="rounded p-2 bg-ocean-800/40 border border-gold-700/20 space-y-1">
               <div className="flex items-center justify-between text-xs font-serif">
-                <span className="text-gold-500">🎖️ 军官团</span>
+                <span className="flex items-center gap-1 text-gold-500"><Award size={11} aria-hidden="true" />军官团</span>
                 <span className="text-gold-600">日薪合计 {totalWage} 金币</span>
               </div>
               {officers.map(id => {
@@ -191,7 +191,7 @@ export default function FleetPanel() {
                 if (!o) return null
                 return (
                   <div key={id} className="flex items-center justify-between text-xs font-serif">
-                    <span className="text-gold-300">{o.icon} {o.name}</span>
+                    <span className="flex items-center gap-1 text-gold-300"><o.icon size={11} aria-hidden="true" />{o.name}</span>
                     <span className="text-gold-500 text-[10px]">{o.effect}</span>
                   </div>
                 )
@@ -223,7 +223,8 @@ export default function FleetPanel() {
                             onError={(e) => { e.currentTarget.style.visibility = 'hidden' }}
                           />
                         )}
-                        {def.icon} {def.name} <span className="text-gold-600">· {def.title}</span>
+                        <def.icon size={11} className="inline -mt-0.5 mr-1" aria-hidden="true" />
+                        {def.name} <span className="text-gold-600">· {def.title}</span>
                       </span>
                       <span className={`text-[10px] ${
                         m.loyalty <= 25 ? 'text-danger-400' : m.loyalty < 50 ? 'text-gold-400' : 'text-safe-400'
@@ -295,7 +296,7 @@ export default function FleetPanel() {
                       className="h-9 w-auto object-contain drop-shadow-md"
                       onError={(e) => { e.currentTarget.style.visibility = 'hidden' }}
                     />
-                    {isFlagship && <span title="旗舰" aria-label="旗舰">👑</span>}
+                    {isFlagship && <span title="旗舰" aria-label="旗舰"><Crown size={10} className="text-gold-400" /></span>}
                     {ship.name} <span className="text-gold-600 text-xs">{shipTypeNames[ship.type]}</span>
                   </span>
                   <button
@@ -333,7 +334,7 @@ export default function FleetPanel() {
           {fleet.currentPortId && !currentRoute && (
             <div className="border-t border-gold-700/30 pt-2">
               <div className="bg-gold-700/15 rounded p-2 mb-2 text-center">
-                <p className="text-gold-300 font-serif text-sm">🗺️ 点击地图上的港口或任意位置开始航行</p>
+                <p className="flex items-center justify-center gap-1.5 text-gold-300 font-serif text-sm"><Map size={12} aria-hidden="true" />点击地图上的港口或任意位置开始航行</p>
                 <p className="text-gold-600 text-xs mt-1">你可以点击地图上任何位置来设定目的地</p>
               </div>
               {availableRoutes.length > 0 && (

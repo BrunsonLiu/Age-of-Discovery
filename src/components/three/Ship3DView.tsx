@@ -23,7 +23,7 @@ class QuietBoundary extends Component<{ children: ReactNode }, { failed: boolean
 function Fallback() {
   return (
     <div className="w-full flex items-center justify-center text-gold-600 text-xs font-serif" style={{ height: 180 }}>
-      ⛵ 正在装配 3D 船模…
+      正在装配 3D 船模…
     </div>
   )
 }

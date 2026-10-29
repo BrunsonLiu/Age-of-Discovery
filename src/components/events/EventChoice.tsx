@@ -1,6 +1,7 @@
 import { ChevronRight, Coins, Droplets, Heart, Shield, Star, Users, Utensils } from 'lucide-react'
 import type { EventChoice as EventChoiceType } from '@/types'
 import { MINI_GAME_COPY } from '@/utils/miniGame'
+import MiniGameGlyph from '@/components/ui/MiniGameGlyph'
 import { RESOURCE_LABEL, type ChoiceSummary, type ResourceKey, type RiskGrade } from '@/utils/eventSummary'
 
 interface EventChoiceProps {
@@ -54,7 +55,7 @@ export default function EventChoice({ choice, index, summary, onSelect }: EventC
               className="flex items-center gap-1 rounded-full border border-gold-600/50 bg-gold-900/40 px-2 py-0.5 text-[10px] font-serif text-gold-300"
               title="选这一项会进入一段实时操作小游戏"
             >
-              <span aria-hidden="true">{tag.icon}</span>
+              <MiniGameGlyph icon={tag.icon} size={10} />
               {tag.label}
             </span>
           )}

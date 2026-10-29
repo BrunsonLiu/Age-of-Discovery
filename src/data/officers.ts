@@ -1,4 +1,5 @@
 import type { OfficerId } from '@/types'
+import { Anchor, Compass, Stethoscope, type LucideIcon } from 'lucide-react'
 
 /**
  * 可招募军官：一次性招募费 + 每日工资，效果在 store 集中生效。
@@ -8,7 +9,7 @@ export interface OfficerDef {
   id: OfficerId
   name: string
   title: string
-  icon: string
+  icon: LucideIcon
   hireCost: number
   dailyWage: number
   effect: string
@@ -19,7 +20,7 @@ export const OFFICERS: OfficerDef[] = [
     id: 'pilot',
     name: '老领航员',
     title: '引航人',
-    icon: '🧭',
+    icon: Compass,
     hireCost: 300,
     dailyWage: 3,
     effect: '识风辨流：舰队航行速度 +15%（跨洋航线显著省时）',
@@ -28,7 +29,7 @@ export const OFFICERS: OfficerDef[] = [
     id: 'quartermaster',
     name: '大副',
     title: '甲板上的铁腕',
-    icon: '⚓',
+    icon: Anchor,
     hireCost: 250,
     dailyWage: 2,
     effect: '弹压得住场面：哗变与海盗事件的士气惩罚减半',
@@ -37,7 +38,7 @@ export const OFFICERS: OfficerDef[] = [
     id: 'surgeon',
     name: '船医',
     title: '柠檬汁与柳叶刀',
-    icon: '⚕️',
+    icon: Stethoscope,
     hireCost: 280,
     dailyWage: 3,
     effect: '每日士气衰减 -2，疾病类事件概率减半',

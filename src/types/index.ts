@@ -1,4 +1,6 @@
-﻿export interface Ship {
+﻿import type { LucideIcon } from 'lucide-react'
+
+export interface Ship {
   id: number
   name: string
   type: 'caravel' | 'galleon' | 'sloop' | 'frigate'
@@ -67,8 +69,8 @@ export interface Achievement {
   id: string
   title: string
   description: string
-  /** 图标（emoji，避免额外依赖） */
-  icon: string
+  /** 图标组件（lucide）。原先存 emoji，会渲染成彩色，与界面材质冲突 */
+  icon: LucideIcon
   /** 达成判定；传入完整 GameState */
   check: (state: GameState) => boolean
 }

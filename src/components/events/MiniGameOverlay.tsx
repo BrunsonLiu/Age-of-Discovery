@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Anchor, Bomb, Dices, Footprints, Sailboat, Scale, Star, Swords, Telescope, Waves, Wind, type LucideIcon } from 'lucide-react'
+import { Anchor, Sailboat, Swords, Star, Waves } from 'lucide-react'
+import MiniGameGlyph from '@/components/ui/MiniGameGlyph'
 import { useGameStore } from '@/store/useGameStore'
 import { useFxStore as useFx } from '@/store/useFxStore'
 import { setMiniGameActive } from '@/utils/uiBus'
@@ -59,11 +60,6 @@ function useMiniGameContext(): MiniGameContext {
  * 各原型的实时逻辑与界面在 src/components/minigames/ 下各自独立，
  * 共享 useMiniGameLoop（ref + 60fps + DOM 直改，不触发 React 重渲染）。
  */
-/** 小游戏图标名 → lucide 组件。miniGame.ts 只存名字，组件解析在渲染层。 */
-const MINI_GAME_GLYPH: Record<string, LucideIcon> = {
-  Wind, Swords, Footprints, Telescope, Dices, Scale, Bomb,
-}
-
 export default function MiniGameOverlay({ gameId, onFinish }: MiniGameOverlayProps) {
   const ctx = useMiniGameContext()
   const modifiers = useMemo(() => computeModifiers(ctx), [ctx])
@@ -132,13 +128,7 @@ export default function MiniGameOverlay({ gameId, onFinish }: MiniGameOverlayPro
         <div className="px-4 py-3 border-b border-gold-700/30 bg-ocean-800/50 flex items-center justify-between">
           <div>
             <h2 className="pirate-title flex items-center gap-1.5 text-lg text-gold-300">
-              {(() => {
-                /* 小游戏图标：原来 copy.icon 是 🌪/⚔/🏃/🔭/🎲/⚖/💥 七个彩色 emoji，
-                   摆在羊皮纸标题栏里各是一种亮色，跟描边字标题完全不是一套语言。
-                   miniGame.ts 是纯逻辑层（不引 React），所以那里只存图标名，这里查表。 */
-                const Glyph = MINI_GAME_GLYPH[copy.icon] ?? Anchor
-                return <Glyph size={16} strokeWidth={1.6} aria-hidden="true" />
-              })()}
+              <MiniGameGlyph icon={copy.icon} size={16} />
               {copy.title}
             </h2>
             <p className="text-gold-500 font-serif text-xs mt-0.5">

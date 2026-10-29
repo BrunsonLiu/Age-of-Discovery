@@ -59,7 +59,14 @@ export default function AchievementPanel() {
                 }`}
               >
                 <div className="flex items-center gap-1.5">
-                  <span className={isUnlocked ? '' : 'grayscale opacity-50'}>{a.icon}</span>
+                  {/* 图标是 lucide 组件（原先存 emoji，靠 grayscale 压掉彩色）；
+                      单色描边图标用颜色区分解锁状态，比滤镜更可控 */}
+                  <a.icon
+                    size={13}
+                    strokeWidth={1.7}
+                    className={`shrink-0 ${isUnlocked ? 'text-gold-300' : 'text-gold-700'}`}
+                    aria-hidden="true"
+                  />
                   <span className={`text-xs font-serif font-semibold ${isUnlocked ? 'text-gold-200' : 'text-gold-600'}`}>
                     {a.title}
                   </span>

@@ -1,4 +1,4 @@
-import { Ship as ShipIcon, Coins, Users, Package, Gauge, Anchor } from 'lucide-react'
+import { Ship as ShipIcon, Coins, Users, Package, Gauge, Anchor, Crown } from 'lucide-react'
 import { useGameStore } from '@/store/useGameStore'
 import { shipTemplates, shipResaleValue } from '@/data/ships'
 import { shipSprite } from '@/data/shipSprites'
@@ -47,7 +47,7 @@ export default function ShipyardPanel() {
               return (
               <div key={ship.id} className="flex items-center justify-between text-xs mb-1">
                 <span className="text-gold-400 font-serif">
-                  {isFlagship && '👑 '}{ship.name} <span className="text-gold-600">({shipTypeNames[ship.type]})</span>
+                  {isFlagship && <Crown size={10} className="inline -mt-0.5 mr-1 text-gold-400" aria-hidden="true" />}{ship.name} <span className="text-gold-600">({shipTypeNames[ship.type]})</span>
                 </span>
                 {canSell ? (
                   <ActionButton onClick={() => sellShip(ship.id)} variant="secondary">
