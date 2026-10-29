@@ -251,6 +251,23 @@ export default function Map3DView() {
       ship.name = 'map3d-ship'
       scene.add(ship)
 
+      // ---- 海盗事件的"3D 演出"：只做海面泛红，不做敌船 ----
+      //
+      // 【这是本轮量出来的成本结论，写在这里免得下次又试一遍】
+      // 试过在地图上放一艘敌船逼近玩家（复用 shipModel + 深色材质），实测走不通：
+      //   ① 事件卡占屏幕中央 416×562（1440×900），玩家船正好在屏幕中心
+      //      → 贴着玩家船的演出全被卡片挡住（1.15 世界单位处完全不可见）。
+      //   ② 把敌船拉远到卡片外，需要 ≥5.7 世界单位（斜俯视下往南偏移主要朝左下走），
+      //      那时船长只剩 ~43px，小到没有意义。
+      //   ③ 固定方向 + 固定距离的偏移很容易落到陆地（东南 45° 偏移 4 单位
+      //      会飘到阿拉伯半岛内陆，被陆块整块遮住）。
+      //   ④ 事件卡的 badge-black/70 + backdrop-blur 会把深色船帆彻底糊掉。
+      // 结论：**在现有全屏事件卡布局下，"地图上的 3D 演出"做不出可读的效果。**
+      // 要做得好看，得先把事件卡改成侧置/更小/半透明——那是另一笔成本。
+      // 所以这里只保留唯一 100% 可见的形式：海面整体色调联动。
+      // （配套改动见 EventCard.tsx：3D 模式下遮罩 70%→45% 且去掉背景模糊，
+      //   让玩家能看清"事件发生在这片海域"。）
+
       // ---- 航线（与 2D 的虚线同一份几何） ----
       const routeMat = new LineMaterial({
         color: 0xe8c46a, linewidth: 2.4, transparent: true, opacity: 0.9,
@@ -460,6 +477,8 @@ export default function Map3DView() {
       let routeSig = ''
       /** 上一次的当前港口 id：只在变化时改 DOM class，不每帧写 */
       let lastCurrentPortId: number | null | undefined
+      /** 海面是否已染上海盗事件的红色（避免每帧重复写材质） */
+      let pirateTintOn = false
       const tmpV = new THREE.Vector3()
 
       const tick = () => {
@@ -506,6 +525,27 @@ export default function Map3DView() {
           }
           // 相机焦点跟随船
           camTarget.x = sx; camTarget.z = sz
+
+          // ---- 海盗事件：海面泛红（3D 演出的唯一可靠形式）----
+          //
+          // 详见上方「海盗事件的"3D 演出"」注释里的成本结论：
+          // 敌船在地图上放不出来（卡片遮挡 + 落陆地 + 太小），
+          // 但"海面整体变色"占满屏幕，是 100% 可见的。
+          //
+          // seaMat.color 与贴图相乘（贴图是青灰色），设成偏红即整体泛红。
+          // 只在状态变化时写，不每帧 setHex（避免无意义的材质更新）。
+          const ev = state.currentEvent
+          const pirateActive = !!ev && ev.type === 'pirate' && state.gamePhase === 'event'
+          if (pirateTintOn !== pirateActive) {
+            pirateTintOn = pirateActive
+            // 【为什么用 emissive 而不是 color】
+            // `color` 是**乘数**：海面贴图是青灰色（低 R / 高 G / 高 B），
+            // 乘任何"偏红"的颜色只会让整体变暗、蓝绿反而更突出，
+            // **乘法在数学上就做不出"变红"**（实测：color 设 0xee8878，海面只是变暗）。
+            // `emissive` 是**加项**，直接往上叠红光，才能真的把海面染红。
+            seaMat.emissive.setHex(pirateActive ? 0x6b1a12 : 0x000000)
+            seaMat.emissiveIntensity = 1.2
+          }
         }
 
         camState.fx += (camTarget.x - camState.fx) * 0.12

@@ -13,6 +13,7 @@ import EventResult from './EventResult'
 import EventScene from './EventScene'
 import MiniGameOverlay from './MiniGameOverlay'
 import { useFxStore as useFx } from '@/store/useFxStore'
+import { useMapStore } from '@/store/useMapStore'
 import type { EventOutcome, MiniGameId } from '@/types'
 
 export default function EventCard() {
@@ -32,6 +33,27 @@ export default function EventCard() {
   const [miniGame, setMiniGame] = useState<{ id: MiniGameId; choice: number } | null>(null)
   /** 本次操作的表现分（0..1），用于结算提示 */
   const [performance, setPerformance] = useState<number | null>(null)
+
+  /**
+   * 遮罩浓度：2D 用 70%，3D 用 45%。
+   *
+   * 【为什么要分】3D 视图下，事件发生地点的海面会做氛围联动
+   * （海盗事件时海面泛红、远处有敌船驶近）。70% 的黑遮罩 + backdrop-blur
+   * 会把 3D 背景压到接近纯黑——实测敌船在那层遮罩后**完全看不见**，等于演出白做。
+   *
+   * 减到 45% 不影响文字可读性：事件卡本身是深色实底（bg-gradient 不透明），
+   * 遮罩只决定卡片**外面**的背景亮度。
+   * 2D 保持 70%——羊皮纸底图本身很亮，减淡反而会干扰阅读。
+   *
+   * 【为什么这个 hook 必须放在这里】下面有 `if (!currentEvent) return null`，
+   * hook 放在那之后就是"条件调用"，eslint 会直接报错（本轮踩到）。
+   */
+  const is3d = useMapStore(s => s.renderMode) === '3d'
+  const scrim = is3d ? 'bg-black/45' : 'bg-black/70'
+  // 3D 模式不去模糊背景：backdrop-blur 会把地图细节彻底糊掉
+  // （实测：只把遮罩从 70% 减到 45%、保留 blur-sm，敌船仍然认不出形状）。
+  // 背景要能看清"海面在变红、有船在靠近"，才叫演出；糊掉就只剩一层色块。
+  const blur = is3d ? '' : 'backdrop-blur-sm'
 
   // 键盘通道：1-9 选择选项，Enter/Space 继续（见 hooks/useKeyboardControls）
   // 钩子先于提前 return 注册；闭包在渲染完成后才执行，引用下方 const 安全
@@ -162,7 +184,7 @@ export default function EventCard() {
 
   return (
     <>
-      <div className="fixed inset-0 flex items-start justify-center bg-black/70 backdrop-blur-sm animate-fade-in-scale p-3 md:p-4 overflow-y-auto"
+      <div className={`fixed inset-0 flex items-start justify-center ${scrim} ${blur} animate-fade-in-scale p-3 md:p-4 overflow-y-auto`}
         style={{ zIndex: 80 }}
       >
         {/* my-auto：内容比视口高时从顶部开始排（flex 居中会把超出部分裁到屏幕外，
