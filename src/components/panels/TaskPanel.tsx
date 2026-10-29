@@ -4,6 +4,7 @@ import { tasks } from '@/data/tasks'
 import { goods } from '@/data/goods'
 import { ports } from '@/data/ports'
 import ParchmentCard from '@/components/ui/ParchmentCard'
+import ScrollFade from '@/components/ui/ScrollFade'
 import { useFxStore as useFx } from '@/store/useFxStore'
 
 const typeLabels: Record<string, string> = {
@@ -67,7 +68,7 @@ export default function TaskPanel() {
                 {activeTasks.map(task => {
                   const done = canComplete(task)
                   return (
-                    <div key={task.id} className="bg-ocean-800/30 rounded p-2">
+                    <div key={task.id} className="bg-black/18 rounded p-2">
                       <div className="flex items-center gap-1.5 mb-1">
                         <span className="text-[10px] px-1 py-0.5 rounded bg-gold-700/30 text-gold-300 font-serif shrink-0">
                           {typeLabels[task.type] ?? task.type}
@@ -130,9 +131,9 @@ export default function TaskPanel() {
             {availableTasks.length === 0 ? (
               <p className="text-gold-600 text-xs font-serif italic">暂无新的传闻（有些线索要航行更久才会浮现）</p>
             ) : (
-              <div className="space-y-1.5 max-h-64 overflow-y-auto scrollbar-thin">
+              <ScrollFade className="space-y-1.5 max-h-64 overflow-y-auto scroll-parchment">
                 {availableTasks.map(task => (
-                  <div key={task.id} className="bg-ocean-800/30 rounded p-2">
+                  <div key={task.id} className="bg-black/18 rounded p-2">
                     <div className="flex items-center gap-1.5 mb-1">
                       <span className="text-[10px] px-1 py-0.5 rounded bg-gold-700/30 text-gold-300 font-serif shrink-0">
                         {typeLabels[task.type] ?? task.type}
@@ -154,7 +155,7 @@ export default function TaskPanel() {
                     </div>
                   </div>
                 ))}
-              </div>
+              </ScrollFade>
             )}
           </div>
 

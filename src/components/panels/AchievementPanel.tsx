@@ -1,5 +1,6 @@
 import { Trophy, Lock } from 'lucide-react'
 import { useGameStore } from '@/store/useGameStore'
+import ScrollFade from '@/components/ui/ScrollFade'
 import { achievements } from '@/data/achievements'
 import { UI_ASSETS } from '@/data/uiAssets'
 import ParchmentCard from '@/components/ui/ParchmentCard'
@@ -39,14 +40,14 @@ export default function AchievementPanel() {
             { label: '最大单笔', value: `${stats.bestDeal} 金` },
             { label: '历史目击', value: stats.historySeen },
           ].map(item => (
-            <div key={item.label} className="bg-ocean-800/40 rounded px-2 py-1.5 border border-gold-700/20">
+            <div key={item.label} className="bg-black/22 rounded px-2 py-1.5 border border-gold-700/20">
               <div className="text-gold-600 text-[10px] font-serif">{item.label}</div>
               <div className="text-gold-300 text-sm font-serif font-semibold">{item.value}</div>
             </div>
           ))}
         </div>
 
-        <div className="space-y-1.5 max-h-[46vh] overflow-y-auto scrollbar-thin pr-1">
+        <ScrollFade className="space-y-1.5 max-h-[46vh] overflow-y-auto scroll-parchment pr-1">
           {achievements.map(a => {
             const isUnlocked = earned.includes(a.id)
             return (
@@ -55,7 +56,7 @@ export default function AchievementPanel() {
                 className={`rounded p-2 border transition-colors ${
                   isUnlocked
                     ? 'bg-gold-700/20 border-gold-500/40'
-                    : 'bg-ocean-800/25 border-gold-700/15 opacity-60'
+                    : 'bg-black/15 border-gold-700/15 opacity-60'
                 }`}
               >
                 <div className="flex items-center gap-1.5">
@@ -82,7 +83,7 @@ export default function AchievementPanel() {
               </div>
             )
           })}
-        </div>
+        </ScrollFade>
       </ParchmentCard>
     </div>
   )

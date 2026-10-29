@@ -73,7 +73,7 @@ export default function ShipyardPanel() {
                 const affordable = fleet.gold >= template.price
                 const disabled = !canBuyRegion || !affordable
                 return (
-                  <div key={key} className="bg-ocean-800/40 rounded p-2">
+                  <div key={key} className="bg-black/22 rounded p-2">
                     <div className="flex items-center justify-between mb-1">
                       <span className="text-gold-200 text-xs font-serif flex items-center gap-2">
                         <img

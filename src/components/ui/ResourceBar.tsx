@@ -51,7 +51,7 @@ export default function ResourceBar({
             </span>
           </span>
         </div>
-        <div className="h-1.5 bg-ocean-700 rounded-full overflow-hidden">
+        <div className="h-1.5 bg-black/30 rounded-full overflow-hidden">
           <div
             className={`h-full rounded-full transition-all duration-500 ease-out ${statusColor}`}
             style={{ width: `${pct}%` }}

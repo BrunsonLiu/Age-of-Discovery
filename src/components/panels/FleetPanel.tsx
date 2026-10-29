@@ -7,6 +7,7 @@ import { ports } from '@/data/ports'
 import { getTrait } from '@/data/traits'
 import { OFFICER_MAP } from '@/data/officers'
 import { CREW_CHAR_MAP } from '@/data/crewChars'
+import ScrollFade from '@/components/ui/ScrollFade'
 import { crewPortrait } from '@/data/portraits'
 import { FACTIONS, factionAttitude } from '@/data/factions'
 import { currentTitle } from '@/data/titles'
@@ -112,7 +113,7 @@ export default function FleetPanel() {
           </div>
 
           {/* 舰队总览 */}
-          <div className="grid grid-cols-3 gap-1 text-center bg-ocean-800/30 rounded p-1.5">
+          <div className="grid grid-cols-3 gap-1 text-center bg-black/18 rounded p-1.5">
             <div>
               <div className="text-gold-500 text-[10px] font-serif">船只</div>
               <div className="text-gold-200 text-xs font-serif">{fleet.ships.length} 艘</div>
@@ -154,7 +155,7 @@ export default function FleetPanel() {
           </div>
 
           {/* 派系态度：世界上有人记得你做过什么 */}
-          <div className="rounded p-2 bg-ocean-800/40 border border-gold-700/20 space-y-1">
+          <div className="rounded p-2 bg-black/22 border border-gold-700/20 space-y-1">
             <div className="flex items-center justify-between text-xs font-serif">
               <span className="text-gold-500 flex items-center gap-1"><Globe size={11} aria-hidden="true" />四方态度</span>
               <span className="text-gold-600 text-[10px]">同一行为，两副面孔</span>
@@ -181,7 +182,7 @@ export default function FleetPanel() {
 
           {/* 军官栏：按日支薪的团队成员 */}
           {officers.length > 0 && (
-            <div className="rounded p-2 bg-ocean-800/40 border border-gold-700/20 space-y-1">
+            <div className="rounded p-2 bg-black/22 border border-gold-700/20 space-y-1">
               <div className="flex items-center justify-between text-xs font-serif">
                 <span className="flex items-center gap-1 text-gold-500"><Award size={11} aria-hidden="true" />军官团</span>
                 <span className="text-gold-600">日薪合计 {totalWage} 金币</span>
@@ -201,7 +202,7 @@ export default function FleetPanel() {
 
           {/* 名船员栏：有名字、有忠诚、会离船也会死的人 */}
           {crewRoster.length > 0 && (
-            <div className="rounded p-2 bg-ocean-800/40 border border-gold-700/20 space-y-1.5">
+            <div className="rounded p-2 bg-black/22 border border-gold-700/20 space-y-1.5">
               <div className="flex items-center justify-between text-xs font-serif">
                 <span className="text-gold-500 flex items-center gap-1"><Users size={11} /> 船上的人</span>
                 <span className="text-gold-600 text-[10px]">忠诚低会离船</span>
@@ -232,7 +233,7 @@ export default function FleetPanel() {
                         忠诚 {m.loyalty}
                       </span>
                     </div>
-                    <div className="h-1 bg-ocean-700 rounded-full mt-0.5 overflow-hidden">
+                    <div className="h-1 bg-black/30 rounded-full mt-0.5 overflow-hidden">
                       <div
                         className={`h-full rounded-full ${m.loyalty <= 25 ? 'bg-danger-500' : m.loyalty < 50 ? 'bg-gold-500' : 'bg-safe-500'}`}
                         style={{ width: `${m.loyalty}%` }}
@@ -286,7 +287,7 @@ export default function FleetPanel() {
             {fleet.ships.map(ship => {
               const isFlagship = ship.id === fleet.flagshipId
               return (
-              <div key={ship.id} className={`rounded p-2 ${isFlagship ? 'bg-gold-700/15 border border-gold-600/30' : 'bg-ocean-800/40'}`}>
+              <div key={ship.id} className={`rounded p-2 ${isFlagship ? 'bg-gold-700/15 border border-gold-600/30' : 'bg-black/22'}`}>
                 <div className="flex items-center justify-between text-sm mb-1">
                   <span className="text-gold-300 font-serif flex items-center gap-1.5">
                     <img
@@ -342,7 +343,7 @@ export default function FleetPanel() {
                   <h4 className="font-pirate text-gold-500 text-xs mb-1.5 flex items-center gap-1">
                     <Anchor size={12} /> 推荐航线
                   </h4>
-                  <div className="space-y-1.5 max-h-32 overflow-y-auto scrollbar-thin">
+                  <ScrollFade className="space-y-1.5 max-h-32 overflow-y-auto scroll-parchment">
                     {availableRoutes.map(route => {
                       const toPort = ports.find(p => p.id === route.toPortId)
                       const days = calculateSailingDays(route, fleet)
@@ -354,7 +355,7 @@ export default function FleetPanel() {
                           className={`w-full text-left rounded p-1.5 text-xs transition-all ${
                             isSelected
                               ? 'bg-gold-700/30 border border-gold-500/50'
-                              : 'bg-ocean-800/30 border border-transparent hover:border-gold-700/30'
+                              : 'bg-black/18 border border-transparent hover:border-gold-700/30'
                           }`}
                         >
                           <div className="flex items-center justify-between">
@@ -376,7 +377,7 @@ export default function FleetPanel() {
                         </button>
                       )
                     })}
-                  </div>
+                  </ScrollFade>
                   {selectedRouteId && (
                     <div className="mt-2">
                       <ActionButton onClick={handleConfirmRoute} icon={<ChevronRight size={14} />}>
@@ -395,7 +396,7 @@ export default function FleetPanel() {
                 <Sailboat size={13} aria-hidden="true" />
                 航行中... {Math.round(routeProgress * 100)}%
               </div>
-              <div className="h-1.5 bg-ocean-700 rounded-full mt-1 overflow-hidden">
+              <div className="h-1.5 bg-black/30 rounded-full mt-1 overflow-hidden">
                 <div className="h-full bg-gold-500 rounded-full transition-all duration-500" style={{ width: `${routeProgress * 100}%` }} />
               </div>
             </div>

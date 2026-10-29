@@ -1,6 +1,7 @@
 import { Scroll, Calendar } from 'lucide-react'
 import { useGameStore } from '@/store/useGameStore'
 import { EVENT_TYPE_COLORS, renderEventIcon } from '@/utils/eventTypeStyles'
+import ScrollFade from '@/components/ui/ScrollFade'
 import ParchmentCard from '@/components/ui/ParchmentCard'
 
 export default function EventLog() {
@@ -17,11 +18,11 @@ export default function EventLog() {
             <p className="text-gold-700 text-xs font-serif mt-1">出海航行，书写你的传奇</p>
           </div>
         ) : (
-          <div className="space-y-2 max-h-80 overflow-y-auto scrollbar-thin">
+          <ScrollFade className="space-y-2 max-h-80 overflow-y-auto scroll-parchment">
             {eventLog.slice().reverse().map((entry) => (
               <div
                 key={`${entry.day}-${entry.event.id}-${entry.choiceIndex}`}
-                className={`bg-ocean-800/30 rounded p-2 border-l-2 ${EVENT_TYPE_COLORS[entry.event.type] || 'border-l-gold-500/50'}`}
+                className={`bg-black/18 rounded p-2 border-l-2 ${EVENT_TYPE_COLORS[entry.event.type] || 'border-l-gold-500/50'}`}
               >
                 <div className="flex items-center gap-1.5 mb-1">
                   {renderEventIcon(entry.event.type, 14)}
@@ -42,7 +43,7 @@ export default function EventLog() {
                 )}
               </div>
             ))}
-          </div>
+          </ScrollFade>
         )}
       </ParchmentCard>
     </div>

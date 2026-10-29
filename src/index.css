@@ -302,32 +302,42 @@ body {
     box-shadow: 0 0 15px rgba(139, 37, 0, 0.5);
   }
 
-  .resource-bar {
-    @apply h-2 rounded-full overflow-hidden;
-    background-color: rgba(26, 42, 58, 0.8);
-  }
+  /*
+    金色滚动条。
 
-  .resource-bar-fill {
-    @apply h-full rounded-full transition-all duration-500;
-  }
+    【为什么不写 scrollbar-width / scrollbar-color】
+    那两个标准属性一旦出现，Chrome 121+ 就会**忽略** ::-webkit-scrollbar，
+    改用系统的 overlay 滚动条——默认隐藏，只有滚动时才闪一下。
+    实测代价很实在：贸易面板的商品列表溢出 210px，玩家看到的却是
+    「朱砂」被切一半、右边什么都没有，根本不知道还能往下翻。
+    （而且 7 个面板都写了 `scrollbar-thin`，那是 tailwind-scrollbar 插件的
+    类名，本项目没装这个插件，等于一行样式都没生成。）
 
+    所以这里只留 webkit 伪元素：Chrome/Edge 得到 6px 常驻可见的金色条。
+    Firefox 会退化成系统默认滚动条（同样可见，只是样式随系统），
+    可以接受——看不见滚动条才是真问题。
+  */
   .scroll-parchment {
     @apply overflow-y-auto;
-    scrollbar-width: thin;
-    scrollbar-color: #c9a96e rgba(244, 228, 193, 0.2);
   }
 
   .scroll-parchment::-webkit-scrollbar {
     width: 6px;
+    height: 6px;
   }
 
   .scroll-parchment::-webkit-scrollbar-track {
-    background: rgba(244, 228, 193, 0.1);
+    background: rgba(244, 228, 193, 0.12);
+    border-radius: 3px;
   }
 
   .scroll-parchment::-webkit-scrollbar-thumb {
     background: #c9a96e;
     border-radius: 3px;
+  }
+
+  .scroll-parchment::-webkit-scrollbar-thumb:hover {
+    background: #f0d88a;
   }
 
   /*

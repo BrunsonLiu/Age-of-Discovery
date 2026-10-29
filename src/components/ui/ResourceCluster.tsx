@@ -47,7 +47,7 @@ import { STANCES } from '@/utils/segment'
 type Level = SupplyLevel
 /** 与 tailwind 调色板对齐：safe-400 / gold-400 / danger-400 */
 const LEVEL_COLOR: Record<Level, string> = {
-  ok: '#4a9e38',
+  ok: '#5f9440',
   warn: '#d4a838',
   critical: '#b8432e',
 }

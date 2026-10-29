@@ -1,6 +1,7 @@
 import { Coins, Star, Map as MapIcon, Ship, Scroll } from 'lucide-react'
 import { useGameStore } from '@/store/useGameStore'
 import ParchmentCard from '@/components/ui/ParchmentCard'
+import ScrollFade from '@/components/ui/ScrollFade'
 import { rivalPortrait } from '@/data/portraits'
 import type { Rival } from '@/types'
 
@@ -40,7 +41,7 @@ export default function RivalPanel() {
               const badge = STYLE_BADGE[r.style]
               const portrait = rivalPortrait(r.id)
               return (
-                <div key={r.id} className="bg-ocean-800/40 border border-gold-700/20 rounded p-2.5">
+                <div key={r.id} className="bg-black/22 border border-gold-700/20 rounded p-2.5">
                   <div className="flex items-center gap-2.5 mb-1.5">
                     {portrait && (
                       <img
@@ -93,7 +94,7 @@ export default function RivalPanel() {
           </div>
 
           {/* 你的座次 */}
-          <div className="bg-ocean-800/30 border border-gold-700/20 rounded p-2.5">
+          <div className="bg-black/18 border border-gold-700/20 rounded p-2.5">
             <div className="flex items-center gap-1 mb-1.5">
               <Ship size={11} className="text-gold-400" />
               <span className="text-gold-300 font-serif text-xs">你的座次</span>
@@ -125,11 +126,11 @@ export default function RivalPanel() {
                 还没有传闻。每隔几天，酒馆里就会有新消息。
               </p>
             ) : (
-              <div className="space-y-1.5 max-h-48 overflow-y-auto scrollbar-thin">
+              <ScrollFade className="space-y-1.5 max-h-48 overflow-y-auto scroll-parchment">
                 {rivalNews.map(n => {
                   const rival = rivals.find(r => r.id === n.rivalId)
                   return (
-                    <div key={n.id} className="bg-ocean-800/20 rounded p-2 border-l-2 border-gold-700/40">
+                    <div key={n.id} className="bg-black/12 rounded p-2 border-l-2 border-gold-700/40">
                       <div className="flex items-center justify-between mb-0.5">
                         <span className="text-gold-400 text-[10px] font-serif">{rival?.name ?? '某位船长'}</span>
                         <span className="text-gold-600 text-[10px] font-serif">第 {n.day} 天</span>
@@ -138,7 +139,7 @@ export default function RivalPanel() {
                     </div>
                   )
                 })}
-              </div>
+              </ScrollFade>
             )}
           </div>
         </div>

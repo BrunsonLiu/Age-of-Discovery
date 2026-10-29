@@ -5,6 +5,7 @@ import { portGoods, localSpecialties, localDemands } from '@/data/ports'
 import { goods } from '@/data/goods'
 import ParchmentCard from '@/components/ui/ParchmentCard'
 import ActionButton from '@/components/ui/ActionButton'
+import ScrollFade from '@/components/ui/ScrollFade'
 import { useFxStore as useFx } from '@/store/useFxStore'
 
 /**
@@ -39,7 +40,7 @@ function BuyRow({ portId, pg, fleet, usedCapacity, totalCapacity, onBuy }: {
   }
 
   return (
-    <div className="bg-ocean-800/30 rounded p-2" data-testid="trade-buy-row" data-good-id={pg.goodId}>
+    <div className="bg-black/18 rounded p-2" data-testid="trade-buy-row" data-good-id={pg.goodId}>
       <div className="flex items-center justify-between mb-1">
         <span className="text-gold-200 text-xs font-serif">{good.nameCn}</span>
         <span
@@ -90,7 +91,7 @@ function SellRow({ portId, item, onSell }: {
   if (!good || sellPrice == null) return null
 
   return (
-    <div className="bg-ocean-800/30 rounded p-2" data-testid="trade-sell-row" data-good-id={item.goodId}>
+    <div className="bg-black/18 rounded p-2" data-testid="trade-sell-row" data-good-id={item.goodId}>
       <div className="flex items-center justify-between mb-1">
         <span className="text-gold-200 text-xs font-serif">
           {good.nameCn}{!tradedHere && <span className="text-gold-600 text-xs">（本港不收，折价）</span>}
@@ -185,7 +186,7 @@ export default function TradePanel() {
           </div>
 
           {(specialties.length > 0 || demands.length > 0) && (
-            <div className="bg-ocean-800/40 border border-gold-700/20 rounded p-2 space-y-1">
+            <div className="bg-black/22 border border-gold-700/20 rounded p-2 space-y-1">
               {specialties.length > 0 && (
                 <p className="text-safe-400 text-xs font-serif flex items-start gap-1">
                   <Sprout size={11} className="mt-0.5 shrink-0" />
@@ -210,7 +211,7 @@ export default function TradePanel() {
             <button
               onClick={() => setTab('buy')}
               className={`flex-1 py-1.5 text-xs font-serif rounded transition-colors ${
-                tab === 'buy' ? 'bg-gold-700/40 text-gold-200' : 'bg-ocean-800/30 text-gold-500 hover:text-gold-300'
+                tab === 'buy' ? 'bg-gold-700/40 text-gold-200' : 'bg-black/18 text-gold-500 hover:text-gold-300'
               }`}
             >
               购买
@@ -218,7 +219,7 @@ export default function TradePanel() {
             <button
               onClick={() => setTab('sell')}
               className={`flex-1 py-1.5 text-xs font-serif rounded transition-colors ${
-                tab === 'sell' ? 'bg-gold-700/40 text-gold-200' : 'bg-ocean-800/30 text-gold-500 hover:text-gold-300'
+                tab === 'sell' ? 'bg-gold-700/40 text-gold-200' : 'bg-black/18 text-gold-500 hover:text-gold-300'
               }`}
             >
               出售
@@ -226,7 +227,7 @@ export default function TradePanel() {
           </div>
 
           {tab === 'buy' && (
-            <div className="space-y-1.5 max-h-60 overflow-y-auto scrollbar-thin">
+            <ScrollFade className="space-y-1.5 max-h-60 overflow-y-auto scroll-parchment">
               {currentPortGoods.map(pg => (
                 <BuyRow
                   key={pg.goodId}
@@ -238,11 +239,11 @@ export default function TradePanel() {
                   onBuy={handleBuy}
                 />
               ))}
-            </div>
+            </ScrollFade>
           )}
 
           {tab === 'sell' && (
-            <div className="space-y-1.5 max-h-60 overflow-y-auto scrollbar-thin">
+            <ScrollFade className="space-y-1.5 max-h-60 overflow-y-auto scroll-parchment">
               {fleet.cargo.length === 0 ? (
                 <p className="text-gold-600 text-xs font-serif text-center py-4">货舱空空如也</p>
               ) : (
@@ -250,7 +251,7 @@ export default function TradePanel() {
                   <SellRow key={item.goodId} portId={portId} item={item} onSell={handleSell} />
                 ))
               )}
-            </div>
+            </ScrollFade>
           )}
         </div>
       </ParchmentCard>
