@@ -47,14 +47,24 @@ export default function ScrollFade({
 
     measure()
     el.addEventListener('scroll', measure, { passive: true })
-    // 内容增减（买入数量变了、新日志进来）也要重算
+
+    // 观察容器本身：内容少时容器高度会跟着变（< max-h），这时要重算"能不能滚"
     const ro = new ResizeObserver(measure)
     ro.observe(el)
-    if (el.firstElementChild) ro.observe(el.firstElementChild)
+
+    /**
+     * 观察子树的 DOM 变化：内容已经撑满 max-h 之后，再往里加东西，
+     * 容器高度**不会变**（被 max-h 卡住），ResizeObserver 就不会触发，
+     * 于是"底部还有内容"的判断停留在旧值。贸易面板买入数量变化、
+     * 日志新增一条都属于这种情况。所以内容变化必须单独听。
+     */
+    const mo = new MutationObserver(measure)
+    mo.observe(el, { childList: true, subtree: true, characterData: true })
 
     return () => {
       el.removeEventListener('scroll', measure)
       ro.disconnect()
+      mo.disconnect()
     }
   }, [])
 

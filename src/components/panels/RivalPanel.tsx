@@ -8,7 +8,7 @@ import type { Rival } from '@/types'
 const STYLE_BADGE: Record<Rival['style'], { label: string; cls: string }> = {
   aggressive: { label: '亡命徒', cls: 'text-danger-400 border-danger-700/40' },
   steady: { label: '稳健派', cls: 'text-safe-400 border-safe-700/40' },
-  explorer: { label: '探险家', cls: 'text-blue-400 border-blue-700/40' },
+  explorer: { label: '探险家', cls: 'text-ocean-300 border-ocean-700/50' },
 }
 
 /**

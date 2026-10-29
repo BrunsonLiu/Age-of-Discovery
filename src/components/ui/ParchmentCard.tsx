@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { X } from 'lucide-react'
 import { UI_ASSETS } from '@/data/uiAssets'
+import ScrollFade from '@/components/ui/ScrollFade'
 
 interface ParchmentCardProps {
   title?: string
@@ -60,10 +61,14 @@ export default function ParchmentCard({ title, subtitle, children, className = '
         {/* 内容区高度：
             桌面端被放在 top-12/bottom-12 的容器里，60vh 刚好；
             移动端面板是底部抽屉（最高 82dvh），要给到 68dvh 才填得下，
-            否则抽屉里会套着一条更矮的内滚动区，出现两层滚动条。 */}
-        <div className="max-h-[68dvh] md:max-h-[60vh] overflow-y-auto scroll-parchment">
+            否则抽屉里会套着一条更矮的内滚动区，出现两层滚动条。
+
+            用 ScrollFade 而不是裸 div：面板内容长起来（港口面板的服务+军官+
+            船员+任务）会在这里被裁掉，玩家看到最后一行断在半截却没有提示，
+            和之前 7 个内层列表是同一个毛病。渐隐色就是本卡片的底色 #30241a。 */}
+        <ScrollFade className="max-h-[68dvh] md:max-h-[60vh] overflow-y-auto scroll-parchment">
           {children}
-        </div>
+        </ScrollFade>
       </div>
     </div>
   )
