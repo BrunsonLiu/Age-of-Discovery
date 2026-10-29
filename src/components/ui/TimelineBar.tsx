@@ -66,15 +66,23 @@ export default function TimelineBar() {
               onMouseEnter={() => setHoveredEvent(event.day)}
               onMouseLeave={() => setHoveredEvent(null)}
             >
+              {/*
+                历史节点：从圆点改成竖刻线（像海图上的经度刻度）。
+                【为什么换】原来是 10px 的深蓝实心圆（bg-ocean-700 + 暗金边），
+                压在实色木梁上几乎看不见——15 个蓝点是顶栏唯一不属于金棕材质
+                的元素，也是整条时间轴显得"网页控件"而非"航海仪器"的主因。
+                刻线还带来一个好处：已过/未到只靠**高度与亮度**区分，
+                不需要读懂颜色语义。
+              */}
               <div
-                className={`w-2.5 h-2.5 rounded-full border transition-all duration-300 ${
+                className={`w-[2px] h-[11px] rounded-[1px] transition-all duration-300 ${
                   isCurrent
-                    ? 'bg-gold-300 border-gold-300 shadow-[0_0_8px_2px_rgba(212,175,55,0.6)] animate-pulse'
+                    ? '!w-[3px] !h-[15px] bg-gold-200 shadow-[0_0_9px_2px_rgba(212,175,55,0.7)]'
                     : isPast
                       ? isSeen
-                        ? 'bg-gold-500 border-gold-500'
-                        : 'bg-gold-400 border-gold-400 shadow-[0_0_6px_1px_rgba(212,175,55,0.4)]'
-                      : 'bg-ocean-700 border-gold-700/40'
+                        ? 'bg-gold-600'
+                        : 'bg-gold-300 shadow-[0_0_5px_1px_rgba(212,175,55,0.45)]'
+                      : 'bg-gold-700/85'
                 }`}
               />
 
