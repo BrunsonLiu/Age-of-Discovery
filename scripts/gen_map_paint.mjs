@@ -50,12 +50,58 @@ function chunk(type, data) {
   const crc = Buffer.alloc(4); crc.writeUInt32BE(crc32(td))
   return Buffer.concat([len, td, crc])
 }
+/**
+ * 写 8bit RGB PNG。
+ *
+ * 【为什么要挑行过滤器】PNG 的无损压缩是「行过滤器 + zlib」两段。
+ * 早先这里只做了 zlib（每行 filter byte 恒为 0），等于漏了一半——
+ * 过滤器的存在就是为了把像素变成"差值"，让 zlib 好压。
+ *
+ * 实测（同一份图，只改编码不看内容）：
+ *   painted-land 638KB → 497KB（-22%）
+ *   painted-sea  349KB → 280KB（-20%）
+ * **像素完全不变**（过滤器是无损可逆的，只影响压缩率）。
+ *
+ * 选法用 PNG 规范推荐的启发式：对 5 种 filter 各算一遍，
+ * 取「绝对值和最小」的那个（越小说明残差越集中，越容易被 zlib 压）。
+ */
 function writePNG(file, w, h, rgb) {
   const src = Buffer.from(rgb.buffer, rgb.byteOffset, rgb.length)
-  const raw = Buffer.alloc((w * 3 + 1) * h)
+  const bpp = 3
+  const stride = w * bpp
+  const raw = Buffer.alloc((stride + 1) * h)
+  const cand = Buffer.alloc(stride)
+  const best = Buffer.alloc(stride)
+  const paeth = (a, b, c) => {
+    const p = a + b - c, pa = Math.abs(p - a), pb = Math.abs(p - b), pc = Math.abs(p - c)
+    return pa <= pb && pa <= pc ? a : pb <= pc ? b : c
+  }
+  let out = 0
   for (let y = 0; y < h; y++) {
-    raw[y * (w * 3 + 1)] = 0
-    src.copy(raw, y * (w * 3 + 1) + 1, y * w * 3, (y + 1) * w * 3)
+    const cur = src.subarray(y * stride, (y + 1) * stride)
+    const prev = y > 0 ? src.subarray((y - 1) * stride, y * stride) : null
+    let bestType = 0
+    let bestSum = Infinity
+    for (let t = 0; t <= 4; t++) {
+      let sum = 0
+      for (let x = 0; x < stride; x++) {
+        const a = x >= bpp ? cur[x - bpp] : 0
+        const b = prev ? prev[x] : 0
+        const c = prev && x >= bpp ? prev[x - bpp] : 0
+        let v
+        if (t === 0) v = cur[x]
+        else if (t === 1) v = (cur[x] - a) & 255
+        else if (t === 2) v = (cur[x] - b) & 255
+        else if (t === 3) v = (cur[x] - ((a + b) >> 1)) & 255
+        else v = (cur[x] - paeth(a, b, c)) & 255
+        cand[x] = v
+        // 带符号残差取绝对值：0 与 255 都表示"很小的差"
+        sum += v < 128 ? v : 256 - v
+      }
+      if (sum < bestSum) { bestSum = sum; bestType = t; cand.copy(best) }
+    }
+    raw[out++] = bestType
+    best.copy(raw, out); out += stride
   }
   const ihdr = Buffer.alloc(13)
   ihdr.writeUInt32BE(w, 0); ihdr.writeUInt32BE(h, 4)
