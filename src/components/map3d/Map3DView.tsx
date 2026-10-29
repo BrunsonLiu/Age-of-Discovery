@@ -284,6 +284,107 @@ export default function Map3DView() {
       scene.add(routeLine)
       disposables.push(routeGeo, routeMat)
 
+      // ---- 航线方向箭头 + 终点标记 ----
+      //
+      // 【为什么 3D 需要箭头而 2D 不需要】2D 是俯视，虚线本身在纸面上有"从 A 到 B"
+      // 的方向感；3D 是斜俯视 + 透视，一条虚线在屏幕上可以是"往远处去"也可以是
+      // "从远处来"，光看线分不清。2D 的 RouteLine 会在航线上每段放一个箭头，
+      // 3D 没有就成了"看得见航线但不知道往哪走"。
+      //
+      // 用一个 InstancedMesh 装全部箭头（而不是每条放一个 Mesh）：
+      // 航线最长约 20 世界单位、间距 1.5，最多十几个箭头，
+      // 一次 draw call 画完，比逐个 Mesh 省得多。
+      const ARROW_MAX = 48
+      /**
+       * 箭头间距（世界单位）。
+       *
+       * 【尺度换算】世界地图边长 20 单位 = 地球周长约 40000km
+       * → **1 世界单位 ≈ 2000km ≈ 1080 海里**。
+       * 所以塞维利亚→伦敦（1223 海里）只有 **1.1 个世界单位**。
+       * 第一版按 1.5 设间距，实测整条航线只放得下 2 个箭头、
+       * 更近的航线一个都没有（0 个）——尺度直接算错了。
+       * 0.5 单位 ≈ 540 海里一个箭头，典型航线 2-3 个，跨洋航线十几个。
+       */
+      const ARROW_SPACING = 0.5
+      const ARROW_Y = -PLATE_THICKNESS + 0.045
+      /** 终点图钉悬空的高度：浮在港口模型（最高约 0.28）之上，不会被建筑插穿 */
+      const DEST_MARK_Y = 0.34
+      const arrowGeo = new THREE.ConeGeometry(0.085, 0.26, 4).rotateX(Math.PI / 2)
+      // ConeGeometry 默认尖朝 +Y；rotateX(π/2) 后尖朝 +Z，
+      // 之后按 atan2(dx, dz) 绕 Y 旋转就能对准航段方向。
+      //
+      // 【尺寸是实测调大的】第一版 0.055×0.17，在默认视距（dist≈15）下
+      // 屏幕上只有 3-4px，缩成了航线上的一串小白点，方向完全看不出来。
+      // 0.085×0.26 在远景约 6px、拉近时约 25px，两头都能读出"这是个箭头"。
+      const arrowMat = new THREE.MeshStandardMaterial({
+        color: 0xf2d98c, emissive: 0x6a5320, emissiveIntensity: 0.85, roughness: 0.55,
+      })
+      const arrows = new THREE.InstancedMesh(arrowGeo, arrowMat, ARROW_MAX)
+      arrows.name = 'map3d-route-arrows'
+      arrows.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
+      arrows.count = 0
+      // 实例矩阵是我们自己写的，包围球不会自动更新 → 关掉剔除，
+      // 否则相机一转箭头会整批消失
+      arrows.frustumCulled = false
+      arrows.visible = false
+      scene.add(arrows)
+      disposables.push(arrowGeo, arrowMat)
+
+      // 终点标记：悬在目标点上方的倒锥（读作"图钉"），帧循环里上下浮动
+      const destGeo = new THREE.ConeGeometry(0.075, 0.2, 4).rotateX(Math.PI)
+      const destMat = new THREE.MeshStandardMaterial({
+        color: 0xf7ecc9, emissive: 0x8a7030, emissiveIntensity: 0.9, roughness: 0.5,
+      })
+      const destMark = new THREE.Mesh(destGeo, destMat)
+      destMark.name = 'map3d-dest-mark'
+      destMark.visible = false
+      scene.add(destMark)
+      disposables.push(destGeo, destMat)
+
+      const arrowM4 = new THREE.Matrix4()
+
+      /**
+       * 沿航线按**弧长**摆方向箭头。
+       *
+       * 【为什么按弧长而不是按点数】getRouteGeometry 出来的点密度极不均匀：
+       * 直线段只有两个端点，绕海岸改道的地方点很密。
+       * 按点数放箭头会出现"直线上一个箭头都没有、贴着海岸挤成一坨"。
+       */
+      const placeArrows = (pts: [number, number][]) => {
+        const world = pts.map(([la, ln]) => ({ x: lonToWorldX(ln), z: latToWorldZ(la) }))
+        // 先量总弧长，让间距能自适应
+        let total = 0
+        for (let i = 0; i + 1 < world.length; i++) {
+          total += Math.hypot(world[i + 1].x - world[i].x, world[i + 1].z - world[i].z)
+        }
+        // 【间距为什么要自适应】固定 0.5 时空距航线放不下箭头：
+        // 塞维利亚→里斯本只有约 0.4 世界单位 → 实测 **0 个箭头**，
+        // 而这类近距离航线恰恰是玩家走得最多的。
+        // 上限 0.5（长航线不挤），下限 0.3（再小箭头首尾相接糊成一条线）。
+        const spacing = Math.max(0.3, Math.min(ARROW_SPACING, total / 3))
+        let n = 0
+        // 从半格起步，避免第一个箭头正好压在船底下（看不见还挡船）
+        let acc = spacing * 0.5
+        for (let i = 0; i + 1 < world.length && n < ARROW_MAX; i++) {
+          const a = world[i], b = world[i + 1]
+          const dx = b.x - a.x, dz = b.z - a.z
+          const segLen = Math.hypot(dx, dz)
+          if (segLen < 1e-5) continue
+          // 模型尖朝 +Z，转到航段方向就是 atan2(dx, dz)
+          const yaw = Math.atan2(dx, dz)
+          while (acc <= segLen && n < ARROW_MAX) {
+            const t = acc / segLen
+            arrowM4.makeRotationY(yaw)
+            arrowM4.setPosition(a.x + dx * t, ARROW_Y, a.z + dz * t)
+            arrows.setMatrixAt(n++, arrowM4)
+            acc += spacing
+          }
+          acc -= segLen
+        }
+        arrows.count = n
+        arrows.instanceMatrix.needsUpdate = true
+      }
+
       // ---- 叠加图层：洋流 / 海盗区 / 风带 ----
       //
       // 【为什么 3D 也要有这三个图层】
@@ -564,6 +665,8 @@ export default function Map3DView() {
         const tNow = performance.now()
         const dt = Math.min(0.1, (tNow - lastT) / 1000)
         lastT = tNow
+        /** 秒级时间戳：船摇、终点标记浮动、洋流等所有周期性动画共用 */
+        const tt = tNow / 1000
         const state = useGameStore.getState()
         const fleet = state.fleet
 
@@ -624,7 +727,6 @@ export default function Map3DView() {
           // 这组数值是给**拉近**用的（dist=3 时 1 世界单位≈286px，端点动 5.9px）。
           // 想让它远景也明显就得倾斜 8° 以上，在平静海面上反而假。
           // 所以保持小幅度：远景是一片安静的海图，贴脸看时才觉得船浮在水上。
-          const tt = tNow / 1000
           const sway = fleet.isSailing ? 1 : 0.45
           ship.position.set(
             sx,
@@ -753,7 +855,9 @@ export default function Map3DView() {
         const origin = state.routeOrigin ?? state.shipPosition
         const wp = state.waypoint
         if (origin && wp) {
-          const sig = `${origin[0].toFixed(3)},${origin[1].toFixed(3)}->${wp.latitude.toFixed(3)},${wp.longitude.toFixed(3)}`
+          // sig 里带上危险等级：航线颜色由它决定，不含进来的话
+          // "同一条航线被重新评估成更危险"时颜色不会跟着变。
+          const sig = `${origin[0].toFixed(3)},${origin[1].toFixed(3)}->${wp.latitude.toFixed(3)},${wp.longitude.toFixed(3)}|${state.currentRoute?.dangerLevel ?? 2}`
           if (sig !== routeSig) {
             routeSig = sig
             const geom = getRouteGeometry([origin[0], origin[1]], [wp.latitude, wp.longitude])
@@ -764,11 +868,37 @@ export default function Map3DView() {
               routeGeo.setPositions(arr)
               routeLine.computeLineDistances()
               routeLine.visible = true
-            } else routeLine.visible = false
+
+              // 航线颜色 = 危险等级。与 2D 的 getDangerColor 同一套分级，
+              // 但整体提亮——2D 的深棕（#6b4a2a）在深青绿海面上根本看不见。
+              const lvl = state.currentRoute?.dangerLevel ?? 2
+              routeMat.color.setHex(lvl <= 2 ? 0xe8c46a : lvl === 3 ? 0xf0a050 : 0xf06a50)
+
+              // 方向箭头 + 终点标记
+              placeArrows(pts)
+              arrows.visible = arrows.count > 0
+              destMark.position.set(
+                lonToWorldX(wp.longitude), DEST_MARK_Y, latToWorldZ(wp.latitude),
+              )
+              destMark.visible = true
+            } else {
+              routeLine.visible = false
+              arrows.visible = false
+              destMark.visible = false
+            }
           }
         } else {
           routeSig = ''
           routeLine.visible = false
+          arrows.visible = false
+          destMark.visible = false
+        }
+
+        // 终点标记上下浮动：静止的钉子在一堆港口模型里很容易被看漏，
+        // 轻微的呼吸让它自己"跳出来"（与新闻提示的脉冲是同一思路，但更安静）
+        if (destMark.visible) {
+          destMark.position.y = DEST_MARK_Y + Math.sin(tt * 2.2) * 0.045
+          destMark.rotation.y = tt * 0.9
         }
 
         // 叠加图层可见性：跟着底栏的开关走

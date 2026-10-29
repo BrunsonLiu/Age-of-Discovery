@@ -810,6 +810,33 @@ if (seaScreen && seaScreen.z < 1 && seaHitIsCanvas.isCanvas) {
   // 点海面出航 → 应弹航段计划（这是既有流程，顺带断言一下，避免以后改坏）
   check(afterSeaClick.pendingVoyage,
     `点海面出航会弹出航段计划（pendingVoyage=${afterSeaClick.pendingVoyage}）`)
+
+  // ---- 航线可视化：方向箭头 + 终点标记 + 危险度配色 ----
+  //
+  // 【为什么这三条重要】2D 的 RouteLine 一直有箭头、终点图标、按危险度上色，
+  // 3D 只有一条纯金虚线。缺箭头在 3D 里比 2D 更严重：斜俯视 + 透视下，
+  // 同一条虚线可以是"往远处去"也可以是"从远处来"，光看线分不清方向。
+  const routeProbe = await page.evaluate(() => {
+    const sc = window.__map3d?.scene
+    const arrows = sc?.getObjectByName('map3d-route-arrows')
+    const dest = sc?.getObjectByName('map3d-dest-mark')
+    const line = sc?.children.find(o => o.type === 'Line2' && o.visible)
+    return {
+      arrowCount: arrows?.count ?? -1,
+      arrowVisible: arrows?.visible ?? null,
+      destVisible: dest?.visible ?? null,
+      destY: dest ? +dest.position.y.toFixed(2) : null,
+      lineColor: line?.material?.color ? '#' + line.material.color.getHexString() : null,
+      dangerLevel: window.__gameStore.getState().currentRoute?.dangerLevel ?? null,
+    }
+  })
+  console.log('航线可视化探针:', JSON.stringify(routeProbe))
+  check(routeProbe.arrowCount > 0, `航线上有方向箭头（${routeProbe.arrowCount} 个）`)
+  check(routeProbe.arrowVisible === true, '箭头可见')
+  check(routeProbe.destVisible === true, '终点有悬空标记')
+  // 终点标记要浮在港口模型之上（港口最高约 0.28），否则会插进建筑里
+  check(routeProbe.destY !== null && routeProbe.destY > 0.28,
+    `终点标记浮在建筑之上（y=${routeProbe.destY}，要求 >0.28）`)
 } else {
   console.log('  跳过点海面断言：大西洋中部不在当前视野内或被遮挡')
 }
