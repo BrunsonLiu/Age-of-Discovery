@@ -530,6 +530,60 @@ console.log('出港船探针:', JSON.stringify(sailingProbe))
 check(sailingProbe.scale >= 0.75,
   `出港后船恢复原尺寸（scale ${sailingProbe.scale}，要求 ≥0.75）`)
 
+// ---- 场景「活起来」：船随浪摇 / 洋流流动 ----
+//
+// 【为什么这三条必须有】它们都只是"帧循环里写一个数值"，
+// tsc 与 eslint 全绿什么都不代表：数值写错了、或者被后面的赋值覆盖，
+// 界面上完全看不出来（船照样停在那，只是不动）。
+// 而且这种"装饰性动画"最容易被后来的重构顺手删掉，删了也没人发现。
+const aliveProbe = () => page.evaluate(() => {
+  const sc = window.__map3d?.scene
+  const ship = sc?.getObjectByName('map3d-ship')
+  const cur = sc?.children.find(c => c.name === 'map3d-currents')
+  let dash = null
+  if (cur) {
+    cur.traverse((o) => {
+      const mat = o.material
+      if (dash === null && mat && mat.isLineMaterial) dash = mat.dashOffset
+    })
+  }
+  return {
+    rotZ: ship ? +ship.rotation.z.toFixed(5) : null,
+    rotX: ship ? +ship.rotation.x.toFixed(5) : null,
+    posY: ship ? +ship.position.y.toFixed(5) : null,
+    yaw: ship ? +ship.rotation.y.toFixed(4) : null,
+    dash: dash === null ? null : +dash.toFixed(4),
+  }
+})
+const aliveA = await aliveProbe()
+// 采 4 次取极差，而不是"两次采样值不等"。
+// 【为什么】正弦在峰值附近变化率趋近 0：实测有一次 posY 两次采样只差 0.00002，
+// "不相等"侥幸通过，但换个采样时刻就完全可能相等 → flaky。
+// 极差看的是"这一段时间里摆动过多少"，与采样相位无关。
+const aliveSeries = [aliveA]
+for (let i = 0; i < 3; i++) {
+  await sleep(150)
+  aliveSeries.push(await aliveProbe())
+}
+const aliveB = aliveSeries[aliveSeries.length - 1]
+const rotZs = aliveSeries.map(s => s.rotZ)
+const posYs = aliveSeries.map(s => s.posY)
+const rotZSpan = Math.max(...rotZs) - Math.min(...rotZs)
+const posYSpan = Math.max(...posYs) - Math.min(...posYs)
+console.log('活性探针:', JSON.stringify(aliveSeries))
+console.log(`  rotZ 极差 ${rotZSpan.toFixed(4)}  posY 极差 ${posYSpan.toFixed(4)}`)
+
+check(rotZSpan > 0.002,
+  `船随浪横摇（rotZ 极差 ${rotZSpan.toFixed(4)}，要求 >0.002）`)
+check(posYSpan > 0.001,
+  `船随浪起伏（posY 极差 ${posYSpan.toFixed(4)}，要求 >0.001）`)
+// 幅度必须克制：摇晃是为了"活"，不是让船横倾。
+// 停泊 0.45 倍 → rotZ 上限 0.035×0.45≈0.016；航行全幅 0.035。留到 0.05 有富余。
+check(Math.max(...rotZs.map(Math.abs)) < 0.05,
+  `摇晃幅度克制（|rotZ| 最大 ${Math.max(...rotZs.map(Math.abs)).toFixed(4)}，要求 <0.05）`)
+check(aliveA.dash !== null && aliveB.dash !== null && aliveB.dash < aliveA.dash,
+  `洋流在流动（dashOffset ${aliveA.dash} → ${aliveB.dash}，要求递减）`)
+
 // 「当前所在港口」的信号：地面光环 + 名字高亮
 //
 // 【为什么必须测】2D 用「34px + 发光 + portPulse」标出船所在的港口。
@@ -781,6 +835,42 @@ await page.mouse.wheel({ deltaY: -400 })
 await sleep(900)
 await page.screenshot({ path: `${SHOTS}/map3d-转视角.png` })
 console.log('截图: map3d-转视角.png')
+
+// 拉近到极限：船必须缩小，给港口让位
+//
+// 【为什么必须测】玩家拉近本意是看港口的三档细节（塔楼/干船坞/栈桥），
+// 而船就在相机注视点正中心。实测 dist=3（camY=1.74）时船占屏 **54.5%**，
+// 港口整块被自己的船压住——刚做的辨识度在最该看清的距离上失效。
+// 这条"近景让位"与"停泊时把船挪开缩小"是同一原则，只写代码不写断言的话，
+// 下一次重构很容易把它当成多余的一行删掉。
+const nearA = await page.evaluate(() =>
+  +window.__map3d.scene.getObjectByName('map3d-ship').scale.x.toFixed(3))
+await page.mouse.move(700, 450)
+for (let i = 0; i < 14; i++) {
+  await page.mouse.wheel({ deltaY: -400 })
+  await sleep(60)
+}
+await sleep(800)
+const nearB = await page.evaluate(() => {
+  const m = window.__map3d
+  return {
+    scale: +m.scene.getObjectByName('map3d-ship').scale.x.toFixed(3),
+    camY: +m.camera.position.y.toFixed(2),
+  }
+})
+console.log('拉近船探针:', JSON.stringify({ 拉近前: nearA, 拉近后: nearB }))
+check(nearB.scale < nearA * 0.8,
+  `拉近时船缩小让位给港口（${nearA} → ${nearB.scale}，要求缩小 20% 以上）`)
+// 拉回远景，别让后面的截图变成贴脸
+for (let i = 0; i < 12; i++) {
+  await page.mouse.wheel({ deltaY: 400 })
+  await sleep(50)
+}
+await sleep(600)
+const backFar = await page.evaluate(() =>
+  +window.__map3d.scene.getObjectByName('map3d-ship').scale.x.toFixed(3))
+check(backFar > nearB.scale * 1.5,
+  `拉回远景后船恢复大小（${nearB.scale} → ${backFar}）`)
 
 // 移动端视口
 await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 2 })

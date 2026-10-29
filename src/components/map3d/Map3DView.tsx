@@ -296,6 +296,17 @@ export default function Map3DView() {
       scene.add(layers.currents, layers.pirates, layers.winds)
       for (const m of layers.lineMaterials) m.resolution.set(width, height)
 
+      // 洋流的虚线材质单独收一份，帧循环里推进 dashOffset 让流向"动起来"。
+      //
+      // 【为什么不能直接用 layers.lineMaterials】那个数组里还有海盗区的闭合环，
+      // 让边界线也流动会被读成"海盗区在漂移"，语义就错了。
+      // 只在 currents 组里找就可以了（洋流是唯一的虚线折线）。
+      const currentMats: { dashOffset: number }[] = []
+      layers.currents.traverse(o => {
+        const m = (o as unknown as { material?: { isLineMaterial?: boolean } }).material
+        if (m?.isLineMaterial) currentMats.push(m as unknown as { dashOffset: number })
+      })
+
       // ---- 国界线 ----
       //
       // 【为什么 3D 也要有】
@@ -538,10 +549,21 @@ export default function Map3DView() {
       let lastCurrentPortId: number | null | undefined
       /** 海面是否已染上海盗事件的红色（避免每帧重复写材质） */
       let pirateTintOn = false
+      /**
+       * 上一帧时间戳，用来算 dt。
+       *
+       * 【为什么必须 clamp】切到别的标签页再回来时，两帧之间可能隔了几十秒，
+       * 不 clamp 的话所有按 dt 推进的东西（转向缓动、洋流流动）会一口气跳到底。
+       * 记忆里 0.1s 这条线是踩过坑定下的（无头浏览器 rAF 帧率低时也不能超）。
+       */
+      let lastT = performance.now()
       const tmpV = new THREE.Vector3()
 
       const tick = () => {
         raf = requestAnimationFrame(tick)
+        const tNow = performance.now()
+        const dt = Math.min(0.1, (tNow - lastT) / 1000)
+        lastT = tNow
         const state = useGameStore.getState()
         const fleet = state.fleet
 
@@ -575,15 +597,80 @@ export default function Map3DView() {
           // 两者投影不再交叠；再小就又会压住港口右侧的房子（0.45 时实测仍遮挡）。
           const sx = lonToWorldX(shipLng) + (docked ? 0.6 : 0)
           const sz = latToWorldZ(shipLat)
-          ship.position.set(sx, -PLATE_THICKNESS + 0.02, sz)
-          ship.scale.setScalar(docked ? 0.5 : 0.8)
+
+          // ---- 拉近时把船缩小 ----
+          //
+          // 【为什么】玩家贴到这么近，本意是看港口的三档细节（塔楼/干船坞/栈桥）。
+          // 而船就在相机注视点正中心：实测 dist=3（camY=1.74）时船占屏 **54.5%**，
+          // 港口整块被自己的船压住，刚做的辨识度在最该看清的距离上失效。
+          //
+          // 曲线取 dist/8：8 以上完全不缩（远景本来就小，占屏 1.7%），
+          // 到 dist=3 缩到 0.45 → 占屏降到约 11%，港口露出来了。
+          // 沿用"停泊时把船挪开缩小"的同一原则：**近景下船要给港口让位**。
+          const nearK = Math.min(1, Math.max(0.45, camState.dist / 8))
+          ship.scale.setScalar((docked ? 0.5 : 0.8) * nearK)
+
+          // ---- 随浪摇晃 ----
+          //
+          // 【为什么不直接让海面起伏】海面贴图下面还铺着洋流/风带/海盗区图层
+          // （y ∈ [-0.0880, -0.0862]，海面顶面在 -0.089），余量只有 0.0008~0.0028。
+          // 海面只要起伏超过千分之二就跟图层穿模，而幅度小到看不出来又等于没做。
+          // 所以让"浮在水上的东西"摇，而不是让水动——成本几乎为零，观感一样成立。
+          //
+          // 停泊时摆幅取 0.45：船系在码头上，只随涌浪轻晃；航行中才是全幅。
+          //
+          // 【幅度为什么这么小】远景（dist=15）下 1 世界单位≈57px，
+          // rotZ 0.035 只能让船首端点动 1.2px —— 本来就看不见。
+          // 这组数值是给**拉近**用的（dist=3 时 1 世界单位≈286px，端点动 5.9px）。
+          // 想让它远景也明显就得倾斜 8° 以上，在平静海面上反而假。
+          // 所以保持小幅度：远景是一片安静的海图，贴脸看时才觉得船浮在水上。
+          const tt = tNow / 1000
+          const sway = fleet.isSailing ? 1 : 0.45
+          ship.position.set(
+            sx,
+            -PLATE_THICKNESS + 0.02 + Math.sin(tt * 1.25) * 0.012 * sway,
+            sz,
+          )
+          // x / z 轴只管摇晃，y 轴留给航向（两者不抢同一个轴）
+          ship.rotation.z = Math.sin(tt * 1.7) * 0.035 * sway
+          ship.rotation.x = Math.sin(tt * 1.05 + 0.7) * 0.022 * sway
+
           const wp = state.waypoint
           if (fleet.isSailing && wp) {
             const bearing = calculateBearing(shipLat, shipLng, wp.latitude, wp.longitude)
-            ship.rotation.y = -bearing * Math.PI / 180 + Math.PI
+            const targetYaw = -bearing * Math.PI / 180 + Math.PI
+            // 最短弧插值。直接赋值会让转向"啪"地跳一下；而且目标角跨过 ±π 边界时
+            // 差值可能接近 2π，硬插值会看到船原地绕一整圈。
+            // atan2(sin, cos) 把差值归一到 [-π, π]，绕远路的问题就没有了。
+            let dYaw = targetYaw - ship.rotation.y
+            dYaw = Math.atan2(Math.sin(dYaw), Math.cos(dYaw))
+            ship.rotation.y += dYaw * Math.min(1, dt * 7)
           }
-          // 相机焦点跟随船
-          camTarget.x = sx; camTarget.z = sz
+          // 相机焦点：停泊时对准港口本身，航行时才跟船。
+          //
+          // 【为什么停泊要对准港口】停泊时船被挪到港口旁边 0.6 世界单位
+          // （为了不压住港口模型），如果注视点还在船上，拉近后港口就偏到视野边缘——
+          // 实测 dist=3 时塞维利亚只剩一个光环挂在画面左缘，玩家拉近本想看港口，
+          // 结果看到的是自己的船和一片空海。
+          // 远景下这点偏移只有 4% 视野，几乎无感；近景下就是"港口在中间"与
+          // "港口在边上"的区别。
+          camTarget.x = docked ? lonToWorldX(shipLng) : sx
+          camTarget.z = sz
+
+          // ---- 洋流流动 ----
+          //
+          // dashOffset 递减 = 虚线沿线的正方向前进。洋流数据的点序就是流向
+          // （OCEAN_CURRENTS 每条都从起点画到终点），所以视觉方向与数据一致，
+          // 不是因为"看起来顺眼"随手定的。
+          //
+          // 速度取 0.15/s：一个 dash 周期是 dashSize+gapSize = 0.085 世界单位，
+          // 约 0.57 秒走完一格 —— 远看是"缓缓流动"，再快就成了跑马灯。
+          //
+          // 洋流只对底栏开关负责：组不可见时这三个材质也不会被渲染，
+          // 但 uniform 仍会被写。7 条线的开销可以忽略，不做可见性判断。
+          for (let i = 0; i < currentMats.length; i++) {
+            currentMats[i].dashOffset -= dt * 0.15
+          }
 
           // ---- 海盗事件：海面泛红（3D 演出的唯一可靠形式）----
           //
