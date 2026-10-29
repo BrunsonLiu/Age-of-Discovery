@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useGameStore } from '@/store/useGameStore'
+import { UI_ASSETS } from '@/data/uiAssets'
 import { GAME_BALANCE } from '@/data/gameConfig'
 import { calculateDailyConsumption, prevailingWindBearing, dailyDistanceNm } from '@/utils/navigation'
 import { ports } from '@/data/ports'
@@ -186,7 +187,21 @@ export default function VoyagePlanModal() {
 
   return (
     <div className="fixed inset-0 flex items-start justify-center bg-black/70 backdrop-blur-sm p-3 md:p-4 overflow-y-auto" style={{ zIndex: 80 }}>
-      <div className="my-auto w-[24rem] max-w-[92vw] bg-ocean-900/95 border border-gold-700/40 rounded-lg shadow-2xl overflow-hidden animate-slide-in-right">
+      <div className="my-auto w-[26rem] max-w-[92vw] bg-ocean-900/95 overflow-hidden animate-slide-in-right"
+        style={{
+          // 金质九宫格边框（F2 治愈版切片）——与事件卡**同一套外壳**。
+          //
+          // 【为什么要统一】原来这里是 `border border-gold-700/40 rounded-lg`，
+          // 1px 细线 + 圆角读起来像网页表单。而事件卡是 20px 金框 + 船徽 + 缎带标题，
+          // 玩家从"点地图看出航计划"到"遇到事件看事件卡"，视觉上像两个游戏。
+          //
+          // borderImage 的 `140 / 20px` 表示"源图切 140px 的角、显示成 20px"，
+          // 所以任何尺寸的面板都能套，不会被拉伸变形（角块是固定像素映射）。
+          borderWidth: '20px',
+          borderStyle: 'solid',
+          borderImage: `url(${UI_ASSETS.frameGoldSlice}) ${UI_ASSETS.frameGoldSliceSize} / 20px / 0 stretch`,
+        }}
+      >
         {/* 标题 */}
         <div className="px-4 py-2.5 border-b border-gold-700/30 bg-ocean-800/50 flex items-center gap-3">
           <img
@@ -328,7 +343,7 @@ export default function VoyagePlanModal() {
         </div>
 
         {/* 操作 */}
-        <div className="px-3 py-2.5 border-t border-gold-700/30 bg-ocean-800/50 flex gap-2">
+        <div className="px-3 py-3.5 border-t border-gold-700/30 bg-ocean-800/50 flex gap-2">
           <button
             onClick={cancelVoyage}
             className="flex-1 py-2 text-xs font-serif text-gold-400 bg-ocean-700/50 hover:bg-ocean-600/60 border border-gold-700/20 rounded transition-colors"

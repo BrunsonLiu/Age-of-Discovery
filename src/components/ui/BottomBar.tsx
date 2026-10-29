@@ -67,8 +67,14 @@ export default function BottomBar() {
     */
     <div
       data-tut="bottombar"
-      className="bg-ocean-800/90 backdrop-blur-sm border-t border-gold-700/30 px-2 md:px-3 py-1
-        flex flex-wrap items-center justify-between gap-x-3 gap-y-0.5 md:flex-nowrap md:py-1.5"
+      className="px-2 md:px-3 py-1 flex flex-wrap items-center justify-between gap-x-3 gap-y-0.5 md:flex-nowrap md:py-1.5"
+      style={{
+        /* 与顶栏同一根梁的"下半截"：渐变方向反转（贴屏幕底边的一侧更亮），
+           这样上下两条边读起来是同一个材质的两个端面，而不是两条独立的黑条。 */
+        background: 'linear-gradient(180deg, #150f07 0%, #1d1409 38%, #2e2212 100%)',
+        borderTop: '2px solid rgba(150, 117, 47, 0.65)',
+        boxShadow: 'inset 0 -1px 0 rgba(255, 238, 186, 0.16), 0 -2px 10px rgba(0, 0, 0, 0.55)',
+      }}
     >
 
       <div className="flex items-center gap-2 text-gold-300 min-w-0 basis-full md:basis-auto md:flex-none order-1">

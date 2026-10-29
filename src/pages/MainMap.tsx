@@ -253,11 +253,9 @@ export default function MainMap() {
               key={btn.type}
               onClick={() => togglePanel(btn.type)}
               data-tut={btn.type}
-              className={`flex items-center gap-2 pl-2.5 pr-3 py-2 rounded-lg transition-all duration-200 ${
-                activePanel === btn.type
-                  ? 'bg-gold-700/60 text-gold-100 shadow-lg shadow-gold-900/30 border-gold-500/50'
-                  : 'bg-ocean-900/85 text-gold-400 hover:text-gold-200 hover:bg-ocean-800/90'
-              } backdrop-blur-sm border border-gold-700/25`}
+              className={`side-plate flex items-center gap-2 pl-2.5 pr-3 py-2 rounded-sm ${
+                activePanel === btn.type ? 'side-plate--active' : ''
+              }`}
               title={btn.label}
               aria-label={btn.label}
               aria-pressed={activePanel === btn.type}
@@ -277,11 +275,9 @@ export default function MainMap() {
               key={btn.type}
               onClick={() => togglePanel(btn.type)}
               data-tut={btn.type}
-              className={`flex items-center gap-2 pl-3 pr-2.5 py-2 rounded-lg transition-all duration-200 ${
-                activePanel === btn.type
-                  ? 'bg-gold-700/60 text-gold-100 shadow-lg shadow-gold-900/30 border-gold-500/50'
-                  : 'bg-ocean-900/85 text-gold-400 hover:text-gold-200 hover:bg-ocean-800/90'
-              } backdrop-blur-sm border border-gold-700/25`}
+              className={`side-plate flex items-center gap-2 pl-3 pr-2.5 py-2 rounded-sm ${
+                activePanel === btn.type ? 'side-plate--active' : ''
+              }`}
               title={btn.label}
               aria-label={btn.label}
               aria-pressed={activePanel === btn.type}
@@ -295,11 +291,9 @@ export default function MainMap() {
               if (activePanel) setActivePanel(null)
               setShowHelp(!showHelp)
             }}
-            className={`flex items-center gap-2 pl-3 pr-2.5 py-2 rounded-lg transition-all duration-200 ${
-              showHelp
-                ? 'bg-gold-700/60 text-gold-100 shadow-lg shadow-gold-900/30 border-gold-500/50'
-                : 'bg-ocean-900/85 text-gold-400 hover:text-gold-200 hover:bg-ocean-800/90'
-            } backdrop-blur-sm border border-gold-700/25`}
+            className={`side-plate flex items-center gap-2 pl-3 pr-2.5 py-2 rounded-sm ${
+              showHelp ? 'side-plate--active' : ''
+            }`}
             title="帮助"
             aria-label="帮助"
             aria-pressed={showHelp}

@@ -678,3 +678,53 @@ body {
    但压在受光照的 3D 画面上会把陆地亮度压到只剩 20%（实测 p90 203 → 41）。 */
 .vintage-map-overlay--dimmed .vintage-paper { opacity: 0.14; }
 .vintage-map-overlay--dimmed .vintage-vignette { opacity: 0.32; }
+
+/* ==========================================================================
+ * 侧栏铭牌（.side-plate）
+ *
+ * 【为什么改】原来是 `bg-ocean-900/85 + border-gold-700/25`：
+ * 深蓝半透明 + 四分之一透明的金边，压在深色海图上读起来就是网页的
+ * ghost button —— 而旁边紧挨着的手绘立绘、羊皮纸地图都是精心做的，
+ * 两者放一起割裂感很明显。
+ *
+ * 航海游戏的侧栏应该是"钉在桌上的铜木铭牌"。质感靠三层 box-shadow 叠出来，
+ * 比单纯加深底色有效得多：
+ *   inset 0  1px  → 顶面高光（受光的棱）
+ *   inset 0 -1px  → 底面暗边（背光的厚度）
+ *   0 2px 6px     → 外部投影（离开桌面）
+ * ========================================================================== */
+.side-plate {
+  /* 不透明色 + 三段渐变：36px 高的按钮上，半透明底永远看不出"厚度"，
+     因为下面的海图会透上来把明暗差吃掉。改成实色后才有一块铜牌的感觉。 */
+  background: linear-gradient(180deg, #543c23 0%, #33220f 52%, #231708 100%);
+  border: 1px solid #96752f;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 238, 186, 0.34),   /* 顶棱受光 */
+    inset 0 -2px 0 rgba(0, 0, 0, 0.62),        /* 底棱背光 */
+    0 2px 5px rgba(0, 0, 0, 0.55);             /* 离开桌面 */
+  color: #dcbc7c;
+  transition: color 160ms ease, background 160ms ease, box-shadow 160ms ease;
+}
+
+.side-plate:hover {
+  color: #f7e6b4;
+  background: linear-gradient(180deg, #6a4c2c 0%, #42301a 52%, #2c1d0c 100%);
+  border-color: #b8934a;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 244, 200, 0.42),
+    inset 0 -2px 0 rgba(0, 0, 0, 0.62),
+    0 3px 9px rgba(0, 0, 0, 0.6);
+}
+
+/* 当前打开的那个面板：铜牌被"点亮"——提亮底色 + 外发光，
+   一眼能看出"我现在看的是哪一页" */
+.side-plate--active {
+  color: #fff8e2;
+  background: linear-gradient(180deg, #b98a3c 0%, #8a5f22 52%, #6a4715 100%);
+  border-color: #f6d684;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 250, 226, 0.55),
+    inset 0 -2px 0 rgba(0, 0, 0, 0.45),
+    0 0 14px rgba(212, 175, 55, 0.5),
+    0 2px 7px rgba(0, 0, 0, 0.5);
+}

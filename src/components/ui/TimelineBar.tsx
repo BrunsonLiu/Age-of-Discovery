@@ -29,7 +29,18 @@ export default function TimelineBar() {
     .sort((a, b) => b.day - a.day)[0]
 
   return (
-    <div className="absolute top-0 left-0 right-0 h-12 bg-ocean-800/80 backdrop-blur-sm border-b border-gold-700/20 flex items-center px-4 gap-4">
+    <div
+      className="absolute top-0 left-0 right-0 h-12 flex items-center px-4 gap-4"
+      style={{
+        /* 木梁横条：与侧栏铜牌（.side-plate）同一套材质语言。
+           原来是 bg-ocean-800/80 + 1px 金边——半透明深蓝压在深色海图上，
+           读起来就是"网页状态栏"，而它上方紧挨着的是手绘立绘和羊皮纸地图。
+           改实色渐变后才有"一块木头钉在屏幕顶上"的分量。 */
+        background: 'linear-gradient(180deg, #2e2212 0%, #1d1409 62%, #150f07 100%)',
+        borderBottom: '2px solid rgba(150, 117, 47, 0.65)',
+        boxShadow: 'inset 0 1px 0 rgba(255, 238, 186, 0.16), 0 2px 10px rgba(0, 0, 0, 0.55)',
+      }}
+    >
       <div className="text-gold-300 font-serif text-sm font-bold min-w-[52px]">
         {currentYear}年
       </div>

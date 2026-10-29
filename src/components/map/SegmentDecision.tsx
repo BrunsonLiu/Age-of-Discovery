@@ -3,6 +3,7 @@ import { useGameStore } from '@/store/useGameStore'
 import { useDialogueStore } from '@/store/useDialogueStore'
 import { onUiCommand } from '@/utils/uiBus'
 import { STANCES, STANCE_ORDER, stanceLedgers, describeStanceTradeoff, type StanceId } from '@/utils/segment'
+import { UI_ASSETS } from '@/data/uiAssets'
 import { calculateDailyConsumption, dailyDistanceNm } from '@/utils/navigation'
 import { WEATHER_INFO, weatherFavorFactor } from '@/utils/weather'
 import { useRolledNumber } from '@/hooks/useRolledNumber'
@@ -215,9 +216,16 @@ export default function SegmentDecision() {
       style={{ zIndex: 85 }}
     >
       <div
-        className="my-auto w-[32rem] max-w-[94vw] rounded-lg border border-gold-700/40 bg-ocean-900/95
-          shadow-2xl overflow-hidden"
-        style={{ animation: prefersReducedMotion() ? undefined : `fade-in-scale 420ms ${EASE_SPRING} both` }}
+        className="my-auto w-[32rem] max-w-[94vw] bg-ocean-900/95 overflow-hidden"
+        style={{
+          // 与事件卡 / 出航计划**同一套金质九宫格外壳**（见 VoyagePlanModal 的说明）。
+          // 三个面板放在同一条动线上（出航 → 择方针 → 遇事件），
+          // 之前只有事件卡有金框，另外两个是 1px 细线，切换时风格会跳。
+          borderWidth: '20px',
+          borderStyle: 'solid',
+          borderImage: `url(${UI_ASSETS.frameGoldSlice}) ${UI_ASSETS.frameGoldSliceSize} / 20px / 0 stretch`,
+          animation: prefersReducedMotion() ? undefined : `fade-in-scale 420ms ${EASE_SPRING} both`,
+        }}
       >
         {/* 标题区 */}
         <div className="px-4 py-2.5 border-b border-gold-700/30 bg-ocean-800/60">
