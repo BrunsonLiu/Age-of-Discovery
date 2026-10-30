@@ -2036,14 +2036,15 @@ export const useGameStore = create<GameStore>()(
   )
 )
 
-/** 供 UI 读取带动态库存的价格 */
-export function getPriceFor(portId: number, goodId: number, state: GameState, mode: 'buy' | 'sell'): number | null {
-  const pg = portGoods.find(p => p.portId === portId && p.goodId === goodId)
-  if (!pg) return null
-  const key = `${portId}:${goodId}`
-  const stock = state.marketStock[key] ?? pg.stock
-  return mode === 'buy' ? dynamicBuyPrice(pg, stock, pg.stock, state.fleet) : dynamicSellPrice(pg, stock, pg.stock, state.fleet)
-}
+/*
+ * 这里原本有一个 getPriceFor(portId, goodId, state, mode) 的辅助函数。
+ * 它自己拼了一份价格公式：`dynamicSellPrice(pg, stock, pg.stock, state.fleet)`
+ * ——**漏了最后一个 opts 参数**（名船员账房 −2%、商会 −1~3%、王室 −3%、称号）。
+ * 也就是说它算出来的价与面板/结算能差到 10%。它当时恰好在全项目无人调用
+ * （grep src/ 与 test/ 都只有定义处），所以没造成事故，但留着就是一个
+ * 「以后谁顺手 import 它，玩家就会发现屏幕数字和实际到账不一致」的定时炸弹。
+ * 已删除。要读价格一律用 selectBuyPrice / selectSellPrice，那是唯一来源。
+ */
 
 export { effectiveFleetSpeed }
 
