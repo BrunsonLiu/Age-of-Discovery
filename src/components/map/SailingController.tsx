@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 import { useGameStore } from '@/store/useGameStore'
 import { ports } from '@/data/ports'
 import { isLandAt } from '@/utils/seaRoute'
+import { advanceAlongRoute } from '@/utils/sailStep'
 import { effectiveFleetSpeed, dailyDistanceNm } from '@/utils/navigation'
 import { useFxStore as useFx } from '@/store/useFxStore'
 import { STANCES } from '@/utils/segment'
@@ -38,6 +39,12 @@ const SIGHT_RANGE_NM = 40
  * 每步都重新检查段界，就不会漏判。
  */
 const MAX_STEP_NM = 8
+/**
+ * 擦边容忍的前瞻距离（海里）。
+ * 见子步循环里那段注释：航线擦过岬角一格掩码时，向前看这么远找海面点。
+ * 一个掩码格约 8~19km，12 海里够盖住擦角，又不足以让船横穿半岛。
+ */
+const GRAZE_LOOKAHEAD_NM = 12
 
 const portMap = new Map(ports.map(p => [p.id, p]))
 
@@ -181,22 +188,40 @@ export default function SailingController() {
       let aground = false
 
       for (let step = 0; step < stepCount; step++) {
-        const nextTraveled = traveledNmRef.current + stepNm
+        const prevTraveled = traveledNmRef.current
+        const nextTraveled = prevTraveled + stepNm
         const next = positionAtNm(geom, nextTraveled)
 
-        // 沿途若撞上陆地，停在这里等玩家处理。
-        //
-        // 判定用**掩码**（isLandAt）而不是多边形（isOnLand）：
-        // 航路是按掩码搜出来的，若触礁检查用另一套判据，
-        // 船会在「自己规划的航线」上报触礁——两套口径必须同源。
-        if (isLandAt(next.lat, next.lng)) {
+        // 撞地判定 + 擦边跳过：逻辑抽在 utils/sailStep（可单测，见 test/logic.test.ts 第 55 组）
+        const adv = advanceAlongRoute({
+          fromNm: prevTraveled,
+          stepNm,
+          totalNm,
+          posAt: (nm) => {
+            const p = positionAtNm(geom, nm)
+            return [p.lat, p.lng]
+          },
+          isLand: isLandAt,
+          lookaheadNm: GRAZE_LOOKAHEAD_NM,
+        })
+        if (adv.aground) {
+          // 判定用**掩码**（isLandAt）而不是多边形（isOnLand）：
+          // 航路是按掩码搜出来的，若触礁检查用另一套判据，
+          // 船会在「自己规划的航线」上报触礁——两套口径必须同源。
           aground = true
           break
+        }
+        if (adv.grazed) {
+          traveledNmRef.current = adv.traveledNm
+          movedNm += adv.traveledNm - prevTraveled
+          const p = positionAtNm(geom, adv.traveledNm)
+          pos = [p.lat, p.lng]
+          continue
         }
 
         pos = [next.lat, next.lng]
         movedNm += stepNm
-        traveledNmRef.current = nextTraveled
+        traveledNmRef.current = adv.traveledNm
 
         // 每一步都检查段界：一旦跨过，立刻停在这一段的末尾，
         // 让玩家的抉择**正好落在段界上**，而不是跳到下一段中间。

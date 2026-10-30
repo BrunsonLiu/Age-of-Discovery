@@ -722,6 +722,16 @@ export const useGameStore = create<GameStore>()(
          * 参观模式全程不产生 pendingSegment，也就不弹抉择、不弹操舵。
          */
         const isVisitor = state.gameMode === 'visitor'
+        /*
+         * 短途免仪式：1 天以内的航程不弹方针、不弹操舵。
+         * 塞维利亚⇄加的斯 54 海里、1 天，来回都要走三件套；
+         * 空船回程那趟什么都还没发生，却要连按三次。
+         *
+         * 【之前试过、失败了，现在才敢再试】
+         * 上一版加这个直接让船在 47% 处触礁——根因是航线的子步采样擦过岬角一格
+         * 陆地掩码（见 utils/sailStep 的说明）。那个 bug 修好之后这条才成立。
+         */
+        const isShortHop = baselineDays <= 1
         return {
           pendingVoyage: null,
           currentRoute: pending.route,
@@ -740,8 +750,8 @@ export const useGameStore = create<GameStore>()(
           // 实测船会在航程 47% 处**触礁搁浅**——塞维利亚在河口，船贴着海岸跑，
           // 稳态速度下的子步采样会踩进陆地掩码；而原来"停下来选方针"恰好把它遮住了。
           // 那是航行几何的问题，不是节奏问题，所以这一项已回退。
-          stance: 'steady',
-          pendingSegment: isVisitor ? null : {
+          stance: state.stance,
+          pendingSegment: isVisitor || isShortHop ? null : {
             index: 0,
             total,
             hazard,
@@ -749,7 +759,7 @@ export const useGameStore = create<GameStore>()(
             remainingNm: pending.route.distance,
             daysLeft: baselineDays,
           },
-          gamePhase: isVisitor ? 'playing' : 'segment',
+          gamePhase: isVisitor || isShortHop ? 'playing' : 'segment',
         }
       }),
 

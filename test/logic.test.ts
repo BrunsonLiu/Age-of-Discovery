@@ -133,6 +133,7 @@ import {
   greatCircleNm, greatCirclePoint, buildRouteGeometry, positionAtNm, traveledNmAt,
 } from '../src/utils/routePath'
 import { findSeaPath } from '../src/utils/seaRoute'
+import { advanceAlongRoute } from '../src/utils/sailStep'
 
 let passed = 0
 let failed = 0
@@ -3524,6 +3525,68 @@ console.log('== 54. 回程建议：卖完货不能让人卡在"无推荐"里 =='
   // 同一个港口不应建议回自己
   useGameStore.setState({ lastPortId: 6 })
   assert(selectReturnLeg(S()) === null, '所在地与来处相同时不应给回程建议')
+}
+
+console.log('== 55. 沿海擦边：跳过一格陆地，而不是整趟搁浅 ==')
+{
+  /*
+   * 【为什么这条必须存在】
+   * 航线是搜出来并做过穿陆校验的，但"8 海里的直线"和"掩码格"不是一个量级：
+   * 一段 15km 的斜线可以擦过岬角一格的角，两端采样点都在海里。
+   * 于是船会在自己规划的航线上报"前方是陆地，被迫停航"——
+   * 实测在塞维利亚→加的斯 47% 处出现过，玩家带着货被搁在半路。
+   *
+   * 这段逻辑原来埋在帧循环里，触发依赖 dt 抖动，跑十次未必复现一次。
+   * 抽成纯函数后，用合成陆地就能把每种情形测死。
+   */
+  // 一条 100 海里的直线航线，坐标就是里程本身（方便断言）
+  const posAt = (nm: number): [number, number] => [nm, 0]
+
+  // —— 1) 一路是海：正常推进，不擦边不触礁 ——
+  const clear = advanceAlongRoute({
+    fromNm: 10, stepNm: 8, totalNm: 100,
+    posAt, isLand: () => false, lookaheadNm: 12,
+  })
+  assert(clear.traveledNm === 18, `正常推进应走满一步（实际 ${clear.traveledNm}）`)
+  assert(!clear.grazed && !clear.aground, '全是海时不该擦边也不该触礁')
+
+  // —— 2) 擦角：只有一格（18~19）是陆地，后面又是海 ——
+  const graze = advanceAlongRoute({
+    fromNm: 10, stepNm: 8, totalNm: 100,
+    posAt, isLand: (lat) => lat >= 18 && lat < 19, lookaheadNm: 12,
+  })
+  assert(!graze.aground, '只擦过一格陆地时不该判触礁')
+  assert(graze.grazed, '应当标记为"擦边跳过"')
+  assert(graze.traveledNm === 19, `应跳到那一格之后的第一个海面点（实际 ${graze.traveledNm}）`)
+
+  // —— 3) 真撞上：从落点起一直是陆地 ——
+  const blocked = advanceAlongRoute({
+    fromNm: 10, stepNm: 8, totalNm: 100,
+    posAt, isLand: (lat) => lat >= 18, lookaheadNm: 12,
+  })
+  assert(blocked.aground, '前方连续 12 海里都是陆地时必须判触礁')
+  assert(blocked.traveledNm === 10, `触礁时里程不能推进（实际 ${blocked.traveledNm}）`)
+
+  // —— 4) 前瞻为 0 = 旧行为：擦一格也直接触礁 ——
+  const noGrace = advanceAlongRoute({
+    fromNm: 10, stepNm: 8, totalNm: 100,
+    posAt, isLand: (lat) => lat >= 18 && lat < 19, lookaheadNm: 0,
+  })
+  assert(noGrace.aground, '把宽容关掉后，擦一格也应判触礁（证明这个参数真的在起作用）')
+
+  // —— 5) 不能越过终点：最后一步最多推进到 totalNm ——
+  const tail = advanceAlongRoute({
+    fromNm: 95, stepNm: 8, totalNm: 100,
+    posAt, isLand: () => false, lookaheadNm: 12,
+  })
+  assert(tail.traveledNm === 100, `推进不得超过航线总长（实际 ${tail.traveledNm}）`)
+
+  // —— 6) 擦边跳过的距离必须受前瞻上限约束 ——
+  const farLand = advanceAlongRoute({
+    fromNm: 10, stepNm: 8, totalNm: 100,
+    posAt, isLand: (lat) => lat >= 18 && lat < 40, lookaheadNm: 12,
+  })
+  assert(farLand.aground, '陆地宽度超过前瞻距离时必须触礁（不能横穿半岛）')
 }
 
 console.log(`\n最终结果：${passed} 通过 / ${failed} 失败`)
