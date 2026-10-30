@@ -7,7 +7,7 @@ import { ports } from '@/data/ports'
 import { PortMarker } from './PortMarker'
 import TerrainDecor from './TerrainDecor'
 import MiniMap from './MiniMap'
-import { buildMajorLand } from '@/utils/terrainDecor'
+import { buildMajorLand, featureArea } from '@/utils/terrainDecor'
 import { RouteLine } from './RouteLine'
 import { ShipAnimation } from './ShipAnimation'
 import { MapOverlays } from './MapOverlays'
@@ -199,7 +199,30 @@ function MapController() {
  */
 // fillColor 用 SVG pattern（见 LandPaperPattern）。fillOpacity 保持 1，
 // 因为纹理本身已经是"米黄纸"，再压透明会让海面透上来发绿。
-const landStyle = { fillColor: 'url(#landPaper)', fillOpacity: 1, color: '#3d2810', weight: 1.3, opacity: 0.9 }
+const LAND_BASE = { fillColor: 'url(#landPaper)', fillOpacity: 1, color: '#3d2810', weight: 1.3, opacity: 0.9 }
+
+/**
+ * 陆地样式按**面积分档**：大陆粗细描边，小岛只留一层淡边。
+ *
+ * 【为什么不能一律 1.3px】
+ * land.geojson 有 1420 块陆地，其中 858 块（60%）的 bbox 面积 < 0.1 度²
+ * ——约 12km×12km。在 zoom 3 的世界视图里它们只有 2~3 个像素，
+ * 却被 1.3px 的深褐描边包一圈，于是整片海域漂着一层褐色杂点，
+ * 看起来既像渲染噪点、又抢走大陆的轮廓感。
+ *
+ * 但**不能删**：那些岛是真实存在的（希腊群岛、挪威峡湾、印尼），
+ * 而且陆地碰撞检测用的是同一份数据——画面上看不见、船却撞上去，
+ * 比噪点更糟。所以只降描边权重，几何一点不动。
+ *
+ * 分档阈值 0.3 度²：p75 是 0.24、p90 是 1.33，取在两者之间，
+ * 正好把"群岛碎块"和"真正的岛"分开。
+ */
+function landStyleFor(feature?: GeoJSON.Feature) {
+  if (!feature) return LAND_BASE
+  return featureArea(feature) < 0.3
+    ? { ...LAND_BASE, weight: 0.45, opacity: 0.55 }
+    : LAND_BASE
+}
 const bordersStyle = { fillColor: 'transparent', fillOpacity: 0, color: '#7a5a30', weight: 0.6, opacity: 0.4, dashArray: '3 2' }
 
 export default function MapView() {
@@ -386,7 +409,7 @@ export default function MapView() {
                       interactive={false}
                     />
                   ))}
-                  <GeoJSON key="land" data={geoData.land} style={landStyle} interactive={false} />
+                  <GeoJSON key="land" data={geoData.land} style={landStyleFor} interactive={false} />
                   {/* 地形符号：山丘/树丛。挂在自定义 terrainPane(z=450)，
                       压在陆地之上、港口标记(z=600)之下 */}
                   <TerrainDecor geojson={geoData.land} />

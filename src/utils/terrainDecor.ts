@@ -227,3 +227,30 @@ export function buildMajorLand(
 
   return { type: 'FeatureCollection', features: picked }
 }
+
+/**
+ * 单块陆地的「外接矩形面积（度²）」。
+ *
+ * 【为什么用 bbox 面积而不是真实面积】
+ * 真实多边形面积要鞋带公式，但这里的用途只有**分档**（大块大陆 / 中等岛 / 小岛），
+ * bbox 已经足够区分——1420 块陆地里 60% 的 bbox 面积 < 0.1 度²，
+ * 而三大洲是 9000~22000 度²，差两个数量级，不存在判错的可能。
+ *
+ * 同 MultiPolygon 取最大的一块：一块要素里常同时含主岛和附属小岛，
+ * 决定描边粗细的应该是主岛。
+ */
+export function featureArea(feature: GeoJSON.Feature): number {
+  const geom = feature.geometry
+  if (!geom) return 0
+  if (geom.type !== 'Polygon' && geom.type !== 'MultiPolygon') return 0
+  const polys = geom.type === 'Polygon' ? [geom.coordinates] : geom.coordinates
+  let best = 0
+  for (const poly of polys) {
+    const outer = (poly as [number, number][][])[0] ?? []
+    if (!outer.length) continue
+    const b = bboxOf(outer)
+    const a = (b.maxLng - b.minLng) * (b.maxLat - b.minLat)
+    if (a > best) best = a
+  }
+  return best
+}
