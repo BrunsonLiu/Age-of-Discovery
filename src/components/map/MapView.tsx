@@ -322,19 +322,37 @@ export default function MapView() {
             {/*
               海面单独成层，不放在 MapContainer 的 background 上。
               理由：滤镜要分开给。
-              - 海面：手绘海浪原图偏"现代油画"的高饱和蓝，压成古海图的青灰
+              - 海面：见下方 luminosity 混合（纹理只贡献明暗，色相可控）
               - 陆地：羊皮纸填充，本就该是暖色，不能被同一层滤镜染冷
               以前两者共用一个容器背景 + 容器级 sepia，结果海浪被洗成土黄、
-              陆地被染灰，海陆糊成一片。现在海是冷、海岸线是深褐、陆地是暖黄，
+              陆地被染灰，海陆糊成一片。现在海是深蓝、海岸线是深褐、陆地是暖黄，
               玩家的第一判断是"哪里能开船"。
             */}
             <div
               className="absolute inset-0 pointer-events-none"
               style={{
-                backgroundColor: '#3d5a5e',
+                backgroundColor: '#2f4d70',
+                // 再压一档：luminosity 只换色相、不改明度，纹理的 Y 约 83 偏亮，
+                // 直接用会得到"晴朗天空蓝"。降明度 + 轻微去饱和，
+                // 才落到参考图那种沉静的古海图深蓝。
+                filter: 'saturate(0.82) brightness(0.86)',
                 backgroundImage: `url(${seaBg})`,
                 backgroundRepeat: 'repeat',
                 backgroundSize: '512px 512px',
+                /*
+                 * 【为什么用 background-blend-mode: luminosity】
+                 * sea-tile.png 是几乎不透明的青灰纹理，实测渲染像素 rgb(64,88,91)
+                 * 与底色常量 #3d5a5e=(61,90,94) 几乎一致——说明改 backgroundColor
+                 * 对画面**没有任何影响**，纹理自己把颜色定死了。
+                 *
+                 * 而那张纹理的色相是"青绿"（R 最低、G≈B），参考图的海是"深蓝"
+                 * （B 明显高于 G）。这不是深浅问题，是通道顺序不对，靠调暗调亮都改不出来。
+                 *
+                 * luminosity 模式：色相与饱和度全部取自 backgroundColor，明度取自纹理。
+                 * 于是纹理的手绘笔触、浪花、斑驳一点不丢，颜色却完全可控——
+                 * 想换海色只改这一个常量，连素材都不用动。
+                 */
+                backgroundBlendMode: 'luminosity',
               }}
               aria-hidden="true"
             />
@@ -356,13 +374,13 @@ export default function MapView() {
                   {/* 浅滩光晕：在陆地**下面**叠三层由粗到细的浅青描边，
                       陆地的填充会盖住内侧，只留海岸外侧那一圈——模拟近岸浅水。
                       三层而不是一层，是因为单层只有一条硬边，叠起来才有"由浅到深"的过渡。 */}
-                  {majorLand && [17, 10, 5].map((w, i) => (
+                  {majorLand && [34, 22, 12].map((w, i) => (
                     <GeoJSON
                       key={`shallows-${w}`}
                       data={majorLand}
                       style={{
                         fillColor: 'transparent', fillOpacity: 0,
-                        color: '#9fd3c6', weight: w, opacity: [0.07, 0.11, 0.16][i],
+                        color: '#9fd3c6', weight: w, opacity: [0.10, 0.15, 0.22][i],
                         lineJoin: 'round', lineCap: 'round',
                       }}
                       interactive={false}
