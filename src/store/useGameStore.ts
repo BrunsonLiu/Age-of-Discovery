@@ -328,11 +328,58 @@ export function dynamicBuyPrice(pg: { price: number; priceModifier: number }, cu
   return Math.round(pg.price * pg.priceModifier * surge * priceMultiplier(fleet, opts))
 }
 
+/**
+ * 动态卖价。
+ *
+ * 【14 号修订：库存过剩必须压价，否则套利永远成立】
+ * 原实现是 `stockRatio = Math.min(1, 库存 / 基准库存)`，把"库存超过基准"
+ * 的情况全部截成 1 —— 于是 `surge` 恒等于 1，**卖得越多、本港越满，
+ * 卖价一分不降**。实测（塞维利亚→加的斯，丝绸）：
+ *   加的斯库存 40 → 62 → 100（+150%），卖价始终 301；
+ *   同期塞维利亚库存 60 → 0，买价只从 85 涨到 97（+14%，上限 +40%）。
+ * 结果是 500 金 3 天内滚到 12953 金（26 倍），而且这笔钱是零风险的
+ * ——54 海里、1 天航程，连补给都不怎么耗。
+ *
+ * 现在两侧对称：
+ *   库存 < 基准（缺货）→ 涨价，最高 +40%（原逻辑不变）
+ *   库存 > 基准（过剩）→ 按 1/(1 + 超出比例×0.55) 压价，永远高于 0
+ * 系数 0.55 是权衡：库存翻倍（ratio=2）时卖价降到 0.645，
+ * 既能把套利利润压到"值得跑但不再暴利"，又不会让正常卖货变成亏损。
+ *
+ * 声望/特质仍按"除以同一系数"处理（系数 <1 即加价），与买价同源。
+ */
 export function dynamicSellPrice(pg: { price: number; priceModifier: number }, currentStock: number, baseStock: number, fleet?: Pick<Fleet, 'fame' | 'trait'>, opts?: Parameters<typeof priceMultiplier>[1]): number {
-  const stockRatio = baseStock > 0 ? Math.min(1, currentStock / baseStock) : 1
-  const surge = 1 + (1 - stockRatio) * 0.4
+  const stockRatio = baseStock > 0 ? currentStock / baseStock : 1
+  const surge = stockRatio <= 1
+    ? 1 + (1 - stockRatio) * 0.4
+    : 1 / (1 + (stockRatio - 1) * 0.55)
+
+  const mult = priceMultiplier(fleet, opts)
+  // 同港买入价（不含 surge 之外任何额外项），用来给卖价兜底
+  const buySide = pg.price * pg.priceModifier * surge * mult
   // 声望/特质让卖出更划算：除以同一系数（系数 <1 即加价）
-  return Math.round(pg.price * pg.priceModifier * surge * 0.85 / priceMultiplier(fleet, opts))
+  const raw = pg.price * pg.priceModifier * surge * 0.85 / mult
+
+  /*
+   * 【15 号修订：卖价必须永远低于同港买价】
+   * 买价是 `× mult`、卖价是 `÷ mult`，两边都朝着"对玩家有利"的方向，
+   * 于是 mult 一旦足够小（声望高），除法带来的加价就会吃掉 15% 的价差并反超。
+   * 实测：
+   *   fame=0    同港卖价 > 买价 的组合 0 / 99
+   *   fame=50   **92 / 99**
+   *   fame=100  **97 / 99**（哈瓦那丝绸：买 286、卖 336）
+   * 玩家因此可以在原地反复买卖赚钱，一步不用挪。
+   *
+   * 【为什么上限是「买价取整后 − 1」而不是「买价 × 0.95」】
+   * 百分比在低价商品上会被四舍五入吃掉：买价 5 时 0.95 倍是 4.75，
+   * 卖价四舍五入又回到 5 —— 价差归零。货币的最小单位是 1，那就按 1 保证：
+   * 卖价永远比同港买价至少便宜一枚金币。高价商品几乎不受影响，
+   * 低价商品则获得明确的"买了立刻卖必亏"。
+   */
+  const buyRounded = Math.max(1, Math.round(buySide))
+  // 下限 1：库存被灌到几十倍基准时 surge 趋近 0，四舍五入会变成 0 价。
+  // 白送比"价格低"更危险（0 价买入 = 无限资源）。
+  return Math.max(1, Math.min(Math.round(raw), buyRounded - 1))
 }
 
 /**

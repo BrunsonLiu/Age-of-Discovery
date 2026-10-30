@@ -24,7 +24,7 @@ import {
   STANCES, forecastSegment, stanceLedgers, segmentCountFor, segmentIndexFor, nextSegmentBoundary,
   dailyFoodUse, dailyWaterUse, dailyWearRate, settleWear, describeStanceTradeoff,
 } from '../src/utils/segment'
-import { generateRouteIntel, settleOfficerWages, advanceRivals, selectBuyPrice, selectSellPrice, selectPriceTone, OFFER_PRICE_RATIO } from '../src/store/useGameStore'
+import { generateRouteIntel, settleOfficerWages, advanceRivals, selectBuyPrice, selectSellPrice, selectPriceTone, OFFER_PRICE_RATIO, dynamicSellPrice } from '../src/store/useGameStore'
 import { FACTIONS, factionAttitude, portFaction } from '../src/data/factions'
 import { CREW_CHARS, CREW_CHAR_MAP } from '../src/data/crewChars'
 import { TITLES, currentTitle, dominantAxis } from '../src/data/titles'
@@ -3254,6 +3254,66 @@ console.log('== 48. 船况配色：边界值必须落在正确的一档 ==')
   // 但耐久在 20% 该红、载重在 20% 不该红 —— 这条能抓住"把两个函数写成一个"
   assert(durabilityColor(0.2) === DANGER_COLOR && loadColor(0.2) === WARN_COLOR,
     '耐久与载重的危险阈值不同，不能共用一个函数')
+}
+
+console.log('== 49. 贸易价差：同港卖价必须永远低于买价（禁止原地套利）==')
+{
+  /*
+   * 【为什么这条必须存在】
+   * 买价是 × priceMultiplier、卖价是 ÷ priceMultiplier —— 两边都朝"对玩家有利"
+   * 的方向。mult 一旦足够小（高声望），除法的加价就会吃掉 15% 的价差并反超。
+   * 实测修复前：
+   *   fame=0   同港卖价 > 买价 0 / 99
+   *   fame=50  **92 / 99**
+   *   fame=100 **97 / 99**（哈瓦那丝绸买 286 卖 336）
+   * 玩家可以在原地反复买卖赚钱，一步不用挪 —— 整条贸易线的意义就没了。
+   *
+   * 这条断言遍历全部港口商品组合，是"经济能不能成立"的底线。
+   */
+  for (const fame of [0, 50, 100]) {
+    useGameStore.getState().initGame('merchant', 'captain')
+    useGameStore.setState({ fleet: { ...useGameStore.getState().fleet, fame } })
+    const st = useGameStore.getState()
+    let bad = 0
+    let checked = 0
+    for (const pg of portGoods) {
+      const buy = selectBuyPrice(st, pg.portId, pg.goodId)
+      const sell = selectSellPrice(st, pg.portId, pg.goodId)
+      if (buy == null || sell == null) continue
+      checked++
+      if (sell >= buy) {
+        bad++
+        if (bad <= 3) console.log(`       [fame=${fame}] 港${pg.portId} 货${pg.goodId} 买${buy} 卖${sell}`)
+      }
+    }
+    assert(checked >= 90, `应覆盖绝大部分组合（fame=${fame} 实际 ${checked} 个）`)
+    assert(bad === 0, `fame=${fame} 不应有卖价≥买价的组合（实际 ${bad}/${checked}）`)
+  }
+}
+
+console.log('== 50. 卖价随本港库存单调下降（库存过剩要压价）==')
+{
+  /*
+   * 修复前 dynamicSellPrice 用 `Math.min(1, 库存/基准)`，把"库存过剩"全截成 1，
+   * 于是卖得越多、本港越满，卖价一分不降（实测加的斯库存 30→90，卖价恒 219）。
+   * 现在改成 1/(1+超出比例×0.55)，这条断言锁住单调性。
+   */
+  const pg = { price: 210, priceModifier: 1.6 }
+  const baseStock = 30
+  const stocks = [30, 45, 60, 90, 150]
+  const prices = stocks.map(stock => dynamicSellPrice(pg, stock, baseStock))
+  for (let i = 1; i < prices.length; i++) {
+    assert(prices[i] < prices[i - 1],
+      `库存 ${stocks[i]} 的卖价应低于库存 ${stocks[i - 1]}（实得 ${prices.join(' / ')}）`)
+  }
+  // 库存恰好等于基准时，不享受过剩折扣（surge 应为 1）
+  assert(dynamicSellPrice(pg, baseStock, baseStock) === Math.round(pg.price * pg.priceModifier * 0.85),
+    '库存等于基准时卖价不打折')
+  // 缺货仍按原逻辑涨价（最高 +40%）
+  assert(dynamicSellPrice(pg, 0, baseStock) > dynamicSellPrice(pg, baseStock, baseStock),
+    '缺货时卖价应更高')
+  // 无论库存多大，价格都不能变成 0 或负数
+  assert(dynamicSellPrice(pg, 100000, baseStock) > 0, '库存极大时卖价仍应为正')
 }
 
 console.log(`\n最终结果：${passed} 通过 / ${failed} 失败`)
