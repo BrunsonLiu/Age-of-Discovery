@@ -122,8 +122,8 @@ export function buildTerrainSymbols(
   geojson: GeoJSON.GeoJsonObject,
   opts: BuildTerrainOptions = {},
 ): TerrainSymbol[] {
-  const topBlocks = opts.topBlocks ?? 18
-  const density = opts.density ?? 1.9
+  const topBlocks = opts.topBlocks ?? 12
+  const density = opts.density ?? 2.1
   const rand = mulberry32(opts.seed ?? 20261030)
 
   const polys = extractRings(geojson)
@@ -142,7 +142,7 @@ export function buildTerrainSymbols(
 
   for (const { rings, area } of scored) {
     // 面积只用来决定撒多少：4 平方度以上按面积长，小岛至少 2 个
-    const count = Math.max(2, Math.round(Math.min(72, area * 2.2) * density))
+    const count = Math.max(2, Math.round(Math.min(50, area * 1.9) * density))
     const b = rings[0].bbox
     const wDeg = b.maxLng - b.minLng
     const hDeg = b.maxLat - b.minLat
