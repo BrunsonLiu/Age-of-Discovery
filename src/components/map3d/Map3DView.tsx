@@ -136,6 +136,17 @@ export default function Map3DView() {
       }
       const seaMat = new THREE.MeshStandardMaterial({
         map: seaTex, roughness: 0.3, metalness: 0.1, envMapIntensity: 1.3,
+        /*
+         * 【为什么要给 color 一个 >1 的分量】
+         * color 在 three.js 里是**乘数**，与贴图逐通道相乘。sea-tile.png 本身是
+         * 青绿（G > B），2D 视图靠 CSS 的 background-blend-mode: luminosity 换掉了
+         * 色相，但那是 2D 的渲染路径，管不到这里——切到 3D 会像换了个游戏。
+         *
+         * 要让青绿变深蓝，必须 R、G 压下去、B 抬上来。乘数默认上限是 1，
+         * 光靠 clamp 只能压暗不能提蓝，所以 B 给到 1.3（分量允许 >1，
+         * 相乘结果 0.23 远不到溢出）。实测海面从 (17,49,43) 变成 B>G>R 的深蓝。
+         */
+        color: new THREE.Color(0.78, 0.86, 1.3),
       })
       const sea = new THREE.Mesh(seaGeo, seaMat)
       sea.position.set(MAP_WORLD_SIZE / 2, -PLATE_THICKNESS - 0.004, 0)
