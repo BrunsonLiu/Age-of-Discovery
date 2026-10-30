@@ -244,8 +244,13 @@ export default function MainMap() {
       */}
       {!isMobile && (
         <>
+        {/* pointer-events-none：这两列容器是 top-60/bottom-52 的整条矩形，按钮却是
+            垂直居中排布的，两侧留出大片透明区域。容器默认拦截点击，会把落在
+            这片"空白"里的别的控件（比如地图右上角的 3D 切换）挡掉。
+            容器只负责布局，点击交给按钮自己。（记忆里那条"浮层必须
+            pointer-events-none"的同一条原则。） */}
         <div
-          className="absolute left-0 flex flex-col justify-center gap-1.5 px-1.5"
+          className="absolute left-0 flex flex-col justify-center gap-1.5 px-1.5 pointer-events-none"
           style={{ zIndex: Z.SIDE_BUTTONS, top: '60px', bottom: '52px' }}
         >
           {panelButtons.filter(b => b.side === 'left').map(btn => (
@@ -253,7 +258,7 @@ export default function MainMap() {
               key={btn.type}
               onClick={() => togglePanel(btn.type)}
               data-tut={btn.type}
-              className={`side-plate flex items-center gap-2 pl-2.5 pr-3 py-2 rounded-sm ${
+              className={`side-plate pointer-events-auto flex items-center gap-2 pl-2.5 pr-3 py-2 rounded-sm ${
                 activePanel === btn.type ? 'side-plate--active' : ''
               }`}
               title={btn.label}
@@ -267,7 +272,7 @@ export default function MainMap() {
         </div>
 
         <div
-          className="absolute right-0 flex flex-col justify-center gap-1.5 px-1.5"
+          className="absolute right-0 flex flex-col justify-center gap-1.5 px-1.5 pointer-events-none"
           style={{ zIndex: Z.SIDE_BUTTONS, top: '60px', bottom: '52px' }}
         >
           {panelButtons.filter(b => b.side === 'right').map(btn => (
@@ -275,7 +280,7 @@ export default function MainMap() {
               key={btn.type}
               onClick={() => togglePanel(btn.type)}
               data-tut={btn.type}
-              className={`side-plate flex items-center gap-2 pl-3 pr-2.5 py-2 rounded-sm ${
+              className={`side-plate pointer-events-auto flex items-center gap-2 pl-3 pr-2.5 py-2 rounded-sm ${
                 activePanel === btn.type ? 'side-plate--active' : ''
               }`}
               title={btn.label}
@@ -291,7 +296,7 @@ export default function MainMap() {
               if (activePanel) setActivePanel(null)
               setShowHelp(!showHelp)
             }}
-            className={`side-plate flex items-center gap-2 pl-3 pr-2.5 py-2 rounded-sm ${
+            className={`side-plate pointer-events-auto flex items-center gap-2 pl-3 pr-2.5 py-2 rounded-sm ${
               showHelp ? 'side-plate--active' : ''
             }`}
             title="帮助"

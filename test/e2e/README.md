@@ -54,9 +54,9 @@ npm run test:e2e:all      # 以上全部（不含 mobile:prod）
 | `measure-map-load.mjs` | 实测「绘制航海图...」占屏时长 + geojson 请求次数 | dev server 或静态服务器 |
 | `online-check.mjs` | 线上站点能否打开、有无控制台错误、地图是否渲染 | 无（直连线上） |
 | `online-load-time.mjs` | 线上端到端加载耗时（含每个关键资源大小） | 无（直连线上） |
-| `notification-overlap.mjs` | 通知堆叠时面板按钮仍点得动（真实鼠标点击） | dev server |
 | `mobile-layout.mjs` | 移动端（390×844 触屏）：无横向溢出、九个入口齐全、底部抽屉、参观模式退路、罗盘与天候徽章不重叠、开局视野含港口 | dev server |
 | `mobile-prod.mjs` | 同一套移动端断言跑在**生产产物**上；不依赖 dev 钩子，全程走玩家真按得到的路径（点海面出航 → 段末抉择 → 操舵退路） | build + `vite preview` |
+| `clickable-audit.mjs` | 所有可见按钮的中心点能否命中自己（`elementFromPoint`）。专治「看得见点不到」——DOM 的 `btn.click()` 会绕开遮挡，详见文件头 | dev server |
 
 ## 写 e2e 时容易踩的坑
 

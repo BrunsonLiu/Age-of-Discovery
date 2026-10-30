@@ -50,15 +50,46 @@ for (let i = 0; i < 16; i++) {
 }
 await sleep(1500)
 
-// 切到 3D（用 evaluate 绕开开场浮层的遮挡）
-const toggled = await page.evaluate(() => {
-  const btn = document.querySelector('[data-testid="map-mode-toggle"]')
-  if (!btn) return null
-  btn.click()
-  return btn.textContent
-})
+/**
+ * 用**真实鼠标点击**，而且先做命中测试。
+ *
+ * 【为什么不能用 btn.click()】
+ * DOM 的 click() 直接派发事件，完全绕过 z-index、pointer-events、遮挡——
+ * 按钮就算被顶栏整个盖住，这样点也照样"成功"。本轮真出过这个事故：
+ * 「3D 海图」按钮放在 top-3（12px），被 h-12 的顶栏压得严严实实，
+ * 玩家反馈"我还是没看到 3D"，而本脚本 71 条断言全绿。
+ * 所以凡是"用户能不能点到"的断言，必须 elementFromPoint + page.mouse.click。
+ */
+const clickReal = async (sel) => {
+  const box = await page.evaluate((s) => {
+    const el = document.querySelector(s)
+    if (!el) return null
+    const r = el.getBoundingClientRect()
+    const cx = r.x + r.width / 2, cy = r.y + r.height / 2
+    const hit = document.elementFromPoint(cx, cy)
+    return {
+      x: cx, y: cy,
+      text: (el.textContent || '').trim(),
+      inViewport: r.x >= 0 && r.y >= 0 && r.right <= innerWidth && r.bottom <= innerHeight,
+      hitsSelf: !!hit && (el === hit || el.contains(hit)),
+      hitTag: hit ? `${hit.tagName}.${(hit.className || '').toString().slice(0, 40)}` : null,
+    }
+  }, sel)
+  if (!box) return null
+  if (box.hitsSelf) await page.mouse.click(box.x, box.y)
+  return box
+}
+
+// 入场后港口面板会自动打开、带一层 bg-black/45 遮罩；玩家这时候也点不到
+// 切换按钮，所以先按 Esc 关掉（真实玩家路径），再做命中测试。
+await page.keyboard.press('Escape'); await sleep(400)
+await page.keyboard.press('Escape'); await sleep(700)
+
+const toggled = await clickReal('[data-testid="map-mode-toggle"]')
 console.log('切换按钮:', JSON.stringify(toggled))
 check(!!toggled, '视图切换按钮存在')
+check(toggled.inViewport, '切换按钮完整落在视口内')
+check(toggled.hitsSelf, `切换按钮真的能被点到（未被遮挡）——实测命中的是 ${toggled.hitTag}`)
 
 // 等 canvas 出现
 await page.waitForSelector('canvas', { timeout: 30000 })
@@ -908,7 +939,7 @@ console.log('截图: map3d-手机.png')
 // 切回 2D，确认 Leaflet 恢复正常
 await page.setViewport({ width: 1440, height: 900 })
 await sleep(400)
-await page.evaluate(() => document.querySelector('[data-testid="map-mode-toggle"]')?.click())
+await clickReal('[data-testid="map-mode-toggle"]')
 await sleep(2500)
 const back = await page.evaluate(() => ({
   leaflet: !!document.querySelector('.leaflet-container'),

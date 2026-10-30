@@ -18,6 +18,7 @@
     "test:e2e:trade": "node test/e2e/trade-quote.mjs",
     "test:e2e:notify": "node test/e2e/notification-overlap.mjs",
     "test:e2e:mobile": "node test/e2e/mobile-layout.mjs",
+    "test:e2e:clickable": "node test/e2e/clickable-audit.mjs",
     "test:e2e:mobile:prod": "node test/e2e/mobile-prod.mjs",
     "test:e2e:load": "node test/e2e/measure-map-load.mjs",
     "test:e2e:online": "node test/e2e/online-load-time.mjs",

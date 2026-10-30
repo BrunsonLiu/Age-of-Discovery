@@ -215,13 +215,20 @@ export default function MapView() {
 
   return (
     <div className="relative" style={{ width: '100%', height: '100%' }}>
-      {/* 视图切换：2D 矢量海图 / 3D 立体海图 */}
+      {/* 视图切换：2D 矢量海图 / 3D 立体海图
+
+          【为什么是 top-14 而不是 top-3】顶栏 TimelineBar 是 top-0/h-12（48px）
+          且压在更上层。这个按钮原先放 top-3（12px）、高 30px，整个落进顶栏
+          覆盖范围里——玩家根本看不见、点不到，反馈"我还是没看到 3D"。
+          之前的 e2e 之所以全绿，是因为脚本直接调 btn.click() 绕过了命中测试。
+          现在躲到 56px（顶栏下方），右侧侧栏按钮是垂直居中排布，不会撞上。 */}
       <button
         type="button"
         onClick={() => setRenderMode(renderMode === '3d' ? '2d' : '3d')}
-        className="absolute top-3 right-3 z-[700] px-2.5 py-1 rounded text-[11px] font-serif
-                   bg-[#1b1408]/75 border border-[#8b6f3e]/60 text-[#e8d4a8]
-                   hover:bg-[#2a1f0c]/85 active:scale-95 transition-colors"
+        className="absolute top-14 right-3 z-[900] px-2.5 py-1 rounded text-[11px] font-serif
+                   bg-[#1b1408]/95 border border-[#8b6f3e]/70 text-[#e8d4a8]
+                   shadow-[0_2px_8px_rgba(0,0,0,0.55)]
+                   hover:bg-[#2a1f0c] active:scale-95 transition-colors"
         title={renderMode === '3d' ? '切回 2D 平面海图' : '切换到 3D 立体海图'}
         data-testid="map-mode-toggle"
       >
