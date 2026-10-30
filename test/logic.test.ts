@@ -19,6 +19,7 @@ import {
 } from '../src/utils/eventSummary'
 import { adjustOutcome, clampOutcomeToFleet } from '../src/utils/outcomeAdjust'
 import { buildTerrainSymbols } from '../src/utils/terrainDecor'
+import { durabilityColor, loadColor, DANGER_COLOR, WARN_COLOR, SAFE_COLOR } from '../src/utils/shipVitals'
 import {
   STANCES, forecastSegment, stanceLedgers, segmentCountFor, segmentIndexFor, nextSegmentBoundary,
   dailyFoodUse, dailyWaterUse, dailyWearRate, settleWear, describeStanceTradeoff,
@@ -3231,6 +3232,29 @@ console.log('== 47. 参观模式：全程不弹航段抉择（store 分流）=='
   assert(visTrip.pendingSegment === null, '参观模式全程无拦截')
 }
 
+
+console.log('== 48. 船况配色：边界值必须落在正确的一档 ==')
+{
+  // 耐久：≤30% 危险、≤60% 提醒、其余正常
+  assert(durabilityColor(0) === DANGER_COLOR, '耐久 0% 应为危险色')
+  assert(durabilityColor(0.3) === DANGER_COLOR, '耐久正好 30% 应仍算危险（边界包含）')
+  assert(durabilityColor(0.31) === WARN_COLOR, '耐久 31% 应升一档为提醒色')
+  assert(durabilityColor(0.6) === WARN_COLOR, '耐久正好 60% 应仍算提醒')
+  assert(durabilityColor(0.61) === SAFE_COLOR, '耐久 61% 应为正常色')
+  assert(durabilityColor(1) === SAFE_COLOR, '耐久 100% 应为正常色')
+
+  // 载重：只有 ≥95% 一档危险（空着跑和装八成都没有后果）
+  assert(loadColor(0) === WARN_COLOR, '载重 0% 不该报危险')
+  assert(loadColor(0.6) === WARN_COLOR, '载重 60% 不该报危险')
+  assert(loadColor(0.94) === WARN_COLOR, '载重 94% 仍不该报危险')
+  assert(loadColor(0.95) === DANGER_COLOR, '载重正好 95% 应报危险（边界包含）')
+  assert(loadColor(1) === DANGER_COLOR, '满载必须报危险')
+
+  // 两种规则不能混：耐久在 50% 是提醒色，载重在 50% 也是提醒色，
+  // 但耐久在 20% 该红、载重在 20% 不该红 —— 这条能抓住"把两个函数写成一个"
+  assert(durabilityColor(0.2) === DANGER_COLOR && loadColor(0.2) === WARN_COLOR,
+    '耐久与载重的危险阈值不同，不能共用一个函数')
+}
 
 console.log(`\n最终结果：${passed} 通过 / ${failed} 失败`)
 if (failed > 0) process.exit(1)

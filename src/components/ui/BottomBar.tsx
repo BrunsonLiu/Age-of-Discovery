@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Anchor, Navigation, Coins, RotateCcw, Pause, FastForward, Sailboat } from 'lucide-react'
+import { Anchor, Navigation, Coins, RotateCcw, Pause, FastForward, Sailboat, Shield, Package } from 'lucide-react'
 import { useGameStore } from '@/store/useGameStore'
 import { useMapStore } from '@/store/useMapStore'
 import { ports } from '@/data/ports'
@@ -9,6 +9,37 @@ import { shipSprite } from '@/data/shipSprites'
 import ResourceCluster from '@/components/ui/ResourceCluster'
 import SoundToggle from '@/components/ui/SoundToggle'
 import ShipCard from '@/components/ui/ShipCard'
+import { durabilityColor, loadColor } from '@/utils/shipVitals'
+
+/**
+ * 底栏里的一枚紧凑船况：图标 + 百分比 + 4px 宽的小条。
+ *
+ * 条只是形状提示，**精确值在 title 里**——屏幕小到只能放条的时候，
+ * 玩家仍然悬停可读「耐久 62/100」。这与"显示的数字必须等于实际"不冲突：
+ * 数字是真的，只是默认折叠进了 tooltip。
+ */
+function ShipVital({ icon, pct, color, title }: {
+  icon: React.ReactNode
+  pct: number
+  color: string
+  title: string
+}) {
+  const pctText = Math.round(pct * 100)
+  return (
+    <span className="flex items-center gap-1 shrink-0 cursor-help" title={title}>
+      <span style={{ color }} className="flex shrink-0">{icon}</span>
+      <span className="font-mono text-[10px] leading-none tabular-nums" style={{ color }}>
+        {pctText}%
+      </span>
+      <span className="relative h-1 w-5 rounded-full bg-black/45 overflow-hidden">
+        <span
+          className="absolute inset-y-0 left-0 rounded-full transition-all duration-300"
+          style={{ width: `${pctText}%`, background: color }}
+        />
+      </span>
+    </span>
+  )
+}
 
 export default function BottomBar() {
   // 船只详情浮层。常驻只留船图和船名，细节点开才出现（见 ShipCard 注释）
@@ -42,6 +73,28 @@ export default function BottomBar() {
   const togglePirateZones = useMapStore((s) => s.togglePirateZones)
 
   const flagship = fleet.ships.find(sh => sh.id === fleet.flagshipId) ?? fleet.ships[0]
+  /*
+   * 常驻船况（耐久 / 载重）。
+   *
+   * 参考图底部那张船卡是常驻的，但那是 1080p 宽屏、底栏独占一整条。
+   * 我们底栏已经塞了船名、港口、速度、天数、四种资源、七个图层开关，
+   * 所以只取船卡里**两个会直接影响下一步动作**的数：
+   *   · 耐久 —— 低了要修船（决定能不能继续远航）
+   *   · 载重 —— 满了就买不了货（决定这一趟还能不能做买卖）
+   * 并且只在 1280px 以上常驻（xl:），1024 下底栏已折两行，再塞会挤。
+   *
+   * 算法与 ShipCard 同源：载重按 usedCapacity 求和算，不是把 cargo 数量相加
+   * —— 两种算法在货物有重量差异时会分叉，屏幕上就会和船卡对不上。
+   */
+  const durPct = flagship && flagship.maxDurability > 0
+    ? flagship.durability / flagship.maxDurability
+    : 0
+  const durColor = durabilityColor(durPct)
+  const loadUsed = fleet.ships.reduce((sum, sh) => sum + sh.usedCapacity, 0)
+  const loadTotal = fleet.ships.reduce((sum, sh) => sum + sh.capacity, 0)
+  const loadPct = loadTotal > 0 ? Math.min(1, loadUsed / loadTotal) : 0
+  // 满载是硬约束：没有空舱就买不进任何货，所以 ≥95% 提前变红提示
+  const loadTone = loadColor(loadPct)
   const currentPort = fleet.currentPortId ? ports.find(p => p.id === fleet.currentPortId) : null
   const destPort = currentRoute?.toPortId ? ports.find(p => p.id === currentRoute.toPortId) : null
   const destName = destPort?.nameCn ?? waypoint?.name ?? '未知海域'
@@ -120,18 +173,34 @@ export default function BottomBar() {
             </span>
           </button>
         )}
+        {flagship && (
+          <span className="hidden xl:flex items-center gap-2.5 shrink-0">
+            <ShipVital
+              color={durColor}
+              pct={durPct}
+              title={`船体耐久 ${flagship.durability}/${flagship.maxDurability}（${Math.round(durPct * 100)}%）`}
+              icon={<Shield size={10} aria-hidden="true" />}
+            />
+            <ShipVital
+              color={loadTone}
+              pct={loadPct}
+              title={`载重 ${loadUsed}/${loadTotal}（${Math.round(loadPct * 100)}%）`}
+              icon={<Package size={10} aria-hidden="true" />}
+            />
+          </span>
+        )}
         {fleet.isSailing ? (
           <div className="flex items-center gap-2 min-w-0">
-            <Navigation size={14} className="text-blue-400 shrink-0 animate-pulse" />
-            <span className="font-serif text-sm text-blue-300 truncate">
+            <Navigation size={14} className="text-ocean-300 shrink-0 animate-pulse" />
+            <span className="font-serif text-sm text-ocean-200 truncate">
               → {destName}
             </span>
             <span className="text-xs text-gold-500 shrink-0">
               {progressPct}%
             </span>
-            <div className="w-16 h-1.5 bg-ocean-700 rounded-full overflow-hidden shrink-0 hidden sm:block">
+            <div className="w-16 h-1.5 bg-black/35 rounded-full overflow-hidden shrink-0 hidden sm:block">
               <div
-                className="h-full bg-blue-400 rounded-full transition-all duration-300"
+                className="h-full bg-ocean-300 rounded-full transition-all duration-300"
                 style={{ width: `${progressPct}%` }}
               />
             </div>

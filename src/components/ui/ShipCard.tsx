@@ -2,6 +2,7 @@ import { Anchor, Package, Users, Gauge, Shield, X } from 'lucide-react'
 import { useGameStore } from '@/store/useGameStore'
 import { shipSprite } from '@/data/shipSprites'
 import { goods } from '@/data/goods'
+import { durabilityColor } from '@/utils/shipVitals'
 
 /**
  * 旗舰卡：底栏上方展开的一块船只详情。
@@ -41,7 +42,7 @@ export default function ShipCard({ onClose }: { onClose: () => void }) {
 
   // 耐久色：低于 30% 才红，避免"正常航行时船卡一片红"
   const durPct = ship.maxDurability > 0 ? ship.durability / ship.maxDurability : 0
-  const durColor = durPct <= 0.3 ? '#b8432e' : durPct <= 0.6 ? '#c9a96e' : '#5f9440'
+  const durColor = durabilityColor(durPct)
 
   const cargo = fleet.cargo.filter(c => c.quantity > 0).slice(0, 8)
 
