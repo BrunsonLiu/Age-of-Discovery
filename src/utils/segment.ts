@@ -1,4 +1,4 @@
-import type { Fleet, WeatherKind } from '@/types'
+import type { WeatherKind } from '@/types'
 
 /**
  * 航段抉择系统。
@@ -178,13 +178,14 @@ export function hazardLabel(dangerLevel: number, weather: WeatherKind): string {
 }
 
 /** 每日基础消耗（食物/淡水），与 utils/navigation 的口径保持一致 */
-export function dailyConsumption(fleet: Pick<Fleet, 'ships'>): { food: number; water: number } {
-  const totalCrew = fleet.ships.reduce((sum, ship) => sum + ship.crew, 0)
-  return {
-    food: Math.ceil(totalCrew * 0.1),
-    water: Math.ceil(totalCrew * 0.15),
-  }
-}
+/*
+ * 【这里原本有 dailyConsumption()，与 utils/navigation 的 calculateDailyConsumption()
+ *  逐字相同（同样是 crew×0.1 / crew×0.15），已删除】
+ *
+ * 记忆里那条"消耗口径：预测层与结算层必须用同一个函数"说的就是这个坑：
+ * 两份公式现在相等，但只要有人改一份忘了另一份，出航计划会报"够"，实际却饿肚子。
+ * 保留 navigation 那一份（三处调用），删掉这个副本。
+ */
 
 /* ---- 消耗口径：预测层与结算层必须用同一个函数 ---- */
 
@@ -434,10 +435,11 @@ export function stanceLedgers(input: LedgerInput): StanceLedger[] {
  * 本段（或全程）里，某个方针下要走的天数。
  * 与 stanceLedgers 用同一套口径，避免两处算出不同的天数。
  */
-export function stanceDays(distanceNm: number, baseNmPerDay: number, stance: StanceProfile): number {
-  const effective = Math.max(0.001, baseNmPerDay * stance.speedMul)
-  return Math.max(1, Math.ceil(distanceNm / effective))
-}
+/*
+ * 【这里原本有 stanceDays()，已删除】
+ * 它算的是 ceil(距离 / (基准日行 × 方针速度倍率))——只乘了速度，没乘天气与风况，
+ * 与真正结算用的 calculateSailingDays() 口径不同。留着就是"面板说 3 天、实际 4 天"。
+ */
 
 
 /**

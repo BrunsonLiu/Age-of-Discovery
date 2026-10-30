@@ -24,7 +24,7 @@
     "test:e2e:mobile:prod": "node test/e2e/mobile-prod.mjs",
     "test:e2e:load": "node test/e2e/measure-map-load.mjs",
     "test:e2e:online": "node test/e2e/online-load-time.mjs",
-    "test:e2e:all": "npm run test:e2e && npm run test:e2e:scenes && npm run test:e2e:audio && npm run test:e2e:map && npm run test:e2e:map3d && npm run test:e2e:trade && npm run test:e2e:notify && npm run test:e2e:mobile"
+    "test:e2e:all": "npm run test:e2e && npm run test:e2e:scenes && npm run test:e2e:audio && npm run test:e2e:map && npm run test:e2e:map3d && npm run test:e2e:trade && npm run test:e2e:notify && npm run test:e2e:mobile && npm run test:e2e:clickable && npm run test:e2e:clickable:1024 && npm run test:e2e:layout"
   },
   "dependencies": {
     "clsx": "^2.1.1",
