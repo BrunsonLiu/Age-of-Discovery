@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react'
 import { Anchor, Navigation, Coins, RotateCcw, Pause, FastForward, Sailboat } from 'lucide-react'
 import { useGameStore } from '@/store/useGameStore'
 import { useMapStore } from '@/store/useMapStore'
@@ -7,8 +8,19 @@ import { daysToDestination } from '@/utils/voyage'
 import { shipSprite } from '@/data/shipSprites'
 import ResourceCluster from '@/components/ui/ResourceCluster'
 import SoundToggle from '@/components/ui/SoundToggle'
+import ShipCard from '@/components/ui/ShipCard'
 
 export default function BottomBar() {
+  // 船只详情浮层。常驻只留船图和船名，细节点开才出现（见 ShipCard 注释）
+  const [showShipCard, setShowShipCard] = useState(false)
+
+  // Esc 收起：浮层盖住底栏上方一块地图，键盘玩家得有个退路
+  useEffect(() => {
+    if (!showShipCard) return
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setShowShipCard(false) }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [showShipCard])
   const fleet = useGameStore((s) => s.fleet)
   const currentRoute = useGameStore((s) => s.currentRoute)
   const routeProgress = useGameStore((s) => s.routeProgress)
@@ -69,7 +81,7 @@ export default function BottomBar() {
     */
     <div
       data-tut="bottombar"
-      className="px-2 md:px-3 py-1 flex flex-wrap items-center justify-between gap-x-3 gap-y-0.5 md:flex-nowrap md:py-1.5"
+      className="relative px-2 md:px-3 py-1 flex flex-wrap items-center justify-between gap-x-3 gap-y-0.5 md:flex-nowrap md:py-1.5"
       style={{
         /* 与顶栏同一根梁的"下半截"：渐变方向反转（贴屏幕底边的一侧更亮），
            这样上下两条边读起来是同一个材质的两个端面，而不是两条独立的黑条。 */
@@ -84,14 +96,29 @@ export default function BottomBar() {
             参考图底部那张船卡的第一眼就是船本身，这里先用最小的代价补上存在感。
             画在文字左边、跟着状态块一起走，移动端折行时也不会孤立。 */}
         {flagship && (
-          <img
-            src={shipSprite(flagship.type)}
-            alt=""
-            aria-hidden="true"
-            draggable={false}
-            className="h-7 w-auto object-contain shrink-0 drop-shadow-[0_1px_3px_rgba(0,0,0,0.6)] select-none"
-            onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none' }}
-          />
+          <button
+            type="button"
+            onClick={() => setShowShipCard(v => !v)}
+            className={`shrink-0 flex items-center gap-1 rounded px-0.5 press transition-colors ${
+              showShipCard ? 'bg-gold-700/35' : 'hover:bg-gold-700/20'
+            }`}
+            title={`${flagship.name} · 点击查看船只详情`}
+            aria-label={`查看 ${flagship.name} 的详情`}
+            aria-expanded={showShipCard}
+            data-testid="ship-card-toggle"
+          >
+            <img
+              src={shipSprite(flagship.type)}
+              alt=""
+              aria-hidden="true"
+              draggable={false}
+              className="h-7 w-auto object-contain drop-shadow-[0_1px_3px_rgba(0,0,0,0.6)] select-none"
+              onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none' }}
+            />
+            <span className="hidden sm:inline font-serif text-[10px] text-gold-400 whitespace-nowrap">
+              {flagship.name}
+            </span>
+          </button>
         )}
         {fleet.isSailing ? (
           <div className="flex items-center gap-2 min-w-0">
@@ -261,6 +288,15 @@ export default function BottomBar() {
             <RotateCcw size={12} aria-hidden="true" />
           </button>
       </div>
+
+      {/* 船只详情浮层：挂在底栏正上方。
+          底栏 z=40 > 面板 z=30，所以它会盖住面板底部——可以接受，它本来就是
+          点开就走的临时浮层，Esc 或再点一次船图即收。 */}
+      {showShipCard && (
+        <div className="absolute bottom-full left-2 md:left-3 mb-1.5 z-10">
+          <ShipCard onClose={() => setShowShipCard(false)} />
+        </div>
+      )}
     </div>
   )
 }
