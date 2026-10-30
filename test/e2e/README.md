@@ -56,6 +56,7 @@ npm run test:e2e:all      # 以上全部（不含 mobile:prod）
 | `online-load-time.mjs` | 线上端到端加载耗时（含每个关键资源大小） | 无（直连线上） |
 | `mobile-layout.mjs` | 移动端（390×844 触屏）：无横向溢出、九个入口齐全、底部抽屉、参观模式退路、罗盘与天候徽章不重叠、开局视野含港口 | dev server |
 | `mobile-prod.mjs` | 同一套移动端断言跑在**生产产物**上；不依赖 dev 钩子，全程走玩家真按得到的路径（点海面出航 → 段末抉择 → 操舵退路） | build + `vite preview` |
+| `layout-audit.mjs` | 多视口 × 8 个面板：元素横向越界、文字被 `overflow:hidden` 裁掉（`scrollWidth > clientWidth`）。**在压缩截图里看不出来的那类毛病**。地图 SVG 图层已排除（它本就比视口大） | dev server |
 | `clickable-audit.mjs` | 所有可见按钮的中心点能否命中自己（`elementFromPoint`）+ 是否完整落在视口内。专治「看得见点不到」——DOM 的 `btn.click()` 会绕开遮挡，详见文件头。**至少跑 1440 与 1024 两档**（`--vw=1024 --vh=768`）：底栏四段在 1024 下折成两行，768–1279 这段宽度只有这一档测得到 | dev server |
 
 ## 写 e2e 时容易踩的坑
