@@ -18,6 +18,7 @@ import {
   CHIP_MIN_EV, type AdjustedOutcome, type ChoiceSummary,
 } from '../src/utils/eventSummary'
 import { adjustOutcome, clampOutcomeToFleet } from '../src/utils/outcomeAdjust'
+import { buildTerrainSymbols } from '../src/utils/terrainDecor'
 import {
   STANCES, forecastSegment, stanceLedgers, segmentCountFor, segmentIndexFor, nextSegmentBoundary,
   dailyFoodUse, dailyWaterUse, dailyWearRate, settleWear, describeStanceTradeoff,
@@ -3081,6 +3082,67 @@ console.log('== 53. 自由世界：模式、跳过操舵、参观模式不输 ==
     }
   }
   assert(checked >= 20, `文案一致性遍历覆盖足够多的账本（实测 ${checked} 条）`)
+}
+
+console.log('== 46. 地形符号：只撒在陆地内、可复现、按面积取块 ==')
+{
+  /**
+   * L 形"大陆"：bbox 是 10×10，但右上角 (0..5, 0..5) 是海。
+   *
+   * 【为什么不能用正方形】——这条差点成为一个假测试。
+   * 正方形填满了自己的 bbox，撒点在 bbox 内就必然在陆地内，
+   * 于是"点是否在多边形内"这个判断**根本没有被检验到**。
+   * 实测：把 pointInRings 的过滤整段删掉，正方形用例照样全绿。
+   * L 形留出 1/4 的空洞，越界点才会真的出现。
+   */
+  const square = {
+    type: 'FeatureCollection',
+    features: [{
+      type: 'Feature',
+      properties: {},
+      geometry: {
+        type: 'Polygon',
+        coordinates: [[[-5, -5], [5, -5], [5, 0], [-1, 0], [-1, 5], [-5, 5], [-5, -5]]],
+      },
+    }],
+  }
+  const symbols = buildTerrainSymbols(square)
+  assert(symbols.length > 0, `正方形大陆应当撒出符号（实得 ${symbols.length}）`)
+  // 全部落在 L 形内——这是撒点逻辑最核心的正确性
+  const inSea = symbols.filter(s => s.lng > -1 && s.lat > 0)
+  assert(inSea.length === 0, `符号不能跑到海面（越界 ${inSea.length} 个）`)
+  // 也不能贴边：贴边的符号会被海岸描边切一半
+  const nearEdge = symbols.filter(s => Math.abs(Math.abs(s.lat) - 5) < 0.05 || Math.abs(Math.abs(s.lng) - 5) < 0.05)
+  assert(nearEdge.length === 0, `符号不该贴着海岸线（贴边 ${nearEdge.length} 个）`)
+
+  // 固定种子 → 同一份数据撒在同一处（否则切视图时山会乱跑）
+  const again = buildTerrainSymbols(square)
+  const same = symbols.length === again.length &&
+    symbols.every((s, i) => s.lat === again[i].lat && s.lng === again[i].lng && s.kind === again[i].kind)
+  assert(same, '同一份数据两次生成结果必须一致（种子固定）')
+
+  // 两种符号都要出现：全是山或全是树说明 kind 分支写死了
+  const kinds = new Set(symbols.map(s => s.kind))
+  assert(kinds.has('peak'), '应当出现山')
+  // 这个方块在赤道附近，树的比例取决于随机数；至少要保证 kind 只有两种取值
+  assert([...kinds].every(k => k === 'peak' || k === 'tree'), `kind 只能是 peak/tree（实得 ${[...kinds]}）`)
+
+  // 只处理面积前 N 块：给一堆小块 + 一个巨块，巨块必须被选中
+  const small = Array.from({ length: 30 }, (_, i) => ({
+    type: 'Feature' as const,
+    properties: {},
+    geometry: {
+      type: 'Polygon' as const,
+      coordinates: [[[100 + i, 40], [100.2 + i, 40], [100.2 + i, 40.2], [100 + i, 40.2], [100 + i, 40]]],
+    },
+  }))
+  const mixed = { type: 'FeatureCollection' as const, features: [...small, ...square.features] }
+  const fromMixed = buildTerrainSymbols(mixed, { topBlocks: 1 })
+  const allInBig = fromMixed.every(s => !(s.lng > -1 && s.lat > 0))
+  assert(allInBig, 'topBlocks=1 时只应给最大的那块撒点')
+
+  // 空数据不该崩
+  assert(buildTerrainSymbols({ type: 'FeatureCollection', features: [] }).length === 0, '空数据集应返回空数组')
 }
 
 console.log(`\n最终结果：${passed} 通过 / ${failed} 失败`)

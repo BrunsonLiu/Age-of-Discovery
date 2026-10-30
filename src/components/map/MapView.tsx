@@ -5,6 +5,7 @@ import { useGameStore } from '@/store/useGameStore'
 import { useIsMobile } from '@/hooks/useIsMobile'
 import { ports } from '@/data/ports'
 import { PortMarker } from './PortMarker'
+import TerrainDecor from './TerrainDecor'
 import { RouteLine } from './RouteLine'
 import { ShipAnimation } from './ShipAnimation'
 import { MapOverlays } from './MapOverlays'
@@ -86,6 +87,9 @@ function LandPaperPattern() {
       const defs = document.createElementNS(NS, 'defs')
       defs.innerHTML = `<pattern id="landPaper" patternUnits="userSpaceOnUse" width="240" height="240">`
         + `<image href="${UI_ASSETS.parchment}" x="-60" y="-60" width="360" height="360" preserveAspectRatio="xMidYMid slice" />`
+        // 羊皮原图比陆地色亮一截，直接铺会把大陆洗成浅黄。叠一层原来的暖色把它压回来，
+        // 纹理仍在（颗粒是乘出来的），明度回到 #e7d5ab 附近。
+        + `<rect width="240" height="240" fill="#d8c39a" opacity="0.42" />`
         + `</pattern>`
       svg.insertBefore(defs, svg.firstChild)
     }
@@ -341,7 +345,12 @@ export default function MapView() {
               attributionControl={false}
             >
               {geoData.land && (
-                <GeoJSON key="land" data={geoData.land} style={landStyle} interactive={false} />
+                <>
+                  <GeoJSON key="land" data={geoData.land} style={landStyle} interactive={false} />
+                  {/* 地形符号：山丘/树丛。挂在自定义 terrainPane(z=450)，
+                      压在陆地之上、港口标记(z=600)之下 */}
+                  <TerrainDecor geojson={geoData.land} />
+                </>
               )}
 
               {geoData.borders && (
