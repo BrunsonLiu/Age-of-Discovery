@@ -6,6 +6,7 @@ import { useIsMobile } from '@/hooks/useIsMobile'
 import { ports } from '@/data/ports'
 import { PortMarker } from './PortMarker'
 import TerrainDecor from './TerrainDecor'
+import MiniMap from './MiniMap'
 import { buildMajorLand } from '@/utils/terrainDecor'
 import { RouteLine } from './RouteLine'
 import { ShipAnimation } from './ShipAnimation'
@@ -381,6 +382,8 @@ export default function MapView() {
               <LandPaperPattern />
               <MapController />
               <MapOverlays />
+              {/* 右上角小地图：全世界轮廓 + 当前视野框，点击跳转 */}
+              <MiniMap land={geoData.land} />
               <MapClickHandler />
               <OceanLabels />
               <RouteLine />
