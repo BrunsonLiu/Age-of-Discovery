@@ -220,6 +220,21 @@ interface GameStore extends GameState {
   /** 取消出航计划 */
   cancelVoyage: () => void
   /**
+   * 航行中主动召唤操舵（原「按 H」）。
+   *
+   * 操舵从"每段必弹"改成"随时可召唤"之后，需要一个入口把玩家送进那个状态。
+   * 与时序无关的纯状态切换，所以放在 store 里而不是 UI 里的 setTimeout。
+   */
+  requestHelm: () => void
+  /**
+   * 航行中打开方针面板（默认只在第一段自动弹一次，之后由玩家主动调）。
+   *
+   * 复用 pendingSegment + gamePhase='segment' 这条既有链路：
+   * 航行循环本来就会在 pendingSegment 存在时停下等玩家，
+   * 没必要为"主动打开"再写一套面板。
+   */
+  openStancePicker: () => void
+  /**
    * 选定当前航段的航段方针。
    *
    * 这是玩家在航程中唯一能「做主」的动作：方针决定了本段的
@@ -755,19 +770,21 @@ export const useGameStore = create<GameStore>()(
           stance: stanceId,
           pendingSegment: null,
           fleet: nextFleet,
-          // 选完方针立刻进入本段操舵——「航行节拍器」的下一拍。
+          // 选完方针 → 第一段强制操舵，之后改为船上「亲手掌舵」按钮召唤。
           //
-          // 之前操舵是可选加分项（按 H 才开，每段一次），于是「最有操作感
-          // 的环节」恰恰是玩家最容易被跳过的环节。现在它跟方针绑定：
-          // 每段起航前都会弹出操舵，评级决定这一段能少走多少海里。
-          // gamePhase 切到 'helm'，SailingController 会停船等玩家。
+          // 原设计是"每段必弹"：因为操舵曾是可选加分项，而它恰恰是最容易被
+          // 跳过的环节。方向没错，但**每段都弹**把一份加分项变成了每段一次的
+          // 门槛——2~4 段的航程就是 2~4 次全屏打断。
           //
-          // 【参观模式例外】只想看看世界的人不该被逼着玩实时操作，
-          // 所以 visitor 模式直接放行——操舵随时可以在面板里手动补做。
-          pendingHelm: state.gameMode === 'visitor'
+          // 现在：第 0 段必弹（保证每个玩家都试过这个环节），
+          // 之后段不再自动弹，改由船上的按钮随时召唤（requestHelm）。
+          // 想玩的人一秒钟就能开，不想玩的人不会被拦。
+          //
+          // 【参观模式】完全不弹，也不进 helm 阶段。
+          pendingHelm: state.gameMode === 'visitor' || state.pendingSegment.index > 0
             ? null
             : { segmentIndex: state.pendingSegment.index },
-          gamePhase: state.gameMode === 'visitor' ? 'playing' : 'helm',
+          gamePhase: state.gameMode === 'visitor' || state.pendingSegment.index > 0 ? 'playing' : 'helm',
         }
       }),
 
@@ -816,6 +833,37 @@ export const useGameStore = create<GameStore>()(
         const weatherMul = WEATHER_INFO[state.weather.kind].sailMul * weatherFavorFactor(state.weather.kind)
         const nmPerDay = dailyDistanceNm(state.fleet, state.officers, route.windFavor, stanceMul, weatherMul)
         const daysLeft = nmPerDay > 0 ? Math.max(0, Math.ceil(remainingNm / nmPerDay)) : 0
+        /*
+         * 【方针只问一次：出航时那一次就是唯一一次】
+         *
+         * 实测过新玩家的第一分钟：到地图后 12 秒内被 7 个全屏层打断
+         * （出航计划 → 方针 1/2 → 操舵 → 方针 2/2 …），75 秒里一分钱没进账。
+         * 4399 那一类游戏从不这样——**同一类问题不反复问**。
+         *
+         * 但也不能一句话不问：玩家需要知道"我现在走到哪了、还剩几天"。
+         * 所以**跨段一律不再弹**，只留一条飘字（不打断、不遮挡）；
+         * 想知道细节或改主意，船上有常驻的「方针」按钮随时点开。
+         *
+         * 【为什么不是"跨第一次还问一下"】
+         * 第一版写的是 nextIndex > 1 才跳过，结果 2 段航线照样问两次
+         * （出航时第 0 段 + 第一次跨段第 1 段）—— 实测弹层数一个没少。
+         * 常见的短途本来就是 2 段，"只问一次"必须字面兑现。
+         *
+         * 决策权没有减少，只是从"你必须回答"变成"你想问就看"。
+         */
+        if (nextIndex >= 1) {
+          useFxStore.getState().fx(
+            {
+              kind: 'float',
+              tone: 'plain',
+              text: `第 ${nextIndex + 1} 段`,
+              sub: `剩 ${daysLeft} 天 · ${STANCES[state.stance].name}`,
+            },
+            'sail',
+          )
+          return { segmentIndex: nextIndex }
+        }
+
         return {
           segmentIndex: nextIndex,
           pendingSegment: {
@@ -831,6 +879,42 @@ export const useGameStore = create<GameStore>()(
       }),
 
       cancelVoyage: () => set({ pendingVoyage: null }),
+
+      requestHelm: () => set((state) => {
+        if (!state.fleet.isSailing || state.pendingHelm) return state
+        if (state.gameMode === 'visitor') return state
+        // 只允许在正常航行时召唤：事件 / 抉择 / 出航计划期间不该插队
+        if (state.gamePhase !== 'playing') return state
+        return { pendingHelm: { segmentIndex: state.segmentIndex }, gamePhase: 'helm' }
+      }),
+
+      openStancePicker: () => set((state) => {
+        const route = state.currentRoute
+        if (!route || !state.fleet.isSailing) return state
+        if (state.pendingSegment || state.pendingHelm) return state
+        if (state.gameMode === 'visitor') return state
+        if (state.gamePhase !== 'playing') return state
+
+        // 与 syncSegmentBoundary 用同一套算法，否则面板里的"剩几天"会是假的
+        const progress = Math.min(1, Math.max(0, state.routeProgress))
+        const remainingNm = Math.max(0, Math.round(route.distance * (1 - progress)))
+        const stanceMul = STANCES[state.stance].speedMul
+        const weatherMul = WEATHER_INFO[state.weather.kind].sailMul * weatherFavorFactor(state.weather.kind)
+        const nmPerDay = dailyDistanceNm(state.fleet, state.officers, route.windFavor, stanceMul, weatherMul)
+        const daysLeft = nmPerDay > 0 ? Math.max(0, Math.ceil(remainingNm / nmPerDay)) : 0
+
+        return {
+          pendingSegment: {
+            index: state.segmentIndex,
+            total: state.segmentCount,
+            hazard: hazardLabel(route.dangerLevel, state.weather.kind),
+            segmentNm: route.distance / Math.max(1, state.segmentCount),
+            remainingNm,
+            daysLeft,
+          },
+          gamePhase: 'segment',
+        }
+      }),
 
       buyRouteIntel: () => set((state) => {
         const pending = state.pendingVoyage

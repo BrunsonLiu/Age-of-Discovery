@@ -18,6 +18,7 @@ import WeatherFx from '@/components/map/WeatherFx'
 import EventCard from '@/components/events/EventCard'
 import BottomBar from '@/components/ui/BottomBar'
 import BrokerTip from '@/components/map/BrokerTip'
+import VoyageControls from '@/components/map/VoyageControls'
 import Compass from '@/components/ui/Compass'
 import WeatherBadge from '@/components/ui/WeatherBadge'
 import TimelineBar from '@/components/ui/TimelineBar'
@@ -398,9 +399,12 @@ export default function MainMap() {
         fixed 容器按文档流往上叠，结构上就不可能重叠。
       */}
       {!isMobile && <BrokerTip />}
+      {/* 航行中：改方针 / 亲手掌舵（原来这两个是每段自动弹的全屏层） */}
+
 
       {isMobile ? (
         <div className="fixed bottom-0 left-0 right-0" style={{ zIndex: Z.BOTTOM_BAR }}>
+          <VoyageControls placement="stack" />
           <BrokerTip placement="stack" />
           <BottomBar />
           <MobileTabBar

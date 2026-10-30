@@ -3210,7 +3210,13 @@ console.log('== 47. 参观模式：全程不弹航段抉择（store 分流）=='
   assert(visSeg.gamePhase === 'playing', `参观模式跨段后仍在 playing（实际 ${visSeg.gamePhase}）`)
   assert(visSeg.stance === 'steady', `参观模式不改变方针（实际 ${visSeg.stance}）`)
 
-  // —— 4) 同样条件换成船长模式：必须弹抉择（证明分流真的按模式走）——
+  // —— 4) 同样条件换成船长模式：跨段同样不弹（问卷只发生在出航时）——
+  //
+  // 【这条以前断言的是"船长模式跨段必弹"，现在反过来了】
+  // 改成"每趟只在出航时问一次方针"之后，两种模式在**跨段**这一点上没有区别；
+  // 真正的模式差异在出航那一刻：船长会弹第 0 段抉择 + 操舵，参观两样都不弹
+  // （见本组 1)、2) 两条）。所以这里保留"跨段不弹"的断言，
+  // 模式分流由 1)/2) 继续守住，判断力没有丢。
   useGameStore.setState({
     gameMode: 'captain', fleet: { ...mkFleet(), isSailing: true }, currentRoute: route,
     segmentCount: 4, segmentIndex: 0, pendingSegment: null, gamePhase: 'playing', stance: 'steady',
@@ -3218,8 +3224,8 @@ console.log('== 47. 参观模式：全程不弹航段抉择（store 分流）=='
   useGameStore.getState().syncSegmentBoundary(0.5)
   const capSeg = useGameStore.getState()
   assert(capSeg.segmentIndex === 1, '船长模式跨段后段号 +1')
-  assert(capSeg.pendingSegment !== null, '船长模式跨段必须弹航段抉择')
-  assert(capSeg.gamePhase === 'segment', '船长模式跨段后进入 segment 阶段')
+  assert(capSeg.pendingSegment === null, '船长模式跨段也不再弹方针（每趟只问一次）')
+  assert(capSeg.gamePhase === 'playing', '船长模式跨段后仍在航行阶段')
 
   // —— 5) 参观模式连续跨多段也不会停：一次一次推进，但不产生任何 pending ——
   useGameStore.setState({
@@ -3355,6 +3361,77 @@ console.log('== 51. 掮客推荐：卡片说的利润必须等于实际到账 ==
   // 不在港口也不该推荐
   useGameStore.setState({ fleet: { ...S().fleet, isSailing: false, currentPortId: null } })
   assert(selectBestDeal(S()) === null, '不在港口时不应给出推荐')
+}
+
+console.log('== 52. 航行节奏：方针只问一次、操舵只在第一段强制 ==')
+{
+  /*
+   * 【这条锁的是什么】
+   * 实测新玩家第一分钟：到地图后 12 秒内被 7 个全屏层打断（出航计划 → 方针 1/2 →
+   * 操舵 → 方针 2/2 …），75 秒里一分钱没进账。4399 的教训是"同一类问题不反复问"。
+   *
+   * 现在：第一段问一次方针 + 弹一次操舵（保证机制被见过），
+   * 之后每跨一段只推进段号 + 一条飘字，不再弹全屏层；
+   * 想改方针 / 想操舵，船上有常驻按钮（openStancePicker / requestHelm）。
+   *
+   * 这几条断言直接对着"弹层次数"写，改回每段必弹会立刻失败。
+   */
+  const mkShip = () => ({ id: 1, name: '圣玛利亚号', type: 'caravel' as const, speed: 5, durability: 80, maxDurability: 100, capacity: 100, usedCapacity: 0, crew: 20, maxCrew: 40 })
+  const mkFleet = (): Fleet => ({ id: 1, name: '测试舰队', gold: 500, fame: 0, morale: 60, food: 100, water: 100, currentPortId: 6, isSailing: false, day: 10, ships: [mkShip()], cargo: [], flagshipId: 1, trait: null, durabilityCarry: 0 })
+  // 距离要够长，否则 confirmDeparture 会按天数把段数压成 2 段（段数由 segmentCountFor 决定）
+  const route: Route = { id: -99, fromPortId: 6, toPortId: 7, distance: 6000, dangerLevel: 2, windFavor: 1 }
+  const waypoint = { latitude: 40, longitude: -10, portId: 7 }
+  const S = () => useGameStore.getState()
+
+  // —— 第一段：出航即问方针，选完进操舵（机制必须被见过）——
+  useGameStore.setState({
+    gameMode: 'captain', fleet: mkFleet(), pendingVoyage: { waypoint, route },
+    shipPosition: [20, -20], segmentCount: 4, segmentIndex: 0, pendingSegment: null,
+    pendingHelm: null, gamePhase: 'playing',
+  })
+  S().confirmDeparture()
+  assert(S().pendingSegment !== null, '出航后应立刻问一次方针（第 0 段）')
+  S().chooseStance('steady')
+  assert(S().pendingHelm !== null, '第一段选完方针应强制弹一次操舵')
+  assert(S().gamePhase === 'helm', `第一段应进入操舵阶段（实际 ${S().gamePhase}）`)
+  S().skipHelmRun()
+  assert(S().gamePhase === 'playing' && S().pendingHelm === null, '跳过操舵后回到航行')
+
+  // 段数由距离/天数决定，测试不能写死；按真实段数取边界
+  const nSeg = S().segmentCount
+  assert(nSeg >= 3, `测试航线应分成至少 3 段（实际 ${nSeg}）`)
+  const cross = (i: number) => nextSegmentBoundary(i, nSeg) + 0.02
+
+  // —— 第一次跨段：不再弹（本趟唯一的问卷发生在出航时）——
+  S().syncSegmentBoundary(cross(0))
+  assert(S().segmentIndex === 1, `第一次跨段应到第 1 段（实际 ${S().segmentIndex}）`)
+  assert(S().pendingSegment === null, '第一次跨段**不该**弹方针（2 段航线也只问一次）')
+  assert(S().gamePhase === 'playing', `跨段后应仍在航行（实际 ${S().gamePhase}）`)
+
+  // —— 后续跨段：只推进段号，不再弹任何全屏层 ——
+  S().syncSegmentBoundary(cross(1))
+  assert(S().segmentIndex === 2, `第二次跨段到第 2 段（实际 ${S().segmentIndex}）`)
+  assert(S().pendingSegment === null, '第二次跨段**不该**再弹方针面板')
+  assert(S().gamePhase === 'playing', '跨段后仍在航行阶段')
+
+  S().syncSegmentBoundary(cross(2))
+  assert(S().segmentIndex === 3, `第三次跨段到第 3 段（实际 ${S().segmentIndex}）`)
+  assert(S().pendingSegment === null, '第三次跨段也不该弹面板')
+
+  // 方针沿用上一次的选择，不会被重置
+  assert(S().stance === 'steady', `方针应沿用出航时的选择（实际 ${S().stance}）`)
+
+  // —— 船上按钮：想改方针 / 想操舵，随时能开 ——
+  S().openStancePicker()
+  assert(S().pendingSegment !== null, '「改方针」按钮应能主动打开面板')
+  assert(S().gamePhase === 'segment', '主动打开时应暂停航行')
+  S().chooseStance('steady')
+  assert(S().gamePhase === 'playing', '选完继续航行')
+  assert(S().pendingHelm === null, '主动改方针不应顺带弹操舵')
+
+  S().requestHelm()
+  assert(S().pendingHelm !== null, '「亲手掌舵」按钮应能召唤操舵')
+  assert(S().gamePhase === 'helm', '召唤后进入操舵阶段')
 }
 
 console.log(`\n最终结果：${passed} 通过 / ${failed} 失败`)
