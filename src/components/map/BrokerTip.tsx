@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { Coins, X, Anchor, PackageOpen } from 'lucide-react'
-import { useGameStore, selectBestDeal, selectCargoSale } from '@/store/useGameStore'
+import { useGameStore, selectBestDeal, selectCargoSale, selectReturnLeg } from '@/store/useGameStore'
 
 /**
  * 港口左下角的一张小卡，负责**把一笔生意从头做到尾**。
@@ -47,23 +47,29 @@ export default function BrokerTip({ placement = 'float' }: { placement?: 'float'
 
   const [dismissed, setDismissed] = useState<string | null>(null)
 
-  const { sale, deal } = useMemo(
+  const lastPortId = useGameStore(s => s.lastPortId)
+
+  const { sale, deal, back } = useMemo(
     () => ({
       sale: selectCargoSale(useGameStore.getState()),
       deal: selectBestDeal(useGameStore.getState()),
+      back: selectReturnLeg(useGameStore.getState()),
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [portId, isSailing, gold, fame, marketStock, cargo],
+    [portId, isSailing, gold, fame, marketStock, cargo, lastPortId],
   )
 
   if (isSailing || pendingVoyage || activePanel || gamePhase !== 'playing') return null
 
-  const mode: 'sell' | 'buy' | null = sale ? 'sell' : deal ? 'buy' : null
+  // 优先级：把手里的货换成钱 → 接一单新的 → 什么都没得做就指条回程
+  const mode: 'sell' | 'buy' | 'return' | null = sale ? 'sell' : deal ? 'buy' : back ? 'return' : null
   if (!mode) return null
 
   const key = mode === 'sell'
     ? `sell:${portId}:${sale!.qty}:${sale!.total}`
-    : `buy:${portId}:${deal!.goodId}:${deal!.toPortId}`
+    : mode === 'buy'
+      ? `buy:${portId}:${deal!.goodId}:${deal!.toPortId}`
+      : `return:${portId}:${back!.toPortId}`
   if (dismissed === key) return null
 
   const wrapper = placement === 'stack' ? 'px-2 pb-1.5' : 'absolute left-3 bottom-16 z-20'
@@ -83,7 +89,7 @@ export default function BrokerTip({ placement = 'float' }: { placement?: 'float'
       <div className="mx-auto rounded-lg overflow-hidden" style={cardStyle}>
         <div className="flex items-center justify-between pl-3 pr-1.5 pt-1.5">
           <span className="font-serif text-xs tracking-wide text-gold-500">
-            {mode === 'sell' ? '货已到港' : '掮客递来一单'}
+            {mode === 'sell' ? '货已到港' : mode === 'buy' ? '掮客递来一单' : '本港行情已平'}
           </span>
           <button
             type="button"
@@ -122,6 +128,33 @@ export default function BrokerTip({ placement = 'float' }: { placement?: 'float'
                 >
                   <PackageOpen size={12} aria-hidden="true" />
                   全部出手
+                </button>
+              </div>
+            </>
+          ) : mode === 'return' ? (
+            <>
+              <div className="flex items-baseline gap-2 font-serif leading-tight">
+                <span className="text-gold-100 text-base">回 {back!.toPortName}</span>
+                <span className="text-gold-500 text-xs">空船补货</span>
+              </div>
+              <div className="mt-1 font-serif text-xs text-gold-500">
+                {back!.days} 天 · {back!.nm} 海里 · 那里才有货可进
+              </div>
+              <div className="mt-2 flex items-center justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() =>
+                    sailToWaypoint({
+                      latitude: back!.toLat,
+                      longitude: back!.toLng,
+                      portId: back!.toPortId,
+                      name: back!.toPortName,
+                    })
+                  }
+                  className={btnClass}
+                >
+                  <Anchor size={12} aria-hidden="true" />
+                  起航返程
                 </button>
               </div>
             </>

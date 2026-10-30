@@ -80,7 +80,16 @@ const modeCount = await page.evaluate(() => document.querySelectorAll('button[da
 check(modeCount === 2, `模式页给出 ${modeCount} 个选项（应为 2：船长/参观）`)
 await sleep(400)
 await clickIn('你想怎么玩', '继续')
-await sleep(700)
+// 等天赋页真的出现再点：固定 sleep 会偶发抢跑（实测 1/5 的概率点不到卡，
+// 报「选择了一张天赋卡（null）」，看起来像功能坏了，其实只是慢了一帧）
+{
+  const t = Date.now()
+  while (Date.now() - t < 4000) {
+    const ready = await page.evaluate(() => /选择你的天赋/.test(document.body.innerText))
+    if (ready) break
+    await sleep(120)
+  }
+}
 // 特质页：点第一张卡（商界血脉/铁壁舰长/魅力领袖/天生探险家/随船医生）
 const traitPicked = await page.evaluate(() => {
   const o = [...document.querySelectorAll('div.fixed.inset-0')].find(x => /选择你的天赋/.test(x.textContent || ''))

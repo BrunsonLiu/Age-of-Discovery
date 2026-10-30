@@ -24,7 +24,7 @@ import {
   STANCES, forecastSegment, stanceLedgers, segmentCountFor, segmentIndexFor, nextSegmentBoundary,
   dailyFoodUse, dailyWaterUse, dailyWearRate, settleWear, describeStanceTradeoff,
 } from '../src/utils/segment'
-import { generateRouteIntel, settleOfficerWages, advanceRivals, selectBuyPrice, selectSellPrice, selectPriceTone, OFFER_PRICE_RATIO, dynamicSellPrice, selectBestDeal, selectCargoSale } from '../src/store/useGameStore'
+import { generateRouteIntel, settleOfficerWages, advanceRivals, selectBuyPrice, selectSellPrice, selectPriceTone, OFFER_PRICE_RATIO, dynamicSellPrice, selectBestDeal, selectCargoSale, selectReturnLeg } from '../src/store/useGameStore'
 import { FACTIONS, factionAttitude, portFaction } from '../src/data/factions'
 import { CREW_CHARS, CREW_CHAR_MAP } from '../src/data/crewChars'
 import { TITLES, currentTitle, dominantAxis } from '../src/data/titles'
@@ -3482,6 +3482,48 @@ console.log('== 53. 卸货卡片：说的金额必须等于实际到账；不值
     },
   })
   assert(selectBestDeal(useGameStore.getState()) === null, '货舱已满时不应推荐')
+}
+
+console.log('== 54. 回程建议：卖完货不能让人卡在"无推荐"里 ==')
+{
+  /*
+   * 实测死胡同：在加的斯卖完丝绸后，本港唯一有正向差价的货是"丝绸→哈瓦那"（22 天）。
+   * 对刚赚到 1170 金的新手，那不是建议。正确下一步是回采购地补货。
+   * 这条测试锁两件事：
+   *   ① arriveAtPort 必须把"从哪来"记进 lastPortId（currentRoute 会被清空）
+   *   ② 回程建议指向的港口与天数必须真实
+   */
+  useGameStore.getState().initGame('merchant', 'captain')
+  const S = () => useGameStore.getState()
+
+  // 从塞维利亚出发到加的斯（20）
+  useGameStore.setState({
+    fleet: { ...S().fleet, currentPortId: 6, isSailing: true },
+    currentRoute: { id: -9, fromPortId: 6, toPortId: 20, distance: 54, dangerLevel: 2, windFavor: 1 } as Route,
+  })
+  S().arriveAtPort(20)
+  assert(S().lastPortId === 6, `到港后应记住来处（实际 ${S().lastPortId}）`)
+  assert(S().currentRoute === null, '到港后 currentRoute 应清空（所以必须单独记 lastPortId）')
+
+  const back = selectReturnLeg(S())
+  assert(back !== null, '在加的斯应给出回程建议')
+  if (back) {
+    assert(back.toPortId === 6, `回程应指向塞维利亚（实际 ${back.toPortId}）`)
+    assert(back.nm > 0 && back.days >= 1, `回程航程应为正（${back.nm}nm / ${back.days}天）`)
+  }
+
+  // 回到塞维利亚后，回程建议反过来指向加的斯（说明它是"来处"而不是写死的）
+  useGameStore.setState({
+    fleet: { ...S().fleet, isSailing: true },
+    currentRoute: { id: -8, fromPortId: 20, toPortId: 6, distance: 54, dangerLevel: 2, windFavor: 1 } as Route,
+  })
+  S().arriveAtPort(6)
+  const back2 = selectReturnLeg(S())
+  assert(back2 !== null && back2.toPortId === 20, `回塞维利亚后应建议回加的斯（实际 ${back2?.toPortId}）`)
+
+  // 同一个港口不应建议回自己
+  useGameStore.setState({ lastPortId: 6 })
+  assert(selectReturnLeg(S()) === null, '所在地与来处相同时不应给回程建议')
 }
 
 console.log(`\n最终结果：${passed} 通过 / ${failed} 失败`)

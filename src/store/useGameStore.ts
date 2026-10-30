@@ -161,6 +161,7 @@ function createInitialMarketStock(): Record<string, number> {
 
 const initialGameState: GameState = {
   fleet: createStartingFleet(),
+  lastPortId: null,
   currentRoute: null,
   routeProgress: 0,
   routeOrigin: null,
@@ -1397,6 +1398,8 @@ export const useGameStore = create<GameStore>()(
           const port = ports.find(p => p.id === portId)
           return {
             fleet: { ...state.fleet, currentPortId: portId, isSailing: false },
+            // 记下"从哪来"：currentRoute 马上就要清空，回程建议要用它
+            lastPortId: state.currentRoute?.fromPortId ?? state.lastPortId,
             currentRoute: null,
             routeProgress: 0,
             routeOrigin: null,
@@ -2275,6 +2278,42 @@ export function selectCargoSale(state: GameState): CargoSale | null {
   }
   if (!items.length) return null
   return { items, total, qty }
+}
+
+/**
+ * 「回程」：本港已经没有值得跑的货时，指一条回去补货的路。
+ *
+ * 实测：在加的斯卖完丝绸后，本港唯一有正向差价的货是"丝绸→哈瓦那"，
+ * 22 天、4035 海里。对一个刚赚到 1170 金的新手来说，那不是建议，是劝退。
+ * 贸易本来就是往返——卖完就该回去进货。
+ *
+ * 【只指"从哪来"这一个地方，不猜】
+ * 不写死塞维利亚，也不去算"哪个港口货最便宜"（那要遍历全图找航线，很慢）。
+ * 记的是玩家自己刚走过的上一条航线起点，所以这条建议永远是"回到你熟悉的地方"。
+ */
+export interface ReturnLeg {
+  toPortId: number
+  toPortName: string
+  toLat: number
+  toLng: number
+  nm: number
+  days: number
+}
+
+export function selectReturnLeg(state: GameState): ReturnLeg | null {
+  const here = state.fleet.currentPortId
+  const back = state.lastPortId
+  if (!here || !back || back === here || state.fleet.isSailing) return null
+  const a = ports.find(p => p.id === here)
+  const b = ports.find(p => p.id === back)
+  if (!a || !b) return null
+
+  const geom = getRouteGeometry([a.latitude, a.longitude], [b.latitude, b.longitude])
+  const nm = Math.round(geom.totalNm)
+  const windFavor = computeWindFavor(a.latitude, a.longitude, b.latitude, b.longitude)
+  const route: Route = { id: -1, fromPortId: here, toPortId: back, distance: nm, dangerLevel: 2, windFavor }
+  const days = calculateSailingDays(route, state.fleet, state.officers)
+  return { toPortId: b.id, toPortName: b.nameCn, toLat: b.latitude, toLng: b.longitude, nm, days }
 }
 
 /*

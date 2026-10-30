@@ -406,6 +406,17 @@ export interface GameState {
   completedTasks: number[]
   activeTasks: Task[]
   eventLog: EventLogEntry[]
+  /**
+   * 上一次停靠的港口（到港时由来时航线的起点写入）。
+   *
+   * 【为什么要记】
+   * 到港会把 currentRoute 清空，于是"我在哪、从哪来"就断了。
+   * 而贸易是往返的：在销售港卖完货之后，本港往往已经没有值得跑的货
+   * （实测加的斯卖完丝绸后，唯一正向差价是"丝绸→哈瓦那 22 天"），
+   * 正确的下一步是回采购地补货，而不是横渡大西洋。
+   * 没有这个字段，卡片就只能在"无推荐"和"推一个烂单"之间二选一。
+   */
+  lastPortId: number | null
   discoveredPorts: number[]
   currentEvent: GameEvent | null
   gamePhase: 'start' | 'playing' | 'event' | 'segment' | 'helm' | 'gameover'
