@@ -24,7 +24,7 @@ import {
   STANCES, forecastSegment, stanceLedgers, segmentCountFor, segmentIndexFor, nextSegmentBoundary,
   dailyFoodUse, dailyWaterUse, dailyWearRate, settleWear, describeStanceTradeoff,
 } from '../src/utils/segment'
-import { generateRouteIntel, settleOfficerWages, advanceRivals, selectBuyPrice, selectSellPrice, selectPriceTone, OFFER_PRICE_RATIO, dynamicSellPrice, selectBestDeal } from '../src/store/useGameStore'
+import { generateRouteIntel, settleOfficerWages, advanceRivals, selectBuyPrice, selectSellPrice, selectPriceTone, OFFER_PRICE_RATIO, dynamicSellPrice, selectBestDeal, selectCargoSale } from '../src/store/useGameStore'
 import { FACTIONS, factionAttitude, portFaction } from '../src/data/factions'
 import { CREW_CHARS, CREW_CHAR_MAP } from '../src/data/crewChars'
 import { TITLES, currentTitle, dominantAxis } from '../src/data/titles'
@@ -3432,6 +3432,56 @@ console.log('== 52. 航行节奏：方针只问一次、操舵只在第一段强
   S().requestHelm()
   assert(S().pendingHelm !== null, '「亲手掌舵」按钮应能召唤操舵')
   assert(S().gamePhase === 'helm', '召唤后进入操舵阶段')
+}
+
+console.log('== 53. 卸货卡片：说的金额必须等于实际到账；不值得的单不推荐 ==')
+{
+  /*
+   * 第一笔钱的闭环里，"卖"这一头也必须对账。
+   * 卡片写「全部出手 · +1095」，点下去金币就必须涨 1095 —— 少一分都是骗人。
+   */
+  useGameStore.getState().initGame('merchant', 'captain')
+  const S = () => useGameStore.getState()
+  const deal = selectBestDeal(S())
+  assert(deal !== null, '开局应有推荐')
+  if (deal) {
+    const from = S().fleet.currentPortId!
+    S().buyGood(from, deal.goodId, deal.qty)
+    useGameStore.setState({ fleet: { ...S().fleet, currentPortId: deal.toPortId } })
+
+    const sale = selectCargoSale(S())
+    assert(sale !== null, '带着货到港后应有卸货报价')
+    if (sale) {
+      assert(sale.qty === deal.qty, `卸货数量应等于买入数量（${sale.qty} vs ${deal.qty}）`)
+      assert(sale.total === deal.sell * deal.qty,
+        `卸货金额应等于卖价×数量（${sale.total} vs ${deal.sell * deal.qty}）`)
+
+      const gold0 = S().fleet.gold
+      for (const it of sale.items) S().sellGood(deal.toPortId, it.goodId, it.qty)
+      const actual = S().fleet.gold - gold0
+      assert(actual === sale.total, `实际到账必须等于卡片金额（卡片 ${sale.total}，实际 ${actual}）`)
+      assert(S().fleet.cargo.length === 0 || S().fleet.cargo.every(c => c.quantity === 0),
+        '全部出手后货舱应为空')
+    }
+
+    // 卖空之后不该再给"卸货"卡
+    assert(selectCargoSale(S()) === null, '货舱空时不应有卸货报价')
+  }
+
+  // 买不起时不推荐（否则卡片会让人点一个什么都不发生的按钮）
+  useGameStore.getState().initGame('merchant', 'captain')
+  useGameStore.setState({ fleet: { ...useGameStore.getState().fleet, gold: 1 } })
+  assert(selectBestDeal(useGameStore.getState()) === null, '金只够 1 枚时不应推荐（买不起任何货）')
+
+  // 舱位满时不推荐
+  useGameStore.getState().initGame('merchant', 'captain')
+  useGameStore.setState({
+    fleet: {
+      ...useGameStore.getState().fleet,
+      ships: useGameStore.getState().fleet.ships.map(sh => ({ ...sh, usedCapacity: sh.capacity })),
+    },
+  })
+  assert(selectBestDeal(useGameStore.getState()) === null, '货舱已满时不应推荐')
 }
 
 console.log(`\n最终结果：${passed} 通过 / ${failed} 失败`)

@@ -2160,6 +2160,15 @@ export interface BrokerDeal {
   days: number
 }
 
+/**
+ * 推荐门槛：**每天**净赚少于这么多就不推。
+ *
+ * 实测：卖掉第一批货之后，加的斯只剩"丝绸 233→301、35 天、4040 海里、+340 金"
+ * 这种单子（约 10 金/天）。把它摆在左下角，等于告诉新手"去跑一个月赚 340"——
+ * 4399 绝不会这么干。宁可什么都不显示，也不要推一个不值得跑的单。
+ */
+const MIN_DEAL_PROFIT_PER_DAY = 45
+
 export function selectBestDeal(state: GameState): BrokerDeal | null {
   const fromPortId = state.fleet.currentPortId
   if (!fromPortId || state.fleet.isSailing) return null
@@ -2211,6 +2220,9 @@ export function selectBestDeal(state: GameState): BrokerDeal | null {
   }
   const days = calculateSailingDays(route, state.fleet, state.officers)
 
+  const totalProfit = best.unit * best.qty
+  if (totalProfit / Math.max(1, days) < MIN_DEAL_PROFIT_PER_DAY) return null
+
   return {
     goodId: best.goodId,
     goodName: best.goodName,
@@ -2222,10 +2234,47 @@ export function selectBestDeal(state: GameState): BrokerDeal | null {
     sell: best.sell,
     qty: best.qty,
     unitProfit: best.unit,
-    totalProfit: best.unit * best.qty,
+    totalProfit,
     nm,
     days,
   }
+}
+
+/**
+ * 「卸货金额」：船上现有货物在本港全部卖出能拿多少钱。
+ *
+ * 【为什么需要】
+ * 实测第一笔钱的闭环：掮客卡把你送到加的斯只要 2 秒，但到港后船舱是空的
+ * ——卡片只设了航向，没帮你买货；到了港也没人提醒你卖。
+ * 于是"+670"这个承诺在真实操作里一分钱都落不了地。
+ *
+ * 这里算的就是"现在卖掉能拿多少"，与 sellGood 用同一个 selectSellPrice，
+ * 所以卡片显示的数就是点到账的数（有单测对账）。
+ */
+export interface CargoSale {
+  items: { goodId: number; goodName: string; qty: number; unit: number; total: number }[]
+  total: number
+  qty: number
+}
+
+export function selectCargoSale(state: GameState): CargoSale | null {
+  const portId = state.fleet.currentPortId
+  if (!portId) return null
+  const items: CargoSale['items'] = []
+  let total = 0
+  let qty = 0
+  for (const c of state.fleet.cargo) {
+    if (c.quantity <= 0) continue
+    const good = goods.find(g => g.id === c.goodId)
+    if (!good) continue
+    const unit = selectSellPrice(state, portId, c.goodId)
+    if (unit == null || unit <= 0) continue
+    items.push({ goodId: c.goodId, goodName: good.nameCn, qty: c.quantity, unit, total: unit * c.quantity })
+    total += unit * c.quantity
+    qty += c.quantity
+  }
+  if (!items.length) return null
+  return { items, total, qty }
 }
 
 /*
