@@ -123,8 +123,8 @@ const layers = await page.evaluate(() => {
   const overlay = document.querySelector('.vintage-map-overlay')
   const markerPane = document.querySelector('.leaflet-marker-pane')
   return {
-    landFill: fills.has('#e7d5ab'),
-    landCount: paths.filter(p => (p.getAttribute('fill') || '').toLowerCase() === '#e7d5ab').length,
+    landFill: fills.has('url(#landpaper)') || fills.has('#e7d5ab'),
+    landCount: paths.filter(p => (p.getAttribute('fill') || '').toLowerCase().includes('landpaper')).length,
     coastCount: paths.filter(p => (p.getAttribute('stroke') || '').toLowerCase() === '#3d2810').length,
     containerBg: cs?.backgroundColor,
     vintageZ: overlay ? getComputedStyle(overlay).zIndex : null,
@@ -151,7 +151,7 @@ const px = (x, y) => {
 // 取一个离岸较远的海上点与一个内陆点。
 const samples = await page.evaluate(() => {
   const paths = [...document.querySelectorAll('.leaflet-overlay-pane path')]
-    .filter(p => (p.getAttribute('fill') || '').toLowerCase() === '#e7d5ab')
+    .filter(p => (p.getAttribute('fill') || '').toLowerCase().includes('landpaper'))
   // 找一个面积够大的陆地多边形（内陆），用其 path 的屏幕包围盒中心
   let best = null, bestArea = 0
   for (const p of paths) {

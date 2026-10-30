@@ -6,11 +6,11 @@ import { ports } from '@/data/ports'
 
 function createPortIcon(isCurrent: boolean) {
   const size = isCurrent ? 34 : 28
-  const color = isCurrent ? '#3d2810' : '#6b4a2a'
-  const fillColor = isCurrent ? 'rgba(244, 228, 193, 0.6)' : 'rgba(212, 184, 132, 0.35)'
+  // 锚改用金色：徽章是深底，原来那个深褐锚在深底上等于没有。
+  const color = isCurrent ? '#f0d88a' : '#d4b884'
   const glow = isCurrent
-    ? 'box-shadow: 0 0 8px rgba(244, 228, 193, 0.8), 0 0 16px rgba(201, 169, 110, 0.4);'
-    : 'box-shadow: 0 0 3px rgba(201, 169, 110, 0.4);'
+    ? 'box-shadow: 0 0 10px rgba(212,168,56,0.6), 0 2px 6px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,240,200,0.22);'
+    : 'box-shadow: 0 1px 4px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,240,200,0.16);'
   const pulse = isCurrent
     ? 'animation: portPulse 2.5s ease-in-out infinite;'
     : ''
@@ -26,8 +26,8 @@ function createPortIcon(isCurrent: boolean) {
   const html = `
     <div style="
       width:${size}px;height:${size}px;
-      background:radial-gradient(circle, ${fillColor} 30%, transparent 70%);
-      border:2px solid ${color};border-radius:50%;
+      background:linear-gradient(180deg, #3a2a18 0%, #1c130a 100%);
+      border:1.5px solid #c9a96e;border-radius:50%;
       display:flex;align-items:center;justify-content:center;
       ${glow}${pulse}
       transition: all 0.3s ease;
@@ -83,9 +83,9 @@ export function PortMarker() {
               permanent={true}
             >
               <span className="font-serif text-xs" style={{
-                color: isCurrent ? '#2b1e0e' : '#5a3e1a',
+                color: isCurrent ? '#f5e2a8' : '#dcbe7c',
                 fontWeight: isCurrent ? 'bold' : 'normal',
-                textShadow: '0 0 4px rgba(244, 228, 193, 0.7), 0 0 2px rgba(244, 228, 193, 0.9)',
+                letterSpacing: '0.02em',
               }}>
                 {port.nameCn}
               </span>
@@ -99,17 +99,17 @@ export function PortMarker() {
           border: none !important;
         }
         .port-tooltip {
-          background: rgba(244, 228, 193, 0.95) !important;
-          border: 1px solid rgba(90, 62, 26, 0.5) !important;
+          background: linear-gradient(180deg, rgba(48, 36, 20, 0.96) 0%, rgba(22, 16, 8, 0.96) 100%) !important;
+          border: 1px solid rgba(201, 169, 110, 0.5) !important;
           border-radius: 2px !important;
-          color: #2b1e0e !important;
+          color: #dcbe7c !important;
           padding: 1px 6px !important;
-          box-shadow: 0 1px 4px rgba(43, 30, 14, 0.4) !important;
+          box-shadow: 0 2px 6px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 238, 186, 0.16) !important;
           font-size: 11px !important;
           white-space: nowrap !important;
         }
         .port-tooltip::before {
-          border-top-color: rgba(90, 62, 26, 0.5) !important;
+          border-top-color: rgba(201, 169, 110, 0.5) !important;
         }
         @keyframes portPulse {
           0%, 100% { transform: scale(1); box-shadow: 0 0 10px rgba(212,168,56,0.7), 0 0 20px rgba(212,168,56,0.3); }

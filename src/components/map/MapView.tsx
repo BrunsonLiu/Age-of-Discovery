@@ -12,6 +12,7 @@ import MapClickHandler from './MapClickHandler'
 import OceanLabels from './OceanLabels'
 import VintageMapOverlay from './VintageMapOverlay'
 import { loadLandData, fetchLandGeojsonForRender } from '@/utils/landCheck'
+import { UI_ASSETS } from '@/data/uiAssets'
 import { fetchBordersGeojson } from '@/utils/mapGeoJson'
 import 'leaflet/dist/leaflet.css'
 import { Compass, Map as MapIcon, Sailboat } from 'lucide-react'
@@ -57,6 +58,43 @@ const DEFAULT_CENTER: [number, number] = [25, -20]
 
 /** 2.5D 立体海图：懒加载，three.js 单独成 chunk，不进主包 */
 const Map3DView = lazy(() => import('@/components/map3d/Map3DView'))
+
+/**
+ * 给陆地铺一层羊皮纸纹理。
+ *
+ * 【为什么要在 SVG 里注入 pattern】
+ * Leaflet 的 GeoJSON 只能填纯色（fill 属性），而参考图里的陆地是有纸纹和
+ * 颗粒的——一整块米黄平涂是"网页色块"和"游戏地图"之间最明显的那条分界。
+ * SVG 的 <pattern> 可以引用图片，把 landStyle.fillColor 写成 url(#landPaper)
+ * 就行，不用改数据、不用换渲染库。
+ *
+ * 【为什么图案放大 1.5 倍再平移】
+ * ui_parchment.png 四周有暗角（vignette），直接 240×240 平铺会看到一格一格
+ * 的边。所以把 360×360 的图往左上偏移 60px，只露出它的中心区。
+ *
+ * 【为什么挂在 zoomend 上】
+ * Leaflet 在视图重建时会换掉 svg 节点，defs 跟着丢；每次缩放结束补一次，
+ * 幂等（已有 #landPaper 就跳过）。
+ */
+function LandPaperPattern() {
+  const map = useMap()
+  useEffect(() => {
+    const ensure = () => {
+      const svg = map.getPanes().overlayPane?.querySelector('svg')
+      if (!svg || svg.querySelector('#landPaper')) return
+      const NS = 'http://www.w3.org/2000/svg'
+      const defs = document.createElementNS(NS, 'defs')
+      defs.innerHTML = `<pattern id="landPaper" patternUnits="userSpaceOnUse" width="240" height="240">`
+        + `<image href="${UI_ASSETS.parchment}" x="-60" y="-60" width="360" height="360" preserveAspectRatio="xMidYMid slice" />`
+        + `</pattern>`
+      svg.insertBefore(defs, svg.firstChild)
+    }
+    ensure()
+    map.on('zoomend', ensure)
+    return () => { map.off('zoomend', ensure) }
+  }, [map])
+  return null
+}
 
 function MapController() {
   const map = useMap()
@@ -153,7 +191,9 @@ function MapController() {
  * 逐像素比对渲染结果，差异仅 0.99%~2.7%（且集中在描边处），填充色完全一致，
  * 海陆分界的清晰度不变。地图数据从 4MB 降到 1.9MB。
  */
-const landStyle = { fillColor: '#e7d5ab', fillOpacity: 0.94, color: '#3d2810', weight: 1.3, opacity: 0.9 }
+// fillColor 用 SVG pattern（见 LandPaperPattern）。fillOpacity 保持 1，
+// 因为纹理本身已经是"米黄纸"，再压透明会让海面透上来发绿。
+const landStyle = { fillColor: 'url(#landPaper)', fillOpacity: 1, color: '#3d2810', weight: 1.3, opacity: 0.9 }
 const bordersStyle = { fillColor: 'transparent', fillOpacity: 0, color: '#7a5a30', weight: 0.6, opacity: 0.4, dashArray: '3 2' }
 
 export default function MapView() {
@@ -308,6 +348,7 @@ export default function MapView() {
                 <GeoJSON key="borders" data={geoData.borders} style={bordersStyle} interactive={false} />
               )}
 
+              <LandPaperPattern />
               <MapController />
               <MapOverlays />
               <MapClickHandler />

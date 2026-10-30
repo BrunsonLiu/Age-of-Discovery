@@ -734,7 +734,10 @@ body {
 .side-plate {
   /* 不透明色 + 三段渐变：36px 高的按钮上，半透明底永远看不出"厚度"，
      因为下面的海图会透上来把明暗差吃掉。改成实色后才有一块铜牌的感觉。 */
-  background: linear-gradient(180deg, #543c23 0%, #33220f 52%, #231708 100%);
+  background:
+    radial-gradient(circle at 5px 50%, rgba(255, 238, 186, 0.42) 0 1.3px, transparent 2.2px),
+    radial-gradient(circle at calc(100% - 5px) 50%, rgba(255, 238, 186, 0.42) 0 1.3px, transparent 2.2px),
+    linear-gradient(180deg, #543c23 0%, #33220f 52%, #231708 100%);
   border: 1px solid #96752f;
   box-shadow:
     inset 0 1px 0 rgba(255, 238, 186, 0.34),   /* 顶棱受光 */
@@ -746,7 +749,10 @@ body {
 
 .side-plate:hover {
   color: #f7e6b4;
-  background: linear-gradient(180deg, #6a4c2c 0%, #42301a 52%, #2c1d0c 100%);
+  background:
+    radial-gradient(circle at 5px 50%, rgba(255, 246, 210, 0.55) 0 1.3px, transparent 2.2px),
+    radial-gradient(circle at calc(100% - 5px) 50%, rgba(255, 246, 210, 0.55) 0 1.3px, transparent 2.2px),
+    linear-gradient(180deg, #6a4c2c 0%, #42301a 52%, #2c1d0c 100%);
   border-color: #b8934a;
   box-shadow:
     inset 0 1px 0 rgba(255, 244, 200, 0.42),

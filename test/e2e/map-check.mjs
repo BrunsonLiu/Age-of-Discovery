@@ -50,7 +50,9 @@ if (shipBox) {
 // 采样：找几个海面与陆地像素
 const info = await page.evaluate(() => {
   const paths = [...document.querySelectorAll('.leaflet-overlay-pane path')]
-  const land = paths.filter(p => (p.getAttribute('fill') || '').toLowerCase() === '#e7d5ab')
+  // 陆地填充现在是 SVG pattern（url(#landPaper)），不再是裸色值；判据跟着改，
+  // 但检验的仍是同一件事：这些 path 就是陆地。
+  const land = paths.filter(p => (p.getAttribute('fill') || '').toLowerCase().includes('landpaper'))
   const cont = paths.filter(p => (p.getAttribute('stroke') || '').toLowerCase() === '#3d2810')
   const c = document.querySelector('.leaflet-container')
   const cs = c ? getComputedStyle(c) : null
