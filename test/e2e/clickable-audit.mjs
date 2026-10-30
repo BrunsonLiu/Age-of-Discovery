@@ -31,7 +31,16 @@ const errors = []
 page.on('pageerror', e => errors.push(e.message))
 page.on('console', m => { if (m.type() === 'error') errors.push(m.text().slice(0, 150)) })
 
-await page.setViewport({ width: Number(process.env.VW ?? 1440), height: Number(process.env.VH ?? 900) })
+// 视口尺寸：优先 CLI 参数（--vw=1024 --vh=768），其次环境变量，最后默认桌面。
+// 不引 cross-env —— Windows 下 `VAR=x cmd` 在 cmd.exe 里不成立，而 npm scripts
+// 走的是 cmd.exe，不是 Git Bash。CLI 参数两边都能用。
+const argOf = (k) => {
+  const hit = process.argv.find(a => a.startsWith(`--${k}=`))
+  return hit ? Number(hit.split('=')[1]) : undefined
+}
+const VW = argOf('vw') ?? Number(process.env.VW ?? 1440)
+const VH = argOf('vh') ?? Number(process.env.VH ?? 900)
+await page.setViewport({ width: VW, height: VH })
 await page.goto(BASE, { waitUntil: 'networkidle2', timeout: 60000 })
 await page.evaluate(() => { localStorage.clear(); sessionStorage.clear() })
 await page.reload({ waitUntil: 'networkidle2', timeout: 60000 })

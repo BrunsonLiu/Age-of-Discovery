@@ -81,7 +81,7 @@ export default function BottomBar() {
     */
     <div
       data-tut="bottombar"
-      className="relative px-2 md:px-3 py-1 flex flex-wrap items-center justify-between gap-x-3 gap-y-0.5 md:flex-nowrap md:py-1.5"
+      className="relative px-2 md:px-3 py-1 flex flex-wrap items-center justify-between gap-x-3 gap-y-0.5 xl:flex-nowrap md:py-1.5"
       style={{
         /* 与顶栏同一根梁的"下半截"：渐变方向反转（贴屏幕底边的一侧更亮），
            这样上下两条边读起来是同一个材质的两个端面，而不是两条独立的黑条。 */
