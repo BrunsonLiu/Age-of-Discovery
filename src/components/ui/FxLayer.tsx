@@ -122,8 +122,16 @@ export default function FxLayer() {
               banner.tone === 'safe' ? 'border-safe-400/60' : 'border-gold-400/60'
             }`}
           >
-            <div className={`pirate-title text-xl ${TONE_TEXT[banner.tone] ?? TONE_TEXT.plain}`}>{banner.text}</div>
-            {banner.sub && <div className="text-gold-500 font-serif text-xs mt-0.5">{banner.sub}</div>}
+            {/* 
+              标题必须用**深墨**，不能用 TONE_TEXT 里的金色。
+              实测：横幅底是羊皮纸 #efdcb0，而 gold-300 是 #e5c35c，
+              两者对比度只有 **1.27:1**（可读性下限 4.5:1）——标题几乎看不见，
+              只剩一圈金边和一团模糊的浅黄。而横幅在每次选方针时都会弹，
+              是全场最高频的一条反馈，"看不清"等于没有反馈。
+              语气（gold / safe / danger）仍然保留在边框上，不丢信息。
+            */}
+            <div className="pirate-title text-xl text-[#2b1e0e]">{banner.text}</div>
+            {banner.sub && <div className="font-serif text-xs mt-0.5 text-[#5a4526]">{banner.sub}</div>}
           </div>
         </div>
       )}
