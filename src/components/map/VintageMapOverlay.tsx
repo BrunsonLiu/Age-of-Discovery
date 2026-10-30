@@ -111,12 +111,24 @@ export default function VintageMapOverlay({ dimmed = false }: { dimmed?: boolean
       <div className="vintage-paper" />
       <div className="vintage-vignette" />
 
-      <CompassRose className="absolute top-3 right-3 w-32 h-32 z-10 opacity-60" />
-      <CompassStar className="absolute bottom-20 left-3 w-16 h-16 opacity-30" />
-      <CompassStar className="absolute top-32 left-3 w-12 h-12 opacity-25" />
+      {/*
+        【为什么装饰插画要 hidden md:block】
+        手机上（390px 宽）那只海怪是 160×120 —— 占屏幕 41%、占高度的七分之一，
+        而它的细节（触手、鳞片）在 3 倍密度屏上也已经看不清了，只剩一团褐色污渍，
+        还压在左上角的罗盘按钮和天气徽章底下。装饰只有在看得清的时候才是装饰，
+        看不清就只是脏。罗盘星同理。
 
-      <SeaMonster className="absolute top-4 left-4 w-40 h-30 opacity-50" />
-      <SeaMonster className="absolute bottom-4 right-4 w-44 h-32 opacity-50" flip />
+        【为什么桌面也把 0.5 降到 0.35】
+        它们压在地图上是"纸上的印花"，不该和地名、港口抢注意力。
+        0.5 在深蓝海面上已经接近一个实体物件，0.35 才退回背景。
+        纸纹与暗角不动——那两样是整体质感，不是插画。
+      */}
+      <CompassRose className="absolute top-3 right-3 w-32 h-32 z-10 opacity-50 hidden md:block" />
+      <CompassStar className="absolute bottom-20 left-3 w-16 h-16 opacity-25 hidden md:block" />
+      <CompassStar className="absolute top-32 left-3 w-12 h-12 opacity-20 hidden md:block" />
+
+      <SeaMonster className="absolute top-4 left-4 w-40 h-30 opacity-35 hidden md:block" />
+      <SeaMonster className="absolute bottom-4 right-4 w-44 h-32 opacity-35 hidden md:block" flip />
 
       <svg
         className="absolute bottom-4 left-1/2 -translate-x-1/2 w-64 h-16 opacity-50"

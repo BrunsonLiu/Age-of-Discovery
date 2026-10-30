@@ -69,9 +69,7 @@ await clickIn('翻开日志', '翻开日志')
 await sleep(500)
 await clickIn('塞维利亚港', '继续')
 await sleep(400)
-await clickIn('你的航程', '继续')
-await sleep(500)
-// 玩法模式页（新增页，位于「你的航程」与「天赋」之间）：显式选船长模式
+// 玩法模式页（位于「塞维利亚港」与「天赋」之间）：显式选船长模式
 const modePicked = await page.evaluate(() => {
   const card = document.querySelector('button[data-mode="captain"]')
   if (card instanceof HTMLElement) { card.click(); return 'captain' }
@@ -95,7 +93,7 @@ check(!!traitPicked, `选择了一张天赋卡（${traitPicked}）`)
 await sleep(400)
 await clickIn('扬帆起航', '扬帆起航')
 await sleep(700)
-await clickIn('开船前的最后一眼', '启航')
+await clickIn('第一次出航', '启航')
 await sleep(1500)
 let st = await page.evaluate(() => {
   const s = window.__gameStore.getState()

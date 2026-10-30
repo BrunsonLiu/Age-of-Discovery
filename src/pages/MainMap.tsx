@@ -208,7 +208,10 @@ export default function MainMap() {
         徽章再排到 114px —— 关系和桌面端一致（徽章永远在罗盘下方），只是整体更紧凑。
       */}
       <div
-        className={isMobile ? 'absolute top-11 left-2' : 'absolute top-14 left-3'}
+        /* 移动端原本是 top-11(44px)，而顶栏 h-12 是 48px —— 罗盘顶部被顶栏压住
+           4px，加上 drop-shadow 看起来像被切掉一角。桌面一直是 top-14(56px)，
+           移动端没跟着改。现在两端统一，留 8px 间隙。 */
+        className={isMobile ? 'absolute top-14 left-2' : 'absolute top-14 left-3'}
         style={{ zIndex: Z.COMPASS }}
       >
         <Compass windBearing={windBearing} size={isMobile ? 'w-16 h-16' : 'w-24 h-24'} />
@@ -216,7 +219,9 @@ export default function MainMap() {
 
       {/* 天候徽章：当前天气 + 风速 + 航速影响，点击展开三日预报 */}
       <div
-        className={isMobile ? 'absolute top-[7.1rem] left-2' : 'absolute top-[9.75rem] left-3'}
+        /* 徽章永远排在罗盘正下方：移动端罗盘 56+64=120，徽章 124；
+           桌面 56+96=152，徽章 156。两边都留 4px。 */
+        className={isMobile ? 'absolute top-[7.75rem] left-2' : 'absolute top-[9.75rem] left-3'}
         style={{ zIndex: Z.COMPASS }}
       >
         <WeatherBadge />

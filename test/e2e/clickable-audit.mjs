@@ -53,7 +53,7 @@ const clickIn = (ov, bt) => page.evaluate((o, b) => {
 }, ov, bt)
 
 // 走到「在地图上、没有浮层」的状态——这是玩家看地图时的常态
-for (const [a, b] of [['翻开日志', '翻开日志'], ['塞维利亚港', '继续'], ['你的航程', '继续']]) {
+for (const [a, b] of [['翻开日志', '翻开日志'], ['塞维利亚港', '继续'], ]) {
   await clickIn(a, b); await sleep(450)
 }
 await page.evaluate(() => document.querySelector('button[data-mode="captain"]')?.click()); await sleep(400)
@@ -64,7 +64,7 @@ await page.evaluate(() => {
   [...o.querySelectorAll('button')].filter(b => /商界血脉|铁壁舰长|魅力领袖|天生探险家|随船医生/.test(b.textContent || ''))[0]?.click()
 }); await sleep(400)
 await clickIn('扬帆起航', '扬帆起航'); await sleep(700)
-await clickIn('开船前的最后一眼', '启航'); await sleep(1500)
+await clickIn('第一次出航', '启航'); await sleep(1500)
 await clickIn('跳过引导', '跳过引导'); await sleep(400)
 // 入场后港口面板会自动打开（带 bg-black/45 遮罩），关掉才是常态
 await page.keyboard.press('Escape'); await sleep(400)
