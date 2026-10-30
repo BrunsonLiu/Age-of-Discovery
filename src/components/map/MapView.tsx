@@ -6,6 +6,7 @@ import { useIsMobile } from '@/hooks/useIsMobile'
 import { ports } from '@/data/ports'
 import { PortMarker } from './PortMarker'
 import TerrainDecor from './TerrainDecor'
+import { buildMajorLand } from '@/utils/terrainDecor'
 import { RouteLine } from './RouteLine'
 import { ShipAnimation } from './ShipAnimation'
 import { MapOverlays } from './MapOverlays'
@@ -214,6 +215,11 @@ export default function MapView() {
     land: GeoJSON.GeoJsonObject | null
     borders: GeoJSON.GeoJsonObject | null
   }>({ land: null, borders: null })
+  // 只取面积最大的十几块陆地来画浅滩光晕（见 buildMajorLand 注释）
+  const majorLand = useMemo(
+    () => (geoData.land ? buildMajorLand(geoData.land, 14) : null),
+    [geoData.land],
+  )
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState(false)
 
@@ -346,6 +352,21 @@ export default function MapView() {
             >
               {geoData.land && (
                 <>
+                  {/* 浅滩光晕：在陆地**下面**叠三层由粗到细的浅青描边，
+                      陆地的填充会盖住内侧，只留海岸外侧那一圈——模拟近岸浅水。
+                      三层而不是一层，是因为单层只有一条硬边，叠起来才有"由浅到深"的过渡。 */}
+                  {majorLand && [17, 10, 5].map((w, i) => (
+                    <GeoJSON
+                      key={`shallows-${w}`}
+                      data={majorLand}
+                      style={{
+                        fillColor: 'transparent', fillOpacity: 0,
+                        color: '#9fd3c6', weight: w, opacity: [0.07, 0.11, 0.16][i],
+                        lineJoin: 'round', lineCap: 'round',
+                      }}
+                      interactive={false}
+                    />
+                  ))}
                   <GeoJSON key="land" data={geoData.land} style={landStyle} interactive={false} />
                   {/* 地形符号：山丘/树丛。挂在自定义 terrainPane(z=450)，
                       压在陆地之上、港口标记(z=600)之下 */}

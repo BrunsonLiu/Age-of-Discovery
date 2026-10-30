@@ -178,3 +178,52 @@ export function buildTerrainSymbols(
 
   return out
 }
+
+/**
+ * 取出面积最大的若干块陆地，用于画"浅滩光晕"。
+ *
+ * 【为什么不画全部 1420 块】
+ * 浅滩要在陆地**下面**叠 3 层不同粗细的描边，1420 块 × 3 层 = 4260 个 SVG path，
+ * 缩放时每次重设 d 属性会明显掉帧。实际视觉上只有大陆的海岸需要这层过渡，
+ * 几公里的小岛自己带一圈描边就够了。
+ */
+export function buildMajorLand(
+  geojson: GeoJSON.GeoJsonObject,
+  topBlocks = 14,
+): GeoJSON.FeatureCollection {
+  const feats: GeoJSON.Feature[] = []
+  const collect = (g: GeoJSON.GeoJsonObject) => {
+    if (g.type === 'FeatureCollection') {
+      (g as GeoJSON.FeatureCollection).features.forEach(collect)
+    } else if (g.type === 'Feature') {
+      const f = g as GeoJSON.Feature
+      if (f.geometry) feats.push(f)
+    } else if (g.type === 'Polygon' || g.type === 'MultiPolygon') {
+      feats.push({ type: 'Feature', properties: {}, geometry: g as GeoJSON.Geometry })
+    }
+  }
+  collect(geojson)
+
+  const areaOf = (f: GeoJSON.Feature) => {
+    const geom = f.geometry
+    if (geom.type !== 'Polygon' && geom.type !== 'MultiPolygon') return 0
+    const rings = geom.type === 'Polygon' ? [geom.coordinates] : geom.coordinates
+    let best = 0
+    for (const poly of rings) {
+      const outer = (poly as [number, number][][])[0] ?? []
+      if (!outer.length) continue
+      const b = bboxOf(outer)
+      const a = (b.maxLng - b.minLng) * (b.maxLat - b.minLat)
+      if (a > best) best = a
+    }
+    return best
+  }
+
+  const picked = feats
+    .map(f => ({ f, a: areaOf(f) }))
+    .sort((x, y) => y.a - x.a)
+    .slice(0, topBlocks)
+    .map(x => x.f)
+
+  return { type: 'FeatureCollection', features: picked }
+}
