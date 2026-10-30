@@ -3111,6 +3111,28 @@ console.log('== 46. 地形符号：只撒在陆地内、可复现、按面积取
   // 全部落在 L 形内——这是撒点逻辑最核心的正确性
   const inSea = symbols.filter(s => s.lng > -1 && s.lat > 0)
   assert(inSea.length === 0, `符号不能跑到海面（越界 ${inSea.length} 个）`)
+
+  /*
+   * 专门测「海岸 inset」：撒点里有两道过滤——点本身在陆地内、
+   * 以及点的四周 inset 距离内也都在陆地内。它们是冗余的（删一道另一道兜住），
+   * 所以只删一道时"不能跑到海面"这条断言不会响，无法定位是哪道坏了。
+   * 这里直接检查"离海岸的距离"，删掉 inset 那道就会立刻失败。
+   */
+  /*
+   * 【为什么用敏感度断言而不是"采样邻点"】
+   * 先写的是"每个符号周围 d 距离内都不能是海"。但 L 形只有 25 个格点，
+   * 落在 (0, d) 那条窄带里的点本身就靠运气——实测把 inset 整段删掉，
+   * 这条断言照样通过（这次随机种子恰好没生成贴边点）。
+   * 改成确定性的：inset 系数翻几倍，被排除的贴边点必然更多，符号数必须变少。
+   * 删掉 inset 逻辑时两个结果相同，立刻失败。
+   */
+  const fine = buildTerrainSymbols(square, { stepDeg: 0.6 })
+  // rank 供绘图层做 zoom 分级：必须落在 [0,1)，否则"按阈值过滤"会整段失效
+  // （全大于 1 就是永远画不出来，全小于 0 就是拉远也不稀）
+  assert(fine.every(s => s.rank >= 0 && s.rank < 1), 'rank 必须落在 [0,1)')
+  const wide = buildTerrainSymbols(square, { stepDeg: 0.6, insetMul: 1.2 })
+  assert(wide.length < fine.length,
+    `海岸 inset 变宽后符号应变少（${fine.length} → ${wide.length}）`)
   // 也不能贴边：贴边的符号会被海岸描边切一半
   const nearEdge = symbols.filter(s => Math.abs(Math.abs(s.lat) - 5) < 0.05 || Math.abs(Math.abs(s.lng) - 5) < 0.05)
   assert(nearEdge.length === 0, `符号不该贴着海岸线（贴边 ${nearEdge.length} 个）`)

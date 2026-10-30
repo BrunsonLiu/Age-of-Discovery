@@ -29,6 +29,12 @@ export interface TerrainSymbol {
   kind: TerrainKind
   /** 局部缩放（0.8~1.25），让符号大小不整齐划一 */
   scale: number
+  /**
+   * 0~1 的稳定随机值，供绘制层做 zoom 分级：
+   * 拉远只画 rank 小的那一部分，符号位置不变、只是稀一些。
+   * 没有它就只能按数量截断，而数组顺序是按纬度排的 —— 一截就截掉整个高纬。
+   */
+  rank: number
 }
 
 interface Ring { pts: [number, number][]; bbox: BBox }
@@ -107,23 +113,52 @@ function extractRings(geojson: GeoJSON.GeoJsonObject): Ring[][] {
 export interface BuildTerrainOptions {
   /** 只给面积最大的前 N 块陆地撒（默认 14） */
   topBlocks?: number
-  /** 每块陆地大约撒多少个（默认按面积自适应） */
-  density?: number
+  /** 网格步长（度）。越小越密，直接决定"每 2 度左右一个符号"的观感 */
+  stepDeg?: number
+  /** 总点数上限，防止极端数据把内存撑爆 */
+  maxSymbols?: number
+  /**
+   * 海岸 inset 系数（相对 stepDeg，默认 0.16）：
+   * 符号离海岸至少 stepDeg × 该系数的距离，否则会压在海岸描边上。
+   * 暴露成参数是为了测试能做敏感度断言——系数变大时符号数必须变少。
+   */
+  insetMul?: number
   seed?: number
 }
 
 /**
  * 生成地形符号。
  *
- * 撒点用「抖动网格」而不是纯随机：纯随机会结块，有的地方挤成一堆、有的地方
- * 空着，看起来像噪点。网格 + 半个格子的抖动既能铺满又不会排成阵列。
+ * 【为什么用「固定地理步长」而不是「每块按面积分摊固定数量」】
+ * 第一版是后者：`count = 面积 × 系数`，然后把 count 个点均匀撒在这块的 bbox 里。
+ * 结果在真实数据上出了个大问题——**欧亚非是同一块要素**
+ * （bbox 经度 -18~180、纬度 -35~78，10297 个顶点，面积 22226 度²）。
+ * 378 个点摊到 22226 度² 上，间距就是 7.7 度。于是玩家在伊比利亚半岛
+ * （约 12×8 度）看到的符号数量是……4 个。
+ * 换句话说：**大陆越大，局部越空**。这跟"地形要铺满"的目标完全相反。
+ *
+ * 改成固定步长后，密度只跟地理空间有关、与"这块陆地多大"无关：
+ * 每个 STEP×STEP 的格子最多撒一个符号，落在陆地上的留下。
+ * 欧亚非因此自动获得 198/2.2 × 113/2.2 ≈ 4600 个候选格子。
+ *
+ * 【rank 是给绘制层做 zoom 分级用的】
+ * 每个符号带一个 0~1 的 rank，绘制时按当前 zoom 决定阈值：
+ * 拉远只画 rank 小的（稀疏，不糊成一团），拉近全画（有细节）。
+ * 关键是**符号位置固定**——低 zoom 画的那批，在高 zoom 里仍在原处，
+ * 只是周围多了新符号，不会出现"山跟着跳"。
+ *
+ * 【为什么步长在经度方向要按纬度补偿】
+ * 同样的 2.2 度经度，在赤道是 245km，在 60°N 只有 122km。不补偿的话
+ * 高纬会挤成两倍密。按 1/cos(lat) 放大经度步长，让地面距离大致一致。
  */
 export function buildTerrainSymbols(
   geojson: GeoJSON.GeoJsonObject,
   opts: BuildTerrainOptions = {},
 ): TerrainSymbol[] {
-  const topBlocks = opts.topBlocks ?? 12
-  const density = opts.density ?? 2.1
+  const topBlocks = opts.topBlocks ?? 14
+  const stepDeg = opts.stepDeg ?? 2.2
+  const maxSymbols = opts.maxSymbols ?? 26000
+  const insetMul = opts.insetMul ?? 0.16
   const rand = mulberry32(opts.seed ?? 20261030)
 
   const polys = extractRings(geojson)
@@ -140,39 +175,40 @@ export function buildTerrainSymbols(
 
   const out: TerrainSymbol[] = []
 
-  for (const { rings, area } of scored) {
-    // 面积只用来决定撒多少：4 平方度以上按面积长，小岛至少 2 个
-    const count = Math.max(2, Math.round(Math.min(50, area * 1.9) * density))
+  for (const { rings } of scored) {
     const b = rings[0].bbox
     const wDeg = b.maxLng - b.minLng
     const hDeg = b.maxLat - b.minLat
     if (wDeg <= 0 || hDeg <= 0) continue
 
-    // 网格：保持近似正方形，格数 = sqrt(count)
-    const cols = Math.max(1, Math.round(Math.sqrt(count * (wDeg / hDeg))))
-    const rows = Math.max(1, Math.ceil(count / cols))
-    const cw = wDeg / cols
-    const ch = hDeg / rows
+    // 纬度跨度大于 3 度时逐行补偿经度步长（见上方注释）
+    const latRows = Math.max(1, Math.ceil(hDeg / stepDeg))
 
-    let placed = 0
-    let guard = 0
-    while (placed < count && guard < count * 12) {
-      guard++
-      const c = Math.floor(rand() * cols)
-      const r = Math.floor(rand() * rows)
-      const lng = b.minLng + (c + 0.25 + rand() * 0.5) * cw
-      const lat = b.minLat + (r + 0.25 + rand() * 0.5) * ch
-      if (!pointInRings(lat, lng, rings)) continue
-      // 海岸附近不撒：贴着海岸线的符号会被描边切一半
-      const inset = Math.min(cw, ch) * 0.18
-      if (!pointInRings(lat + inset, lng, rings) || !pointInRings(lat - inset, lng, rings)
-        || !pointInRings(lat, lng + inset, rings) || !pointInRings(lat, lng - inset, rings)) continue
+    for (let r = 0; r < latRows; r++) {
+      const rowLat = b.minLat + (r + 0.5) * (hDeg / latRows)
+      const cos = Math.max(0.25, Math.cos((rowLat * Math.PI) / 180))
+      const lngStep = stepDeg / cos
+      const lngCols = Math.max(1, Math.round(wDeg / lngStep))
 
-      // 高纬度出雪峰，其余按 2:1 混山与树
-      const snowy = Math.abs(lat) > 55
-      const kind: TerrainKind = snowy ? 'peak' : (rand() < 0.62 ? 'peak' : 'tree')
-      out.push({ lat, lng, kind, scale: 0.8 + rand() * 0.45 })
-      placed++
+      for (let c = 0; c < lngCols; c++) {
+        if (out.length >= maxSymbols) break
+        // 格内抖动：纯网格会排成阵列，抖动半个格子才自然
+        const lng = b.minLng + (c + 0.25 + rand() * 0.5) * (wDeg / lngCols)
+        const lat = b.minLat + (r + 0.25 + rand() * 0.5) * (hDeg / latRows)
+        const rank = rand()
+        if (!pointInRings(lat, lng, rings)) continue
+
+        // 海岸附近不撒：贴着海岸线的符号会压到海面上去。
+        // 只查左右/上下各一小步，等价于"离边界至少 inset 度"。
+        const inset = stepDeg * insetMul
+        if (!pointInRings(lat + inset, lng, rings) || !pointInRings(lat - inset, lng, rings)
+          || !pointInRings(lat, lng + inset, rings) || !pointInRings(lat, lng - inset, rings)) continue
+
+        // 高纬度出雪峰，其余按 2:1 混山与树
+        const snowy = Math.abs(lat) > 55
+        const kind: TerrainKind = snowy ? 'peak' : (rand() < 0.62 ? 'peak' : 'tree')
+        out.push({ lat, lng, kind, scale: 0.8 + rand() * 0.45, rank })
+      }
     }
   }
 
