@@ -9,7 +9,7 @@ import { ports, portGoods, localDemands } from '@/data/ports'
 import { events } from '@/data/events'
 import { tasks } from '@/data/tasks'
 import { goods } from '@/data/goods'
-import { calculateDailyConsumption, dangerLevelFromDistance, computeWindFavor, effectiveFleetSpeed, prevailingWindBearing, calculateSailingDays, dailyDistanceNm } from '@/utils/navigation'
+import { calculateDailyConsumption, dangerLevelFromDistance, computeWindFavor, effectiveFleetSpeed, prevailingWindBearing, calculateSailingDays, dailyDistanceNm, haversineNm } from '@/utils/navigation'
 import { getRouteGeometry } from '@/utils/routePath'
 import { getRandomEvents, consumeEventFlags } from '@/utils/eventEngine'
 import { STANCES, segmentCountFor, nextSegmentBoundary, hazardLabel, dailyFoodUse, dailyWaterUse, dailyWearRate, settleWear } from '@/utils/segment'
@@ -2035,6 +2035,114 @@ export const useGameStore = create<GameStore>()(
     }
   )
 )
+
+/**
+ * 「掮客推荐」：在当前港口、当前金币、当前空舱下，最值得跑的一趟买卖。
+ *
+ * 【为什么要这个东西】
+ * 量化过新玩家的第一分钟：到地图后 12 秒内被 7 个全屏层打断
+ * （出航计划 → 方针 1/2 → 操舵 → 方针 2/2 …），而 75 秒里一分钱没进账、
+ * 飘字 0 次。4399 那一类游戏的手感恰恰相反：**手上一直在动，结果立刻回来**。
+ * 它们也从不让新手自己找"该干什么"——第一关永远是送上门的一次成功。
+ *
+ * 这张卡就是那次成功：把"该买什么、卖到哪、几天到、赚多少"一次说完，
+ * 点一下直接设航向。
+ *
+ * 【数字必须与结算完全一致，所以全部走同一个来源】
+ *   买价   selectBuyPrice   （与 buyGood 同）
+ *   卖价   selectSellPrice  （与 sellGood 同）
+ *   可买量 min(空舱, 买得起的数量, 本港库存)
+ *   天数   calculateSailingDays(真实航线, 真实风向系数)  （与 confirmDeparture 同）
+ * 少一样都会出现"卡片说赚 1095、实际到账 700"。
+ *
+ * 【排序用直线距离，最终数字用真实航线】
+ * 每港每货都算真实航线（要绕开陆地寻路）会让进港明显卡顿；
+ * 而排序只需要一个稳定的相对量。命中那一单最后会用真实航程重算距离与天数，
+ * 所以**屏幕上显示的数字仍然是准的**——只有"选哪一单"用了近似。
+ */
+export interface BrokerDeal {
+  goodId: number
+  goodName: string
+  toPortId: number
+  toPortName: string
+  toLat: number
+  toLng: number
+  buy: number
+  sell: number
+  qty: number
+  unitProfit: number
+  totalProfit: number
+  nm: number
+  days: number
+}
+
+export function selectBestDeal(state: GameState): BrokerDeal | null {
+  const fromPortId = state.fleet.currentPortId
+  if (!fromPortId || state.fleet.isSailing) return null
+  const fromPort = ports.find(p => p.id === fromPortId)
+  if (!fromPort) return null
+
+  const freeSpace = state.fleet.ships.reduce((sum, sh) => sum + Math.max(0, sh.capacity - sh.usedCapacity), 0)
+  if (freeSpace < 1) return null
+  const gold = state.fleet.gold
+
+  type Cand = { goodId: number; goodName: string; toPortId: number; buy: number; sell: number; qty: number; unit: number; est: number }
+  let best: Cand | null = null
+
+  for (const pg of portGoods) {
+    if (pg.portId !== fromPortId) continue
+    const buy = selectBuyPrice(state, fromPortId, pg.goodId)
+    if (buy == null || buy < 1) continue
+    const stock = state.marketStock[`${fromPortId}:${pg.goodId}`] ?? pg.stock
+    const qty = Math.min(freeSpace, Math.floor(gold / buy), stock)
+    if (qty < 1) continue
+    const good = goods.find(g => g.id === pg.goodId)
+    if (!good) continue
+
+    for (const p of ports) {
+      if (p.id === fromPortId) continue
+      const sell = selectSellPrice(state, p.id, pg.goodId)
+      if (sell == null) continue
+      const unit = sell - buy
+      if (unit <= 0) continue
+      // 排序指标：每海里能赚多少 → 新手会先拿到"最近一趟就赚翻"的那单
+      const straight = haversineNm(fromPort.latitude, fromPort.longitude, p.latitude, p.longitude)
+      const est = (unit * qty) / Math.max(1, straight)
+      if (!best || est > best.est) {
+        best = { goodId: pg.goodId, goodName: good.nameCn, toPortId: p.id, buy, sell, qty, unit, est }
+      }
+    }
+  }
+  if (!best) return null
+
+  const toPort = ports.find(p => p.id === best.toPortId)
+  if (!toPort) return null
+
+  // 真实航程 + 真实风向系数（与 sailToWaypoint / confirmDeparture 同一套）
+  const geom = getRouteGeometry([fromPort.latitude, fromPort.longitude], [toPort.latitude, toPort.longitude])
+  const nm = Math.round(geom.totalNm)
+  const windFavor = computeWindFavor(fromPort.latitude, fromPort.longitude, toPort.latitude, toPort.longitude)
+  const route: Route = {
+    id: -1, fromPortId, toPortId: toPort.id, distance: nm, dangerLevel: 2, windFavor,
+  }
+  const days = calculateSailingDays(route, state.fleet, state.officers)
+
+  return {
+    goodId: best.goodId,
+    goodName: best.goodName,
+    toPortId: toPort.id,
+    toPortName: toPort.nameCn,
+    toLat: toPort.latitude,
+    toLng: toPort.longitude,
+    buy: best.buy,
+    sell: best.sell,
+    qty: best.qty,
+    unitProfit: best.unit,
+    totalProfit: best.unit * best.qty,
+    nm,
+    days,
+  }
+}
 
 /*
  * 这里原本有一个 getPriceFor(portId, goodId, state, mode) 的辅助函数。

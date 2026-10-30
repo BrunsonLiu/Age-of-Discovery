@@ -10,6 +10,8 @@ lerna-debug.log*
 node_modules
 dist
 dist-ssr
+# WorkBuddy 发布用产物（base=/ 的根路径版本，供分享链接使用）
+dist-wb
 *.local
 
 # Editor directories and files

@@ -17,6 +17,7 @@ import SegmentDecision from '@/components/map/SegmentDecision'
 import WeatherFx from '@/components/map/WeatherFx'
 import EventCard from '@/components/events/EventCard'
 import BottomBar from '@/components/ui/BottomBar'
+import BrokerTip from '@/components/map/BrokerTip'
 import Compass from '@/components/ui/Compass'
 import WeatherBadge from '@/components/ui/WeatherBadge'
 import TimelineBar from '@/components/ui/TimelineBar'
@@ -389,8 +390,18 @@ export default function MainMap() {
         移动：状态栏**压缩成一行**，下面再叠一排面板入口标签栏。
         两者放进同一个 fixed 容器，免得用魔法数字互相错位。
       */}
+      {/*
+        掮客推荐。
+        桌面：浮在左下、底栏之上。
+        移动：不放这里 —— 底栏高度会随折行变（42/64/三行），任何写死的 bottom
+        都会在某一档把卡片压到栏底下（实测手机按钮被整条盖住）。改由下面那个
+        fixed 容器按文档流往上叠，结构上就不可能重叠。
+      */}
+      {!isMobile && <BrokerTip />}
+
       {isMobile ? (
         <div className="fixed bottom-0 left-0 right-0" style={{ zIndex: Z.BOTTOM_BAR }}>
+          <BrokerTip placement="stack" />
           <BottomBar />
           <MobileTabBar
             buttons={panelButtons.map(b => ({ type: b.type, icon: b.icon, label: b.label }))}

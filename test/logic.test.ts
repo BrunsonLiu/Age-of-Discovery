@@ -24,7 +24,7 @@ import {
   STANCES, forecastSegment, stanceLedgers, segmentCountFor, segmentIndexFor, nextSegmentBoundary,
   dailyFoodUse, dailyWaterUse, dailyWearRate, settleWear, describeStanceTradeoff,
 } from '../src/utils/segment'
-import { generateRouteIntel, settleOfficerWages, advanceRivals, selectBuyPrice, selectSellPrice, selectPriceTone, OFFER_PRICE_RATIO, dynamicSellPrice } from '../src/store/useGameStore'
+import { generateRouteIntel, settleOfficerWages, advanceRivals, selectBuyPrice, selectSellPrice, selectPriceTone, OFFER_PRICE_RATIO, dynamicSellPrice, selectBestDeal } from '../src/store/useGameStore'
 import { FACTIONS, factionAttitude, portFaction } from '../src/data/factions'
 import { CREW_CHARS, CREW_CHAR_MAP } from '../src/data/crewChars'
 import { TITLES, currentTitle, dominantAxis } from '../src/data/titles'
@@ -3314,6 +3314,47 @@ console.log('== 50. 卖价随本港库存单调下降（库存过剩要压价）
     '缺货时卖价应更高')
   // 无论库存多大，价格都不能变成 0 或负数
   assert(dynamicSellPrice(pg, 100000, baseStock) > 0, '库存极大时卖价仍应为正')
+}
+
+console.log('== 51. 掮客推荐：卡片说的利润必须等于实际到账 ==')
+{
+  /*
+   * 【为什么这条最重要】
+   * 这张卡是新玩家看到的第一个"具体收益承诺"（+670 金）。它一旦和实际结算分叉，
+   * 就成了这个项目最忌讳的东西：屏幕上的数字在骗人。
+   * 所以不只断言"有推荐"，而是**真的走一遍买卖，把金币差额和卡片数字对账**。
+   * 任何一环改了取价来源（比如有人图快用 good.basePrice），这里必然失败。
+   */
+  useGameStore.getState().initGame('merchant', 'captain')
+  const S = () => useGameStore.getState()
+  const deal = selectBestDeal(S())
+  assert(deal !== null, '开局在塞维利亚应当有推荐（否则卡片不出现，新手又没人指路）')
+  if (deal) {
+    assert(deal.qty >= 1, `推荐数量应为正（实际 ${deal.qty}）`)
+    assert(deal.unitProfit > 0, `单位利润应为正（实际 ${deal.unitProfit}）`)
+    assert(deal.nm > 0 && deal.days >= 1, `航程与天数应为正（${deal.nm}nm / ${deal.days}天）`)
+
+    // 卡片价 == 面板取价（同一来源）
+    assert(deal.buy === selectBuyPrice(S(), S().fleet.currentPortId!, deal.goodId), '卡片买价必须等于面板买价')
+    assert(deal.sell === selectSellPrice(S(), deal.toPortId, deal.goodId), '卡片卖价必须等于目标港卖价')
+
+    // 真的买卖一次，对账
+    const from = S().fleet.currentPortId!
+    const gold0 = S().fleet.gold
+    S().buyGood(from, deal.goodId, deal.qty)
+    useGameStore.setState({ fleet: { ...S().fleet, currentPortId: deal.toPortId } })
+    S().sellGood(deal.toPortId, deal.goodId, deal.qty)
+    const actual = S().fleet.gold - gold0
+    assert(actual === deal.totalProfit,
+      `实际到账必须等于卡片利润（卡片 ${deal.totalProfit}，实际 ${actual}）`)
+  }
+
+  // 航行中不该推荐（人不在港口）
+  useGameStore.setState({ fleet: { ...S().fleet, isSailing: true } })
+  assert(selectBestDeal(S()) === null, '航行中不应给出推荐')
+  // 不在港口也不该推荐
+  useGameStore.setState({ fleet: { ...S().fleet, isSailing: false, currentPortId: null } })
+  assert(selectBestDeal(S()) === null, '不在港口时不应给出推荐')
 }
 
 console.log(`\n最终结果：${passed} 通过 / ${failed} 失败`)
