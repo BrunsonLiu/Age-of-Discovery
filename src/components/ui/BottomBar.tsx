@@ -4,6 +4,7 @@ import { useMapStore } from '@/store/useMapStore'
 import { ports } from '@/data/ports'
 import { STANCES } from '@/utils/segment'
 import { daysToDestination } from '@/utils/voyage'
+import { shipSprite } from '@/data/shipSprites'
 import ResourceCluster from '@/components/ui/ResourceCluster'
 import SoundToggle from '@/components/ui/SoundToggle'
 
@@ -28,6 +29,7 @@ export default function BottomBar() {
   const toggleCurrentOverlay = useMapStore((s) => s.toggleCurrentOverlay)
   const togglePirateZones = useMapStore((s) => s.togglePirateZones)
 
+  const flagship = fleet.ships.find(sh => sh.id === fleet.flagshipId) ?? fleet.ships[0]
   const currentPort = fleet.currentPortId ? ports.find(p => p.id === fleet.currentPortId) : null
   const destPort = currentRoute?.toPortId ? ports.find(p => p.id === currentRoute.toPortId) : null
   const destName = destPort?.nameCn ?? waypoint?.name ?? '未知海域'
@@ -78,6 +80,19 @@ export default function BottomBar() {
     >
 
       <div className="flex items-center gap-2 text-gold-300 min-w-0 basis-full md:basis-auto md:flex-none order-1">
+        {/* 旗舰缩略图：底栏原先只有文字，看不出"我开的是什么船"。
+            参考图底部那张船卡的第一眼就是船本身，这里先用最小的代价补上存在感。
+            画在文字左边、跟着状态块一起走，移动端折行时也不会孤立。 */}
+        {flagship && (
+          <img
+            src={shipSprite(flagship.type)}
+            alt=""
+            aria-hidden="true"
+            draggable={false}
+            className="h-7 w-auto object-contain shrink-0 drop-shadow-[0_1px_3px_rgba(0,0,0,0.6)] select-none"
+            onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none' }}
+          />
+        )}
         {fleet.isSailing ? (
           <div className="flex items-center gap-2 min-w-0">
             <Navigation size={14} className="text-blue-400 shrink-0 animate-pulse" />
