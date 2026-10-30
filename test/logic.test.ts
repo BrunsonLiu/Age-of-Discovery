@@ -3145,5 +3145,70 @@ console.log('== 46. 地形符号：只撒在陆地内、可复现、按面积取
   assert(buildTerrainSymbols({ type: 'FeatureCollection', features: [] }).length === 0, '空数据集应返回空数组')
 }
 
+console.log('== 47. 参观模式：全程不弹航段抉择（store 分流）==')
+{
+  const mkShip = () => ({ id: 1, name: '圣玛利亚号', type: 'caravel' as const, speed: 5, durability: 80, maxDurability: 100, capacity: 100, usedCapacity: 0, crew: 20, maxCrew: 40 })
+  const mkFleet = (): Fleet => ({ id: 1, name: '测试舰队', gold: 500, fame: 0, morale: 60, food: 100, water: 100, currentPortId: 6, isSailing: false, day: 10, ships: [mkShip()], cargo: [], flagshipId: 1, trait: null, durabilityCarry: 0 })
+  const route: Route = { id: -99, fromPortId: 6, toPortId: 7, distance: 600, dangerLevel: 2, windFavor: 1 }
+  const waypoint = { latitude: 40, longitude: -10, portId: 7 }
+
+  // —— 1) 船长模式：出航即进入第 0 段抉择（原有行为，不能被改坏）——
+  useGameStore.setState({
+    gameMode: 'captain', fleet: mkFleet(), pendingVoyage: { waypoint, route },
+    shipPosition: [20, -20], segmentCount: 0, segmentIndex: 0, pendingSegment: null, gamePhase: 'playing',
+  })
+  useGameStore.getState().confirmDeparture()
+  const cap = useGameStore.getState()
+  assert(cap.fleet.isSailing === true, '船长模式出航后确实在航行')
+  assert(cap.pendingSegment !== null, '船长模式出航后应立刻进入航段抉择')
+  assert(cap.gamePhase === 'segment', `船长模式出航后 gamePhase 应为 segment（实际 ${cap.gamePhase}）`)
+
+  // —— 2) 参观模式：出航直接 playing，不产生 pendingSegment ——
+  useGameStore.setState({
+    gameMode: 'visitor', fleet: mkFleet(), pendingVoyage: { waypoint, route },
+    shipPosition: [20, -20], segmentCount: 0, segmentIndex: 0, pendingSegment: null, gamePhase: 'playing',
+  })
+  useGameStore.getState().confirmDeparture()
+  const vis = useGameStore.getState()
+  assert(vis.fleet.isSailing === true, '参观模式仍然真的开船（不是什么都不做）')
+  assert(vis.pendingSegment === null, '参观模式出航后不应产生航段抉择')
+  assert(vis.gamePhase === 'playing', `参观模式出航后 gamePhase 应为 playing（实际 ${vis.gamePhase}）`)
+  assert(vis.segmentCount > 0, '参观模式仍然切分了航段（进度条刻度要靠它）')
+
+  // —— 3) 参观模式跨段：段号照常前进，仍不产生抉择 ——
+  useGameStore.setState({
+    gameMode: 'visitor', fleet: { ...mkFleet(), isSailing: true }, currentRoute: route,
+    segmentCount: 4, segmentIndex: 0, pendingSegment: null, gamePhase: 'playing', stance: 'steady',
+  })
+  useGameStore.getState().syncSegmentBoundary(0.5)
+  const visSeg = useGameStore.getState()
+  assert(visSeg.segmentIndex === 1, `参观模式跨段后段号应 +1（实际 ${visSeg.segmentIndex}）`)
+  assert(visSeg.pendingSegment === null, '参观模式跨段不应产生抉择面板')
+  assert(visSeg.gamePhase === 'playing', `参观模式跨段后仍在 playing（实际 ${visSeg.gamePhase}）`)
+  assert(visSeg.stance === 'steady', `参观模式不改变方针（实际 ${visSeg.stance}）`)
+
+  // —— 4) 同样条件换成船长模式：必须弹抉择（证明分流真的按模式走）——
+  useGameStore.setState({
+    gameMode: 'captain', fleet: { ...mkFleet(), isSailing: true }, currentRoute: route,
+    segmentCount: 4, segmentIndex: 0, pendingSegment: null, gamePhase: 'playing', stance: 'steady',
+  })
+  useGameStore.getState().syncSegmentBoundary(0.5)
+  const capSeg = useGameStore.getState()
+  assert(capSeg.segmentIndex === 1, '船长模式跨段后段号 +1')
+  assert(capSeg.pendingSegment !== null, '船长模式跨段必须弹航段抉择')
+  assert(capSeg.gamePhase === 'segment', '船长模式跨段后进入 segment 阶段')
+
+  // —— 5) 参观模式连续跨多段也不会停：一次一次推进，但不产生任何 pending ——
+  useGameStore.setState({
+    gameMode: 'visitor', fleet: { ...mkFleet(), isSailing: true }, currentRoute: route,
+    segmentCount: 4, segmentIndex: 0, pendingSegment: null, gamePhase: 'playing', stance: 'steady',
+  })
+  for (const p of [0.3, 0.55, 0.8]) useGameStore.getState().syncSegmentBoundary(p)
+  const visTrip = useGameStore.getState()
+  assert(visTrip.segmentIndex === 3, `参观模式连续推进到第 3 段（实际 ${visTrip.segmentIndex}）`)
+  assert(visTrip.pendingSegment === null, '参观模式全程无拦截')
+}
+
+
 console.log(`\n最终结果：${passed} 通过 / ${failed} 失败`)
 if (failed > 0) process.exit(1)

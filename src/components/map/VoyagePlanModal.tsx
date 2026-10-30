@@ -111,6 +111,23 @@ export default function VoyagePlanModal() {
     return off
   }, [confirmDeparture, cancelVoyage])
 
+  /**
+   * 参观模式：不弹出航计划，直接起航。
+   *
+   * 「只想看看世界」的人每点一次海面就被问一次「选哪个方针、补给够不够」，
+   * 是这套流程里最招人烦的一处——而且他来这里本来就不打算为补给操心
+   * （参观模式不扣粮水、不判胜负）。方针用默认的「稳妥」，
+   * 想细看的玩家仍然能点开局时的船长模式。
+   *
+   * 用 effect 而不是在 sailToWaypoint 里分流：store 的起航流程是共用的，
+   * 在 UI 层"自动按确认键"等价于玩家自己点了一下，不动核心状态机。
+   */
+  useEffect(() => {
+    if (!pendingVoyage) return
+    if (useGameStore.getState().gameMode !== 'visitor') return
+    confirmDeparture()
+  }, [pendingVoyage, confirmDeparture])
+
   if (!pendingVoyage) return null
 
   const { waypoint, route } = pendingVoyage

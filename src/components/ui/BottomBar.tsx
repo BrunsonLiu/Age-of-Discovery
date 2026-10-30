@@ -242,7 +242,13 @@ export default function BottomBar() {
         order 只影响 flex 容器的排列顺序，不影响内容，
         所以桌面端的观感完全没变。
       */}
-      <div className="flex items-center gap-0.5 shrink-0 order-3 md:order-4">
+      {/*
+        ml-auto：折行时（xl 以下）图标组独占最后一行，没有它会贴在最左边，
+        右边空出大半条——第一行两端撑满、第二行挤在左侧，看起来像"掉队"。
+        ml-auto 把它推到右端，与第一行末尾的资源区对齐。
+        单行时（xl 以上）它本来就是最后一项，再加 ml-auto 无副作用。
+      */}
+      <div className="flex items-center gap-0.5 shrink-0 order-3 md:order-4 ml-auto">
           <button
             onClick={toggleWindOverlay}
             className={`p-1 rounded press transition-all ${

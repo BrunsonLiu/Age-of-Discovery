@@ -158,6 +158,11 @@ export default function SegmentDecision() {
     }
   }, [gamePhase])
 
+  // 【参观模式不弹这个面板】分流做在 store 的 syncSegmentBoundary 里：
+  // 参观模式直接推进段号、不写 pendingSegment，所以这个组件根本不会出现。
+  // 曾试过在这里用 effect + setTimeout 自动 chooseStance，实测不生效——
+  // 这段流程由航行循环驱动，UI 层的延时提交会被帧循环挤掉。
+
   const handlePick = useCallback((id: StanceId) => {
     // 用 ref 判重：picked 是 state，若 handlePick 依赖它，
     // uiBus 的订阅回调就得跟着重建，容易漏掉一次按键。

@@ -650,6 +650,15 @@ export const useGameStore = create<GameStore>()(
         // 航段按**距离均分**：距离是确定的，天数会随方针漂移。
         const segmentNm = pending.route.distance / total
         const hazard = hazardLabel(pending.route.dangerLevel, state.weather.kind)
+        /*
+         * 参观模式：出航不进入航段抉择，直接开船。
+         *
+         * 「出航即进入第 0 段的抉择」对船长模式是好的（第一件事就是做决定），
+         * 但对"只看，不被逼着做任何事"的参观模式来说，第一秒就被拦一次。
+         * 这里连同后面的 syncSegmentBoundary 一起分流：
+         * 参观模式全程不产生 pendingSegment，也就不弹抉择、不弹操舵。
+         */
+        const isVisitor = state.gameMode === 'visitor'
         return {
           pendingVoyage: null,
           currentRoute: pending.route,
@@ -664,7 +673,7 @@ export const useGameStore = create<GameStore>()(
           // 出航即进入第 0 段的抉择：让玩家第一件事就是做决定，
           // 而不是先看十几秒空转。
           stance: 'steady',
-          pendingSegment: {
+          pendingSegment: isVisitor ? null : {
             index: 0,
             total,
             hazard,
@@ -672,7 +681,7 @@ export const useGameStore = create<GameStore>()(
             remainingNm: pending.route.distance,
             daysLeft: baselineDays,
           },
-          gamePhase: 'segment',
+          gamePhase: isVisitor ? 'playing' : 'segment',
         }
       }),
 
@@ -730,6 +739,27 @@ export const useGameStore = create<GameStore>()(
         if (progress < boundary) return state
         const route = state.currentRoute
         if (!route) return state
+
+        /*
+         * 参观模式：不做航段抉择，直接推进段号继续走。
+         *
+         * 一次远航有 2~4 段，每段都会弹「抢行 / 按部就班 / 谨慎」。
+         * 对只想沿海岸线看看的人来说，这是每段一次的拦截；而且这个选择
+         * 对他没有后果——参观模式不扣粮水、耐久下限 1、不判胜负。
+         *
+         * 【为什么在 store 里分流，而不是在 UI 里自动点按钮】
+         * 先试过在 SegmentDecision 里用 effect + setTimeout 自动 chooseStance，
+         * 实测没生效：这个流程的时序由航行循环驱动，UI 层的延时提交
+         * 会被帧循环挤掉。而"参观模式没有航段抉择"本来就是状态层的语义，
+         * 放在这里既准确又不会和渲染时序打架。
+         *
+         * 方针保持上一次的选择（初始是 steady），不重置。
+         */
+        if (state.gameMode === 'visitor') {
+          return { segmentIndex: nextIndex }
+        }
+
+
         const totalNm = route.distance
         // 剩余航程 = 总距离 × (1 − 进度)；本段按距离均分
         const remainingNm = Math.max(0, Math.round(totalNm * (1 - Math.min(1, Math.max(0, progress)))))
@@ -1077,7 +1107,12 @@ export const useGameStore = create<GameStore>()(
           const lastEventDay = state.lastEventDay ?? 0
           // 天气偏置：暴风雨/落雨/浓雾让海面更"有话可说"
           // 姿态再叠一层：抢行遇事更频繁，谨慎遇事更少
-          const eventBias = WEATHER_INFO[newWeather.kind].eventBias * profile.eventRateMul
+          // 参观模式：事件卡是「必须停下来做个选择」的强制打断。
+          // 只想看看世界的人被每段一次的抉择拦住，正是本作最劝退的一点。
+          // 压到三成而不是归零——世界仍需一点活性，且事件卡本来就带
+          // 「站在一边看」的旁观选项，真遇上了也能什么都不做。
+          const modeEventMul = isVisitor ? 0.3 : 1
+          const eventBias = WEATHER_INFO[newWeather.kind].eventBias * profile.eventRateMul * modeEventMul
           const triggeredEvent = eventBias !== 1
             ? getRandomEvents({ ...state, fleet: newFleet, routeProgress: state.routeProgress }, events, newDay - lastEventDay, eventBias)
             : getRandomEvents({ ...state, fleet: newFleet, routeProgress: state.routeProgress }, events, newDay - lastEventDay)
