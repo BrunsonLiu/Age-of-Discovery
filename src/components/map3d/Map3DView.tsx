@@ -20,6 +20,7 @@ import { buildMap3DLayers } from './mapLayers3d'
 import { buildMap3DBorders } from './mapBorders3d'
 import { fetchBordersGeojson } from '@/utils/mapGeoJson'
 import { decidePixelRatio } from '@/utils/adaptiveResolution'
+import { useIsMobile } from '@/hooks/useIsMobile'
 import {
   createAreaLabels, createPortLabel, measureLabels, placeLabels, remeasureWhenFontsReady,
   type ScreenLabel,
@@ -49,6 +50,8 @@ import type { Waypoint } from '@/types'
 export default function Map3DView() {
   const mountRef = useRef<HTMLDivElement>(null)
   const [phase, setPhase] = useState<'loading' | 'ready' | 'error'>('loading')
+  /** 操作提示要按设备改写（手机没有滚轮）；手势本身两条路径都支持 */
+  const isMobile = useIsMobile()
   const [errorMsg, setErrorMsg] = useState('')
 
   useEffect(() => {
@@ -1039,10 +1042,37 @@ export default function Map3DView() {
         </div>
       )}
 
+      {/*
+        操作提示。两件事：
+
+        ① **按设备说能做得到的事**：原来固定写「滚轮缩放」，
+           手机上根本没有滚轮，等于教玩家一个不存在的操作。
+           手势本身一直是两条路径都支持的（单指拖拽 + 双指捏合，见下方 pointer 处理）。
+
+        ② **位置必须避开底栏**：原来在 bottom-3 left-3，实测一直被底栏压住
+           （桌面提示底边 888、底栏顶边 858；手机 832 vs 714），玩家从来没看见过。
+           现在放到顶部居中（罗盘在左、切换按钮在右，中间是空的），
+           并 6.5 秒后自动淡出——"教一次就够"的说明不该长期占着画面。
+      */}
       {phase === 'ready' && (
-        <div className="absolute bottom-3 left-3 z-10 text-[#c9b489] font-serif text-xs pointer-events-none"
-             style={{ textShadow: '0 1px 4px #000' }}>
-          拖拽转视角 · 滚轮缩放 · 点击海面设定航向
+        <div
+          className="absolute top-14 left-1/2 -translate-x-1/2 z-20 pointer-events-none text-center
+                     text-[#e2cfa2] font-serif text-xs px-3 py-1.5 rounded-full
+                     max-w-[calc(100vw-160px)]"
+          style={{
+            background: 'rgba(12, 20, 30, 0.55)',
+            border: '1px solid rgba(201, 180, 137, 0.28)',
+            textShadow: '0 1px 4px #000',
+            animation: 'hintFade 6.5s ease-out forwards',
+          }}
+        >
+          {/*
+            手机上只讲手势。三段全写会换行成"…点海面" + "设航向"两行且长短失衡
+            （实测胶囊内宽 195px，装不下 19 个字）。
+            而「点海面设定航向」在 2D 里就是这么用的，3D 沿用同一套交互，
+            不是新信息 —— 手机上真正需要教的只有手势。
+          */}
+          {isMobile ? '单指转视角 · 双指缩放' : '拖拽转视角 · 滚轮缩放 · 点击海面设定航向'}
         </div>
       )}
     </div>
