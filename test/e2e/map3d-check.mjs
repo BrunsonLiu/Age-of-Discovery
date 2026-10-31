@@ -1006,6 +1006,39 @@ console.log('截图: map3d-手机.png')
 // 切回 2D，确认 Leaflet 恢复正常
 await page.setViewport({ width: 1440, height: 900 })
 await sleep(400)
+// ------------------------------------------------------------------
+// 天气：风暴要让海面明显变暗，改回晴天必须**完全恢复**。
+//
+// 【为什么必须测"恢复"】这段是"只在天气变化时写材质"的缓存逻辑。
+// 缓存类改动最典型的失败不是"没变暗"，而是"变暗之后回不来" ——
+// 玩家打完一场风暴，海面永远停在阴沉的颜色。本项目在标签缓存上
+// 刚栽过一次（漏同步 → 48 个标签永久隐藏），所以这里专门盯恢复。
+// ------------------------------------------------------------------
+const weatherChk = await page.evaluate(async () => {
+  const g = window.__gameStore
+  let m = null
+  window.__map3d.scene.traverse(o => {
+    if (o.isMesh && !o.isInstancedMesh && o.material?.map && o.geometry?.parameters?.width === 20) m = o.material
+  })
+  if (!m) return { err: 'no sea material' }
+  const read = () => m.color.toArray().map(v => +v.toFixed(3))
+  g.setState({ weather: { ...g.getState().weather, kind: 'clear' } })
+  await new Promise(r => setTimeout(r, 350))
+  const base = read()
+  g.setState({ weather: { ...g.getState().weather, kind: 'storm' } })
+  await new Promise(r => setTimeout(r, 350))
+  const storm = read()
+  g.setState({ weather: { ...g.getState().weather, kind: 'clear' } })
+  await new Promise(r => setTimeout(r, 350))
+  return { base, storm, back: read() }
+})
+console.log('天气调色:', JSON.stringify(weatherChk))
+check(!!weatherChk.base, '3D 里能找到海面材质')
+check(weatherChk.base && weatherChk.storm && weatherChk.storm.every((v, i) => v < weatherChk.base[i] * 0.8),
+  `暴风雨时海面三个通道都明显压暗（${JSON.stringify(weatherChk.base)} → ${JSON.stringify(weatherChk.storm)}）`)
+check(weatherChk.base && weatherChk.back && weatherChk.back.every((v, i) => Math.abs(v - weatherChk.base[i]) < 1e-6),
+  `改回晴天后海面颜色完全恢复（${JSON.stringify(weatherChk.back)}）`)
+
 await clickReal('[data-testid="map-mode-toggle"]')
 await sleep(2500)
 const back = await page.evaluate(() => ({

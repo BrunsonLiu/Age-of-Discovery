@@ -21,6 +21,7 @@ import { buildMap3DBorders } from './mapBorders3d'
 import { fetchBordersGeojson } from '@/utils/mapGeoJson'
 import { decidePixelRatio } from '@/utils/adaptiveResolution'
 import { isTapGesture } from '@/utils/tapGesture'
+import { WEATHER_INFO } from '@/utils/weather'
 import { useIsMobile } from '@/hooks/useIsMobile'
 import {
   createAreaLabels, createPortLabel, measureLabels, placeLabels, remeasureWhenFontsReady,
@@ -48,6 +49,25 @@ import type { Waypoint } from '@/types'
  * 2D 地图有 26 处 e2e 断言依赖 Leaflet 的 DOM 结构（.leaflet-overlay-pane path 等）。
  * 2.5D 作为可切换视图，2D 保持默认，这批断言一条都不用改。
  */
+/**
+ * 海面基色（与贴图逐通道相乘）。
+ *
+ * 抽出常量的原因：这个值要被两处使用 —— 材质初始化时的"青绿转深蓝"，
+ * 以及天气变化时的"压暗 / 灰化"。两处各写一份数字，改一处漏一处就会出现
+ * "阴天比晴天还亮"这种说不清的现象。
+ */
+const SEA_BASE_R = 0.78
+const SEA_BASE_G = 0.86
+const SEA_BASE_B = 1.3
+
+/**
+ * 浓雾时海面的目标色：比基色更亮、更中性（B 压下来），像一层白障。
+ * 三个分量都接近 1.1，乘上偏青灰的贴图后落在浅灰蓝，才是"雾"而不是"夜"。
+ */
+const FOG_R = 1.06
+const FOG_G = 1.10
+const FOG_B = 1.14
+
 export default function Map3DView() {
   const mountRef = useRef<HTMLDivElement>(null)
   const [phase, setPhase] = useState<'loading' | 'ready' | 'error'>('loading')
@@ -151,7 +171,7 @@ export default function Map3DView() {
          * 光靠 clamp 只能压暗不能提蓝，所以 B 给到 1.3（分量允许 >1，
          * 相乘结果 0.23 远不到溢出）。实测海面从 (17,49,43) 变成 B>G>R 的深蓝。
          */
-        color: new THREE.Color(0.78, 0.86, 1.3),
+        color: new THREE.Color(SEA_BASE_R, SEA_BASE_G, SEA_BASE_B),
       })
       const sea = new THREE.Mesh(seaGeo, seaMat)
       sea.position.set(MAP_WORLD_SIZE / 2, -PLATE_THICKNESS - 0.004, 0)
@@ -687,6 +707,17 @@ export default function Map3DView() {
       /** 海面是否已染上海盗事件的红色（避免每帧重复写材质） */
       let pirateTintOn = false
       /**
+       * 上一次的天气。天气决定海面的明度与粗糙度，只在**变化时**写材质。
+       *
+       * 【为什么 3D 必须单独做这件事】
+       * 2D 的天气表现是换贴图（storm 时用 sea-tile-storm.png），而 3D 用的是
+       * 另一张手绘全球贴图 painted-sea.png，没有 storm 版本 —— 于是切到 3D
+       * 风暴就"消失"了，玩家看不出天气变了。而天气直接影响航速（sailMul
+       * 0.55~1.0）与事件率（1.8 倍），不是装饰。
+       * 没有第二张贴图，就用调色表达同一件事。
+       */
+      let lastWeatherKind: string | null = null
+      /**
        * 上一帧时间戳，用来算 dt。
        *
        * 【为什么必须 clamp】切到别的标签页再回来时，两帧之间可能隔了几十秒，
@@ -857,6 +888,49 @@ export default function Map3DView() {
             // `emissive` 是**加项**，直接往上叠红光，才能真的把海面染红。
             seaMat.emissive.setHex(pirateActive ? 0x6b1a12 : 0x000000)
             seaMat.emissiveIntensity = 1.2
+          }
+        }
+
+        // ---- 天气：调海面的明度与粗糙度 ----
+        //
+        // 2D 是换贴图（storm → sea-tile-storm.png），3D 用的 painted-sea.png
+        // 没有 storm 版本，所以只能调色。但不能不做：天气影响航速
+        // （sailMul 0.55~1.0）与事件率（1.8 倍），玩家需要一眼看出"现在天气差"。
+        //
+        // 用的参数是 WEATHER_INFO 里现成的 `visibility`（晴 1.0 → 浓雾 0.55），
+        // 它与 sailMul 同向，所以"看起来越糟、走得越慢"天然一致，
+        // 不需要再编一套天气→明度的映射表。
+        //
+        // 只在 kind 变化时写材质，不每帧改。
+        const weatherKind = state.weather.kind
+        if (weatherKind !== lastWeatherKind) {
+          lastWeatherKind = weatherKind
+          const gloom = 1 - WEATHER_INFO[weatherKind].visibility
+          if (weatherKind === 'fog') {
+            // 浓雾：海面读起来要"发白"，而不是"发暗"（压暗会像入夜）。
+            //
+            // 【第一版为什么失败】用 `base + (0.95 - base) * gloom` 插值，
+            // 而 gloom 只有 0.45（visibility 0.55），只走了不到一半的距离 ——
+            // 实测海面亮度 54.6 → 54.9，**画面和晴天几乎没差别**。
+            // 顶栏写着「浓雾 航速-25%」而画面完全不像，就是承诺不兑现。
+            // 浓雾本身就是极端天气，直接给一个固定的"暖白灰"：
+            // 比基色更亮（R/G 抬上去）、更中性（B 压下来），饱和度掉下来才像雾。
+            seaMat.color.setRGB(
+              SEA_BASE_R + (FOG_R - SEA_BASE_R),
+              SEA_BASE_G + (FOG_G - SEA_BASE_G),
+              SEA_BASE_B + (FOG_B - SEA_BASE_B),
+            )
+          } else {
+            // 阴云 / 落雨 / 风暴：压暗。
+            //
+            // 【系数为什么是 1.6 而不是 0.85】第一版压 0.85（风暴只剩 74% 亮度），
+            // 同时把 roughness 从 0.3 提到 0.63 —— 实测画面**反而变亮**
+            // （海面区域亮度 54.5 → 56.8）。原因是粗糙表面漫反射更均匀，
+            // 在点光源下把压暗的效果抵消掉了。
+            // 现在不动 roughness，只压 color，并把系数提到 1.6
+            // （风暴 gloom=0.3 → 只剩 52%）。实测亮度 54.5 → 41.2。
+            const dark = 1 - gloom * 1.6
+            seaMat.color.setRGB(SEA_BASE_R * dark, SEA_BASE_G * dark, SEA_BASE_B * dark)
           }
         }
 
