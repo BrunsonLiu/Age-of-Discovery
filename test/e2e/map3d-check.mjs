@@ -1016,12 +1016,20 @@ await sleep(400)
 // ------------------------------------------------------------------
 const weatherChk = await page.evaluate(async () => {
   const g = window.__gameStore
+  const sc = window.__map3d.scene
   let m = null
-  window.__map3d.scene.traverse(o => {
+  sc.traverse(o => {
     if (o.isMesh && !o.isInstancedMesh && o.material?.map && o.geometry?.parameters?.width === 20) m = o.material
   })
   if (!m) return { err: 'no sea material' }
-  const read = () => m.color.toArray().map(v => +v.toFixed(3))
+  // 光照也要一起读：亮度几乎全来自三盏灯（实测关灯 → 亮度掉到 4.9），
+  // 只断言 color 会漏掉"颜色恢复了但灯还压着"这种半恢复状态。
+  const lightSum = () => {
+    let sum = 0
+    sc.traverse(o => { if (o.isLight) sum += o.intensity })
+    return +sum.toFixed(3)
+  }
+  const read = () => ({ color: m.color.toArray().map(v => +v.toFixed(3)), lights: lightSum() })
   g.setState({ weather: { ...g.getState().weather, kind: 'clear' } })
   await new Promise(r => setTimeout(r, 350))
   const base = read()
@@ -1034,10 +1042,14 @@ const weatherChk = await page.evaluate(async () => {
 })
 console.log('天气调色:', JSON.stringify(weatherChk))
 check(!!weatherChk.base, '3D 里能找到海面材质')
-check(weatherChk.base && weatherChk.storm && weatherChk.storm.every((v, i) => v < weatherChk.base[i] * 0.8),
-  `暴风雨时海面三个通道都明显压暗（${JSON.stringify(weatherChk.base)} → ${JSON.stringify(weatherChk.storm)}）`)
-check(weatherChk.base && weatherChk.back && weatherChk.back.every((v, i) => Math.abs(v - weatherChk.base[i]) < 1e-6),
-  `改回晴天后海面颜色完全恢复（${JSON.stringify(weatherChk.back)}）`)
+check(weatherChk.base && weatherChk.storm && weatherChk.storm.color.every((v, i) => v < weatherChk.base.color[i] * 0.8),
+  `暴风雨时海面三个通道都明显压暗（${JSON.stringify(weatherChk.base?.color)} → ${JSON.stringify(weatherChk.storm?.color)}）`)
+check(weatherChk.base && weatherChk.storm && weatherChk.storm.lights < weatherChk.base.lights * 0.75,
+  `暴风雨时光照同步压暗（${weatherChk.base?.lights} → ${weatherChk.storm?.lights}）—— 亮度主要来自灯，光压色不够`)
+check(weatherChk.base && weatherChk.back
+  && weatherChk.back.color.every((v, i) => Math.abs(v - weatherChk.base.color[i]) < 1e-6)
+  && Math.abs(weatherChk.back.lights - weatherChk.base.lights) < 1e-6,
+  `改回晴天后颜色与光照都完全恢复（${JSON.stringify(weatherChk.back)}）`)
 
 await clickReal('[data-testid="map-mode-toggle"]')
 await sleep(2500)

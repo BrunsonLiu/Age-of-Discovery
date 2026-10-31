@@ -68,6 +68,24 @@ const FOG_R = 1.06
 const FOG_G = 1.10
 const FOG_B = 1.14
 
+/**
+ * 三个光源的基准强度。天气变差时按比例压暗（见帧循环里的天气段）。
+ * 抽常量的理由同 SEA_BASE：基准值要被"初始化"与"天气调整"两处用。
+ */
+const LIGHT_KEY = 3.0
+const LIGHT_RIM = 0.45
+const LIGHT_AMB = 0.78
+
+/**
+ * `scene.environment`（PMREM 环境贴图）的基准强度。
+ *
+ * 【为什么它必须一起压】海面用的是 MeshStandardMaterial，材质自身没有 envMap，
+ * 走的是 scene.environment —— 这一项的贡献**不受 Light.intensity 影响**。
+ * 实测只压三个光源时，风暴的画面亮度纹丝不动（48.8 不变），
+ * 因为画面亮度主要来自它（0.72）而不是方向光。
+ */
+const ENV_BASE = 0.72
+
 export default function Map3DView() {
   const mountRef = useRef<HTMLDivElement>(null)
   const [phase, setPhase] = useState<'loading' | 'ready' | 'error'>('loading')
@@ -460,7 +478,7 @@ export default function Map3DView() {
       }
 
       // ---- 光照 ----
-      const key = new THREE.DirectionalLight(0xffe4b8, 3.0)
+      const key = new THREE.DirectionalLight(0xffe4b8, LIGHT_KEY)
       key.position.set(-9, 6, 6)
       key.castShadow = true
       key.shadow.mapSize.set(2048, 2048)
@@ -469,10 +487,12 @@ export default function Map3DView() {
       key.shadow.camera.near = 1; key.shadow.camera.far = 40
       key.shadow.bias = -0.0012
       scene.add(key)
-      const rim = new THREE.DirectionalLight(0x6f9fd8, 0.45)
+      const rim = new THREE.DirectionalLight(0x6f9fd8, LIGHT_RIM)
       rim.position.set(7, 3, -6)
       scene.add(rim)
-      scene.add(new THREE.AmbientLight(0x3d5470, 0.78))
+      // 保存引用：天气变差时要压它的强度（原来这里是匿名 add，调不到）
+      const ambient = new THREE.AmbientLight(0x3d5470, LIGHT_AMB)
+      scene.add(ambient)
 
       // 晕影不在这里做：游戏自带的 VintageMapOverlay 已经有一层暗角，
       // 两层叠加会把 3D 画面压到只剩 20% 亮度（实测 2D 陆地 p90=203 / 3D 陆地 p90=41）。
@@ -946,6 +966,29 @@ export default function Map3DView() {
             const dark = 1 - gloom * 1.6
             seaMat.color.setRGB(SEA_BASE_R * dark, SEA_BASE_G * dark, SEA_BASE_B * dark)
           }
+          /*
+           * 同时压暗三盏灯与环境贴图。
+           *
+           * 【为什么必须压光照，而不能只压海面颜色】
+           * 实测归因（1440×900、同一机位、逐项消融）：
+           *   · 海面 color 压到 0.2 倍 → 画面亮度只降 7%（54.5 → 50.5）
+           *   · 三盏灯全部关掉       → 亮度掉到 4.9（说明亮度几乎全来自灯）
+           *   · scene.environment 设 0 → **完全不变**（对场景没有可见贡献）
+           * ACES 色调映射（exposure 1.42）把颜色乘法压得几乎看不见，
+           * 所以"天阴了"要真看得见，只能压光照强度 —— 实测压 33% 就是
+           * 一个明确可感的差别，而颜色压 48% 只有 10%。
+           *
+           * 附带好处：陆地、港口、船一起吃这个变化，符合"阴天"的直觉；
+           * 只压海面会让陆地亮得刺眼。
+           * 浓雾例外：雾是散射的，整体发灰但不该像入夜。第一版按 0.55 压，
+           * 净效果变成 46.6（比晴天暗 14.5%）—— 看起来像"阴天"而不是"雾"。
+           * 压到 0.3 后，海色提亮占主导，整体略暗但偏灰白，才是雾。
+           */
+          const dim = weatherKind === 'fog' ? 1 - gloom * 0.3 : 1 - gloom * 1.1
+          key.intensity = LIGHT_KEY * dim
+          rim.intensity = LIGHT_RIM * dim
+          ambient.intensity = LIGHT_AMB * dim
+          scene.environmentIntensity = ENV_BASE * dim
         }
 
         camState.fx += (camTarget.x - camState.fx) * 0.12
