@@ -134,6 +134,7 @@ import {
 } from '../src/utils/routePath'
 import { findSeaPath } from '../src/utils/seaRoute'
 import { advanceAlongRoute } from '../src/utils/sailStep'
+import { decidePixelRatio, PIXEL_RATIO_STEP, SLOW_FRAME_MS, MIN_SAMPLES } from '../src/utils/adaptiveResolution'
 
 let passed = 0
 let failed = 0
@@ -3587,6 +3588,49 @@ console.log('== 55. 沿海擦边：跳过一格陆地，而不是整趟搁浅 ==
     posAt, isLand: (lat) => lat >= 18 && lat < 40, lookaheadNm: 12,
   })
   assert(farLand.aground, '陆地宽度超过前瞻距离时必须触礁（不能横穿半岛）')
+}
+
+console.log('== 56. 3D 自适应分辨率：只降不升、单帧尖峰不误判 ==')
+{
+  /*
+   * 【这条锁的是什么】
+   * 初始 pixelRatio 是 min(devicePixelRatio, 1.5)。2 倍屏上等于 2.25 倍像素，
+   * 核显（实测 Intel UHD 630）从 27ms/帧 掉到 20fps 以下。
+   * 降档本身要稳：判错一次，玩家看到的就是画面莫名变糊或反复抖。
+   */
+  const fill = (n: number, ms: number) => Array.from({ length: n }, () => ms)
+
+  // —— 1) 样本不足不决策（一次加载抖动不能当依据）——
+  assert(decidePixelRatio(1.5, fill(MIN_SAMPLES - 1, 60)) === null,
+    `样本不足 ${MIN_SAMPLES} 帧时不应降档`)
+
+  // —— 2) 本来就流畅：不动 ——
+  assert(decidePixelRatio(1.5, fill(40, 15)) === null, '15ms/帧（60fps）不应降档')
+
+  // —— 3) 刚好在阈值上：不动（> 才算慢，等于不算）——
+  assert(decidePixelRatio(1.5, fill(40, SLOW_FRAME_MS)) === null,
+    `帧时正好 ${SLOW_FRAME_MS}ms 时不应降档`)
+
+  // —— 4) 持续慢：降一档，且只降一档 ——
+  const slow = decidePixelRatio(1.5, fill(40, 30))
+  assert(slow !== null && Math.abs(slow - (1.5 - PIXEL_RATIO_STEP)) < 1e-9,
+    `30ms/帧应降到 ${1.5 - PIXEL_RATIO_STEP}（实际 ${slow}）`)
+
+  // —— 5) 已经到下限：不再降（1 以下会明显模糊）——
+  assert(decidePixelRatio(1, fill(40, 30)) === null, 'pixelRatio 1 时不应再降')
+  assert(decidePixelRatio(0.9, fill(40, 30)) === null, '低于 1 时不应再降')
+
+  // —— 6) 关键：单帧尖峰（GC / 贴图上传）不能触发降档 ——
+  // 40 帧里 39 帧 15ms、1 帧 500ms：中位数仍是 15ms
+  const spike = [...fill(39, 15), 500]
+  assert(decidePixelRatio(1.5, spike) === null,
+    '单帧 500ms 尖峰不应触发降档（否则偶尔卡一下就永久变糊）')
+
+  // —— 7) 一步到下限：1.5 直接降到 1，不经过 1.25 ——
+  // 中间档实测约 33ms（仍超阈值），必然继续降，只是多糊一次而已。
+  const once = decidePixelRatio(1.5, fill(40, 40))!
+  assert(once === 1, `1.5 应一步降到 1（实际 ${once}）`)
+  assert(decidePixelRatio(once, fill(40, 40)) === null, '到 1 后停止')
 }
 
 console.log(`\n最终结果：${passed} 通过 / ${failed} 失败`)

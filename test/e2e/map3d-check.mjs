@@ -416,13 +416,35 @@ console.log('区域名探针:', JSON.stringify(areaProbe))
 check(areaProbe.areaTotal === 28, `区域名 28 个（海名 18 + 洲名 10，实得 ${areaProbe.areaTotal}）`)
 check(areaProbe.oceanTotal === 18, `海名 18 个（实得 ${areaProbe.oceanTotal}）`)
 check(areaProbe.regionTotal === 10, `洲名 10 个（实得 ${areaProbe.regionTotal}）`)
-check(areaProbe.areaVisible > 0, `有可见的区域名（实得 ${areaProbe.areaVisible}）`)
+// 【下限为什么不是 >0】实测默认视角有 24 个可见（15 海名 + 9 洲名）、4 个因避让隐藏。
+// 写 >0 的话，只剩 1 个也算通过 —— 而"标签卡死在 display:none"这种回归
+// 恰恰是从"从 25 个掉到 1 个"开始的（本轮就踩过一次，见 mapLabels3d 的 hideLabel）。
+check(areaProbe.areaVisible >= 18,
+  `可见区域名 ≥18 个（实测默认视角 24，实得 ${areaProbe.areaVisible}）`)
 check(areaProbe.areaZeroSized.length === 0,
   `可见区域名都有实际尺寸（零尺寸：${areaProbe.areaZeroSized.join(',') || '无'}）`)
 check(areaProbe.areaOffscreen.length === 0,
   `可见区域名完整落在视口内（越界：${areaProbe.areaOffscreen.join(',') || '无'}）`)
 check(areaProbe.overlaps.length === 0,
   `区域名与港口名互不重叠（重叠：${areaProbe.overlaps.join(',') || '无'}）`)
+
+// ------------------------------------------------------------------
+// 相机静止时，标签的 style 不该被反复改写。
+//
+// 【为什么值得单独断言】placeLabels 每帧都跑，48 个标签 × (display/left/top)
+// 是无条件写的话，静止 1.5 秒就是 48 × ~35fps ≈ 2500 次样式赋值，全是白费。
+// 现在按缓存只在真变化时写，实测静止 2 秒 0 次。
+// 阈值给 120（远小于"每帧都写"的量级，又留足余量应对字体/尺寸的首次落位）。
+// ------------------------------------------------------------------
+const idleWrites = await page.evaluate(() => new Promise(res => {
+  const els = [...document.querySelectorAll('.map3d-area-label, .map3d-port-label')]
+  let n = 0
+  const ob = new MutationObserver(muts => { n += muts.length })
+  for (const el of els) ob.observe(el, { attributes: true, attributeFilter: ['style'] })
+  setTimeout(() => { ob.disconnect(); res({ els: els.length, writes: n }) }, 1500)
+}))
+check(idleWrites.writes < 120,
+  `相机静止 1.5s 内标签 style 改写 <120 次（实测 0；每帧都写会是上千次，实得 ${idleWrites.writes}）`)
 
 // ===================================================================
 // 港口辨识度：三档规模 + 干船坞

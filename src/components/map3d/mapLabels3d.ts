@@ -38,6 +38,19 @@ export interface ScreenLabel {
   h: number
   /** 本帧是否参与布局 */
   shown: boolean
+  /**
+   * 上一次真正写进 DOM 的可见性 / 位置（缓存，避免每帧重复写样式）。
+   *
+   * 【为什么要缓存】
+   * placeLabels 每帧都跑，48 个标签 × (display + left + top) = 每帧 144 次样式写。
+   * 而玩家看海图时相机常常是静止的，位置一点没变却照样重写一遍。
+   * 给相同值赋值浏览器虽然会跳过重排，但 CSSStyleDeclaration 的赋值本身要走
+   * 解析 + 比较，实测这一次白写是纯浪费。
+   * 这里只在「真的变了」时写，相机静止时 DOM 一次都不碰。
+   */
+  domShown?: boolean
+  domLeft?: number
+  domTop?: number
 }
 
 /** 锚点高度：港口名挂在模型上方，海名贴海面，洲名贴陆地顶面 */
@@ -129,9 +142,12 @@ export function measureLabels(labels: ScreenLabel[]): void {
     l.h = l.el.offsetHeight || 16
   }
   // 阶段 3：全部恢复（写）
+  // 恢复后把可见性缓存对齐 —— 测量期间 display 被临时改成 block，
+  // 缓存（domShown）必须跟着实际值走，否则 placeLabels 会以为"已经显示着"而漏写。
   for (let i = 0; i < labels.length; i++) {
     labels[i].el.style.display = prevDisplay[i]
     labels[i].el.style.visibility = prevVisibility[i]
+    labels[i].domShown = prevDisplay[i] !== 'none'
   }
 }
 
@@ -180,14 +196,14 @@ export function placeLabels(
 
   for (const l of labels) {
     if (!l.shown) {
-      l.el.style.display = 'none'
+      hideLabel(l)
       continue
     }
     tmpV.set(l.x, l.y, l.z)
     tmpV.project(camera)
     // z>=1 表示在相机背后（project 对背后的点不做透视除法）
     if (tmpV.z >= 1) {
-      l.el.style.display = 'none'
+      hideLabel(l)
       continue
     }
     const anchorX = ((tmpV.x + 1) / 2) * width
@@ -208,7 +224,7 @@ export function placeLabels(
   })
 
   const placed: { x: number; y: number; w: number; h: number }[] = []
-  const writes: { el: HTMLDivElement; left: number; top: number }[] = []
+  const writes: { label: ScreenLabel; left: number; top: number }[] = []
 
   for (const c of cands) {
     const { label, anchorX, anchorY, mode } = c
@@ -243,8 +259,11 @@ export function placeLabels(
       if (!hit) { best = box; break }
     }
     if (!best) {
-      // 无处可放 → 隐藏该标签（宁缺勿叠）
-      label.el.style.display = 'none'
+      // 无处可放 → 隐藏该标签（宁缺勿叠）。
+      // 【必须走 hideLabel】这里如果直接写 el.style.display = 'none'，
+      // 缓存还会以为"正显示着"，下一帧即使能落位也不会写回 block ——
+      // 标签就永久卡在隐藏状态（实测 48 个标签全变 none 就是这么来的）。
+      hideLabel(label)
       continue
     }
     placed.push(best)
@@ -254,13 +273,34 @@ export function placeLabels(
     // 所以要按各自的语义换算，不能一刀切。
     const left = best.x + w / 2
     const top = mode === 'bottom' ? best.y + h : best.y + h / 2
-    writes.push({ el: label.el, left, top })
+    writes.push({ label, left, top })
   }
 
-  // 统一写入
+  // 统一写入：只在真的变了时碰 DOM（见 ScreenLabel.domShown 的注释）
   for (const wr of writes) {
-    wr.el.style.display = 'block'
-    wr.el.style.left = `${wr.left}px`
-    wr.el.style.top = `${wr.top}px`
+    const { label, left, top } = wr
+    const el = label.el
+    if (label.domShown !== true) {
+      el.style.display = 'block'
+      label.domShown = true
+    }
+    // 半像素阈值：亚像素抖动不值得写一次样式，但累积到 0.5px 就会写，
+    // 所以不会出现"永远差一点、慢慢漂走"的偏移。
+    if (label.domLeft === undefined || Math.abs(label.domLeft - left) > 0.5) {
+      el.style.left = `${left}px`
+      label.domLeft = left
+    }
+    if (label.domTop === undefined || Math.abs(label.domTop - top) > 0.5) {
+      el.style.top = `${top}px`
+      label.domTop = top
+    }
+  }
+}
+
+/** 隐藏一个标签；只在状态变化时真正写 display */
+function hideLabel(l: ScreenLabel): void {
+  if (l.domShown !== false) {
+    l.el.style.display = 'none'
+    l.domShown = false
   }
 }

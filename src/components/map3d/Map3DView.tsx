@@ -19,6 +19,7 @@ import { createPortModelKit, createShipModelKit, makePortModel, makeShipModel, p
 import { buildMap3DLayers } from './mapLayers3d'
 import { buildMap3DBorders } from './mapBorders3d'
 import { fetchBordersGeojson } from '@/utils/mapGeoJson'
+import { decidePixelRatio } from '@/utils/adaptiveResolution'
 import {
   createAreaLabels, createPortLabel, measureLabels, placeLabels, remeasureWhenFontsReady,
   type ScreenLabel,
@@ -672,11 +673,39 @@ export default function Map3DView() {
       let lastT = performance.now()
       const tmpV = new THREE.Vector3()
 
+      /*
+       * 自适应分辨率的采样缓冲。
+       *
+       * 初始 pixelRatio 是 min(devicePixelRatio, 1.5)。在 2 倍屏上那是 2.25 倍像素，
+       * 核显（实测 Intel UHD 630：1440×900 下 3D 27ms/帧、2D 16.7ms）扛不住，
+       * 但玩家不会去调设置，只会觉得「一切 3D 就卡」。所以这里实测帧时自己降档。
+       *
+       * 两条必要的防护：
+       *   · 只采 0~100ms 的样本 —— 切标签页回来那种几十秒的间隔不是分辨率的锅；
+       *   · 改完清空样本并冷却 3 秒 —— setPixelRatio 会重分配 drawingBuffer，
+       *     紧接着那几帧必然慢，拿它们当依据会一路降到底。
+       */
+      const frameMsBuf: number[] = []
+      let lastRatioChangeAt = 0
+
       const tick = () => {
         raf = requestAnimationFrame(tick)
         const tNow = performance.now()
-        const dt = Math.min(0.1, (tNow - lastT) / 1000)
+        const rawMs = tNow - lastT
+        const dt = Math.min(0.1, rawMs / 1000)
         lastT = tNow
+
+        if (rawMs > 0 && rawMs < 100) frameMsBuf.push(rawMs)
+        if (frameMsBuf.length >= 40) {
+          if (tNow - lastRatioChangeAt > 3000) {
+            const next = decidePixelRatio(renderer!.getPixelRatio(), frameMsBuf)
+            if (next !== null) {
+              renderer!.setPixelRatio(next)
+              lastRatioChangeAt = tNow
+            }
+          }
+          frameMsBuf.length = 0
+        }
         /** 秒级时间戳：船摇、终点标记浮动、洋流等所有周期性动画共用 */
         const tt = tNow / 1000
         const state = useGameStore.getState()
