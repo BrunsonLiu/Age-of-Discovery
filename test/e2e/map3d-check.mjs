@@ -728,7 +728,12 @@ const portScreen = await page.evaluate(() => {
     if (o.isGroup && o.userData?.portId === 6 && o.userData?.portScale) t = o
   })
   if (!t) return null
-  const v = new m.camera.position.constructor().set(t.position.x, 0.05, t.position.z)
+  // y 取港口模型的**中部**（约 0.14）而不是贴地的 0.05。
+  // 港口模型是有高度的立体物：投影点放在底面时，屏幕坐标对应模型脚下的地面，
+  // 射线从相机射过去会从模型旁边擦过（实测打到 8° 以西的海面，
+  // waypoint 变成 [43.71,-8.01]），于是"点当前港口不设航点"这条断言
+  // 验的根本不是港口命中。
+  const v = new m.camera.position.constructor().set(t.position.x, 0.14, t.position.z)
   v.project(m.camera)
   // 【必须用 canvas 自己的 rect】project 得到的是 NDC，换成点击坐标要基于
   // canvas 的实际位置与尺寸（顶栏占了视口上方约 40px）。
@@ -762,6 +767,17 @@ if (portScreen && portScreen.z < 1) {
     }
   })
   console.log('点「当前所在港口」后:', JSON.stringify(afterSelfClick))
+  // 诊断用：万一又打偏，先看射线到底命中了什么
+  if (afterSelfClick.waypoint) {
+    const hit = await page.evaluate(() => {
+      const m = window.__map3d
+      const c = m.renderer.domElement
+      const r = c.getBoundingClientRect()
+      const el = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)
+      return { topTag: el?.tagName, topClass: (el?.className || '').toString().slice(0, 30) }
+    })
+    console.log('  （打偏诊断）画布中心命中:', JSON.stringify(hit))
+  }
   check(afterSelfClick.panel === null,
     `点当前所在港口不弹面板（实得 ${afterSelfClick.panel}）`)
   check(!afterSelfClick.waypoint,

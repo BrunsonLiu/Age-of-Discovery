@@ -135,6 +135,7 @@ import {
 import { findSeaPath } from '../src/utils/seaRoute'
 import { advanceAlongRoute } from '../src/utils/sailStep'
 import { decidePixelRatio, PIXEL_RATIO_STEP, SLOW_FRAME_MS, MIN_SAMPLES } from '../src/utils/adaptiveResolution'
+import { isTapGesture, TAP_SLOP_MOUSE, TAP_SLOP_TOUCH } from '../src/utils/tapGesture'
 
 let passed = 0
 let failed = 0
@@ -3631,6 +3632,46 @@ console.log('== 56. 3D 自适应分辨率：只降不升、单帧尖峰不误判
   const once = decidePixelRatio(1.5, fill(40, 40))!
   assert(once === 1, `1.5 应一步降到 1（实际 ${once}）`)
   assert(decidePixelRatio(once, fill(40, 40)) === null, '到 1 后停止')
+}
+
+console.log('== 57. 3D 点击判定：手指抖动不该让航向设不上 ==')
+{
+  /*
+   * 【这条锁的是什么】
+   * 原来的判据是"每帧增量绝对值之和 < 5"。手指按下-抬起本意是点，但会有
+   * 3~5px 的游走，累加后超过阈值 —— 实测（CDP 真实触摸序列，390×844）：
+   *   抖动 2,2px → 算点击；**抖动 4,3px → 判成拖拽**，航向设不上。
+   * 玩家看到的是"点了海面没反应"，功能像是坏的。
+   * 现在改成净位移（起点→终点）+ 按设备分阈值。
+   */
+  const tap = (o: Partial<Parameters<typeof isTapGesture>[0]>) => isTapGesture({
+    pointerType: 'touch', startX: 100, startY: 100, endX: 100, endY: 100,
+    pinched: false, eventType: 'pointerup', ...o,
+  })
+
+  // —— 鼠标：精确设备，5px 以内算点 ——
+  assert(tap({ pointerType: 'mouse' }), '鼠标原地点击应算点击')
+  assert(tap({ pointerType: 'mouse', endX: 103, endY: 102 }),
+    `鼠标移动 ${TAP_SLOP_MOUSE}px 以内应算点击（净位移 3.6）`)
+  assert(!tap({ pointerType: 'mouse', endX: 108, endY: 106 }),
+    `鼠标移动 10px 应算拖拽（净位移 > ${TAP_SLOP_MOUSE}）`)
+
+  // —— 触屏：同样的位移要算点击（这就是这次的修复点）——
+  assert(tap({ endX: 106, endY: 105 }),
+    '触屏抖动 6,5px（净位移 7.8）应算点击 —— 改前会被判成拖拽')
+  assert(!tap({ endX: 112, endY: 108 }),
+    `触屏移动 14px 应算拖拽（净位移 > ${TAP_SLOP_TOUCH}）`)
+  // 触屏的容忍必须真的比鼠标宽，否则这次修改没有意义
+  assert(TAP_SLOP_TOUCH > TAP_SLOP_MOUSE,
+    '触屏的点击容忍必须大于鼠标（手指天然比鼠标抖）')
+
+  // —— 捏合过就绝不是点击 ——
+  // 两指缩放松手时坐标可能落回原点，不屏蔽会误触发"点海面设航向"
+  assert(!tap({ pinched: true }), '捏合松手不应算点击')
+
+  // —— pointercancel 不可能是点击（坐标不可靠、玩家本意不是点）——
+  assert(!tap({ eventType: 'pointercancel' }), 'pointercancel 不应算点击')
+  assert(!tap({ eventType: 'pointerdown' }), 'pointerdown 不应算点击')
 }
 
 console.log(`\n最终结果：${passed} 通过 / ${failed} 失败`)

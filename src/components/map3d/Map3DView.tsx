@@ -20,6 +20,7 @@ import { buildMap3DLayers } from './mapLayers3d'
 import { buildMap3DBorders } from './mapBorders3d'
 import { fetchBordersGeojson } from '@/utils/mapGeoJson'
 import { decidePixelRatio } from '@/utils/adaptiveResolution'
+import { isTapGesture } from '@/utils/tapGesture'
 import { useIsMobile } from '@/hooks/useIsMobile'
 import {
   createAreaLabels, createPortLabel, measureLabels, placeLabels, remeasureWhenFontsReady,
@@ -477,7 +478,19 @@ export default function Map3DView() {
       /** 当前按下的所有指针（触摸/鼠标统一走 Pointer Events） */
       const pointers = new Map<number, { x: number; y: number }>()
       let dragging = false
-      let moved = 0
+      /**
+       * 本次按下时的屏幕坐标。松手时用**净位移**判定"点"还是"拖"。
+       *
+       * 【为什么不用累加位移】`moved` 是每帧增量绝对值之和，手指来回抖动会
+       * 被累加成好几倍：真实手指按下抬起即使"点"也会有 3~5px 的游走，
+       * 累加后轻松超过 5 —— 实测（CDP 发真实触摸序列，390×844）：
+       *   抖动 2,2px → 触发点击；**抖动 4,3px → 被当成拖拽**，航向设不上。
+       * 玩家感受到的是"点了海面没反应"。净位移对往返抖动不敏感，
+       * 才真正区分"手抖"与"想转视角"。
+       */
+      let startX = 0, startY = 0
+      /** 捏合期间置 true：松手不该触发点击 */
+      let pinched = false
       let lastX = 0, lastY = 0
       /** 上一次的两指间距，捏合时用相邻两帧的比值算缩放 */
       let pinchDist = 0
@@ -498,14 +511,16 @@ export default function Map3DView() {
         pointers.set(e.pointerId, { x: e.clientX, y: e.clientY })
         try { el.setPointerCapture(e.pointerId) } catch { /* 指针已释放 */ }
         if (pointers.size === 1) {
-          dragging = true; moved = 0; lastX = e.clientX; lastY = e.clientY
+          dragging = true; pinched = false
+          lastX = e.clientX; lastY = e.clientY
+          startX = e.clientX; startY = e.clientY
         } else if (pointers.size === 2) {
           // 进入捏合：停掉旋转，否则第二根手指落下时画面会跳一下
           dragging = false
           const [p1, p2] = [...pointers.values()]
           pinchDist = Math.hypot(p1.x - p2.x, p1.y - p2.y)
           // 捏合不算点击：否则松手会误触发"点地图出航"
-          moved = 999
+          pinched = true
         }
       }
       const onPointerMove = (e: PointerEvent) => {
@@ -518,7 +533,6 @@ export default function Map3DView() {
 
         const dx = e.clientX - lastX, dy = e.clientY - lastY
         lastX = e.clientX; lastY = e.clientY
-        moved += Math.abs(dx) + Math.abs(dy)
         camState.az -= dx * 0.005
         camState.el = Math.min(1.35, Math.max(0.16, camState.el + dy * 0.004))
       }
@@ -530,9 +544,15 @@ export default function Map3DView() {
         if (pointers.size === 0) {
           dragging = false
           pinchDist = 0
-          // pointercancel（浏览器抢走触摸、手势被系统接管）不该当成点击：
-          // 它没有可靠的坐标，且玩家的本意不是点。
-          if (wasSingle && moved < 5 && e.type === 'pointerup') handleClick(e)
+          // 点击判定抽在 utils/tapGesture（可单测）：净位移 + 按设备分阈值。
+          // 实测改前：手机抖动 4,3px 就被当成拖拽，航向根本设不上。
+          if (wasSingle && isTapGesture({
+            pointerType: e.pointerType,
+            startX, startY,
+            endX: e.clientX, endY: e.clientY,
+            pinched,
+            eventType: e.type,
+          })) handleClick(e)
         } else if (pointers.size === 1) {
           // 从双指退回单指：把剩下那根手指当新的基准，
           // 否则 dt 会从"上一根手指的位置"算，画面跳一大截
