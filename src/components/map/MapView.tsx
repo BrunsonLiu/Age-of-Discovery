@@ -299,7 +299,7 @@ export default function MapView() {
       <button
         type="button"
         onClick={() => setRenderMode(renderMode === '3d' ? '2d' : '3d')}
-        className="absolute top-14 right-3 z-[900] px-2.5 py-1 rounded text-[11px] font-serif
+        className="absolute top-14 right-3 z-[900] px-3 py-1.5 rounded text-xs font-serif
                    bg-[#1b1408]/95 border border-[#8b6f3e]/70 text-[#e8d4a8]
                    shadow-[0_2px_8px_rgba(0,0,0,0.55)]
                    hover:bg-[#2a1f0c] active:scale-95 transition-colors"
@@ -308,8 +308,8 @@ export default function MapView() {
       >
         <span className="inline-flex items-center gap-1.5">
           {renderMode === '3d'
-            ? <><MapIcon size={12} aria-hidden="true" />2D 海图</>
-            : <><Compass size={12} aria-hidden="true" />3D 海图</>}
+            ? <><MapIcon size={14} aria-hidden="true" />2D 海图</>
+            : <><Compass size={14} aria-hidden="true" />3D 海图</>}
         </span>
       </button>
 

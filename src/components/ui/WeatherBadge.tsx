@@ -37,46 +37,46 @@ export default function WeatherBadge() {
     <div data-testid="weather-badge" className="pointer-events-auto select-none">
       <button
         onClick={() => setOpen(o => !o)}
-        className="flex items-center gap-2 px-2.5 py-1.5 rounded-md bg-ocean-800/70 border border-gold-700/30 hover:border-gold-600/50 transition-colors shadow-lg"
+        className="flex items-center gap-2 px-3 py-2 rounded-md bg-ocean-800/75 border border-gold-700/30 hover:border-gold-600/50 transition-colors shadow-lg"
         title={`${info.label}：${info.hint}（点击看预报）`}
         aria-label={`天候：${info.label}，点击展开预报`}
         aria-expanded={open}
       >
-        <WeatherIcon kind={info.kind} size={16} className="text-gold-300" />
-        <span className="text-gold-200 font-serif text-xs">{info.label}</span>
-        <span className="text-gold-600 font-serif text-[10px] tabular-nums">{weather.windSpeed}节</span>
+        <WeatherIcon kind={info.kind} size={18} className="text-gold-300" />
+        <span className="text-gold-200 font-serif text-[13px]">{info.label}</span>
+        <span className="text-gold-400 font-serif text-[11px] tabular-nums">{weather.windSpeed}节</span>
         {speedPct !== 0 && (
-          <span className={`font-serif text-[10px] tabular-nums ${speedPct < 0 ? 'text-red-300/90' : 'text-emerald-300/90'}`}>
+          <span className={`font-serif text-[11px] tabular-nums ${speedPct < 0 ? 'text-red-300' : 'text-emerald-300'}`}>
             航速{speedPct > 0 ? '+' : ''}{speedPct}%
           </span>
         )}
         <svg width="12" height="12" viewBox="0 0 24 24" style={{ transform: `rotate(${windArrowRotation}deg)` }} className="transition-transform duration-700">
           <path d="M12 2 L16 14 L12 11.5 L8 14 Z" fill="#d4a838" />
         </svg>
-        <span className={`text-gold-700 text-[10px] transition-transform ${open ? 'rotate-180' : ''}`}>▾</span>
+        <span className={`text-gold-500 text-[11px] transition-transform ${open ? 'rotate-180' : ''}`}>▾</span>
       </button>
 
       {open && (
-        <div className="mt-1 w-56 rounded-md bg-ocean-800/90 border border-gold-700/30 shadow-xl p-2 space-y-1.5">
-          <p className="text-gold-500 font-serif text-[10px]">{info.hint}</p>
+        <div className="mt-1 w-64 rounded-md bg-ocean-800/92 border border-gold-700/30 shadow-xl p-2.5 space-y-2">
+          <p className="text-gold-400 font-serif text-[11px] leading-relaxed">{info.hint}</p>
           <div className="border-t border-gold-700/20 pt-1.5">
-            <p className="text-gold-400 font-serif text-[10px] mb-1">未来三天</p>
+            <p className="text-gold-400 font-serif text-[11px] mb-1.5 tracking-wide">未来三天</p>
             {forecast.map((w, i) => {
               const fi = WEATHER_INFO[w.kind]
               return (
                 <div key={i} className="flex items-center gap-2 py-0.5">
-                  <span className="text-gold-600 font-serif text-[10px] w-8 tabular-nums">第{fleet.day + i}天</span>
+                  <span className="text-gold-500 font-serif text-[11px] w-10 tabular-nums">第{fleet.day + i}天</span>
                   <span className="w-4 flex justify-center text-gold-300"><WeatherIcon kind={w.kind} size={12} /></span>
-                  <span className="text-gold-200 font-serif text-[11px] flex-1">{fi.label}</span>
-                  <span className="text-gold-600 font-serif text-[10px] tabular-nums">{w.windSpeed}节</span>
-                  <span className={`font-serif text-[10px] tabular-nums w-10 text-right ${fi.sailMul < 1 ? 'text-red-300/80' : 'text-emerald-300/80'}`}>
+                  <span className="text-gold-200 font-serif text-xs flex-1">{fi.label}</span>
+                  <span className="text-gold-500 font-serif text-[11px] tabular-nums">{w.windSpeed}节</span>
+                  <span className={`font-serif text-[11px] tabular-nums w-11 text-right ${fi.sailMul < 1 ? 'text-red-300' : 'text-emerald-300'}`}>
                     {Math.round((fi.sailMul - 1) * 100)}%
                   </span>
                 </div>
               )
             })}
           </div>
-          <p className="text-gold-700 font-serif text-[9px] leading-relaxed">
+          <p className="text-gold-600 font-serif text-[11px] leading-relaxed">
             天气按海域生成、持续 1-3 天；赤道无风带多雾，中纬度多暴风雨。
           </p>
         </div>

@@ -42,9 +42,9 @@ function BuyRow({ portId, pg, fleet, usedCapacity, totalCapacity, onBuy }: {
   return (
     <div className="bg-black/18 rounded p-2" data-testid="trade-buy-row" data-good-id={pg.goodId}>
       <div className="flex items-center justify-between mb-1">
-        <span className="text-gold-200 text-xs font-serif">{good.nameCn}</span>
+        <span className="text-gold-200 text-[13px] font-serif">{good.nameCn}</span>
         <span
-          className={`flex items-center gap-0.5 text-xs font-serif ${TONE_CLASS[tone]}`}
+          className={`flex items-center gap-0.5 text-[13px] font-serif ${TONE_CLASS[tone]}`}
           data-price={buyPrice}
           data-tone={tone}
           title={TONE_HINT[tone]}
@@ -55,7 +55,7 @@ function BuyRow({ portId, pg, fleet, usedCapacity, totalCapacity, onBuy }: {
         </span>
       </div>
       <div className="flex items-center justify-between">
-        <span className="text-gold-600 text-xs">库存: {stock}</span>
+        <span className="text-gold-600 text-[13px]">库存: {stock}</span>
         <div className="flex gap-1">
           {[1, 5, 10].map(qty => (
             <ActionButton
@@ -93,15 +93,15 @@ function SellRow({ portId, item, onSell }: {
   return (
     <div className="bg-black/18 rounded p-2" data-testid="trade-sell-row" data-good-id={item.goodId}>
       <div className="flex items-center justify-between mb-1">
-        <span className="text-gold-200 text-xs font-serif">
-          {good.nameCn}{!tradedHere && <span className="text-gold-600 text-xs">（本港不收，折价）</span>}
+        <span className="text-gold-200 text-[13px] font-serif">
+          {good.nameCn}{!tradedHere && <span className="text-gold-600 text-[13px]">（本港不收，折价）</span>}
         </span>
-        <span className="flex items-center gap-0.5 text-safe-400 text-xs font-serif" data-price={sellPrice}>
+        <span className="flex items-center gap-0.5 text-safe-400 text-[13px] font-serif" data-price={sellPrice}>
           <Coins size={10} /> {sellPrice}
         </span>
       </div>
       <div className="flex items-center justify-between">
-        <span className="text-gold-600 text-xs">持有: {item.quantity}</span>
+        <span className="text-gold-600 text-[13px]">持有: {item.quantity}</span>
         <div className="flex gap-1">
           {[1, 5, 10].map(qty => (
             <ActionButton
@@ -180,7 +180,7 @@ export default function TradePanel() {
     <div className="w-full md:w-80 animate-slide-in-right" data-testid="trade-panel">
       <ParchmentCard title="商品交易" onClose={() => setActivePanel(null)}>
         <div className="space-y-3">
-          <div className="flex items-center justify-between text-xs text-gold-400 font-serif">
+          <div className="flex items-center justify-between text-[13px] text-gold-400 font-serif">
             <span className="flex items-center gap-1"><Coins size={12} /> {fleet.gold} 金币</span>
             <span className="flex items-center gap-1"><Package size={12} /> {usedCapacity}/{totalCapacity}</span>
           </div>
@@ -188,19 +188,19 @@ export default function TradePanel() {
           {(specialties.length > 0 || demands.length > 0) && (
             <div className="bg-black/22 border border-gold-700/20 rounded p-2 space-y-1">
               {specialties.length > 0 && (
-                <p className="text-safe-400 text-xs font-serif flex items-start gap-1">
+                <p className="text-safe-400 text-[13px] font-serif flex items-start gap-1">
                   <Sprout size={11} className="mt-0.5 shrink-0" />
                   <span>本地出产：{specialties.join('、')}（价格通常偏低）</span>
                 </p>
               )}
               {demands.length > 0 && (
-                <p className="text-gold-300 text-xs font-serif flex items-start gap-1">
+                <p className="text-gold-300 text-[13px] font-serif flex items-start gap-1">
                   <HandCoins size={11} className="mt-0.5 shrink-0" />
                   <span>高价收购：{demands.slice(0, 3).join('、')}（在这里卖更划算）</span>
                 </p>
               )}
               {sellableHigh.length > 0 && (
-                <p className="text-gold-400 text-xs font-serif italic">
+                <p className="text-gold-400 text-[13px] font-serif italic">
                   ✓ 你船上的 {sellableHigh.join('、')} 在此可卖高价
                 </p>
               )}
@@ -210,7 +210,7 @@ export default function TradePanel() {
           <div className="flex gap-1">
             <button
               onClick={() => setTab('buy')}
-              className={`flex-1 py-1.5 text-xs font-serif rounded transition-colors ${
+              className={`flex-1 py-1.5 text-[13px] font-serif rounded transition-colors ${
                 tab === 'buy' ? 'bg-gold-700/40 text-gold-200' : 'bg-black/18 text-gold-500 hover:text-gold-300'
               }`}
             >
@@ -218,7 +218,7 @@ export default function TradePanel() {
             </button>
             <button
               onClick={() => setTab('sell')}
-              className={`flex-1 py-1.5 text-xs font-serif rounded transition-colors ${
+              className={`flex-1 py-1.5 text-[13px] font-serif rounded transition-colors ${
                 tab === 'sell' ? 'bg-gold-700/40 text-gold-200' : 'bg-black/18 text-gold-500 hover:text-gold-300'
               }`}
             >
@@ -245,7 +245,7 @@ export default function TradePanel() {
           {tab === 'sell' && (
             <ScrollFade className="space-y-1.5 max-h-60 overflow-y-auto scroll-parchment">
               {fleet.cargo.length === 0 ? (
-                <p className="text-gold-600 text-xs font-serif text-center py-4">货舱空空如也</p>
+                <p className="text-gold-600 text-[13px] font-serif text-center py-4">货舱空空如也</p>
               ) : (
                 fleet.cargo.map(item => (
                   <SellRow key={item.goodId} portId={portId} item={item} onSell={handleSell} />

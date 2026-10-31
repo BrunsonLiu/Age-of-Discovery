@@ -116,21 +116,21 @@ export default function FleetPanel() {
           <div className="grid grid-cols-3 gap-1 text-center bg-black/18 rounded p-1.5">
             <div>
               <div className="text-gold-500 text-[10px] font-serif">船只</div>
-              <div className="text-gold-200 text-xs font-serif">{fleet.ships.length} 艘</div>
+              <div className="text-gold-200 text-[13px] font-serif">{fleet.ships.length} 艘</div>
             </div>
             <div>
               <div className="text-gold-500 text-[10px] font-serif">均速</div>
-              <div className="text-gold-200 text-xs font-serif">{avgSpeed.toFixed(1)} 节</div>
+              <div className="text-gold-200 text-[13px] font-serif">{avgSpeed.toFixed(1)} 节</div>
             </div>
             <div>
               <div className="text-gold-500 text-[10px] font-serif">总货舱</div>
-              <div className="text-gold-200 text-xs font-serif">{totalCapacity}</div>
+              <div className="text-gold-200 text-[13px] font-serif">{totalCapacity}</div>
             </div>
           </div>
 
           {/* 声望与船长特质：声望 ≥40 起港口交易享优惠 */}
           <div className="rounded p-2 bg-gold-700/10 border border-gold-600/25 space-y-1">
-            <div className="flex items-center justify-between text-xs font-serif">
+            <div className="flex items-center justify-between text-[13px] font-serif">
               <span className="text-gold-500 flex items-center gap-1"><Star size={11} /> 声望</span>
               <span className="text-gold-300">
                 {fleet.fame}
@@ -138,7 +138,7 @@ export default function FleetPanel() {
               </span>
             </div>
             {fleetTrait && (
-              <div className="flex items-center justify-between text-xs font-serif">
+              <div className="flex items-center justify-between text-[13px] font-serif">
                 <span className="text-gold-500 flex items-center gap-1">
                   <Badge kind="trait" id={fleetTrait.id} fallback={fleetTrait.icon} size={15} />
                   天赋
@@ -147,7 +147,7 @@ export default function FleetPanel() {
               </div>
             )}
             {captainTitle && (
-              <div className="flex items-center justify-between text-xs font-serif">
+              <div className="flex items-center justify-between text-[13px] font-serif">
                 <span className="text-gold-500 flex items-center gap-1"><Tag size={11} aria-hidden="true" />海上人称</span>
                 <span className="text-gold-300">{captainTitle.name} · {captainTitle.effect}</span>
               </div>
@@ -156,7 +156,7 @@ export default function FleetPanel() {
 
           {/* 派系态度：世界上有人记得你做过什么 */}
           <div className="rounded p-2 bg-black/22 border border-gold-700/20 space-y-1">
-            <div className="flex items-center justify-between text-xs font-serif">
+            <div className="flex items-center justify-between text-[13px] font-serif">
               <span className="text-gold-500 flex items-center gap-1"><Globe size={11} aria-hidden="true" />四方态度</span>
               <span className="text-gold-600 text-[10px]">同一行为，两副面孔</span>
             </div>
@@ -164,7 +164,7 @@ export default function FleetPanel() {
               const rep = factionRep[f.id] ?? 0
               const att = factionAttitude(rep)
               return (
-                <div key={f.id} className="flex items-center justify-between text-xs font-serif">
+                <div key={f.id} className="flex items-center justify-between text-[13px] font-serif">
                   <span className="text-gold-400 flex items-center gap-1.5">
                     <Badge kind="faction" id={f.id} fallback={f.icon} size={15} />
                     {f.name}
@@ -183,7 +183,7 @@ export default function FleetPanel() {
           {/* 军官栏：按日支薪的团队成员 */}
           {officers.length > 0 && (
             <div className="rounded p-2 bg-black/22 border border-gold-700/20 space-y-1">
-              <div className="flex items-center justify-between text-xs font-serif">
+              <div className="flex items-center justify-between text-[13px] font-serif">
                 <span className="flex items-center gap-1 text-gold-500"><Award size={11} aria-hidden="true" />军官团</span>
                 <span className="text-gold-600">日薪合计 {totalWage} 金币</span>
               </div>
@@ -191,7 +191,7 @@ export default function FleetPanel() {
                 const o = OFFICER_MAP.get(id)
                 if (!o) return null
                 return (
-                  <div key={id} className="flex items-center justify-between text-xs font-serif">
+                  <div key={id} className="flex items-center justify-between text-[13px] font-serif">
                     <span className="flex items-center gap-1 text-gold-300"><o.icon size={11} aria-hidden="true" />{o.name}</span>
                     <span className="text-gold-500 text-[10px]">{o.effect}</span>
                   </div>
@@ -203,7 +203,7 @@ export default function FleetPanel() {
           {/* 名船员栏：有名字、有忠诚、会离船也会死的人 */}
           {crewRoster.length > 0 && (
             <div className="rounded p-2 bg-black/22 border border-gold-700/20 space-y-1.5">
-              <div className="flex items-center justify-between text-xs font-serif">
+              <div className="flex items-center justify-between text-[13px] font-serif">
                 <span className="text-gold-500 flex items-center gap-1"><Users size={11} /> 船上的人</span>
                 <span className="text-gold-600 text-[10px]">忠诚低会离船</span>
               </div>
@@ -212,7 +212,7 @@ export default function FleetPanel() {
                 if (!def) return null
                 const portrait = crewPortrait(m.id)
                 return (
-                  <div key={m.id} className="text-xs font-serif">
+                  <div key={m.id} className="text-[13px] font-serif">
                     <div className="flex items-center justify-between">
                       <span className="text-gold-300 flex items-center gap-1.5">
                         {portrait && (
@@ -277,7 +277,7 @@ export default function FleetPanel() {
               warnBelow={60}
               criticalBelow={LOW_MORALE}
             />
-            <div className="flex justify-between text-xs text-gold-500 px-0.5">
+            <div className="flex justify-between text-[13px] text-gold-500 px-0.5">
               <span>总船员</span>
               <span>{totalCrew}/{maxCrew}</span>
             </div>
@@ -298,18 +298,18 @@ export default function FleetPanel() {
                       onError={(e) => { e.currentTarget.style.visibility = 'hidden' }}
                     />
                     {isFlagship && <span title="旗舰" aria-label="旗舰"><Crown size={10} className="text-gold-400" /></span>}
-                    {ship.name} <span className="text-gold-600 text-xs">{shipTypeNames[ship.type]}</span>
+                    {ship.name} <span className="text-gold-600 text-[13px]">{shipTypeNames[ship.type]}</span>
                   </span>
                   <button
                     onClick={() => setPreviewId(previewId === ship.id ? null : ship.id)}
-                    className="text-gold-500 hover:text-gold-300 text-xs font-serif transition-colors"
+                    className="text-gold-500 hover:text-gold-300 text-[13px] font-serif transition-colors"
                     aria-expanded={previewId === ship.id}
                   >
                     {previewId === ship.id ? '收起 3D' : '查看 3D'}
                   </button>
                 </div>
                 <ResourceBar value={ship.durability} maxValue={ship.maxDurability} label="耐久" icon={<Ship size={12} />} />
-                <div className="flex justify-between items-center text-xs text-gold-500 mt-1">
+                <div className="flex justify-between items-center text-[13px] text-gold-500 mt-1">
                   <span>船员 {ship.crew}/{ship.maxCrew}</span>
                   <span>货舱 {ship.usedCapacity}/{ship.capacity}</span>
                   {isFlagship ? (
@@ -336,11 +336,11 @@ export default function FleetPanel() {
             <div className="border-t border-gold-700/30 pt-2">
               <div className="bg-gold-700/15 rounded p-2 mb-2 text-center">
                 <p className="flex items-center justify-center gap-1.5 text-gold-300 font-serif text-sm"><Map size={12} aria-hidden="true" />点击地图上的港口或任意位置开始航行</p>
-                <p className="text-gold-600 text-xs mt-1">你可以点击地图上任何位置来设定目的地</p>
+                <p className="text-gold-600 text-[13px] mt-1">你可以点击地图上任何位置来设定目的地</p>
               </div>
               {availableRoutes.length > 0 && (
                 <>
-                  <h4 className="font-pirate text-gold-500 text-xs mb-1.5 flex items-center gap-1">
+                  <h4 className="font-pirate text-gold-500 text-[13px] mb-1.5 flex items-center gap-1">
                     <Anchor size={12} /> 推荐航线
                   </h4>
                   <ScrollFade className="space-y-1.5 max-h-32 overflow-y-auto scroll-parchment">
@@ -352,7 +352,7 @@ export default function FleetPanel() {
                         <button
                           key={route.id}
                           onClick={() => setSelectedRouteId(route.id)}
-                          className={`w-full text-left rounded p-1.5 text-xs transition-all ${
+                          className={`w-full text-left rounded p-1.5 text-[13px] transition-all ${
                             isSelected
                               ? 'bg-gold-700/30 border border-gold-500/50'
                               : 'bg-black/18 border border-transparent hover:border-gold-700/30'
@@ -362,7 +362,7 @@ export default function FleetPanel() {
                             <span className="text-gold-200 font-serif flex items-center gap-1">
                               <Map size={11} /> {toPort?.nameCn}
                             </span>
-                            <span className={`text-xs ${
+                            <span className={`text-[13px] ${
                               route.dangerLevel >= 4 ? 'text-danger-400' :
                               route.dangerLevel >= 3 ? 'text-gold-400' : 'text-safe-400'
                             }`}>

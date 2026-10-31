@@ -12,15 +12,15 @@ interface ActionButtonProps {
 
 const variantStyles = {
   primary: `
-    bg-gradient-to-b from-gold-500 to-gold-700
-    text-ocean-900 font-semibold
+    bg-gradient-to-b from-gold-400 to-gold-600
+    text-[#1c1408]
     hover:from-gold-400 hover:to-gold-600
     hover:shadow-[0_0_12px_rgba(201,169,110,0.4)]
     active:from-gold-600 active:to-gold-800
   `,
   danger: `
-    bg-gradient-to-b from-danger-400 to-danger-600
-    text-parchment-50 font-semibold
+    bg-gradient-to-b from-danger-300 to-danger-500
+    text-[#fff6ee]
     hover:from-danger-300 hover:to-danger-500
     hover:shadow-[0_0_12px_rgba(184,67,46,0.4)]
     active:from-danger-500 active:to-danger-700
@@ -47,9 +47,9 @@ export default function ActionButton({
       onClick={onClick}
       disabled={disabled}
       className={clsx(
-        'inline-flex items-center gap-1.5 px-3 py-1.5 rounded text-sm',
+        'inline-flex items-center gap-1.5 px-4 py-2 rounded text-[15px] leading-5',
         'transition-all duration-200 ease-out',
-        'font-serif tracking-wide',
+        'font-serif tracking-[0.04em]',
         variantStyles[variant],
         disabled && 'opacity-40 cursor-not-allowed pointer-events-none',
         className,

@@ -3169,6 +3169,27 @@ console.log('== 46. 地形符号：只撒在陆地内、可复现、按面积取
 
   // 空数据不该崩
   assert(buildTerrainSymbols({ type: 'FeatureCollection', features: [] }).length === 0, '空数据集应返回空数组')
+
+  /*
+   * 团簇（clusterStrength）：让山脉成簇、平原留白。
+   *
+   * 两条断言缺一不可：
+   *   ① 符号数必须变少（否则等于没生效）；
+   *   ② 保留下来的符号坐标必须与"不团簇"时**逐个相同**——
+   *      也就是说团簇只允许"择掉"，不允许"挪位置"。
+   * 第 ② 条是这次改动的关键约束：如果实现里改成用 rand() 判团簇，
+   * 每多一次随机数消耗都会让后面所有点整体错位，山会整片跳走。
+   * 用户看到的会是"地形变了"，而不是"地形稀疏了"。
+   */
+  const dense = buildTerrainSymbols(square, { clusterStrength: 0 })
+  const clumped = buildTerrainSymbols(square, { clusterStrength: 1 })
+  assert(clumped.length > 0, `团簇后仍应有符号（实得 ${clumped.length}）`)
+  assert(clumped.length < dense.length,
+    `团簇后符号应变少（${dense.length} → ${clumped.length}）`)
+  const denseKeys = new Set(dense.map(s => `${s.lat},${s.lng}`))
+  const moved = clumped.filter(s => !denseKeys.has(`${s.lat},${s.lng}`))
+  assert(moved.length === 0,
+    `团簇只能择掉符号、不能挪动位置（挪了 ${moved.length} 个）`)
 }
 
 console.log('== 47. 参观模式：全程不弹航段抉择（store 分流）==')

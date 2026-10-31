@@ -32,20 +32,20 @@ export default function ShipyardPanel() {
     <div className="w-full md:w-80 animate-slide-in-right">
       <ParchmentCard title="造船厂" onClose={() => setActivePanel(null)}>
         <div className="space-y-3">
-          <div className="flex items-center justify-between text-xs text-gold-400 font-serif">
+          <div className="flex items-center justify-between text-[13px] text-gold-400 font-serif">
             <span className="flex items-center gap-1"><Coins size={12} /> {fleet.gold} 金币</span>
             <span className="flex items-center gap-1"><Package size={12} /> {usedCapacity}/{totalCapacity} 货舱</span>
           </div>
 
           <div className="border-t border-gold-700/30 pt-2">
-            <h4 className="text-gold-300 font-serif text-xs mb-1.5 flex items-center gap-1">
+            <h4 className="text-gold-300 font-serif text-[13px] mb-1.5 flex items-center gap-1">
               <ShipIcon size={12} /> 出售旧船
             </h4>
             {fleet.ships.map(ship => {
               const isFlagship = ship.id === fleet.flagshipId
               const canSell = fleet.ships.length > 1 && ship.usedCapacity === 0 && !isFlagship
               return (
-              <div key={ship.id} className="flex items-center justify-between text-xs mb-1">
+              <div key={ship.id} className="flex items-center justify-between text-[13px] mb-1">
                 <span className="text-gold-400 font-serif">
                   {isFlagship && <Crown size={10} className="inline -mt-0.5 mr-1 text-gold-400" aria-hidden="true" />}{ship.name} <span className="text-gold-600">({shipTypeNames[ship.type]})</span>
                 </span>
@@ -54,7 +54,7 @@ export default function ShipyardPanel() {
                     <Coins size={10} /> {shipResaleValue(ship)}
                   </ActionButton>
                 ) : (
-                  <span className="text-gold-600 text-xs">
+                  <span className="text-gold-600 text-[13px]">
                     {fleet.ships.length <= 1 ? '唯一座舰' : isFlagship ? '旗舰（先改旗）' : '卸货后可售'}
                   </span>
                 )}
@@ -63,7 +63,7 @@ export default function ShipyardPanel() {
           </div>
 
           <div className="border-t border-gold-700/30 pt-2">
-            <h4 className="text-gold-300 font-serif text-xs mb-1.5 flex items-center gap-1">
+            <h4 className="text-gold-300 font-serif text-[13px] mb-1.5 flex items-center gap-1">
               <Anchor size={12} /> 购入新船
             </h4>
             <div className="space-y-1.5">
@@ -75,7 +75,7 @@ export default function ShipyardPanel() {
                 return (
                   <div key={key} className="bg-black/22 rounded p-2">
                     <div className="flex items-center justify-between mb-1">
-                      <span className="text-gold-200 text-xs font-serif flex items-center gap-2">
+                      <span className="text-gold-200 text-[13px] font-serif flex items-center gap-2">
                         <img
                           src={shipSprite(key)}
                           alt=""
@@ -102,14 +102,14 @@ export default function ShipyardPanel() {
                         <Coins size={10} /> {template.price}
                       </ActionButton>
                     </div>
-                    <div className="flex items-center gap-3 text-gold-600 text-xs">
+                    <div className="flex items-center gap-3 text-gold-600 text-[13px]">
                       <span className="flex items-center gap-0.5"><Gauge size={10} /> {template.speed}节</span>
                       <span className="flex items-center gap-0.5"><ShipIcon size={10} /> 耐久{template.maxDurability}</span>
                       <span className="flex items-center gap-0.5"><Package size={10} /> {template.capacity}舱</span>
                       <span className="flex items-center gap-0.5"><Users size={10} /> {template.maxCrew}人</span>
                     </div>
                     {!canBuyRegion && (
-                      <p className="flex items-start gap-1 text-gold-600 text-xs mt-1 font-serif">
+                      <p className="flex items-start gap-1 text-gold-600 text-[13px] mt-1 font-serif">
                         <Anchor size={10} aria-hidden="true" className="mt-0.5 shrink-0" />
                         <span>此型船只在{template.regions.map(r => r === 'europe' ? '欧洲' : r === 'caribbean' ? '加勒比' : r === 'asia' ? '亚洲' : '非洲').join('、')}造船厂才有售</span>
                       </p>
@@ -120,7 +120,7 @@ export default function ShipyardPanel() {
             </div>
           </div>
 
-          <div className="border-t border-gold-700/30 pt-2 text-xs text-gold-500 font-serif">
+          <div className="border-t border-gold-700/30 pt-2 text-[13px] text-gold-500 font-serif">
             <span className="flex items-center gap-1">
               <Gauge size={11} /> 当前舰队均速：{effectiveFleetSpeed(fleet).toFixed(1)} 节
             </span>

@@ -43,14 +43,14 @@ export default function MobileTabBar({
       aria-label={label}
       aria-pressed={isActive}
       title={label}
-      className={`flex flex-col items-center justify-center gap-0.5 py-1.5 rounded-md transition-all duration-200 active:scale-95 ${
+      className={`flex flex-col items-center justify-center gap-1 py-2 rounded-md transition-all duration-200 active:scale-95 ${
         isActive
           ? 'bg-gold-700/60 text-gold-100'
           : 'text-gold-400 active:bg-ocean-700/60'
       }`}
     >
       <span className="shrink-0 flex items-center justify-center">{icon}</span>
-      <span className="font-serif text-[10px] leading-none whitespace-nowrap">{label}</span>
+      <span className="font-serif text-xs leading-none whitespace-nowrap">{label}</span>
     </button>
   )
 

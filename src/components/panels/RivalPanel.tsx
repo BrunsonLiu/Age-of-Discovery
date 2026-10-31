@@ -31,7 +31,7 @@ export default function RivalPanel() {
     <div className="w-full md:w-80 animate-slide-in-right">
       <ParchmentCard title="航海见闻" subtitle="竞争船长" onClose={() => setActivePanel(null)}>
         <div className="space-y-3">
-          <p className="text-gold-500 font-serif text-xs italic">
+          <p className="text-gold-500 font-serif text-[13px] italic">
             酒馆的传闻比海风跑得快——这三个人和你抢着同一片海。
           </p>
 
@@ -64,7 +64,7 @@ export default function RivalPanel() {
                       <div className="text-gold-500 text-[10px] font-serif flex items-center justify-center gap-0.5">
                         <Coins size={9} /> 金币
                       </div>
-                      <div className={`text-xs font-serif ${r.gold >= fleet.gold ? 'text-gold-300' : 'text-gold-500'}`}>
+                      <div className={`text-[13px] font-serif ${r.gold >= fleet.gold ? 'text-gold-300' : 'text-gold-500'}`}>
                         {r.gold}
                       </div>
                     </div>
@@ -72,7 +72,7 @@ export default function RivalPanel() {
                       <div className="text-gold-500 text-[10px] font-serif flex items-center justify-center gap-0.5">
                         <Star size={9} /> 声望
                       </div>
-                      <div className={`text-xs font-serif ${r.fame >= fleet.fame ? 'text-gold-300' : 'text-gold-500'}`}>
+                      <div className={`text-[13px] font-serif ${r.fame >= fleet.fame ? 'text-gold-300' : 'text-gold-500'}`}>
                         {r.fame}
                       </div>
                     </div>
@@ -80,7 +80,7 @@ export default function RivalPanel() {
                       <div className="text-gold-500 text-[10px] font-serif flex items-center justify-center gap-0.5">
                         <MapIcon size={9} /> 探索
                       </div>
-                      <div className={`text-xs font-serif ${r.portsFound >= myPorts ? 'text-gold-300' : 'text-gold-500'}`}>
+                      <div className={`text-[13px] font-serif ${r.portsFound >= myPorts ? 'text-gold-300' : 'text-gold-500'}`}>
                         {r.portsFound}/20
                       </div>
                     </div>
@@ -97,9 +97,9 @@ export default function RivalPanel() {
           <div className="bg-black/18 border border-gold-700/20 rounded p-2.5">
             <div className="flex items-center gap-1 mb-1.5">
               <Ship size={11} className="text-gold-400" />
-              <span className="text-gold-300 font-serif text-xs">你的座次</span>
+              <span className="text-gold-300 font-serif text-[13px]">你的座次</span>
             </div>
-            <div className="grid grid-cols-3 gap-1 text-center text-xs font-serif">
+            <div className="grid grid-cols-3 gap-1 text-center text-[13px] font-serif">
               <div>
                 <div className="text-gold-500 text-[10px]">财富</div>
                 <div className="text-gold-200">{fleet.gold} / {bestRivalGold}</div>
@@ -120,9 +120,9 @@ export default function RivalPanel() {
 
           {/* 见闻流 */}
           <div>
-            <div className="flex items-center gap-1 text-gold-300 font-serif text-xs mb-1.5"><Scroll size={11} aria-hidden="true" />最新见闻</div>
+            <div className="flex items-center gap-1 text-gold-300 font-serif text-[13px] mb-1.5"><Scroll size={11} aria-hidden="true" />最新见闻</div>
             {rivalNews.length === 0 ? (
-              <p className="text-gold-600 text-xs font-serif text-center py-3">
+              <p className="text-gold-600 text-[13px] font-serif text-center py-3">
                 还没有传闻。每隔几天，酒馆里就会有新消息。
               </p>
             ) : (
@@ -135,7 +135,7 @@ export default function RivalPanel() {
                         <span className="text-gold-400 text-[10px] font-serif">{rival?.name ?? '某位船长'}</span>
                         <span className="text-gold-600 text-[10px] font-serif">第 {n.day} 天</span>
                       </div>
-                      <p className="text-gold-300 text-xs font-serif">{n.text}</p>
+                      <p className="text-gold-300 text-[13px] font-serif">{n.text}</p>
                     </div>
                   )
                 })}

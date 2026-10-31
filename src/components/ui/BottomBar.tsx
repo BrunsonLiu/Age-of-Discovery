@@ -28,10 +28,10 @@ function ShipVital({ icon, pct, color, title }: {
   return (
     <span className="flex items-center gap-1 shrink-0 cursor-help" title={title}>
       <span style={{ color }} className="flex shrink-0">{icon}</span>
-      <span className="font-mono text-[10px] leading-none tabular-nums" style={{ color }}>
+      <span className="font-mono text-xs leading-none tabular-nums" style={{ color }}>
         {pctText}%
       </span>
-      <span className="relative h-1 w-5 rounded-full bg-black/45 overflow-hidden">
+      <span className="relative h-1.5 w-6 rounded-full bg-black/45 overflow-hidden">
         <span
           className="absolute inset-y-0 left-0 rounded-full transition-all duration-300"
           style={{ width: `${pctText}%`, background: color }}
@@ -134,7 +134,7 @@ export default function BottomBar() {
     */
     <div
       data-tut="bottombar"
-      className="relative px-2 md:px-3 py-1 flex flex-wrap items-center justify-between gap-x-3 gap-y-0.5 xl:flex-nowrap md:py-1.5"
+      className="relative px-2 md:px-3 py-1.5 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 xl:flex-nowrap md:py-2"
       style={{
         /* 与顶栏同一根梁的"下半截"：渐变方向反转（贴屏幕底边的一侧更亮），
            这样上下两条边读起来是同一个材质的两个端面，而不是两条独立的黑条。 */
@@ -168,7 +168,7 @@ export default function BottomBar() {
               className="h-7 w-auto object-contain drop-shadow-[0_1px_3px_rgba(0,0,0,0.6)] select-none"
               onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none' }}
             />
-            <span className="hidden sm:inline font-serif text-[10px] text-gold-400 whitespace-nowrap">
+            <span className="hidden sm:inline font-serif text-xs text-gold-400 whitespace-nowrap">
               {flagship.name}
             </span>
           </button>
@@ -179,13 +179,13 @@ export default function BottomBar() {
               color={durColor}
               pct={durPct}
               title={`船体耐久 ${flagship.durability}/${flagship.maxDurability}（${Math.round(durPct * 100)}%）`}
-              icon={<Shield size={10} aria-hidden="true" />}
+              icon={<Shield size={13} aria-hidden="true" />}
             />
             <ShipVital
               color={loadTone}
               pct={loadPct}
               title={`载重 ${loadUsed}/${loadTotal}（${Math.round(loadPct * 100)}%）`}
-              icon={<Package size={10} aria-hidden="true" />}
+              icon={<Package size={13} aria-hidden="true" />}
             />
           </span>
         )}
@@ -195,7 +195,7 @@ export default function BottomBar() {
             <span className="font-serif text-sm text-ocean-200 truncate">
               → {destName}
             </span>
-            <span className="text-xs text-gold-500 shrink-0">
+            <span className="text-[13px] text-gold-400 shrink-0 tabular-nums">
               {progressPct}%
             </span>
             <div className="w-16 h-1.5 bg-black/35 rounded-full overflow-hidden shrink-0 hidden sm:block">
@@ -204,13 +204,13 @@ export default function BottomBar() {
                 style={{ width: `${progressPct}%` }}
               />
             </div>
-            <span className="text-xs text-gold-600 shrink-0">
+            <span className="text-[13px] text-gold-500 shrink-0 tabular-nums">
               约{daysLeft}天
             </span>
             {/* 航段指示：第几段 / 共几段——玩家随时知道"下次抉择还有多远" */}
             {segmentCount > 0 && (
               <span
-                className="text-[10px] font-serif text-gold-700 shrink-0 tabular-nums"
+                className="text-[11px] font-serif text-gold-600 shrink-0 tabular-nums"
                 title={`航段 ${segmentIndex + 1} / ${segmentCount}`}
               >
                 段{segmentIndex + 1}/{segmentCount}
@@ -221,7 +221,7 @@ export default function BottomBar() {
           <div className="flex items-center gap-1.5">
             <Anchor size={14} className="text-gold-400 shrink-0" />
             <span className="font-serif text-sm text-gold-300">{currentPort.nameCn}</span>
-            <span className="text-xs text-gold-600 hidden sm:inline">· 点击地图出航</span>
+            <span className="text-xs text-gold-500 hidden sm:inline">· 点击地图出航</span>
           </div>
         ) : (
           <div className="flex items-center gap-1.5">
@@ -237,12 +237,12 @@ export default function BottomBar() {
             展示「现在正以什么姿态航行」比展示一堆可点的按钮更有用。 */}
         {fleet.isSailing && (
           <div
-            className="hidden sm:flex items-center gap-1 px-2 py-1 rounded-md border border-gold-700/30 bg-ocean-700/50"
+            className="hidden sm:flex items-center gap-1.5 px-2 py-1.5 rounded-md border border-gold-700/30 bg-ocean-700/50"
             title={`当前方针：${stanceProfile.name}——${stanceProfile.hint}`}
           >
             <Sailboat size={12} className="text-gold-400 shrink-0" />
-            <span className="text-xs font-serif text-gold-200">{stanceProfile.name}</span>
-            <span className="text-[10px] font-mono text-gold-600 tabular-nums">
+            <span className="text-[13px] font-serif text-gold-200">{stanceProfile.name}</span>
+            <span className="text-xs font-mono text-gold-500 tabular-nums">
               ×{stanceProfile.speedMul.toFixed(1)}
             </span>
           </div>
@@ -255,7 +255,7 @@ export default function BottomBar() {
             <button
               key={opt.value}
               onClick={() => setSimSpeed(opt.value)}
-              className={`px-2 py-1 text-xs font-serif press transition-all ${
+              className={`px-2.5 py-1.5 text-[13px] font-serif press transition-all ${
                 simSpeed === opt.value
                   ? 'bg-gold-700/50 text-gold-200'
                   : 'text-gold-500 hover:text-gold-300 hover:bg-ocean-600/50'
@@ -270,7 +270,7 @@ export default function BottomBar() {
         </div>
         <button
           onClick={advanceDay}
-          className="px-2 py-1 text-xs font-serif text-gold-500 hover:text-gold-300 bg-ocean-700/40 rounded-md border border-gold-700/20 press transition-all"
+          className="px-2.5 py-1.5 text-[13px] font-serif text-gold-500 hover:text-gold-300 bg-ocean-700/40 rounded-md border border-gold-700/20 press transition-all"
           title="跳过一天"
           aria-label="跳过一天"
         >
@@ -284,13 +284,13 @@ export default function BottomBar() {
         桌面端回到原位（md:order-3）。
       */}
       <div className="flex items-center gap-2 md:gap-3 shrink-0 order-4 md:order-3">
-        <div className="flex items-center gap-2 text-xs text-gold-300">
+        <div className="flex items-center gap-2 text-[13px] text-gold-300">
           <span className="text-gold-500 font-serif">第{fleet.day}天</span>
           {/* 金币也要带字——和粮/水/士气三个片保持同一种"图标 + 单字 + 数字"
               的读法，否则底栏右侧是一串无标签数字，玩家得靠位置去猜。 */}
           <span className="flex items-center gap-0.5" title="金币">
-            <Coins size={11} className="text-gold-500" aria-hidden="true" />
-            <span className="font-serif text-[10px] text-gold-600">金</span>
+            <Coins size={13} className="text-gold-500" aria-hidden="true" />
+            <span className="font-serif text-xs text-gold-500">金</span>
             <span className="font-mono tabular-nums">{fleet.gold}</span>
           </span>
         </div>
@@ -320,47 +320,47 @@ export default function BottomBar() {
       <div className="flex items-center gap-0.5 shrink-0 order-3 md:order-4 ml-auto">
           <button
             onClick={toggleWindOverlay}
-            className={`p-1 rounded press transition-all ${
+            className={`p-1.5 rounded press transition-all ${
               showWindOverlay ? 'bg-gold-700/40 text-gold-200' : 'text-gold-500 hover:text-gold-300'
             }`}
             title="风向"
             aria-label="风向"
             aria-pressed={showWindOverlay}
           >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M9.59 4.59A2 2 0 1 1 11 8H2m10.59 11.41A2 2 0 1 0 14 16H2m15.73-8.27A2.5 2.5 0 1 1 19.5 12H2"/></svg>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M9.59 4.59A2 2 0 1 1 11 8H2m10.59 11.41A2 2 0 1 0 14 16H2m15.73-8.27A2.5 2.5 0 1 1 19.5 12H2"/></svg>
           </button>
           <button
             onClick={toggleCurrentOverlay}
-            className={`p-1 rounded press transition-all ${
+            className={`p-1.5 rounded press transition-all ${
               showCurrentOverlay ? 'bg-gold-700/40 text-gold-200' : 'text-gold-500 hover:text-gold-300'
             }`}
             title="洋流"
             aria-label="洋流"
             aria-pressed={showCurrentOverlay}
           >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M2 12c1.5-2 3.5-2 5 0s3.5 2 5 0 3.5-2 5 0 3.5 2 5 0M2 18c1.5-2 3.5-2 5 0s3.5 2 5 0 3.5-2 5 0 3.5 2 5 0M2 6c1.5-2 3.5-2 5 0s3.5 2 5 0 3.5-2 5 0 3.5 2 5 0"/></svg>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M2 12c1.5-2 3.5-2 5 0s3.5 2 5 0 3.5-2 5 0 3.5 2 5 0M2 18c1.5-2 3.5-2 5 0s3.5 2 5 0 3.5-2 5 0 3.5 2 5 0M2 6c1.5-2 3.5-2 5 0s3.5 2 5 0 3.5-2 5 0 3.5 2 5 0"/></svg>
           </button>
           <button
             onClick={togglePirateZones}
-            className={`p-1 rounded press transition-all ${
+            className={`p-1.5 rounded press transition-all ${
               showPirateZones ? 'bg-danger-700/40 text-danger-200' : 'text-gold-500 hover:text-gold-300'
             }`}
             title="海盗区域"
             aria-label="海盗区域"
             aria-pressed={showPirateZones}
           >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 8v4m0 4h.01"/></svg>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 8v4m0 4h.01"/></svg>
           </button>
           <div className="hidden md:block w-px h-3 bg-gold-700/30" />
           <SoundToggle />
           <div className="hidden md:block w-px h-3 bg-gold-700/30" />
           <button
             onClick={resetGame}
-            className="p-1 rounded text-gold-500 hover:text-gold-300 hover:bg-gold-700/30 press transition-all"
+            className="p-1.5 rounded text-gold-500 hover:text-gold-300 hover:bg-gold-700/30 press transition-all"
             title="重新开始"
             aria-label="重新开始"
           >
-            <RotateCcw size={12} aria-hidden="true" />
+            <RotateCcw size={14} aria-hidden="true" />
           </button>
       </div>
 

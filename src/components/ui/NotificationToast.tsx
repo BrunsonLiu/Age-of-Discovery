@@ -136,7 +136,7 @@ export default function NotificationToast() {
               <Icon size={18} />
             </div>
             <div className="flex-1 min-w-0">
-              <div className="text-gold-200 font-serif text-sm font-bold truncate">{n.title}</div>
+              <div className="text-gold-100 font-serif text-[15px] tracking-wide truncate">{n.title}</div>
               {/* 历史节点的正文是重点，允许两行；其余通知保持单行紧凑 */}
               <div className={`text-gold-400 text-xs mt-0.5 ${n.type === 'history' ? 'line-clamp-2' : 'truncate'}`}>
                 {n.message}

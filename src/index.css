@@ -272,9 +272,12 @@ body {
   }
 
   .btn-nautical {
-    @apply px-4 py-2 rounded font-serif font-semibold transition-all duration-200;
-    background: linear-gradient(180deg, #c9a96e 0%, #8a6c2a 100%);
-    color: #1a2a3a;
+    /* 不用 font-semibold：中文只有 400 字重，那是浏览器合成的假粗体。
+       强调靠字距（letter-spacing）与明度对比。 */
+    @apply px-4 py-2 rounded font-serif transition-all duration-200;
+    letter-spacing: 0.04em;
+    background: linear-gradient(180deg, #d4a838 0%, #b08d3a 100%);
+    color: #1c1408;
     border: 2px solid #d4a838;
     text-shadow: 0 1px 0 rgba(255, 255, 255, 0.3);
   }
@@ -291,9 +294,10 @@ body {
   }
 
   .btn-danger {
-    @apply px-4 py-2 rounded font-serif font-semibold transition-all duration-200;
-    background: linear-gradient(180deg, #d46a55 0%, #8b2500 100%);
-    color: #fce8e4;
+    @apply px-4 py-2 rounded font-serif transition-all duration-200;
+    letter-spacing: 0.04em;
+    background: linear-gradient(180deg, #d46a55 0%, #a33e28 100%);
+    color: #fff6ee;
     border: 2px solid #b8432e;
   }
 

@@ -265,15 +265,15 @@ export default function MainMap() {
               key={btn.type}
               onClick={() => togglePanel(btn.type)}
               data-tut={btn.type}
-              className={`side-plate pointer-events-auto flex items-center gap-2 pl-2.5 pr-3 py-2 rounded-sm ${
+              className={`side-plate pointer-events-auto flex items-center gap-2 pl-2.5 pr-3 py-2.5 rounded-sm ${
                 activePanel === btn.type ? 'side-plate--active' : ''
               }`}
               title={btn.label}
               aria-label={btn.label}
               aria-pressed={activePanel === btn.type}
             >
-              <span className="shrink-0 flex items-center justify-center w-4">{btn.icon}</span>
-              <span className="font-serif text-xs whitespace-nowrap leading-none">{btn.label}</span>
+              <span className="shrink-0 flex items-center justify-center w-5">{btn.icon}</span>
+              <span className="font-serif text-sm whitespace-nowrap leading-none">{btn.label}</span>
             </button>
           ))}
         </div>
@@ -287,15 +287,15 @@ export default function MainMap() {
               key={btn.type}
               onClick={() => togglePanel(btn.type)}
               data-tut={btn.type}
-              className={`side-plate pointer-events-auto flex items-center gap-2 pl-3 pr-2.5 py-2 rounded-sm ${
+              className={`side-plate pointer-events-auto flex items-center gap-2 pl-3 pr-2.5 py-2.5 rounded-sm ${
                 activePanel === btn.type ? 'side-plate--active' : ''
               }`}
               title={btn.label}
               aria-label={btn.label}
               aria-pressed={activePanel === btn.type}
             >
-              <span className="font-serif text-xs whitespace-nowrap leading-none">{btn.label}</span>
-              <span className="shrink-0 flex items-center justify-center w-4">{btn.icon}</span>
+              <span className="font-serif text-sm whitespace-nowrap leading-none">{btn.label}</span>
+              <span className="shrink-0 flex items-center justify-center w-5">{btn.icon}</span>
             </button>
           ))}
           <button
@@ -303,15 +303,15 @@ export default function MainMap() {
               if (activePanel) setActivePanel(null)
               setShowHelp(!showHelp)
             }}
-            className={`side-plate pointer-events-auto flex items-center gap-2 pl-3 pr-2.5 py-2 rounded-sm ${
+            className={`side-plate pointer-events-auto flex items-center gap-2 pl-3 pr-2.5 py-2.5 rounded-sm ${
               showHelp ? 'side-plate--active' : ''
             }`}
             title="帮助"
             aria-label="帮助"
             aria-pressed={showHelp}
           >
-            <span className="font-serif text-xs whitespace-nowrap leading-none">帮助</span>
-            <span className="shrink-0 flex items-center justify-center w-4"><HelpCircle size={18} /></span>
+            <span className="font-serif text-sm whitespace-nowrap leading-none">帮助</span>
+            <span className="shrink-0 flex items-center justify-center w-5"><HelpCircle size={18} /></span>
           </button>
         </div>
         </>

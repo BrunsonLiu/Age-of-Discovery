@@ -82,13 +82,13 @@ export default function BrokerTip({ placement = 'float' }: { placement?: 'float'
   } as const
 
   const btnClass =
-    'press flex items-center gap-1 rounded border border-gold-500/70 bg-gold-600/30 px-2.5 py-1.5 font-serif text-xs text-gold-100 hover:bg-gold-600/45'
+    'press flex items-center gap-1.5 rounded border border-gold-500/70 bg-gold-600/30 px-3 py-2 font-serif text-[13px] text-gold-100 hover:bg-gold-600/45'
 
   return (
     <div className={`${wrapper} pointer-events-auto`}>
       <div className="mx-auto rounded-lg overflow-hidden" style={cardStyle}>
         <div className="flex items-center justify-between pl-3 pr-1.5 pt-1.5">
-          <span className="font-serif text-xs tracking-wide text-gold-500">
+          <span className="font-serif text-[13px] tracking-wide text-gold-400">
             {mode === 'sell' ? '货已到港' : mode === 'buy' ? '掮客递来一单' : '本港行情已平'}
           </span>
           <button
@@ -97,7 +97,7 @@ export default function BrokerTip({ placement = 'float' }: { placement?: 'float'
             onClick={() => setDismissed(key)}
             className="press p-1.5 text-gold-600 hover:text-gold-300"
           >
-            <X size={13} aria-hidden="true" />
+            <X size={15} aria-hidden="true" />
           </button>
         </div>
 
@@ -106,17 +106,17 @@ export default function BrokerTip({ placement = 'float' }: { placement?: 'float'
             <>
               <div className="flex items-baseline gap-2 font-serif leading-tight">
                 <span className="text-gold-100 text-base">{sale!.items[0].goodName}</span>
-                <span className="font-mono text-sm text-gold-400 tabular-nums">{sale!.items[0].unit}</span>
-                <span className="text-gold-600 text-xs">
+                <span className="font-mono text-base text-gold-200 tabular-nums">{sale!.items[0].unit}</span>
+                <span className="text-gold-500 text-xs">
                   × {sale!.qty} 件{sale!.items.length > 1 ? `（共 ${sale!.items.length} 种货）` : ''}
                 </span>
               </div>
-              <div className="mt-1 font-serif text-xs text-gold-500">本港现价，全部出手</div>
+              <div className="mt-1.5 font-serif text-[13px] text-gold-400">本港现价，全部出手</div>
               <div className="mt-2 flex items-center justify-between gap-3">
                 <span className="flex items-baseline gap-1 font-serif text-gold-200">
-                  <Coins size={13} className="translate-y-[1px]" aria-hidden="true" />
+                  <Coins size={15} className="translate-y-[1px]" aria-hidden="true" />
                   <span className="font-mono text-lg tabular-nums">+{sale!.total}</span>
-                  <span className="text-[11px] text-gold-500">金</span>
+                  <span className="text-xs text-gold-400">金</span>
                 </span>
                 <button
                   type="button"
@@ -126,7 +126,7 @@ export default function BrokerTip({ placement = 'float' }: { placement?: 'float'
                   }}
                   className={btnClass}
                 >
-                  <PackageOpen size={12} aria-hidden="true" />
+                  <PackageOpen size={14} aria-hidden="true" />
                   全部出手
                 </button>
               </div>
@@ -135,9 +135,9 @@ export default function BrokerTip({ placement = 'float' }: { placement?: 'float'
             <>
               <div className="flex items-baseline gap-2 font-serif leading-tight">
                 <span className="text-gold-100 text-base">回 {back!.toPortName}</span>
-                <span className="text-gold-500 text-xs">空船补货</span>
+                <span className="text-gold-400 text-[13px]">空船补货</span>
               </div>
-              <div className="mt-1 font-serif text-xs text-gold-500">
+              <div className="mt-1.5 font-serif text-[13px] text-gold-400">
                 {back!.days} 天 · {back!.nm} 海里 · 那里才有货可进
               </div>
               <div className="mt-2 flex items-center justify-end gap-3">
@@ -153,7 +153,7 @@ export default function BrokerTip({ placement = 'float' }: { placement?: 'float'
                   }
                   className={btnClass}
                 >
-                  <Anchor size={12} aria-hidden="true" />
+                  <Anchor size={14} aria-hidden="true" />
                   起航返程
                 </button>
               </div>
@@ -162,18 +162,18 @@ export default function BrokerTip({ placement = 'float' }: { placement?: 'float'
             <>
               <div className="flex items-baseline gap-2 font-serif leading-tight">
                 <span className="text-gold-100 text-base">{deal!.goodName}</span>
-                <span className="font-mono text-sm text-gold-400 tabular-nums">{deal!.buy}</span>
-                <span className="text-gold-700 text-xs">→</span>
-                <span className="font-mono text-sm text-safe-300 tabular-nums">{deal!.sell}</span>
+                <span className="font-mono text-base text-gold-200 tabular-nums">{deal!.buy}</span>
+                <span className="text-gold-500 text-sm">→</span>
+                <span className="font-mono text-base text-safe-300 tabular-nums">{deal!.sell}</span>
               </div>
-              <div className="mt-1 font-serif text-xs text-gold-500">
+              <div className="mt-1.5 font-serif text-[13px] text-gold-400">
                 {deal!.toPortName} · {deal!.days} 天 · {deal!.nm} 海里 · 买 {deal!.qty} 件
               </div>
               <div className="mt-2 flex items-center justify-between gap-3">
                 <span className="flex items-baseline gap-1 font-serif text-gold-200">
-                  <Coins size={13} className="translate-y-[1px]" aria-hidden="true" />
+                  <Coins size={15} className="translate-y-[1px]" aria-hidden="true" />
                   <span className="font-mono text-lg tabular-nums">+{deal!.totalProfit}</span>
-                  <span className="text-[11px] text-gold-500">金</span>
+                  <span className="text-xs text-gold-400">金</span>
                 </span>
                 <button
                   type="button"
@@ -191,7 +191,7 @@ export default function BrokerTip({ placement = 'float' }: { placement?: 'float'
                   }}
                   className={btnClass}
                 >
-                  <Anchor size={12} aria-hidden="true" />
+                  <Anchor size={14} aria-hidden="true" />
                   买进并起航
                 </button>
               </div>

@@ -82,10 +82,14 @@ export function PortMarker() {
               className="port-tooltip"
               permanent={true}
             >
-              <span className="font-serif text-xs" style={{
-                color: isCurrent ? '#f5e2a8' : '#dcbe7c',
-                fontWeight: isCurrent ? 'bold' : 'normal',
-                letterSpacing: '0.02em',
+              {/* 港口名是地图上最常被读的字，12px → 13px。
+                  当前港口原先用 fontWeight:bold 强调——中文只有 400 字重，
+                  那是浏览器合成的假粗体（笔画横向涂抹），在 13px 上会糊。
+                  改用"提亮 + 加宽字距"：字距是排印里最干净的强调手段，
+                  而且不会改变字形本身。 */}
+              <span className="font-serif text-[13px]" style={{
+                color: isCurrent ? '#fff2cf' : '#e3c98a',
+                letterSpacing: isCurrent ? '0.06em' : '0.02em',
               }}>
                 {port.nameCn}
               </span>

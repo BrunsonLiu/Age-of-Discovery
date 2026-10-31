@@ -45,11 +45,28 @@ import { STANCES } from '@/utils/segment'
  */
 
 type Level = SupplyLevel
-/** 与 tailwind 调色板对齐：safe-400 / gold-400 / danger-400 */
-const LEVEL_COLOR: Record<Level, string> = {
+/**
+ * 两套颜色，不是一个。
+ *
+ * 【为什么必须拆开】同一种颜色画成"实心块"和写成"11px 小字"，可读性差着一倍：
+ * 块是面，字是线。原先两处共用一个值，结果是为"块要饱和"挑的深色，
+ * 直接拿去当字色 → 在底栏 #2e2212 褐底上实测对比度：
+ *   · 安全绿 #5f9440 → 4.28:1（低于正文 4.5 的下限）
+ *   · 危急红 #b8432e → **2.87:1** —— 全底栏最难读的颜色，偏偏是"出事了"那个
+ * 也就是说玩家最需要一眼看到的预警，是全屏最看不清的字。
+ * 现在：方块继续用饱和色（要沉、要像仪表灯），文字用提亮版本（要能读）。
+ * 所有值都在 #2e2212 上验过 ≥5:1。
+ */
+const LEVEL_BAR: Record<Level, string> = {
   ok: '#5f9440',
   warn: '#d4a838',
-  critical: '#b8432e',
+  critical: '#c94a32',
+}
+/** 只在文字上用：对比 5.45 / 8.74 / 5.01 :1 */
+const LEVEL_TEXT: Record<Level, string> = {
+  ok: '#7bb356',
+  warn: '#e8bd52',
+  critical: '#e0735c',
 }
 
 /** 数值变动时闪烁的底色（绿=增加，红=减少） */
@@ -110,7 +127,8 @@ function ResourceChip({
 }: ChipProps) {
   const rolled = useRolledNumber(value)
   const delta = useDelta(value)
-  const color = LEVEL_COLOR[level]
+  const barColor = LEVEL_BAR[level]
+  const color = LEVEL_TEXT[level]
 
   // 天数文案：撑不到目的港时直接说「差 N 天」，比单纯标红更可行动
   let daysText = ''
@@ -128,7 +146,7 @@ function ResourceChip({
       onClick={onClick}
       title={tip}
       aria-label={`${label} ${Math.round(value)}${daysText ? `，${daysText}` : ''}`}
-      className="flex items-center gap-1 md:gap-1.5 rounded px-1 md:px-1.5 py-1 transition-colors hover:bg-ocean-700/60 focus:outline-none focus-visible:ring-1 focus-visible:ring-gold-500/60 md:min-w-[96px]"
+      className="flex items-center gap-1 md:gap-1.5 rounded px-1 md:px-1.5 py-0.5 transition-colors hover:bg-ocean-700/60 focus:outline-none focus-visible:ring-1 focus-visible:ring-gold-500/60 md:min-w-[124px]"
     >
       {/* 图标：危急时脉冲——不需要玩家去读数字就知道出事了 */}
       <span
@@ -140,17 +158,22 @@ function ResourceChip({
 
       {/* 单字标签：把「100」变成「粮 100」。桌面与移动端都要——
           移动端宁可砍掉余量条也要保住它，因为条只是修饰，标签才是含义。
-          颜色用 gold-500 而不是 gold-600：10px 的字在 #2e2212 褐底上，
-          gold-600（#b08d3a）对比只有约 3.4:1，实测几乎融进背景，
-          等于加了个看不见的标签。 */}
-      <span className="shrink-0 font-serif text-[11px] leading-none text-gold-500">
+          颜色用 gold-400 而不是 gold-500/600：这批字只有 12px，
+          在 #2e2212 褐底上 gold-600（#b08d3a）对比约 3.4:1 会融进背景，
+          gold-500（#c9a96e）约 5.1:1 勉强，gold-400（#d4a838）约 6.4:1 才立得住。 */}
+      <span className="shrink-0 font-serif text-xs leading-none text-gold-400">
         {short}
       </span>
 
       {/* 数值：等宽右对齐——三个片的条才能落在同一条竖线上，
-          否则 46 / 88 / 52 会左冲右突，看起来像没排过版。 */}
+          否则 46 / 88 / 52 会左冲右突，看起来像没排过版。
+
+          【字号 11 → 15】这是玩家每一秒都在看、且直接决定生死的三个数
+          （断粮当天士气崩、每天 12% 概率死人），原先给的是底栏最小的字。
+          信息层级是反的：装饰性的「第N天」和它一样大，读数反而要眯眼。
+          15px 是中文等宽数字在 1x 屏上的最小舒适字号。 */}
       <span
-        className="min-w-[20px] md:min-w-[22px] text-right font-mono text-[11px] leading-none tabular-nums"
+        className="min-w-[24px] md:min-w-[26px] text-right font-mono text-[15px] leading-none tabular-nums"
         style={{ color: level === 'critical' ? color : '#e5c35c' }}
       >
         {Math.round(rolled)}
@@ -159,10 +182,10 @@ function ResourceChip({
       {/* 迷你条：宽度即余量，颜色即水位。
           移动端隐藏——390px 上三个片各占 32px 的条会把数字挤成两行，
           而"余量多少"在手机上一眼看数字比一眼看短条更准。 */}
-      <span className="relative hidden md:block h-1 w-10 shrink-0 overflow-hidden rounded-full bg-ocean-900/80">
+      <span className="relative hidden md:block h-1.5 w-9 shrink-0 overflow-hidden rounded-full bg-ocean-900/80">
         <span
           className="absolute inset-y-0 left-0 rounded-full"
-          style={{ width: `${barPct}%`, background: color, transition: TRANSITION }}
+          style={{ width: `${barPct}%`, background: barColor, transition: TRANSITION }}
         />
         {delta !== 0 && (
           <span
@@ -176,7 +199,7 @@ function ResourceChip({
         <>
           {/* 桌面：完整的天数说明（含"还剩 N 天"） */}
           <span
-            className="hidden md:inline min-w-[30px] font-serif text-[10px] leading-none tabular-nums"
+            className="hidden md:inline min-w-[36px] font-serif text-xs leading-none tabular-nums"
             style={{ color }}
           >
             {daysText}
@@ -185,7 +208,7 @@ function ResourceChip({
               但"撑不到目的港"这句话绝不能丢。 */}
           {level === 'critical' && (
             <span
-              className="md:hidden font-serif text-[10px] leading-none tabular-nums whitespace-nowrap"
+              className="md:hidden font-serif text-xs leading-none tabular-nums whitespace-nowrap"
               style={{ color }}
             >
               {daysText}
@@ -289,7 +312,7 @@ export default function ResourceCluster() {
       <ResourceChip
         label="食物"
         short="粮"
-        icon={<Drumstick size={11} />}
+        icon={<Drumstick size={14} />}
         value={fleet.food}
         /* 条 = 相对补给容量（100 份为满仓）。超过 100 就画满：
            多存的粮有意义（能多走几天），但条的分辨率只到满仓为止，
@@ -305,7 +328,7 @@ export default function ResourceCluster() {
       <ResourceChip
         label="淡水"
         short="水"
-        icon={<Droplets size={11} />}
+        icon={<Droplets size={14} />}
         value={fleet.water}
         barPct={Math.min(100, fleet.water)}
         level={waterLevel}
@@ -318,7 +341,7 @@ export default function ResourceCluster() {
       <ResourceChip
         label="士气"
         short="士气"
-        icon={<Heart size={11} />}
+        icon={<Heart size={14} />}
         value={fleet.morale}
         barPct={fleet.morale}
         level={moraleLevelValue}

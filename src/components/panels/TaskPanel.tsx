@@ -48,12 +48,12 @@ export default function TaskPanel() {
   return (
     <div className="w-full md:w-80 animate-slide-in-left">
       <ParchmentCard title="冒险笔记" onClose={() => setActivePanel(null)}>
-        <p className="text-gold-500 text-xs font-serif italic mb-2">
+        <p className="text-gold-500 text-[13px] font-serif italic mb-2">
           {gameMode === 'visitor'
             ? '参观模式：这些都是听说过的事，不接也没关系——船照开，世界照走'
             : '这些只是建议，你可以自由探索任何地方'}
         </p>
-        <div className="flex items-center justify-between text-xs text-gold-400 font-serif mb-3 border-b border-gold-700/20 pb-2">
+        <div className="flex items-center justify-between text-[13px] text-gold-400 font-serif mb-3 border-b border-gold-700/20 pb-2">
           <span className="flex items-center gap-1"><CheckCircle2 size={12} /> 冒险进度</span>
           <span className="text-gold-300">{progress}</span>
         </div>
@@ -73,16 +73,16 @@ export default function TaskPanel() {
                         <span className="text-[10px] px-1 py-0.5 rounded bg-gold-700/30 text-gold-300 font-serif shrink-0">
                           {typeLabels[task.type] ?? task.type}
                         </span>
-                        <span className="text-gold-200 text-xs font-serif">{task.title}</span>
+                        <span className="text-gold-200 text-[13px] font-serif">{task.title}</span>
                       </div>
-                      <p className="text-gold-500 text-xs font-serif mb-1.5">{task.description}</p>
+                      <p className="text-gold-500 text-[13px] font-serif mb-1.5">{task.description}</p>
                       {task.requiredGoods && (
                         <div className="mb-1.5 space-y-0.5">
                           {task.requiredGoods.map(req => {
                             const have = cargoOf(req.goodId)
                             const ok = have >= req.quantity
                             return (
-                              <p key={req.goodId} className={`text-xs font-serif flex items-center gap-1 ${ok ? 'text-safe-400' : 'text-gold-500'}`}>
+                              <p key={req.goodId} className={`text-[13px] font-serif flex items-center gap-1 ${ok ? 'text-safe-400' : 'text-gold-500'}`}>
                                 <Package size={10} /> 需携带 {nameOf(req.goodId)} {req.quantity} 件（现有 {have}）
                               </p>
                             )
@@ -90,7 +90,7 @@ export default function TaskPanel() {
                         </div>
                       )}
                       <div className="flex items-center justify-between">
-                        <span className="text-gold-400 text-xs flex items-center gap-0.5">
+                        <span className="text-gold-400 text-[13px] flex items-center gap-0.5">
                           <Coins size={10} /> {task.reward.gold}
                           {task.reward.fame && <span className="ml-1">+{task.reward.fame}声望</span>}
                         </span>
@@ -107,12 +107,12 @@ export default function TaskPanel() {
                                 { kind: 'float', tone: 'gold', text: `+${task.reward.gold}`, sub: task.reward.fame ? `声望 +${task.reward.fame}` : undefined },
                               )
                             }}
-                            className="text-safe-400 hover:text-safe-300 text-xs font-serif transition-colors"
+                            className="text-safe-400 hover:text-safe-300 text-[13px] font-serif transition-colors"
                           >
                             ✓ 交付领赏
                           </button>
                         ) : (
-                          <span className="text-gold-600 text-xs font-serif flex items-center gap-0.5">
+                          <span className="text-gold-600 text-[13px] font-serif flex items-center gap-0.5">
                             <Map size={10} /> 前往{ports.find(p => p.id === (task.targetPortId ?? task.portId))?.nameCn ?? '目的地'}
                           </span>
                         )}
@@ -129,7 +129,7 @@ export default function TaskPanel() {
               <Scroll size={14} /> 道听途说
             </h4>
             {availableTasks.length === 0 ? (
-              <p className="text-gold-600 text-xs font-serif italic">暂无新的传闻（有些线索要航行更久才会浮现）</p>
+              <p className="text-gold-600 text-[13px] font-serif italic">暂无新的传闻（有些线索要航行更久才会浮现）</p>
             ) : (
               <ScrollFade className="space-y-1.5 max-h-64 overflow-y-auto scroll-parchment">
                 {availableTasks.map(task => (
@@ -138,17 +138,17 @@ export default function TaskPanel() {
                       <span className="text-[10px] px-1 py-0.5 rounded bg-gold-700/30 text-gold-300 font-serif shrink-0">
                         {typeLabels[task.type] ?? task.type}
                       </span>
-                      <span className="text-gold-200 text-xs font-serif">{task.title}</span>
+                      <span className="text-gold-200 text-[13px] font-serif">{task.title}</span>
                     </div>
-                    <p className="text-gold-500 text-xs font-serif mb-1.5">{task.description}</p>
+                    <p className="text-gold-500 text-[13px] font-serif mb-1.5">{task.description}</p>
                     <div className="flex items-center justify-between">
-                      <span className="text-gold-400 text-xs flex items-center gap-0.5">
+                      <span className="text-gold-400 text-[13px] flex items-center gap-0.5">
                         <Coins size={10} /> {task.reward.gold}
                         {task.reward.fame && <span className="ml-1">+{task.reward.fame}声望</span>}
                       </span>
                       <button
                         onClick={() => acceptTask(task.id)}
-                        className="text-gold-400 hover:text-gold-300 text-xs font-serif transition-colors"
+                        className="text-gold-400 hover:text-gold-300 text-[13px] font-serif transition-colors"
                       >
                         记下这条
                       </button>

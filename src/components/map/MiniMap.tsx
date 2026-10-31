@@ -34,8 +34,11 @@ function project(lng: number, lat: number) {
 function drawLand(ctx: CanvasRenderingContext2D, geojson: GeoJSON.GeoJsonObject) {
   ctx.clearRect(0, 0, W, H)
 
-  // 世界底：与主图同一族青灰
-  ctx.fillStyle = '#26414a'
+  // 世界底：必须与主图当前的海色同族。
+  // 这里原先是 #26414a（青绿），是海面转深蓝那次改造漏掉的一处——
+  // 主图已经是 #32465a 的深蓝灰，小地图却还是旧青绿，一块冷色斑压在右上角。
+  // 实测主图海面采样 rgb(50,70,90) ≈ #32465a，直接用同一个值。
+  ctx.fillStyle = '#32465a'
   ctx.fillRect(0, 0, W, H)
 
   const polys: [number, number][][] = []
@@ -150,8 +153,15 @@ export default function MiniMap({ land }: { land: GeoJSON.GeoJsonObject | null }
     // 而且 e2e 的可点性巡检只遍历 button —— div 会漏在巡检之外。
     <button
       type="button"
-      className="absolute right-3 hidden md:block p-0 rounded overflow-hidden border border-[#8b6f3e]/70 shadow-[0_4px_14px_rgba(0,0,0,0.6)] cursor-pointer"
-      style={{ top: 96, width: W, height: H, zIndex: 850 }}
+      className="absolute right-3 hidden md:block p-0 rounded-sm overflow-hidden cursor-pointer"
+      style={{
+        top: 96, width: W, height: H, zIndex: 850,
+        /* 与侧栏铭牌同一套材质逻辑：外框深铜 + 内侧一道受光金线 + 内投影。
+           只有 1px 细边的话，这块 168px 的小图看起来像"贴在屏幕上的一张图"，
+           而不是嵌在航海桌上的仪表。 */
+        border: '2px solid #8b6f3e',
+        boxShadow: 'inset 0 0 0 1px rgba(255,238,186,0.22), inset 0 2px 7px rgba(0,0,0,0.55), 0 4px 14px rgba(0,0,0,0.6)',
+      }}
       onClick={jump}
       title="点击跳到该位置"
       aria-label="世界小地图，点击可跳转到该位置"
@@ -166,7 +176,7 @@ export default function MiniMap({ land }: { land: GeoJSON.GeoJsonObject | null }
         style={{ width: W, height: H }}
       />
       {/* 罗盘角标：小地图做得再准，玩家第一眼还是要知道"上北下南" */}
-      <span className="absolute left-1 top-0.5 text-[8px] font-serif text-gold-300/80 pointer-events-none">N</span>
+      <span className="absolute left-1 top-0.5 text-[10px] font-serif text-gold-200/90 pointer-events-none">N</span>
     </button>
   )
 }

@@ -120,12 +120,12 @@ export default function PortDetail() {
         <div className="space-y-3">
           <div className="flex items-center gap-2">
             <span className="text-gold-400 font-serif text-sm">{port.name}</span>
-            <span className="text-xs bg-black/30 text-gold-300 px-2 py-0.5 rounded font-serif">
+            <span className="text-[13px] bg-black/30 text-gold-300 px-2 py-0.5 rounded font-serif">
               {regionNames[port.region] || port.region}
             </span>
           </div>
 
-          <p className="text-gold-500 text-xs font-serif leading-relaxed">{port.description}</p>
+          <p className="text-gold-500 text-[13px] font-serif leading-relaxed">{port.description}</p>
 
           {/* 本港势力态度：第二条线的本地视角 */}
           {(() => {
@@ -135,7 +135,7 @@ export default function PortDetail() {
             const rep = factionRep[fid] ?? 0
             const att = factionAttitude(rep)
             return (
-              <div className="flex items-center justify-between bg-black/22 border border-gold-700/20 rounded p-1.5 text-xs font-serif">
+              <div className="flex items-center justify-between bg-black/22 border border-gold-700/20 rounded p-1.5 text-[13px] font-serif">
                 <span className="text-gold-500 flex items-center gap-1.5">
                   <Badge kind="faction" id={fid} fallback={f.icon} size={15} />
                   本港由{f.name}话事
@@ -150,7 +150,7 @@ export default function PortDetail() {
           })()}
 
           {!isAtPort && (
-            <div className="flex items-center gap-1.5 bg-black/22 border border-gold-700/20 rounded p-2 text-xs text-gold-400 font-serif">
+            <div className="flex items-center gap-1.5 bg-black/22 border border-gold-700/20 rounded p-2 text-[13px] text-gold-400 font-serif">
               <Ship size={12} aria-hidden="true" className="shrink-0" />
               你当前不在此港，点击地图航行前往
             </div>
@@ -169,7 +169,7 @@ export default function PortDetail() {
                       if (svc === 'trade') setActivePanel('trade')
                       if (svc === 'shipyard') setActivePanel('shipyard')
                     }}
-                    className="flex items-center gap-1.5 bg-black/22 hover:bg-black/25 border border-gold-700/20 rounded px-2 py-1.5 text-xs text-gold-300 font-serif transition-colors"
+                    className="flex items-center gap-1.5 bg-black/22 hover:bg-black/25 border border-gold-700/20 rounded px-2 py-1.5 text-[13px] text-gold-300 font-serif transition-colors"
                   >
                     {serviceIcons[svc]}
                     {serviceNames[svc]}
@@ -181,21 +181,21 @@ export default function PortDetail() {
 
           {isAtPort && port.services.includes('repair') && (
             <div className="border-t border-gold-700/30 pt-2">
-              <h4 className="text-gold-300 font-serif text-xs mb-1.5 flex items-center gap-1">
+              <h4 className="text-gold-300 font-serif text-[13px] mb-1.5 flex items-center gap-1">
                 <Shield size={12} /> 修理船只
               </h4>
               {fleet.ships.map(ship => {
                 const damage = ship.maxDurability - ship.durability
                 const cost = damage * GAME_BALANCE.REPAIR_COST_PER_DURABILITY
                 return (
-                  <div key={ship.id} className="flex items-center justify-between text-xs mb-1">
+                  <div key={ship.id} className="flex items-center justify-between text-[13px] mb-1">
                     <span className="text-gold-400 font-serif">{ship.name} ({ship.durability}/{ship.maxDurability})</span>
                     {damage > 0 ? (
                       <ActionButton onClick={() => handleRepair(ship.id)} disabled={fleet.gold < cost} variant="secondary">
                         <Coins size={10} /> {cost}
                       </ActionButton>
                     ) : (
-                      <span className="text-safe-400 text-xs">完好</span>
+                      <span className="text-safe-400 text-[13px]">完好</span>
                     )}
                   </div>
                 )
@@ -205,10 +205,10 @@ export default function PortDetail() {
 
           {isAtPort && port.services.includes('supply') && (
             <div className="border-t border-gold-700/30 pt-2">
-              <h4 className="text-gold-300 font-serif text-xs mb-1.5 flex items-center gap-1">
+              <h4 className="text-gold-300 font-serif text-[13px] mb-1.5 flex items-center gap-1">
                 <Package size={12} /> 补给物资
               </h4>
-              <div className="flex items-center justify-between text-xs">
+              <div className="flex items-center justify-between text-[13px]">
                 <span className="text-gold-400 font-serif">食物+{GAME_BALANCE.SUPPLY_AMOUNT} 淡水+{GAME_BALANCE.SUPPLY_AMOUNT}</span>
                 <ActionButton onClick={handleSupply} disabled={fleet.gold < GAME_BALANCE.SUPPLY_TOTAL_COST} variant="secondary">
                   <Coins size={10} /> {GAME_BALANCE.SUPPLY_TOTAL_COST}
@@ -219,11 +219,11 @@ export default function PortDetail() {
 
           {isAtPort && (
             <div className="border-t border-gold-700/30 pt-2">
-              <h4 className="text-gold-300 font-serif text-xs mb-1.5 flex items-center gap-1">
+              <h4 className="text-gold-300 font-serif text-[13px] mb-1.5 flex items-center gap-1">
                 <Heart size={12} /> 港口休整
               </h4>
               <div className="space-y-1.5">
-                <div className="flex items-center justify-between text-xs">
+                <div className="flex items-center justify-between text-[13px]">
                   <span className="text-gold-400 font-serif">
                     休整一日：士气+{GAME_BALANCE.REST_MORALE}（耗食物{GAME_BALANCE.REST_FOOD}/淡水{GAME_BALANCE.REST_WATER}）
                   </span>
@@ -231,7 +231,7 @@ export default function PortDetail() {
                     休整
                   </ActionButton>
                 </div>
-                <div className="flex items-center justify-between text-xs">
+                <div className="flex items-center justify-between text-[13px]">
                   <span className="text-gold-400 font-serif">
                     甲板盛宴：士气+{GAME_BALANCE.FEAST_MORALE}、声望+{GAME_BALANCE.FEAST_FAME}
                   </span>
@@ -250,11 +250,11 @@ export default function PortDetail() {
 
           {isAtPort && port.services.includes('recruit') && (
             <div className="border-t border-gold-700/30 pt-2">
-              <h4 className="text-gold-300 font-serif text-xs mb-1.5 flex items-center gap-1">
+              <h4 className="text-gold-300 font-serif text-[13px] mb-1.5 flex items-center gap-1">
                 <Users size={12} /> 招募船员
               </h4>
               {fleet.ships.map(ship => (
-                <div key={ship.id} className="flex items-center justify-between text-xs mb-1">
+                <div key={ship.id} className="flex items-center justify-between text-[13px] mb-1">
                   <span className="text-gold-400 font-serif">{ship.name} ({ship.crew}/{ship.maxCrew})</span>
                   {ship.crew < ship.maxCrew && (
                     <ActionButton onClick={() => handleRecruit(ship.id)} disabled={fleet.gold < RECRUIT_COST} variant="secondary">
@@ -268,7 +268,7 @@ export default function PortDetail() {
 
           {isAtPort && (
             <div className="border-t border-gold-700/30 pt-2">
-              <h4 className="text-gold-300 font-serif text-xs mb-1.5 flex items-center gap-1">
+              <h4 className="text-gold-300 font-serif text-[13px] mb-1.5 flex items-center gap-1">
                 <Compass size={12} /> 酒馆·招募军官
               </h4>
               <p className="text-gold-600 text-[10px] font-serif mb-1.5">
@@ -291,12 +291,12 @@ export default function PortDetail() {
                       )}
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between mb-0.5">
-                          <span className="text-gold-200 text-xs font-serif">
+                          <span className="text-gold-200 text-[13px] font-serif">
                             <o.icon size={11} className="inline -mt-0.5 mr-1" aria-hidden="true" />
                             {o.name} <span className="text-gold-600">· {o.title}</span>
                           </span>
                           {hired ? (
-                            <span className="text-safe-400 text-xs font-serif">已在编</span>
+                            <span className="text-safe-400 text-[13px] font-serif">已在编</span>
                           ) : (
                             <ActionButton
                               onClick={() => recruitOfficer(o.id)}
@@ -319,7 +319,7 @@ export default function PortDetail() {
 
           {isAtPort && (
             <div className="border-t border-gold-700/30 pt-2">
-              <h4 className="text-gold-300 font-serif text-xs mb-1.5 flex items-center gap-1">
+              <h4 className="text-gold-300 font-serif text-[13px] mb-1.5 flex items-center gap-1">
                 <Users size={12} /> 码头·寻访名船员
               </h4>
               <p className="text-gold-600 text-[10px] font-serif mb-1.5">
@@ -342,12 +342,12 @@ export default function PortDetail() {
                       )}
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between mb-0.5">
-                          <span className="text-gold-200 text-xs font-serif">
+                          <span className="text-gold-200 text-[13px] font-serif">
                             <c.icon size={11} className="inline -mt-0.5 mr-1" aria-hidden="true" />
                             {c.name} <span className="text-gold-600">· {c.title}</span>
                           </span>
                           {hired ? (
-                            <span className="text-safe-400 text-xs font-serif">已在船</span>
+                            <span className="text-safe-400 text-[13px] font-serif">已在船</span>
                           ) : (
                             <ActionButton
                               onClick={() => recruitCrewMember(c.id)}
@@ -370,21 +370,21 @@ export default function PortDetail() {
 
           {isAtPort && portTasks.length > 0 && (
             <div className="border-t border-gold-700/30 pt-2">
-              <h4 className="text-gold-300 font-serif text-xs mb-1.5 flex items-center gap-1">
+              <h4 className="text-gold-300 font-serif text-[13px] mb-1.5 flex items-center gap-1">
                 <Heart size={12} /> 可接任务
               </h4>
               {portTasks.slice(0, 3).map(task => (
                 <div key={task.id} className="bg-black/18 rounded p-1.5 mb-1">
                   <div className="flex items-center justify-between">
-                    <span className="text-gold-200 text-xs font-serif">{task.title}</span>
+                    <span className="text-gold-200 text-[13px] font-serif">{task.title}</span>
                     <button
                       onClick={() => acceptTask(task.id)}
-                      className="text-gold-400 hover:text-gold-300 text-xs font-serif transition-colors"
+                      className="text-gold-400 hover:text-gold-300 text-[13px] font-serif transition-colors"
                     >
                       接受
                     </button>
                   </div>
-                  <div className="flex items-center justify-between text-gold-500 text-xs mt-0.5">
+                  <div className="flex items-center justify-between text-gold-500 text-[13px] mt-0.5">
                     <span>奖励: <Coins size={10} className="inline" /> {task.reward.gold}{task.reward.fame ? ` +${task.reward.fame}声望` : ''}</span>
                     {task.targetPortId && (
                       <span className="flex items-center gap-0.5">

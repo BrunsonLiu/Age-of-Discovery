@@ -42,7 +42,7 @@ export default function AchievementPanel() {
           ].map(item => (
             <div key={item.label} className="bg-black/22 rounded px-2 py-1.5 border border-gold-700/20">
               <div className="text-gold-600 text-[10px] font-serif">{item.label}</div>
-              <div className="text-gold-300 text-sm font-serif font-semibold">{item.value}</div>
+              <div className="text-gold-200 text-[15px] font-serif tabular-nums">{item.value}</div>
             </div>
           ))}
         </div>
@@ -68,7 +68,7 @@ export default function AchievementPanel() {
                     className={`shrink-0 ${isUnlocked ? 'text-gold-300' : 'text-gold-700'}`}
                     aria-hidden="true"
                   />
-                  <span className={`text-xs font-serif font-semibold ${isUnlocked ? 'text-gold-200' : 'text-gold-600'}`}>
+                  <span className={`text-[13px] font-serif ${isUnlocked ? 'text-gold-100' : 'text-gold-600'}`}>
                     {a.title}
                   </span>
                   {isUnlocked ? (
@@ -77,7 +77,7 @@ export default function AchievementPanel() {
                     <Lock size={11} className="ml-auto text-gold-700" />
                   )}
                 </div>
-                <p className={`text-xs font-serif mt-0.5 leading-relaxed ${isUnlocked ? 'text-gold-400' : 'text-gold-700'}`}>
+                <p className={`text-[13px] font-serif mt-0.5 leading-relaxed ${isUnlocked ? 'text-gold-400' : 'text-gold-700'}`}>
                   {a.description}
                 </p>
               </div>

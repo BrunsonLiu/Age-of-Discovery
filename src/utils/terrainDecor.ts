@@ -87,6 +87,22 @@ function mulberry32(seed: number) {
   }
 }
 
+/**
+ * 由整数格坐标直接算出 0~1 的稳定随机值（不消耗 rand 序列）。
+ *
+ * 【为什么不直接用 rand()】
+ * 团簇判断要按"粗格"取值，而粗格里每个细格都会各查一次——用 rand() 就等于
+ * 每次查询都推进序列，一旦某处条件分支变化（比如 inset 过滤掉一个点），
+ * 后面所有符号的位置都会整体错位，山会"整片跳走"。
+ * 用格坐标哈希则与遍历顺序、与别处消耗多少随机数都无关：
+ * 同一个粗格永远得到同一个值，加不加团簇都不影响已有符号的坐标。
+ */
+function hashCell(x: number, y: number, seed: number) {
+  let h = Math.imul(x | 0, 374761393) ^ Math.imul(y | 0, 668265263) ^ (seed | 0)
+  h = Math.imul(h ^ (h >>> 13), 1274126177)
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967296
+}
+
 function extractRings(geojson: GeoJSON.GeoJsonObject): Ring[][] {
   const out: Ring[][] = []
   const pushPoly = (coords: [number, number][][]) => {
@@ -123,6 +139,12 @@ export interface BuildTerrainOptions {
    * 暴露成参数是为了测试能做敏感度断言——系数变大时符号数必须变少。
    */
   insetMul?: number
+  /**
+   * 团簇强度 0~1（默认 1）：让山脉成簇、平原留白，而不是均匀铺满。
+   * 0 = 退回"等距麻点"的旧观感——留这个口子是为了能做 A/B，
+   * 也为了测试在"必须按格数精确断言"时可以关掉这个随机因素。
+   */
+  clusterStrength?: number
   seed?: number
 }
 
@@ -159,6 +181,8 @@ export function buildTerrainSymbols(
   const stepDeg = opts.stepDeg ?? 2.2
   const maxSymbols = opts.maxSymbols ?? 26000
   const insetMul = opts.insetMul ?? 0.16
+  /** 团簇：0 = 均匀铺满（旧观感），1 = 极端起伏。见下方 CLUSTER 注释 */
+  const clusterStrength = opts.clusterStrength ?? 1
   const rand = mulberry32(opts.seed ?? 20261030)
 
   const polys = extractRings(geojson)
@@ -204,10 +228,43 @@ export function buildTerrainSymbols(
         if (!pointInRings(lat + inset, lng, rings) || !pointInRings(lat - inset, lng, rings)
           || !pointInRings(lat, lng + inset, rings) || !pointInRings(lat, lng - inset, rings)) continue
 
+        /*
+         * 【随机数消耗必须先于任何"可能 continue"的判断】
+         *
+         * kind 的 rand() 原本写在团簇判断之后。团簇会 continue 掉一批点，
+         * 被 continue 的点就不消耗那一次 rand() → 后面的 rand 序列整体错位
+         * → 保留下来的山虽然"位置公式一样"，实测却有 2/3 挪到了别处
+         * （单测「团簇只能择掉符号、不能挪动位置」抓到）。
+         *
+         * 所以先无条件决定 kind，再做团簇取舍。丢弃一点计算，换"地形不跳位"。
+         */
         // 高纬度出雪峰，其余按 2:1 混山与树
         const snowy = Math.abs(lat) > 55
         const kind: TerrainKind = snowy ? 'peak' : (rand() < 0.62 ? 'peak' : 'tree')
-        out.push({ lat, lng, kind, scale: 0.8 + rand() * 0.45, rank })
+        const scale = 0.8 + rand() * 0.45
+
+        /*
+         * 团簇：古地图的山脉是"一簇一簇"的，中间隔着大片留白的平原。
+         *
+         * 【为什么要加这一步】均匀撒点是第一版的观感问题：符号等距铺满整块陆地，
+         * 远看是一片均匀的麻点，既不像地形、又抢注意力。加团簇后同一块陆地上
+         * 出现「密山区 / 空平原」的对比，与手绘地图的疏密节奏一致。
+         *
+         * 粗格 = CLUSTER × CLUSTER 个细格（2×2，约 4.4° 见方）。
+         * 先用格坐标哈希判定这一块是山区还是平原，再在块内按密度取舍：
+         *   · 山区留 85%（成片）
+         *   · 平原留 12%（零星几座孤峰，不是完全没有）
+         * 两次取值都用 hashCell 而不是 rand()——见 hashCell 的注释。
+         */
+        if (clusterStrength > 0) {
+          const CLUSTER = 2
+          const region = hashCell(Math.floor(c / CLUSTER), Math.floor(r / CLUSTER), 0x5eed)
+          const clustered = region > 0.42 ? 0.85 : 0.12
+          const density = 1 - clusterStrength + clusterStrength * clustered
+          if (hashCell(c, r, 0x1234) > density) continue
+        }
+
+        out.push({ lat, lng, kind, scale, rank })
       }
     }
   }

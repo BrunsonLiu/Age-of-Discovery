@@ -58,6 +58,9 @@ npm run test:e2e:all      # 以上全部（不含 mobile:prod）
 | `mobile-prod.mjs` | 同一套移动端断言跑在**生产产物**上；不依赖 dev 钩子，全程走玩家真按得到的路径（点海面出航 → 段末抉择 → 操舵退路） | build + `vite preview` |
 | `layout-audit.mjs` | 多视口 × 8 个面板：元素横向越界、文字被 `overflow:hidden` 裁掉（`scrollWidth > clientWidth`）。**在压缩截图里看不出来的那类毛病**。地图 SVG 图层已排除（它本就比视口大） | dev server |
 | `clickable-audit.mjs` | 所有可见按钮的中心点能否命中自己（`elementFromPoint`）+ 是否完整落在视口内。专治「看得见点不到」——DOM 的 `btn.click()` 会绕开遮挡，详见文件头。**至少跑 1440 与 1024 两档**（`--vw=1024 --vh=768`）：底栏四段在 1024 下折成两行，768–1279 这段宽度只有这一档测得到。**还要跑一档 2.5D**（`--mode=3d`）：3D 是一整块覆盖全屏的 canvas，层叠或 `pointer-events` 出错会把所有栏位按钮盖住，而 DOM 点击照样成功 | dev server |
+| `typography-audit.mjs` | **屏幕上所有可见文字的字号分布**：按区域（顶栏/底栏/左右侧栏/地图浮层）分组，统计 <12px / 12~13px / ≥14px 占比，并列出最小的 40 条与所有 <32px 的按钮。中文没有 x-height 缓冲，12px 以下笔画会糊——这类问题读代码看不出来（`text-xs` 在哪都是 12px，但压在深木底上就是读不动） | dev server |
+| `font-actual.mjs` | **中文实际由哪个字体绘制**（CDP `CSS.getPlatformFontsForNode`）。CSS 里写的是字体栈，屏幕上用的是回落链里第一个含中文字形的字体；本项目还验证了「只有一个 400 字重 → 所有 font-bold 都是合成假粗体」这类看不见的缺陷 | dev server |
+| `shot.mjs` | 截图工具：`--vw --vh --dsf --clip=all\|bottom\|left\|side\|year\|res\|panelr\|panell --panel=port`。**只用来判断构图与布局，颜色/对齐/1-2px 一律读 DOM**（裁剪图会误导） | dev server |
 
 ## 写 e2e 时容易踩的坑
 

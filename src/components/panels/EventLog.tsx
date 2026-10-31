@@ -14,8 +14,8 @@ export default function EventLog() {
         {eventLog.length === 0 ? (
           <div className="text-center py-6">
             <Scroll size={32} className="mx-auto text-gold-700/50 mb-2" />
-            <p className="text-gold-600 text-xs font-serif">尚无事件记录</p>
-            <p className="text-gold-700 text-xs font-serif mt-1">出海航行，书写你的传奇</p>
+            <p className="text-gold-600 text-[13px] font-serif">尚无事件记录</p>
+            <p className="text-gold-700 text-[13px] font-serif mt-1">出海航行，书写你的传奇</p>
           </div>
         ) : (
           <ScrollFade className="space-y-2 max-h-80 overflow-y-auto scroll-parchment">
@@ -26,17 +26,17 @@ export default function EventLog() {
               >
                 <div className="flex items-center gap-1.5 mb-1">
                   {renderEventIcon(entry.event.type, 14)}
-                  <span className="text-gold-300 text-xs font-serif font-semibold">{entry.event.title}</span>
-                  <span className="text-gold-600 text-xs ml-auto flex items-center gap-0.5">
+                  <span className="text-gold-200 text-[13px] font-serif">{entry.event.title}</span>
+                  <span className="text-gold-600 text-[13px] ml-auto flex items-center gap-0.5">
                     <Calendar size={10} /> 第{entry.day}天
                   </span>
                 </div>
-                <p className="text-gold-200 text-xs font-serif mb-1">
+                <p className="text-gold-200 text-[13px] font-serif mb-1">
                   选择: {entry.event.choices[entry.choiceIndex]?.text}
                 </p>
-                <p className="text-gold-400 text-xs font-serif">{entry.outcome.description}</p>
+                <p className="text-gold-400 text-[13px] font-serif">{entry.outcome.description}</p>
                 {entry.outcome.historicalNote && (
-                  <div className="scroll-parchment mt-1.5 flex items-start gap-1 text-xs text-gold-300 font-serif rounded">
+                  <div className="scroll-parchment mt-1.5 flex items-start gap-1 text-[13px] text-gold-300 font-serif rounded">
                     <Scroll size={11} className="mt-0.5 shrink-0 text-gold-500" aria-hidden="true" />
                     <span>{entry.outcome.historicalNote}</span>
                   </div>

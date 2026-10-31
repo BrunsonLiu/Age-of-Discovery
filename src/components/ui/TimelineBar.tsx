@@ -41,7 +41,10 @@ export default function TimelineBar() {
         boxShadow: 'inset 0 1px 0 rgba(255, 238, 186, 0.16), 0 2px 10px rgba(0, 0, 0, 0.55)',
       }}
     >
-      <div className="text-gold-300 font-serif text-sm font-bold min-w-[52px]">
+      {/* 这里原本是 text-sm font-bold。中文只有 400 字重，font-bold 会让「年」变成
+              浏览器合成的假粗体（横向涂抹），而「1492」是 Crimson Text 的真 700——
+              同一个词里两种粗细，放大 4 倍看非常明显。中文靠字号与字距立足，不靠字重。 */}
+      <div className="text-gold-300 font-serif text-[15px] tracking-wide min-w-[56px]">
         {currentYear}年
       </div>
 
@@ -89,10 +92,10 @@ export default function TimelineBar() {
               {hoveredEvent === event.day && (
                 <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 whitespace-nowrap z-50">
                   <div className="bg-ocean-900/95 backdrop-blur-sm border border-gold-700/30 rounded-lg px-3 py-2 shadow-xl">
-                    <div className="text-gold-300 font-serif text-xs font-bold">{event.year}年</div>
-                    <div className="text-gold-100 text-xs mt-0.5">{event.title}</div>
+                    <div className="text-gold-300 font-serif text-[13px] tabular-nums">{event.year}年</div>
+                    <div className="text-gold-100 text-[13px] mt-0.5">{event.title}</div>
                     {isPast && (
-                      <div className="text-gold-500 text-[10px] mt-1 max-w-[200px] whitespace-normal">{event.description}</div>
+                      <div className="text-gold-500 text-[11px] mt-1 max-w-[210px] whitespace-normal leading-relaxed">{event.description}</div>
                     )}
                   </div>
                   <div className="absolute top-full left-1/2 -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-ocean-900/95" />
@@ -110,16 +113,16 @@ export default function TimelineBar() {
         </div>
       </div>
 
-      <div className="text-gold-400 font-serif text-xs min-w-[120px] text-right truncate">
+      <div className="text-gold-400 font-serif text-[13px] min-w-[130px] text-right truncate">
         {currentEvent ? currentEvent.title : latestSeenEvent ? latestSeenEvent.title : '启航'}
       </div>
 
       {/* 声望：天然的进度指标，此前只在结局画面出现，玩家全程看不到自己在往上走 */}
       <div
-        className="flex items-center gap-1 text-gold-300 font-serif text-xs min-w-[68px] justify-end"
+        className="flex items-center gap-1.5 text-gold-300 font-serif text-[13px] min-w-[74px] justify-end"
         title="声望：发现新港口与完成冒险都会累积"
       >
-        <Award size={13} className="text-gold-400" />
+        <Award size={15} className="text-gold-400" />
         <span className="font-mono">{fame}</span>
       </div>
     </div>
