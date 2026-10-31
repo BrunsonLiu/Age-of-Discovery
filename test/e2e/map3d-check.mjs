@@ -95,6 +95,35 @@ check(toggled.hitsSelf, `切换按钮真的能被点到（未被遮挡）——�
 await page.waitForSelector('canvas', { timeout: 30000 })
 await sleep(3500)
 
+// ------------------------------------------------------------------
+// 3D 操作提示：必须看得见。
+//
+// 【为什么要断言】它原来是 `absolute bottom-3 left-3`，而底栏就叠在视口底部：
+// 实测桌面提示底边 888 / 底栏顶边 858，手机 832 / 714 —— **完全在底栏底下**，
+// 从来没被玩家看见过。这类问题没有任何报错，只有量矩形才发现。
+// 提示会在 6.5 秒后淡出（visibility:hidden），但矩形仍在，所以这里测得到。
+// ------------------------------------------------------------------
+const hintChk = await page.evaluate(() => {
+  const el = [...document.querySelectorAll('div')].find(d => /转视角/.test(d.textContent || '') && d.children.length === 0)
+  if (!el) return { found: false }
+  const r = el.getBoundingClientRect()
+  const bar = document.querySelector('[data-tut="bottombar"]')?.getBoundingClientRect()
+  return {
+    found: true,
+    text: el.textContent.trim(),
+    top: Math.round(r.top),
+    bottom: Math.round(r.bottom),
+    barTop: bar ? Math.round(bar.top) : null,
+    inViewport: r.left >= 0 && r.right <= innerWidth && r.top >= 0 && r.bottom <= innerHeight,
+    beforeFade: getComputedStyle(el).visibility === 'visible',
+  }
+})
+console.log('操作提示:', JSON.stringify(hintChk))
+check(hintChk.found, '3D 操作提示存在')
+check(hintChk.found && hintChk.inViewport, `操作提示完整在视口内（top=${hintChk.top} bottom=${hintChk.bottom}）`)
+check(hintChk.found && hintChk.barTop !== null && hintChk.bottom < hintChk.barTop,
+  `操作提示不被底栏遮挡（提示底边 ${hintChk.bottom} / 底栏顶边 ${hintChk.barTop}）`)
+
 const probe = await page.evaluate(() => {
   const canvases = [...document.querySelectorAll('canvas')]
   const labels = [...document.querySelectorAll('.map3d-port-label')]
