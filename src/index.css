@@ -697,13 +697,17 @@ body {
   user-select: none;
 }
 .map3d-area-label--ocean {
-  color: rgba(190, 220, 230, 0.62);
+  /* 实测对比度 3.83:1（13px 正文标准要 4.5），压在浅一点的大陆架海面上更低。
+     提亮到 .86 并加深描边后复测见注释下方数值——海域名是"读地图"的基础信息，
+     不能只当装饰。 */
+  color: rgba(206, 232, 240, 0.86);
   font: italic 13px/1.2 serif;
   letter-spacing: 4px;
-  text-shadow: 0 1px 3px rgba(0, 20, 28, 0.9), 0 0 8px rgba(0, 20, 28, 0.7);
+  text-shadow: 0 1px 2px rgba(0, 14, 20, 0.95), 0 0 6px rgba(0, 14, 20, 0.85);
 }
 .map3d-area-label--region {
-  color: rgba(58, 38, 16, 0.62);
+  /* 深褐字压在陆地上，靠暖色光晕提亮度；.62 在深色山地/森林上偏淡，提到 .74 */
+  color: rgba(52, 33, 12, 0.74);
   font: bold 13px/1.2 serif;
   letter-spacing: 6px;
   text-shadow:

@@ -123,18 +123,43 @@ export function buildLandGeometry(geojson: GeoJsonLike): LandGeometry {
   const lidPos: number[] = [], lidUv: number[] = []
   const wallPos: number[] = []
 
-  const pushTri = (dst: number[], uvDst: number[] | null, raw: number[]) => {
+  /*
+   * 侧壁厚度按**岛屿自身的尺寸**缩放，而不是全图统一 0.085。
+   *
+   * 【为什么必须这样】
+   * 0.085 世界单位 ≈ 96km（1 单位 ≈ 2000km）。对欧亚大陆这是恰当的"板块厚度"，
+   * 但对加那利那种几百米宽的小岛，就等于给一块石头配了 96km 高的墙——
+   * 放大后海面上会立着一排薄片，像栅栏。实测截图在伊比利亚西南外海非常明显。
+   *
+   * 用 bbox 对角线做尺度：大陆（>8°）取满厚度，越小的岛越薄，
+   * 最小保留 12%（再薄会和海面穿插）。顶面仍在 y=0，所以岛屿高度不变。
+   */
+  const thicknessFor = (diagDeg: number) => PLATE_THICKNESS * Math.min(1, Math.max(0.12, diagDeg / 8))
+
+  const pushTri = (dst: number[], uvDst: number[] | null, raw: number[], thick: number) => {
     const nV = raw.length / 3
     for (let t = 0; t + 2 < nV; t += 3) {
       for (let k = t; k <= t + 2; k++) {
         const lon = raw[k * 3], lat = raw[k * 3 + 1], dz = raw[k * 3 + 2]
-        dst.push(lonToWorldX(lon), (dz - 1) * PLATE_THICKNESS, latToWorldZ(lat))
+        dst.push(lonToWorldX(lon), (dz - 1) * thick, latToWorldZ(lat))
         if (uvDst) uvDst.push((lon + 180) / 360, mercNorm(lat))
       }
     }
   }
 
   for (const s of shapes) {
+    // 用外环 bbox 对角线判断"这块陆地有多大"
+    const pts = s.getPoints(0)
+    let mnx = Infinity, mxx = -Infinity, mny = Infinity, mxy = -Infinity
+    for (const p of pts) {
+      if (p.x < mnx) mnx = p.x
+      if (p.x > mxx) mxx = p.x
+      if (p.y < mny) mny = p.y
+      if (p.y > mxy) mxy = p.y
+    }
+    const diagDeg = Math.hypot(mxx - mnx, mxy - mny)
+    const thick = thicknessFor(diagDeg)
+
     const geo = new THREE.ExtrudeGeometry(s, { depth: 1, bevelEnabled: false })
     const pos = geo.attributes.position.array as Float32Array
     const gLid = geo.groups.find(g => g.materialIndex === 0)
@@ -145,8 +170,8 @@ export function buildLandGeometry(geojson: GeoJsonLike): LandGeometry {
       for (let i = grp.start; i < grp.start + grp.count; i++) {
         raw.push(pos[i * 3], pos[i * 3 + 1], pos[i * 3 + 2])
       }
-      if (isLid) pushTri(lidPos, lidUv, raw)
-      else pushTri(wallPos, null, raw)
+      if (isLid) pushTri(lidPos, lidUv, raw, thick)
+      else pushTri(wallPos, null, raw, thick)
     }
     geo.dispose()
   }
