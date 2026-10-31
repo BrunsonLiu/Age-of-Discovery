@@ -478,7 +478,21 @@ export default function Map3DView() {
       // 两层叠加会把 3D 画面压到只剩 20% 亮度（实测 2D 陆地 p90=203 / 3D 陆地 p90=41）。
 
       // ---- 相机状态：绕着船转，玩家控制角度与距离 ----
-      const camState = { fx: 10, fz: 0, dist: 15, az: 0.42, el: 0.62 }
+      /*
+       * 相机状态。**初始注视点取船位**，不是写死的世界中心。
+       *
+       * 【为什么】(10, 0) 是世界中心（约在非洲西侧）。玩家在远东时切到 3D，
+       * 镜头会从中心一路"飞"到船位：实测船在 (23.1, 113.3) 时，相机首帧在
+       * (15.73, 10.99)，要 1.4 秒才滑到 (21.27, 9.83)。
+       * 第一次切视图时那 1.4 秒就是"地图在乱跑"，玩家会以为出了 bug。
+       * 以船位起手，切过去第一眼就是船所在的那片海。
+       */
+      const initShip = useGameStore.getState().shipPosition
+      const camState = {
+        fx: initShip && isFinite(initShip[1]) ? lonToWorldX(initShip[1]) : 10,
+        fz: initShip && isFinite(initShip[0]) ? latToWorldZ(initShip[0]) : 0,
+        dist: 15, az: 0.42, el: 0.62,
+      }
       const camTarget = { x: 10, z: 0 }
 
       // ---- 交互：拖拽转视角 / 滚轮或双指捏合缩放 / 点击选点 ----
