@@ -38,6 +38,11 @@ const argOf = (k) => {
   const hit = process.argv.find(a => a.startsWith(`--${k}=`))
   return hit ? Number(hit.split('=')[1]) : undefined
 }
+/** 字符串型 CLI 参数（视口那两个是数字，这个是 '2d' / '3d'） */
+const strArgOf = (k) => {
+  const hit = process.argv.find(a => a.startsWith(`--${k}=`))
+  return hit ? hit.split('=')[1] : undefined
+}
 const VW = argOf('vw') ?? Number(process.env.VW ?? 1440)
 const VH = argOf('vh') ?? Number(process.env.VH ?? 900)
 await page.setViewport({ width: VW, height: VH })
@@ -70,6 +75,37 @@ await clickIn('跳过引导', '跳过引导'); await sleep(400)
 await page.keyboard.press('Escape'); await sleep(400)
 await page.keyboard.press('Escape'); await sleep(700)
 
+/*
+ * `--mode=3d`：切到 2.5D 再巡检。
+ *
+ * 【为什么必须单独跑一遍】3D 是一整块覆盖全屏的 canvas。如果它的层叠顺序或
+ * pointer-events 有问题，会把侧栏、底栏、顶栏的按钮全盖住 —— 而 DOM 的
+ * button.click() 照样成功，所有其它测试全绿。这类"看得见点不到"在这个项目
+ * 已经发生过一次（3D 切换按钮被顶栏压住，71 条断言全绿、玩家说看不到 3D）。
+ * 而在此之前，巡检只在 2D 模式下跑过，3D 模式是块真空。
+ */
+const MODE = strArgOf('mode') ?? '2d'
+if (MODE === '3d') {
+  await page.evaluate(() => document.querySelector('[data-testid="map-mode-toggle"]')?.click())
+  const t3 = Date.now()
+  while (Date.now() - t3 < 25000) {
+    const ready = await page.evaluate(() => !!document.querySelector('canvas') && !!document.querySelector('.map3d-area-label'))
+    if (ready) break
+    await sleep(300)
+  }
+  await sleep(1800)   // 等相机缓动与标签落位
+  // 【必须是断言而不是日志】切换失败却继续巡检，等于拿 2D 的结果冒充 3D ——
+  // 那比不测更糟：以后 3D 真出遮挡问题，这份报告会显示"全部可点"。
+  const ok3d = await page.evaluate(() => !!document.querySelector('.map3d-area-label') && !!document.querySelector('canvas'))
+  if (!ok3d) {
+    console.log('  ✗ 切到 2.5D 失败（20 秒内未见 3D 标签与 canvas），后续巡检结果不可信')
+    await browser.close()
+    process.exit(1)
+  }
+  console.log('  ✓ 已切到 2.5D（标签与 canvas 都已就绪）')
+  if (VW < 768) console.log('  （提示：这一档视口 <768，按项目约定走的是移动端结构）')
+}
+
 const report = await page.evaluate(() => {
   const out = { total: 0, blocked: [], offscreen: [] }
   for (const b of document.querySelectorAll('button')) {
@@ -100,7 +136,7 @@ const report = await page.evaluate(() => {
   return out
 })
 
-console.log(`巡检 ${report.total} 个可见按钮`)
+console.log(`巡检 ${report.total} 个可见按钮（${MODE === '3d' ? '2.5D 模式' : '2D 模式'}）`)
 
 let fails = 0
 const check = (ok, msg) => { console.log((ok ? '  ✓ ' : '  ✗ ') + msg); if (!ok) fails++ }

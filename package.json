@@ -20,11 +20,12 @@
     "test:e2e:mobile": "node test/e2e/mobile-layout.mjs",
     "test:e2e:clickable": "node test/e2e/clickable-audit.mjs",
     "test:e2e:clickable:1024": "node test/e2e/clickable-audit.mjs --vw=1024 --vh=768",
+    "test:e2e:clickable:3d": "node test/e2e/clickable-audit.mjs --mode=3d",
     "test:e2e:layout": "node test/e2e/layout-audit.mjs --widths=1024,1440",
     "test:e2e:mobile:prod": "node test/e2e/mobile-prod.mjs",
     "test:e2e:load": "node test/e2e/measure-map-load.mjs",
     "test:e2e:online": "node test/e2e/online-load-time.mjs",
-    "test:e2e:all": "npm run test:e2e && npm run test:e2e:scenes && npm run test:e2e:audio && npm run test:e2e:map && npm run test:e2e:map3d && npm run test:e2e:trade && npm run test:e2e:notify && npm run test:e2e:mobile && npm run test:e2e:clickable && npm run test:e2e:clickable:1024 && npm run test:e2e:layout"
+    "test:e2e:all": "npm run test:e2e && npm run test:e2e:scenes && npm run test:e2e:audio && npm run test:e2e:map && npm run test:e2e:map3d && npm run test:e2e:trade && npm run test:e2e:notify && npm run test:e2e:mobile && npm run test:e2e:clickable && npm run test:e2e:clickable:1024 && npm run test:e2e:clickable:3d && npm run test:e2e:layout"
   },
   "dependencies": {
     "clsx": "^2.1.1",
