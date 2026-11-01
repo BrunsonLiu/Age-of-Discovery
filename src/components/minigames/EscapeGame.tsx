@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { PersonStanding } from 'lucide-react'
 import {
   ESCAPE_DIRS,
   ESCAPE_DIR_KEY,
@@ -107,7 +108,10 @@ export default function EscapeGame({ modifiers, onDone }: {
       <div className="relative mx-auto w-56 h-56">
         {/* 中央：你自己 */}
         <div className="absolute inset-0 m-auto w-16 h-16 rounded-full border-2 border-gold-600/60 bg-ocean-800/70 flex items-center justify-center">
-          <span className="text-2xl">🧍</span>
+          {/* 原来这里是一个彩色 emoji 🧍（Windows 上还带肤色），
+              摆在罗盘环正中，是整屏唯一的非铜木颜色。
+              换成同源的线性图标：1.6 描边、金色，与侧栏铭牌/小游戏角标一致。 */}
+          <PersonStanding size={30} strokeWidth={1.6} className="text-gold-300" aria-hidden="true" />
         </div>
         {/* 四个来袭方向。
             触屏上直接点箭头即可：这里派发的就是方向键，

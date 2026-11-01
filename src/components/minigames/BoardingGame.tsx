@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { Skull } from 'lucide-react'
 import {
   BOARDING_PLANKS,
   BOARDING_WAVES,
@@ -113,7 +114,11 @@ export default function BoardingGame({ modifiers, onDone }: {
                 style={{ height: '0%', background: 'linear-gradient(to top, rgba(248,113,113,0.5), rgba(248,113,113,0.12))' }}
               />
             </div>
-            <span className="plank-mark absolute left-1/2 -translate-x-1/2 text-2xl opacity-0 transition-opacity z-30" style={{ bottom: '4px' }}>🏴‍☠️</span>
+            {/* 🏴‍☠️ 是彩色 emoji，且是"旗帜+骷髅"两个字形拼的，在 2xl 下边缘发虚。
+                改成单个 Skull 线性图标，颜色跟着 gold-300 走。 */}
+            <span className="plank-mark absolute left-1/2 -translate-x-1/2 opacity-0 transition-opacity z-30 text-gold-300" style={{ bottom: '4px' }}>
+              <Skull size={26} strokeWidth={1.6} aria-hidden="true" />
+            </span>
             <span className="absolute top-1.5 left-1/2 -translate-x-1/2 text-[10px] font-serif text-gold-400 z-10">
               {i + 1}
             </span>

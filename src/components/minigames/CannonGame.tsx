@@ -438,7 +438,9 @@ export default function CannonGame({ modifiers, onDone }: {
           className="absolute left-1/2 -translate-x-1/2 bottom-16 text-3xl transition-opacity"
           style={{ opacity: 0 }}
         >
-          🛡
+          {/* 红色护盾=本回合挡住。用 lucide 图标而不是 🛡 emoji：
+              emoji 是彩色位图，缩放时会糊，也没法和旁边的手绘船图同色系。 */}
+          <Shield size={34} strokeWidth={1.8} className="text-safe-300" aria-hidden="true" />
         </span>
         </div>
 
