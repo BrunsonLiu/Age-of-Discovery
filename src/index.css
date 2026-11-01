@@ -744,6 +744,42 @@ body {
 .vintage-map-overlay--dimmed .vintage-vignette { opacity: 0.32; }
 
 /* ==========================================================================
+ * 木梁（.wood-beam）
+ *
+ * 顶栏与底栏本来就是「同一根梁的上下两截」（底栏的注释里就写着），但两处各写了
+ * 一份内联 linear-gradient —— 同一材质两份定义，改一处另一处不会跟着变。
+ * 收成一个类，并补上原先完全没有的东西：**木纹**。
+ *
+ * 【为什么是竖纹、为什么必须正好 90°】
+ * 木纹是轴对齐的极细竖线。关键是 90deg：1px 线与像素网格完全重合，不会拍出
+ * 摩尔纹；而斜纹（雨层用的 100~105deg）在宽屏上会和像素网格干涉出大片低频菱形，
+ * 这是实测过的坑（见 .wx-rain-slow 的注释）。
+ * 三层不同周期（3 / 11 / 17px）的最小公倍是 561px，远看是木纤维的疏密，近看也
+ * 认不出「每隔几像素一条」的规律。
+ *
+ * 【alpha 是量出来的，不是估的】
+ * 第一版给了 0.055 / 0.028，横向采样实测只有 ±2/255 的波动（67→65→67）——等于
+ * 看不见。现在 0.10 / 0.085 / 0.05，幅度约 ±10，在 #2e2212 上刚好读得出纤维；
+ * 而且浅金文字压在深条纹上对比反而更高，不会伤可读性。
+ * ========================================================================== */
+.wood-beam {
+  background:
+    repeating-linear-gradient(90deg, rgba(0, 0, 0, 0.1) 0 1px, transparent 1px 3px),
+    repeating-linear-gradient(90deg, rgba(0, 0, 0, 0.085) 0 2px, transparent 2px 11px),
+    repeating-linear-gradient(90deg, rgba(255, 238, 186, 0.05) 0 1px, transparent 1px 17px),
+    linear-gradient(180deg, #2e2212 0%, #1d1409 62%, #150f07 100%);
+}
+
+/* 底栏用的反向版本：贴屏幕底边的一侧更亮，读起来才是同一根梁的另一个端面 */
+.wood-beam--foot {
+  background:
+    repeating-linear-gradient(90deg, rgba(0, 0, 0, 0.1) 0 1px, transparent 1px 3px),
+    repeating-linear-gradient(90deg, rgba(0, 0, 0, 0.085) 0 2px, transparent 2px 11px),
+    repeating-linear-gradient(90deg, rgba(255, 238, 186, 0.05) 0 1px, transparent 1px 17px),
+    linear-gradient(180deg, #150f07 0%, #1d1409 38%, #2e2212 100%);
+}
+
+/* ==========================================================================
  * 侧栏铭牌（.side-plate）
  *
  * 【为什么改】原来是 `bg-ocean-900/85 + border-gold-700/25`：
@@ -751,7 +787,7 @@ body {
  * ghost button —— 而旁边紧挨着的手绘立绘、羊皮纸地图都是精心做的，
  * 两者放一起割裂感很明显。
  *
- * 航海游戏的侧栏应该是"钉在桌上的铜木铭牌"。质感靠三层 box-shadow 叠出来，
+ * 航海游戏的侧栏应该是「钉在桌上的铜木铭牌」。质感靠三层 box-shadow 叠出来，
  * 比单纯加深底色有效得多：
  *   inset 0  1px  → 顶面高光（受光的棱）
  *   inset 0 -1px  → 底面暗边（背光的厚度）

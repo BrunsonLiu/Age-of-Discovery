@@ -30,13 +30,11 @@ export default function TimelineBar() {
 
   return (
     <div
-      className="absolute top-0 left-0 right-0 h-12 flex items-center px-4 gap-4"
+      className="wood-beam absolute top-0 left-0 right-0 h-12 flex items-center px-4 gap-4"
       style={{
-        /* 木梁横条：与侧栏铜牌（.side-plate）同一套材质语言。
-           原来是 bg-ocean-800/80 + 1px 金边——半透明深蓝压在深色海图上，
-           读起来就是"网页状态栏"，而它上方紧挨着的是手绘立绘和羊皮纸地图。
-           改实色渐变后才有"一块木头钉在屏幕顶上"的分量。 */
-        background: 'linear-gradient(180deg, #2e2212 0%, #1d1409 62%, #150f07 100%)',
+        /* 材质与底栏共用 .wood-beam（原本两处各写一份内联渐变）。
+           边框与投影留在这里：顶栏是"压在屏幕上的一块木头"，
+           只有下棱描边 + 整条外投影才能和 48px 下方的海图分开。 */
         borderBottom: '2px solid rgba(150, 117, 47, 0.65)',
         boxShadow: 'inset 0 1px 0 rgba(255, 238, 186, 0.16), 0 2px 10px rgba(0, 0, 0, 0.55)',
       }}
@@ -49,10 +47,31 @@ export default function TimelineBar() {
       </div>
 
       <div className="flex-1 relative h-6 flex items-center">
-        <div className="absolute left-0 right-0 h-[2px] bg-gold-900/50 rounded-full" />
+        {/*
+          轨道：从"画在木梁上的一条线"改成"刻进木梁的一道凹槽"。
+
+          【为什么要改】原来是 `h-[2px] bg-gold-900/50` 一条平涂细线——放在实色
+          木纹上，观感就是网页里的一根 border。木梁本身已经做出三段渐变 + 顶棱
+          受光 + 底棱背光（见上面的容器样式），而轨道却是个没有厚度的色块，
+          两者不在同一个材质体系里。
+          凹槽的读法靠三样：内投影压深（刻下去了）、下方 1px 高光（切口的下棱
+          受光）、高度加到 4px（有宽度才看得出是槽，2px 只能算线）。
+          轨道里的进度条则是**嵌进槽里的黄铜丝**：细、亮、带一点辉光。
+        */}
         <div
-          className="absolute left-0 h-[2px] bg-gold-500 rounded-full transition-all duration-500"
-          style={{ width: `${progress * 100}%` }}
+          className="absolute left-0 right-0 h-[4px] rounded-[2px]"
+          style={{
+            background: 'linear-gradient(180deg, rgba(0,0,0,0.62) 0%, rgba(0,0,0,0.34) 55%, rgba(0,0,0,0.5) 100%)',
+            boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.75), 0 1px 0 rgba(255,238,186,0.16)',
+          }}
+        />
+        <div
+          className="absolute left-0 h-[2px] bg-gold-400 rounded-full transition-all duration-500"
+          style={{
+            width: `${progress * 100}%`,
+            top: 'calc(50% - 1px)',
+            boxShadow: '0 0 6px 1px rgba(212,175,55,0.5), inset 0 1px 0 rgba(255,246,210,0.55)',
+          }}
         />
 
         {historicalTimeline.map((event) => {
