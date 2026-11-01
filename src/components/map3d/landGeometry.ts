@@ -50,24 +50,33 @@ export interface LandGeometry {
   triangles: number
 }
 
-/** 交换每个三角形的第 2、3 顶点 → 翻转绕向 */
+/**
+ * 交换每个三角形的第 2、3 顶点 → 翻转绕向。
+ *
+ * 【必须交换**所有**顶点属性，不能只管 position/uv】
+ * 侧壁后来加了 `color`（垂直明暗渐变的顶点色）。这个函数原先只换 position 与 uv，
+ * 颜色留在原位——于是翻转绕向后，每个顶点的颜色对到了**另一个顶点**的位置上。
+ * 一条四边形的两个三角形颜色互相错位，渲染出来就是海岸立面上一圈规则的
+ * 竖条纹（像瓦楞纸／一排板缝）。排查时依次排除了法线合并、阴影自遮挡、
+ * 背面剔除（分别改 eps、关 receiveShadow、设 DoubleSide，条纹都不动），
+ * 最后才定位到"漏交换一个属性"。
+ *
+ * 所以这里改成按 attributes 遍历：以后再加任何顶点属性（tangent / ao …）都不会漏。
+ */
 function flipWinding(geo: THREE.BufferGeometry): void {
-  const pos = geo.attributes.position.array as Float32Array
-  const uv = geo.attributes.uv ? (geo.attributes.uv.array as Float32Array) : null
-  for (let t = 0; t + 2 < pos.length / 3; t += 3) {
-    const i1 = (t + 1) * 3, i2 = (t + 2) * 3
-    for (let c = 0; c < 3; c++) {
-      const s = pos[i1 + c]; pos[i1 + c] = pos[i2 + c]; pos[i2 + c] = s
-    }
-    if (uv) {
-      const u1 = (t + 1) * 2, u2 = (t + 2) * 2
-      for (let c = 0; c < 2; c++) {
-        const s = uv[u1 + c]; uv[u1 + c] = uv[u2 + c]; uv[u2 + c] = s
+  const attrs = Object.values(geo.attributes) as THREE.BufferAttribute[]
+  const nVerts = geo.attributes.position.count
+  for (const attr of attrs) {
+    const arr = attr.array as Float32Array
+    const n = attr.itemSize
+    for (let t = 0; t + 2 < nVerts; t += 3) {
+      const i1 = (t + 1) * n, i2 = (t + 2) * n
+      for (let c = 0; c < n; c++) {
+        const s = arr[i1 + c]; arr[i1 + c] = arr[i2 + c]; arr[i2 + c] = s
       }
     }
+    attr.needsUpdate = true
   }
-  geo.attributes.position.needsUpdate = true
-  if (uv) geo.attributes.uv.needsUpdate = true
   geo.computeVertexNormals()
 }
 
@@ -96,10 +105,11 @@ function smoothNormalsByPosition(geo: THREE.BufferGeometry, eps = 1e-4): number 
   return merged
 }
 
-function makeGeometry(pos: number[], uv: number[] | null): THREE.BufferGeometry {
+function makeGeometry(pos: number[], uv: number[] | null, col: number[] | null = null): THREE.BufferGeometry {
   const g = new THREE.BufferGeometry()
   g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pos), 3))
   if (uv) g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(uv), 2))
+  if (col) g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(col), 3))
   g.computeVertexNormals()
   return g
 }
@@ -122,6 +132,50 @@ export function buildLandGeometry(geojson: GeoJsonLike): LandGeometry {
 
   const lidPos: number[] = [], lidUv: number[] = []
   const wallPos: number[] = []
+  const wallCol: number[] = []
+
+  /*
+   * 侧壁的垂直明暗（顶点色）。
+   *
+   * 【为什么需要】侧壁原本是**一整片纯色 0xa89066、没有贴图也没有渐变**。
+   * 近景下它变成一圈又厚又亮的均匀色带——看起来是纸板切出来的蛋糕盒，
+   * 而不是有深度的岩层，是整个 2.5D 里最廉价的一处。
+   *
+   * 真实板块的侧壁有三段：靠近顶面的棱受天光（最亮）、中段是岩土本色、
+   * 贴近水面的一段被水影吃掉（最暗）。所以按深度做一条三段渐变：
+   *   t=1（顶棱）   #c9b083
+   *   t=0.45（中段）#6f5738
+   *   t=0（水线）   #241a10
+   * 用顶点色而不是贴图：侧壁几何本来就没有 UV（只有顶面有），
+   * 补 UV 要按周长展开，成本高且会随多边形变形拉伸；顶点色只要看 y 就能算。
+   */
+  const WALL_TOP: [number, number, number] = [150 / 255, 123 / 255, 80 / 255]
+  const WALL_MID: [number, number, number] = [92 / 255, 73 / 255, 46 / 255]
+  const WALL_LOW: [number, number, number] = [30 / 255, 21 / 255, 12 / 255]
+  /*
+   * 【必须先转线性】顶点色在 three 里属于**工作色彩空间（线性）**，
+   * 直接塞 sRGB 的百分比会被当成线性值，再经 ACES 一提亮就发白浮起来——
+   * 实测第一版侧壁比陆地表面还亮，像贴了一条白纸。
+   * 这里把设计时用的 sRGB 值转成线性再写入。
+   */
+  const srgbToLinear = (v: number) => (v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4))
+  const wallShade = (t: number): [number, number, number] => {
+    const k = Math.min(1, Math.max(0, t))
+    if (k >= 0.45) {
+      const u = (k - 0.45) / 0.55
+      return [
+        srgbToLinear(WALL_MID[0] + (WALL_TOP[0] - WALL_MID[0]) * u),
+        srgbToLinear(WALL_MID[1] + (WALL_TOP[1] - WALL_MID[1]) * u),
+        srgbToLinear(WALL_MID[2] + (WALL_TOP[2] - WALL_MID[2]) * u),
+      ]
+    }
+    const u = k / 0.45
+    return [
+      srgbToLinear(WALL_LOW[0] + (WALL_MID[0] - WALL_LOW[0]) * u),
+      srgbToLinear(WALL_LOW[1] + (WALL_MID[1] - WALL_LOW[1]) * u),
+      srgbToLinear(WALL_LOW[2] + (WALL_MID[2] - WALL_LOW[2]) * u),
+    ]
+  }
 
   /*
    * 侧壁厚度按**岛屿自身的尺寸**缩放，而不是全图统一 0.085。
@@ -136,13 +190,18 @@ export function buildLandGeometry(geojson: GeoJsonLike): LandGeometry {
    */
   const thicknessFor = (diagDeg: number) => PLATE_THICKNESS * Math.min(1, Math.max(0.12, diagDeg / 8))
 
-  const pushTri = (dst: number[], uvDst: number[] | null, raw: number[], thick: number) => {
+  const pushTri = (dst: number[], uvDst: number[] | null, raw: number[], thick: number, colDst: number[] | null = null) => {
     const nV = raw.length / 3
     for (let t = 0; t + 2 < nV; t += 3) {
       for (let k = t; k <= t + 2; k++) {
         const lon = raw[k * 3], lat = raw[k * 3 + 1], dz = raw[k * 3 + 2]
         dst.push(lonToWorldX(lon), (dz - 1) * thick, latToWorldZ(lat))
         if (uvDst) uvDst.push((lon + 180) / 360, mercNorm(lat))
+        // dz 本身就是明暗参数：1 = 顶棱（贴 y=0），0 = 水线（y=-thick）
+        if (colDst) {
+          const sh = wallShade(dz)
+          colDst.push(sh[0], sh[1], sh[2])
+        }
       }
     }
   }
@@ -171,13 +230,13 @@ export function buildLandGeometry(geojson: GeoJsonLike): LandGeometry {
         raw.push(pos[i * 3], pos[i * 3 + 1], pos[i * 3 + 2])
       }
       if (isLid) pushTri(lidPos, lidUv, raw, thick)
-      else pushTri(wallPos, null, raw, thick)
+      else pushTri(wallPos, null, raw, thick, wallCol)
     }
     geo.dispose()
   }
 
   const lid = makeGeometry(lidPos, lidUv)
-  const wall = makeGeometry(wallPos, null)
+  const wall = makeGeometry(wallPos, null, wallCol)
 
   // 自动定向：测地表法线，朝下就整体翻转绕向（见文件头说明）
   const n = lid.attributes.normal.array as Float32Array

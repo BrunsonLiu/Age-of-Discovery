@@ -56,17 +56,20 @@ import type { Waypoint } from '@/types'
  * 以及天气变化时的"压暗 / 灰化"。两处各写一份数字，改一处漏一处就会出现
  * "阴天比晴天还亮"这种说不清的现象。
  */
-const SEA_BASE_R = 0.78
-const SEA_BASE_G = 0.86
-const SEA_BASE_B = 1.3
+const SEA_BASE_R = 1.34
+const SEA_BASE_G = 1.50
+const SEA_BASE_B = 2.18
 
 /**
  * 浓雾时海面的目标色：比基色更亮、更中性（B 压下来），像一层白障。
- * 三个分量都接近 1.1，乘上偏青灰的贴图后落在浅灰蓝，才是"雾"而不是"夜"。
+ * 三个分量的比值沿用调亮前的设计（雾/晴 = 1.36 / 1.28 / 0.88）：
+ * R、G 抬上去、B 压下来，与青灰贴图相乘后落在浅灰蓝，才是雾而不是夜。
+ * 海面基色整体提亮后，这里必须按**同一个比例**跟着放大，
+ * 否则雾会相对变暗、浓雾看起来像阴天。
  */
-const FOG_R = 1.06
-const FOG_G = 1.10
-const FOG_B = 1.14
+const FOG_R = 1.82
+const FOG_G = 1.92
+const FOG_B = 1.91
 
 /**
  * 三个光源的基准强度。天气变差时按比例压暗（见帧循环里的天气段）。
@@ -198,12 +201,56 @@ export default function Map3DView() {
 
       const outer = new THREE.Mesh(
         new THREE.PlaneGeometry(90, 90),
-        new THREE.MeshStandardMaterial({ color: 0x16303f, roughness: 0.5, metalness: 0.2 })
+        /*
+         * 【为什么用 MeshBasicMaterial（不受光）】
+         * 这层是"海图之外的水"，铺满屏幕四周，不参与任何光照叙事。
+         * 用 Standard 材质时它会被 scene.environment 洗成中性灰：实测给
+         * color=(0.21,0.24,0.35) 的深蓝，渲染出来是 rgb(93,87,87) 的灰——
+         * 比海面 (9,56,74) 还亮，边界反而更刺眼。
+         * 不受光材质只有一个可调项（颜色），与海面的对应关系稳定可调，
+         * 天气也只需要走同一个 setSeaColor 就能同步。
+         */
+        new THREE.MeshBasicMaterial({ color: 0x0a2230 })
       )
       outer.rotation.x = -Math.PI / 2
       outer.position.set(MAP_WORLD_SIZE / 2, -PLATE_THICKNESS - 0.02, 0)
       scene.add(outer)
       disposables.push(seaGeo, seaMat, outer.geometry, outer.material)
+
+      /*
+       * 海色只有一处写法。
+       *
+       * 【为什么必须收成一个函数】海图是两块面：`sea`（地图范围内，带贴图）和
+       * `outer`（地图之外 90×90 的"远处的水"）。天气一变只改 sea 的颜色，
+       * 边界上就会当场裂出一条直线——实测晴天时海面 rgb(9,56,74)、外面 rgb(14,21,19)，
+       * 一条硬切把"海图"切成"棋盘上的一块板"。海盗区泛红时同理。
+       * 所以两块面共用这一个写入口，任何调海色的地方都走这里，不许单独 setRGB。
+       *
+       * 【外圈为什么不能跟着乘同一个数】sea 的颜色是**和贴图相乘**的，贴图本身很暗；
+       * outer 没有贴图，同样的乘数会让它亮出一大截（实测 color=sea×0.26 时，
+       * 外圈渲染成 rgb(179,180,191) 的灰白，比海面还亮）。
+       * 所以外圈给一套独立的线性基色，只按"海色的 R 相对基色的比例"缩放——
+       * 天气压暗/雾化时比例跟着走，两边不会脱钩。
+       *
+       * OUTER_BASE 是解出来的，不是拍脑袋：目标是把外圈渲染成接近海面的深海色
+       * rgb(12,40,52)。sRGB(12,40,52) → 线性 (0.0037,0.0215,0.0331)；
+       * three 的 ACES 在暗部是**提亮**的（x=0.35 会输出 0.49），反解 ACES 得到
+       * 输入约 (0.010,0.031,0.042)。实测按此设置后外圈落在 rgb(11,38,50)。
+       */
+      const OUTER_BASE: [number, number, number] = [0.010, 0.031, 0.042]
+      const outerMat = outer.material as THREE.MeshBasicMaterial
+      /** 海盗事件把海面染红时的加项（emissive 的等价物，不受光材质只能加到颜色上） */
+      let pirateR = 0, pirateG = 0, pirateB = 0
+      const setSeaColor = (r: number, g: number, b: number) => {
+        seaMat.color.setRGB(r, g, b)
+        const k = SEA_BASE_R > 0 ? r / SEA_BASE_R : 1
+        outerMat.color.setRGB(
+          OUTER_BASE[0] * k + pirateR,
+          OUTER_BASE[1] * k + pirateG,
+          OUTER_BASE[2] * k + pirateB,
+        )
+      }
+      setSeaColor(SEA_BASE_R, SEA_BASE_G, SEA_BASE_B)
 
       // ---- 陆地板块 ----
       const land = buildLandGeometry(geojson as unknown as Parameters<typeof buildLandGeometry>[0])
@@ -219,12 +266,32 @@ export default function Map3DView() {
       //
       // 加一点暖色自发光当"底光"，让背光面仍读作暗棕色的岩壁，
       // 而不是被吃掉的黑色剪影。这是"给暗部补光"，不是"取消阴影"。
-      const wallMat = new THREE.MeshStandardMaterial({
-        color: 0xa89066,
-        roughness: 0.92,
-        metalness: 0,
-        emissive: 0x6b5334,
-        emissiveIntensity: 0.55,
+      //
+      // 【明暗改由顶点色承担】原来整个侧壁是一色 0xa89066 的纯色面膜，
+      // 近景下就是一圈又厚又亮的均匀色带（像蛋糕盒）。现在几何里带了
+      // 逐顶点的垂直渐变（顶棱亮 → 中段岩土色 → 水线暗），所以这里的 color
+      // 必须是纯白（three 的最终色 = material.color × vertexColor），
+      // emissive 也要压下来，否则平铺的自发光会把渐变的暗部重新提亮、白做。
+      /*
+       * 【为什么最终改成不受光材质（MeshBasicMaterial）】
+       * 侧壁是"切开的岩层截面"，它的明暗应该由**画好的顶点色**决定，
+       * 而不是由光线的入射角决定。可实测反复出问题：相邻墙面的绕向/法线并不一致，
+       * 受光后每个竖条亮度不同，整圈海岸变成了**瓦楞纸**——一排明暗相间的板缝，
+       * 局部甚至接近全黑。
+       * 排查过程（都记下来，免得下次重走）：放大法线合并容差（无效）→
+       * 关 receiveShadow（无效）→ 设 DoubleSide（无效）→ 最后定位到 flipWinding
+       * 漏交换 color（已修，条纹减轻但仍有残余，因为法线本身不连续）。
+       *
+       * 换成不受光后：颜色 = vertexColors（顶棱亮 → 中段 → 水线暗），完全确定，
+       * 且必须 DoubleSide——不受光材质下，绕向不一致的墙面若单面渲染会被剔除，
+       * 露出背面形成"黑缝"。
+       * 代价是它不再跟着灯光变化，所以天气压暗时要**手动**同步一次倍率
+       * （见下面天气段里的 wallMat.color.setScalar(dim)）。
+       */
+      const wallMat = new THREE.MeshBasicMaterial({
+        color: 0xffffff,
+        vertexColors: true,
+        side: THREE.DoubleSide,
       })
       const lidMesh = new THREE.Mesh(land.lid, lidMat)
       lidMesh.castShadow = true; lidMesh.receiveShadow = true
@@ -922,6 +989,12 @@ export default function Map3DView() {
             // `emissive` 是**加项**，直接往上叠红光，才能真的把海面染红。
             seaMat.emissive.setHex(pirateActive ? 0x6b1a12 : 0x000000)
             seaMat.emissiveIntensity = 1.2
+            // 外圈是不受光材质、没有 emissive，只能用"颜色加项"模拟同样的泛红，
+            // 然后重跑一遍 setSeaColor 把它写进去（不要绕过唯一入口单写）。
+            pirateR = pirateActive ? 0.020 : 0
+            pirateG = pirateActive ? 0.004 : 0
+            pirateB = pirateActive ? 0.002 : 0
+            setSeaColor(seaMat.color.r, seaMat.color.g, seaMat.color.b)
           }
         }
 
@@ -949,7 +1022,7 @@ export default function Map3DView() {
             // 顶栏写着「浓雾 航速-25%」而画面完全不像，就是承诺不兑现。
             // 浓雾本身就是极端天气，直接给一个固定的"暖白灰"：
             // 比基色更亮（R/G 抬上去）、更中性（B 压下来），饱和度掉下来才像雾。
-            seaMat.color.setRGB(
+            setSeaColor(
               SEA_BASE_R + (FOG_R - SEA_BASE_R),
               SEA_BASE_G + (FOG_G - SEA_BASE_G),
               SEA_BASE_B + (FOG_B - SEA_BASE_B),
@@ -964,7 +1037,7 @@ export default function Map3DView() {
             // 现在不动 roughness，只压 color，并把系数提到 1.6
             // （风暴 gloom=0.3 → 只剩 52%）。实测亮度 54.5 → 41.2。
             const dark = 1 - gloom * 1.6
-            seaMat.color.setRGB(SEA_BASE_R * dark, SEA_BASE_G * dark, SEA_BASE_B * dark)
+            setSeaColor(SEA_BASE_R * dark, SEA_BASE_G * dark, SEA_BASE_B * dark)
           }
           /*
            * 同时压暗三盏灯与环境贴图。
@@ -989,6 +1062,9 @@ export default function Map3DView() {
           rim.intensity = LIGHT_RIM * dim
           ambient.intensity = LIGHT_AMB * dim
           scene.environmentIntensity = ENV_BASE * dim
+          // 侧壁是不受光材质，不吃上面这四行，必须自己跟一次——
+          // 否则暴风雨里整张海图都暗了，只有海岸那圈还是晴天的亮度。
+          wallMat.color.setScalar(0.55 + 0.45 * dim)
         }
 
         camState.fx += (camTarget.x - camState.fx) * 0.12
