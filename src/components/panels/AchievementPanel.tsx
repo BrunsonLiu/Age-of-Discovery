@@ -40,7 +40,7 @@ export default function AchievementPanel() {
             { label: '最大单笔', value: `${stats.bestDeal} 金` },
             { label: '历史目击', value: stats.historySeen },
           ].map(item => (
-            <div key={item.label} className="bg-black/22 rounded px-2 py-1.5 border border-gold-700/20">
+            <div key={item.label} className="inlay rounded px-2 py-1.5 border border-gold-700/20">
               <div className="text-gold-600 text-[10px] font-serif">{item.label}</div>
               <div className="text-gold-200 text-[15px] font-serif tabular-nums">{item.value}</div>
             </div>
@@ -56,7 +56,7 @@ export default function AchievementPanel() {
                 className={`rounded p-2 border transition-colors ${
                   isUnlocked
                     ? 'bg-gold-700/20 border-gold-500/40'
-                    : 'bg-black/15 border-gold-700/15 opacity-60'
+                    : 'inlay--flat border-gold-700/15 opacity-60'
                 }`}
               >
                 <div className="flex items-center gap-1.5">

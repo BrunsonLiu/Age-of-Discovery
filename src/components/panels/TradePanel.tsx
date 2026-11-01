@@ -40,7 +40,7 @@ function BuyRow({ portId, pg, fleet, usedCapacity, totalCapacity, onBuy }: {
   }
 
   return (
-    <div className="bg-black/18 rounded p-2" data-testid="trade-buy-row" data-good-id={pg.goodId}>
+    <div className="inlay--flat rounded p-2" data-testid="trade-buy-row" data-good-id={pg.goodId}>
       <div className="flex items-center justify-between mb-1">
         <span className="text-gold-200 text-[13px] font-serif">{good.nameCn}</span>
         <span
@@ -91,7 +91,7 @@ function SellRow({ portId, item, onSell }: {
   if (!good || sellPrice == null) return null
 
   return (
-    <div className="bg-black/18 rounded p-2" data-testid="trade-sell-row" data-good-id={item.goodId}>
+    <div className="inlay--flat rounded p-2" data-testid="trade-sell-row" data-good-id={item.goodId}>
       <div className="flex items-center justify-between mb-1">
         <span className="text-gold-200 text-[13px] font-serif">
           {good.nameCn}{!tradedHere && <span className="text-gold-600 text-[13px]">（本港不收，折价）</span>}
@@ -186,7 +186,7 @@ export default function TradePanel() {
           </div>
 
           {(specialties.length > 0 || demands.length > 0) && (
-            <div className="bg-black/22 border border-gold-700/20 rounded p-2 space-y-1">
+            <div className="inlay border border-gold-700/20 rounded p-2 space-y-1">
               {specialties.length > 0 && (
                 <p className="text-safe-400 text-[13px] font-serif flex items-start gap-1">
                   <Sprout size={11} className="mt-0.5 shrink-0" />
@@ -211,7 +211,7 @@ export default function TradePanel() {
             <button
               onClick={() => setTab('buy')}
               className={`flex-1 py-1.5 text-[13px] font-serif rounded transition-colors ${
-                tab === 'buy' ? 'bg-gold-700/40 text-gold-200' : 'bg-black/18 text-gold-500 hover:text-gold-300'
+                tab === 'buy' ? 'bg-gold-700/40 text-gold-200' : 'inlay--flat text-gold-500 hover:text-gold-300'
               }`}
             >
               购买
@@ -219,7 +219,7 @@ export default function TradePanel() {
             <button
               onClick={() => setTab('sell')}
               className={`flex-1 py-1.5 text-[13px] font-serif rounded transition-colors ${
-                tab === 'sell' ? 'bg-gold-700/40 text-gold-200' : 'bg-black/18 text-gold-500 hover:text-gold-300'
+                tab === 'sell' ? 'bg-gold-700/40 text-gold-200' : 'inlay--flat text-gold-500 hover:text-gold-300'
               }`}
             >
               出售

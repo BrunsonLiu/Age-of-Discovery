@@ -23,7 +23,7 @@ const CHIP_ICONS: Record<ResourceKey, React.ReactNode> = {
 }
 
 const RISK_META: Record<RiskGrade, { label: string; className: string; hint: string }> = {
-  steady: { label: '稳', className: 'text-safe-400', hint: '基本只赚不赔，或代价很小' },
+  steady: { label: '稳', className: 'ink-good', hint: '基本只赚不赔，或代价很小' },
   gamble: { label: '搏', className: 'text-gold-400', hint: '有真实的坏结局，但期望仍站得住' },
   risky: { label: '险', className: 'text-danger-400', hint: '期望就差、尾部太重，或可能掉人——想清楚再选' },
 }
@@ -43,7 +43,7 @@ export default function EventChoice({ choice, index, summary, onSelect }: EventC
   return (
     <button
       onClick={() => onSelect(index)}
-      className="w-full group relative overflow-hidden rounded-lg border border-gold-700/40 bg-black/25 px-4 py-3 text-left press transition-all hover:border-gold-500/60 hover:bg-black/35"
+      className="w-full group relative overflow-hidden rounded-lg border border-gold-700/40 inlay px-4 py-3 text-left press transition-all hover:border-gold-500/60 hover:bg-black/35"
     >
       <div className="absolute inset-0 bg-gradient-to-r from-gold-700/0 via-gold-700/5 to-gold-700/0 opacity-0 group-hover:opacity-100 transition-opacity" />
       <div className="relative flex items-center justify-between gap-2">
@@ -74,15 +74,15 @@ export default function EventChoice({ choice, index, summary, onSelect }: EventC
               : '按各结局概率加权的估算值，实际结果仍看运气'}
           >
             {summary.plain ? (
-              <span className="text-[10px] font-serif text-gold-600">
+              <span className="text-[11px] font-serif text-gold-500">
                 {choice.miniGame ? '操作定成败 · 评分改写概率' : '影响甚微'}
               </span>
             ) : (
               chips.map(chip => (
                 <span
                   key={chip.key}
-                  className={`flex items-center gap-1 font-mono text-[10px] tabular-nums ${
-                    chip.ev > 0 ? 'text-safe-400' : 'text-danger-400'
+                  className={`flex items-center gap-1 font-mono text-[11px] tabular-nums ${
+                    chip.ev > 0 ? 'ink-good' : 'ink-bad'
                   }`}
                 >
                   <span className="opacity-70">{CHIP_ICONS[chip.key]}</span>
@@ -96,7 +96,7 @@ export default function EventChoice({ choice, index, summary, onSelect }: EventC
               等于凭空编造一个根本没算过的结论——左侧那句因果说明已经够了。 */}
           {risk && !choice.miniGame && (!summary.plain || summary.risk !== 'steady') && (
             <span
-              className={`shrink-0 font-serif text-[10px] ${risk.className}`}
+              className={`shrink-0 font-serif text-[11px] ${risk.className}`}
               title={risk.hint}
               data-risk={summary.risk}
             >

@@ -135,7 +135,7 @@ export default function PortDetail() {
             const rep = factionRep[fid] ?? 0
             const att = factionAttitude(rep)
             return (
-              <div className="flex items-center justify-between bg-black/22 border border-gold-700/20 rounded p-1.5 text-[13px] font-serif">
+              <div className="flex items-center justify-between inlay border border-gold-700/20 rounded p-1.5 text-[13px] font-serif">
                 <span className="text-gold-500 flex items-center gap-1.5">
                   <Badge kind="faction" id={fid} fallback={f.icon} size={15} />
                   本港由{f.name}话事
@@ -150,7 +150,7 @@ export default function PortDetail() {
           })()}
 
           {!isAtPort && (
-            <div className="flex items-center gap-1.5 bg-black/22 border border-gold-700/20 rounded p-2 text-[13px] text-gold-400 font-serif">
+            <div className="flex items-center gap-1.5 inlay border border-gold-700/20 rounded p-2 text-[13px] text-gold-400 font-serif">
               <Ship size={12} aria-hidden="true" className="shrink-0" />
               你当前不在此港，点击地图航行前往
             </div>
@@ -169,7 +169,7 @@ export default function PortDetail() {
                       if (svc === 'trade') setActivePanel('trade')
                       if (svc === 'shipyard') setActivePanel('shipyard')
                     }}
-                    className="flex items-center gap-1.5 bg-black/22 hover:bg-black/25 border border-gold-700/20 rounded px-2 py-1.5 text-[13px] text-gold-300 font-serif transition-colors"
+                    className="flex items-center gap-1.5 inlay hover:inlay border border-gold-700/20 rounded px-2 py-1.5 text-[13px] text-gold-300 font-serif transition-colors"
                   >
                     {serviceIcons[svc]}
                     {serviceNames[svc]}
@@ -189,13 +189,13 @@ export default function PortDetail() {
                 const cost = damage * GAME_BALANCE.REPAIR_COST_PER_DURABILITY
                 return (
                   <div key={ship.id} className="flex items-center justify-between text-[13px] mb-1">
-                    <span className="text-gold-400 font-serif">{ship.name} ({ship.durability}/{ship.maxDurability})</span>
+                    <span className="text-gold-300 font-serif">{ship.name} ({ship.durability}/{ship.maxDurability})</span>
                     {damage > 0 ? (
                       <ActionButton onClick={() => handleRepair(ship.id)} disabled={fleet.gold < cost} variant="secondary">
                         <Coins size={10} /> {cost}
                       </ActionButton>
                     ) : (
-                      <span className="text-safe-400 text-[13px]">完好</span>
+                      <span className="ink-good text-[13px]">完好</span>
                     )}
                   </div>
                 )
@@ -279,7 +279,7 @@ export default function PortDetail() {
                   const hired = officers.includes(o.id)
                   const portrait = officerPortrait(o.id)
                   return (
-                    <div key={o.id} className="bg-black/18 rounded p-2 flex gap-2.5">
+                    <div key={o.id} className="inlay--flat rounded p-2 flex gap-2.5">
                       {portrait && (
                         <img
                           src={portrait}
@@ -330,7 +330,7 @@ export default function PortDetail() {
                   const hired = crewRoster.some(m => m.id === c.id)
                   const portrait = crewPortrait(c.id)
                   return (
-                    <div key={c.id} className="bg-black/18 rounded p-2 flex gap-2.5">
+                    <div key={c.id} className="inlay--flat rounded p-2 flex gap-2.5">
                       {portrait && (
                         <img
                           src={portrait}
@@ -374,7 +374,7 @@ export default function PortDetail() {
                 <Heart size={12} /> 可接任务
               </h4>
               {portTasks.slice(0, 3).map(task => (
-                <div key={task.id} className="bg-black/18 rounded p-1.5 mb-1">
+                <div key={task.id} className="inlay--flat rounded p-1.5 mb-1">
                   <div className="flex items-center justify-between">
                     <span className="text-gold-200 text-[13px] font-serif">{task.title}</span>
                     <button

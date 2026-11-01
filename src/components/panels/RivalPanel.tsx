@@ -41,7 +41,7 @@ export default function RivalPanel() {
               const badge = STYLE_BADGE[r.style]
               const portrait = rivalPortrait(r.id)
               return (
-                <div key={r.id} className="bg-black/22 border border-gold-700/20 rounded p-2.5">
+                <div key={r.id} className="inlay border border-gold-700/20 rounded p-2.5">
                   <div className="flex items-center gap-2.5 mb-1.5">
                     {portrait && (
                       <img
@@ -94,7 +94,7 @@ export default function RivalPanel() {
           </div>
 
           {/* 你的座次 */}
-          <div className="bg-black/18 border border-gold-700/20 rounded p-2.5">
+          <div className="inlay--flat border border-gold-700/20 rounded p-2.5">
             <div className="flex items-center gap-1 mb-1.5">
               <Ship size={11} className="text-gold-400" />
               <span className="text-gold-300 font-serif text-[13px]">你的座次</span>
@@ -130,7 +130,7 @@ export default function RivalPanel() {
                 {rivalNews.map(n => {
                   const rival = rivals.find(r => r.id === n.rivalId)
                   return (
-                    <div key={n.id} className="bg-black/12 rounded p-2 border-l-2 border-gold-700/40">
+                    <div key={n.id} className="inlay--flat rounded p-2 border-l-2 border-gold-700/40">
                       <div className="flex items-center justify-between mb-0.5">
                         <span className="text-gold-400 text-[10px] font-serif">{rival?.name ?? '某位船长'}</span>
                         <span className="text-gold-600 text-[10px] font-serif">第 {n.day} 天</span>

@@ -22,7 +22,7 @@ export default function EventLog() {
             {eventLog.slice().reverse().map((entry) => (
               <div
                 key={`${entry.day}-${entry.event.id}-${entry.choiceIndex}`}
-                className={`bg-black/18 rounded p-2 border-l-2 ${EVENT_TYPE_COLORS[entry.event.type] || 'border-l-gold-500/50'}`}
+                className={`inlay--flat rounded p-2 border-l-2 ${EVENT_TYPE_COLORS[entry.event.type] || 'border-l-gold-500/50'}`}
               >
                 <div className="flex items-center gap-1.5 mb-1">
                   {renderEventIcon(entry.event.type, 14)}

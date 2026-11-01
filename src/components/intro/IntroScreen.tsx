@@ -134,7 +134,7 @@ export default function IntroScreen() {
                   className={`text-left rounded-lg border p-3 transition-all ${
                     selected
                       ? 'border-gold-400 bg-gold-700/30 shadow-lg shadow-gold-900/40'
-                      : 'border-gold-700/30 bg-black/25 hover:border-gold-500/50 hover:bg-black/32'
+                      : 'border-gold-700/30 inlay hover:border-gold-500/50 hover:bg-black/32'
                   }`}
                 >
                   <div className="flex items-center gap-2">
@@ -173,7 +173,7 @@ export default function IntroScreen() {
                   className={`text-left rounded-lg border p-2.5 transition-all ${
                     selected
                       ? 'border-gold-400 bg-gold-700/30 shadow-lg shadow-gold-900/40'
-                      : 'border-gold-700/30 bg-black/25 hover:border-gold-500/50 hover:bg-black/32'
+                      : 'border-gold-700/30 inlay hover:border-gold-500/50 hover:bg-black/32'
                   }`}
                 >
                   <div className="flex items-center gap-2.5">
@@ -209,7 +209,7 @@ export default function IntroScreen() {
               船名、船型、泊位。前几屏都没提过"卡拉维尔帆船"这种具体信息，
               而它决定了这一局的航速与载重，值得在开船前占一行。
             */}
-            <div className="flex items-center gap-2.5 rounded-lg border border-gold-700/30 bg-black/22 px-3 py-2">
+            <div className="flex items-center gap-2.5 rounded-lg border border-gold-700/30 inlay px-3 py-2">
               <img
                 src={shipSprite('caravel')}
                 alt=""
