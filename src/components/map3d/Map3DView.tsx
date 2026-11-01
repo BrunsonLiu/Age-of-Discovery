@@ -342,10 +342,19 @@ export default function Map3DView() {
       // 【为什么几何是 (1, 1.2) 的"单位环"】三档底座的半径不同（0.228 / 0.19 / 0.144），
       // 用一个固定尺寸的环会在大港上显得松、小港上显得太宽。
       // 单位环 × 缩放系数（= 底座半径 + 0.01）就能贴合每一档。
+      /*
+       * 【为什么环变细、变成金色】
+       * 原来是 (1, 1.2) 的环——径向厚度占半径的 20%，在近景下是一圈又粗又平的
+       * 米白色垫圈，像 UI 控件扣在地形上，和铜木金边的材质语言不搭。
+       * 真实海图上的"当前港口"标记是**嵌在图上的一道细铜环**：
+       * 厚度约 6%、颜色偏黄铜、边缘比中间亮一点。
+       * 所以改成 (1, 1.06) + #e8c87e，并用两层复叠做出"铜丝 + 微光"：
+       * 细环本体不透明一些，外圈再压一层极淡的宽环当辉光。
+       */
       const currentPortRing = new THREE.Mesh(
-        new THREE.RingGeometry(1, 1.2, 40).rotateX(-Math.PI / 2),
+        new THREE.RingGeometry(1, 1.06, 64).rotateX(-Math.PI / 2),
         new THREE.MeshBasicMaterial({
-          color: 0xf4e4c1, transparent: true, opacity: 0.5,
+          color: 0xe8c87e, transparent: true, opacity: 0.9,
           side: THREE.DoubleSide, depthWrite: false,
         }),
       )
