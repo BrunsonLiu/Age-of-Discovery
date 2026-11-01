@@ -23,6 +23,20 @@
 
 export type TerrainKind = 'peak' | 'tree'
 
+/**
+ * 雪线：|纬度| ≥ 48° 才画雪顶。
+ *
+ * 【为什么这条要抽出来】原来绘制层是**无条件**给每座山画雪帽的，
+ * 于是撒哈拉、阿拉伯、印度的山尖上全是一撮白——5 倍放大下一眼能看见，
+ * 而且是事实错误（热带石灰岩山不会有永久积雪），不只是不好看。
+ * 抽成纯函数是为了能单测：绘制层在 canvas 里，断言不到像素级的"有没有雪"。
+ */
+export const SNOW_LAT = 48
+
+export function hasSnow(latDeg: number): boolean {
+  return Math.abs(latDeg) >= SNOW_LAT
+}
+
 export interface TerrainSymbol {
   lat: number
   lng: number
@@ -180,7 +194,22 @@ export function buildTerrainSymbols(
   const topBlocks = opts.topBlocks ?? 14
   const stepDeg = opts.stepDeg ?? 2.2
   const maxSymbols = opts.maxSymbols ?? 26000
-  const insetMul = opts.insetMul ?? 0.16
+  /*
+   * 离岸内缩：采样点必须离海岸有这么远，否则不出符号。
+   *
+   * 【为什么从 0.16 提到 0.3】符号是**屏幕固定像素**（约 26px 宽），
+   * 而内缩是按度数算的。0.16 × 2.2° ≈ 0.35°，在 zoom 4 下只有 ~4px，
+   * 远小于符号的半宽 13px —— 海岸边的山会把一只角伸进海里。
+   * 提到 0.3（≈0.66°，zoom 4 下约 7px）能削减一半的溢出。
+   *
+   * 【为什么没有提到 0.5】试过：0.5 = 1.1°，挪威那种窄半岛上**一个符号都不剩了**
+   * （实测整个斯堪的纳维亚北端变空白）。海岸线附近的符号比偶尔一只角伸进海里
+   * 重要得多，所以折回 0.3。
+   *
+   * 这是近似不是根治：根治要把符号裁剪到陆地多边形里，得每帧重建 1400+
+   * 个多边形的 Path2D，代价远大于收益。
+   */
+  const insetMul = opts.insetMul ?? 0.3
   /** 团簇：0 = 均匀铺满（旧观感），1 = 极端起伏。见下方 CLUSTER 注释 */
   const clusterStrength = opts.clusterStrength ?? 1
   const rand = mulberry32(opts.seed ?? 20261030)

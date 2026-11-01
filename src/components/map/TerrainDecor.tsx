@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef } from 'react'
 import { useMap } from 'react-leaflet'
 import L from 'leaflet'
-import { buildTerrainSymbols, type TerrainSymbol } from '@/utils/terrainDecor'
+import { buildTerrainSymbols, hasSnow, type TerrainSymbol } from '@/utils/terrainDecor'
 
 /**
  * 地形装饰层：把 terrainDecor 生成的山丘 / 树丛画到地图上。
@@ -59,6 +59,49 @@ function makePaths() {
   }
 }
 
+/**
+ * 位置哈希 → 0~1。用于让"这座山有没有肩峰、在左还是在右"只取决于它自己的经纬度，
+ * 而不消耗全局随机序列（团簇那次踩过：随机数消耗顺序一变，后面所有点整体错位）。
+ */
+function hash01(lat: number, lng: number): number {
+  const v = Math.sin(lat * 12.9898 + lng * 78.233) * 43758.5453
+  return v - Math.floor(v)
+}
+
+/** 画一座山。snow=true 才画雪顶——不是每座山都该有雪 */
+function drawPeakAt(
+  ctx: CanvasRenderingContext2D,
+  paths: ReturnType<typeof makePaths>,
+  x: number,
+  y: number,
+  scale: number,
+  snow: boolean,
+  faded = false,
+) {
+  // 锚点在底边中心：把局部坐标 (13,18) 对齐到 (x,y)
+  ctx.save()
+  ctx.translate(x - 13 * scale, y - 18 * scale)
+  ctx.scale(scale, scale)
+
+  // 肩峰整体后退一档：更淡、描边更细，读作"后面那座矮一点的山"
+  ctx.fillStyle = faded ? 'rgba(146,116,72,0.66)' : 'rgba(138,106,62,0.72)'
+  ctx.strokeStyle = faded ? 'rgba(63,44,20,0.60)' : 'rgba(63,44,20,0.75)'
+  ctx.lineWidth = faded ? 0.8 : 1
+  ctx.lineJoin = 'round'
+  ctx.fill(paths.peakBody)
+  ctx.stroke(paths.peakBody)
+
+  ctx.fillStyle = faded ? 'rgba(63,44,20,0.24)' : 'rgba(63,44,20,0.34)'
+  ctx.fill(paths.peakShade)
+
+  if (snow) {
+    ctx.fillStyle = 'rgba(247,240,216,0.75)'
+    ctx.fill(paths.peakSnow)
+  }
+
+  ctx.restore()
+}
+
 function drawSymbol(
   ctx: CanvasRenderingContext2D,
   paths: ReturnType<typeof makePaths>,
@@ -69,25 +112,48 @@ function drawSymbol(
   const scale = s.scale
 
   if (s.kind === 'peak') {
-    // 锚点在底边中心：把局部坐标 (13,18) 对齐到 (x,y)
-    ctx.save()
-    ctx.translate(x - 13 * scale, y - 18 * scale)
-    ctx.scale(scale, scale)
+    /*
+     * 雪线：只有高纬（|lat| ≥ 48）才有雪顶。
+     *
+     * 【原来每座山都戴雪帽】`ctx.fill(paths.peakSnow)` 是**无条件**执行的，
+     * 于是撒哈拉、阿拉伯半岛、印度的山尖上全是一撮白——5 倍放大下一眼就能看见，
+     * 而且它是"事实错误"而不只是不好看：热带石灰岩山不该有永久积雪。
+     * 雪线取 48°：阿尔卑斯（46~48）刚好在边缘、斯堪的纳维亚与北美北部有雪，
+     * 地中海沿岸以南一律没有。
+     */
+    const snow = hasSnow(s.lat)
 
-    ctx.fillStyle = 'rgba(138,106,62,0.72)'
-    ctx.strokeStyle = 'rgba(63,44,20,0.75)'
-    ctx.lineWidth = 1
-    ctx.lineJoin = 'round'
-    ctx.fill(paths.peakBody)
-    ctx.stroke(paths.peakBody)
+    /*
+     * 肩峰：让山成"脉"而不是一堆孤立三角。
+     *
+     * 原来每座山都是一个等大的三角形，撒满整块陆地之后像图钉。
+     * 手绘古地图上的山脉是**一组高低错落的三角**挤在一条脊线上。
+     * 偏移必须够大：主峰底边 22 宽（半宽 11），肩峰缩到 0.62 后半宽只有 6.8——
+     * 中心偏移小于 11 的话，肩峰会整块躲进主峰的范围里，
+     * 只剩一条 5px 的边露在外面（第一版给 8.6，等于没画）。现在给 14.5。
+     * 这里按位置哈希决定是否在大山旁边补 1~2 座小峰：小的先画（在后面）、
+     * 偏一点底边、更淡更细，于是成组的山读作"一道山脊"。
+     * 用 hash01 而不是随机数：符号的绘制顺序会随 zoom 变（rank 阈值筛掉一部分），
+     * 一旦在这里消耗全局随机，同一个位置的山在不同缩放下会长得不一样。
+     */
+    const h = hash01(s.lat, s.lng)
+    const shoulders = h > 0.78 ? 2 : h > 0.40 ? 1 : 0
+    const side = hash01(s.lng, s.lat) > 0.5 ? 1 : -1
+    for (let i = 0; i < shoulders; i++) {
+      const dir = i === 0 ? side : -side
+      const mag = i === 0 ? 1 : 0.78
+      drawPeakAt(
+        ctx,
+        paths,
+        x + dir * 14.5 * scale * mag,
+        y + 2.2 * scale,
+        scale * (i === 0 ? 0.62 : 0.52),
+        snow,
+        true,
+      )
+    }
 
-    ctx.fillStyle = 'rgba(63,44,20,0.34)'
-    ctx.fill(paths.peakShade)
-
-    ctx.fillStyle = 'rgba(247,240,216,0.75)'
-    ctx.fill(paths.peakSnow)
-
-    ctx.restore()
+    drawPeakAt(ctx, paths, x, y, scale, snow)
     return
   }
 

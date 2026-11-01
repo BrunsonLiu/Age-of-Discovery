@@ -138,6 +138,7 @@ import { decidePixelRatio, PIXEL_RATIO_STEP, SLOW_FRAME_MS, MIN_SAMPLES } from '
 import { isTapGesture, TAP_SLOP_MOUSE, TAP_SLOP_TOUCH } from '../src/utils/tapGesture'
 import { landPaperPatternMarkup, PAPER_TILE } from '../src/utils/paperTexture'
 import { buildRhumbNetwork, RHUMB_CENTERS } from '../src/utils/rhumbLines'
+import { hasSnow, SNOW_LAT } from '../src/utils/terrainDecor'
 
 let passed = 0
 let failed = 0
@@ -3813,6 +3814,27 @@ console.log('== 57. 3D 点击判定：手指抖动不该让航向设不上 ==')
         `罗经点 (${lat},${lng}) 应当在开阔洋面且避开极点附近`)
     }
   }
+}
+
+
+/* ==========================================================================
+ * 雪线：只有高纬的山才有雪顶
+ *
+ * 绘制层原来**无条件**给每座山画雪帽，于是撒哈拉、阿拉伯、印度的山尖上
+ * 全是一撮白。这不是风格问题，是事实错误：热带石灰岩山不会有永久积雪。
+ * 判据抽成纯函数（canvas 里断言不到像素级的"有没有雪"），在这里锁死。
+ * ========================================================================== */
+{
+  assert(!hasSnow(25), '撒哈拉（25°N）的山不该有雪顶')
+  assert(!hasSnow(0), '赤道不该有雪顶')
+  assert(!hasSnow(-20), '南纬 20°（非洲南部）不该有雪顶')
+  assert(!hasSnow(SNOW_LAT - 0.1), `雪线下方（${SNOW_LAT - 0.1}°）不该有雪顶`)
+  assert(hasSnow(SNOW_LAT), `雪线上（${SNOW_LAT}°）应当有雪顶`)
+  assert(hasSnow(62), '斯堪的纳维亚（62°N）应当有雪顶')
+  // 南半球对称：火地岛/南极方向也该有雪
+  assert(hasSnow(-55), '南纬 55° 应当有雪顶（雪线是纬度的绝对值）')
+  // 防止有人把判据写成"只认北半球"
+  assert(hasSnow(-60) === hasSnow(60), '南北半球必须对称')
 }
 
 console.log(`\n最终结果：${passed} 通过 / ${failed} 失败`)
