@@ -545,7 +545,7 @@ body {
   to { background-position: -26px 130px; }
 }
 .wx-rain {
-  background-image: repeating-linear-gradient(105deg, rgba(180,200,220,0.16) 0px, rgba(180,200,220,0.16) 1px, transparent 1px, transparent 9px);
+  background-image: repeating-linear-gradient(102deg, rgba(180,200,220,0.11) 0px, rgba(180,200,220,0.11) 1.3px, transparent 1.3px, transparent 20px);
   animation: wxRain 0.65s linear infinite;
 }
 @keyframes wxLightning {
@@ -567,8 +567,11 @@ body {
   from { background-position: 0 0; }
   to { background-position: -18px 160px; }
 }
+/* 【为什么周期要放大】原先 14px 周期 + 1px 线宽，在 1440px 宽屏上会和像素网格
+   拍出低频摩尔纹——屏幕上出现一片大尺度菱形交叉线，看起来像贴图接缝。
+   雨丝要疏而有向，密到每 14px 一条反而变成花纹。 */
 .wx-rain-slow {
-  background-image: repeating-linear-gradient(100deg, rgba(170,195,220,0.13) 0px, rgba(170,195,220,0.13) 1px, transparent 1px, transparent 14px);
+  background-image: repeating-linear-gradient(100deg, rgba(170,195,220,0.10) 0px, rgba(170,195,220,0.10) 1.2px, transparent 1.2px, transparent 26px);
   animation: wxRainSlow 1.15s linear infinite;
 }
 /* 快雨（暴风雨级） */
@@ -591,7 +594,7 @@ body {
   to { background-position: -240px 0; }
 }
 .wx-gust {
-  background-image: repeating-linear-gradient(var(--wx-gust-angle, 90deg), rgba(255,255,255,0.05) 0px, rgba(255,255,255,0.05) 2px, transparent 2px, transparent 26px);
+  background-image: repeating-linear-gradient(var(--wx-gust-angle, 90deg), rgba(255,255,255,0.045) 0px, rgba(255,255,255,0.045) 3px, transparent 3px, transparent 110px);
   animation: wxGust 5.5s linear infinite;
 }
 

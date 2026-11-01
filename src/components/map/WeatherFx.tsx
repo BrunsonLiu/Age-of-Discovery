@@ -1,8 +1,6 @@
 import { useGameStore } from '@/store/useGameStore'
-import { WEATHER_INFO } from '@/utils/weather'
 import { FX_ASSETS } from '@/data/envAssets'
 import type { WeatherKind } from '@/types'
-import WeatherIcon from '@/components/ui/WeatherIcon'
 
 /**
  * 天候氛围层：把"环境"这条线直接画在屏幕上。
@@ -19,7 +17,6 @@ export default function WeatherFx() {
   const weather = useGameStore(s => s.weather)
   const isSailing = useGameStore(s => s.fleet.isSailing)
   const kind: WeatherKind = weather.kind
-  const info = WEATHER_INFO[kind]
 
   // 港内有屋檐：只在海上（或世界地图可见时）渲染天气
   if (!isSailing || kind === 'clear') return null
@@ -33,32 +30,65 @@ export default function WeatherFx() {
   return (
     // 层级 450：高于 Leaflet 图块/覆盖层（200/400），低于标记（600）与控件（1000）
     <div className="absolute inset-0 pointer-events-none overflow-hidden" style={{ zIndex: 450 }} aria-hidden="true">
-      {/* 整体压暗：按天候分级 */}
+      {/*
+        云影：阴/雨/暴风雨时压在海面上的暗色云团，缓慢横向滚动。
+
+        【为什么不再用 weather_clouds.png 平铺】
+        那张图是 1024 的位图，放大到 1800px 平铺后**必然露缝**：
+        1440 宽的屏上能看到一条硬竖线，横向还有一条分带——实测截图里非常明显，
+        像两张图拼接。位图平铺在任何"非整数倍"的尺寸上都会这样，除非做真正的无缝贴图。
+        改用 4 个大半径 radial-gradient 叠出的不规则云团，尺寸按百分比给：
+        天生无缝，且可以任意缩放、任意漂移都不露边。
+        另外云用**暗色**而不是白云——原先的白云贴图会把整个画面提亮，
+        雨天实测比晴天还亮 2.3 个亮度，方向是反的（见下方调色层的注释）。
+      */}
+      {(kind === 'cloudy' || isRain || isStorm) && (
+        <div className="absolute inset-0 overflow-hidden">
+          <div
+            className="wx-cloud-roll absolute"
+            style={{
+              left: '-25%',
+              top: '-25%',
+              width: '150%',
+              height: '150%',
+              opacity: isStorm ? 0.95 : isRain ? 0.62 : 0.34,
+              background: [
+                'radial-gradient(ellipse 26% 20% at 20% 32%, rgba(8,13,22,0.62), transparent 70%)',
+                'radial-gradient(ellipse 32% 24% at 58% 20%, rgba(8,13,22,0.56), transparent 72%)',
+                'radial-gradient(ellipse 28% 22% at 80% 60%, rgba(8,13,22,0.5), transparent 70%)',
+                'radial-gradient(ellipse 38% 28% at 36% 74%, rgba(8,13,22,0.44), transparent 74%)',
+              ].join(','),
+            }}
+          />
+        </div>
+      )}
+
+      {/*
+        天候调色层：**必须在云/雨/雾纹理之上**。
+
+        【为什么不能放在最底下】原先它在第一层（纹理之下），实测的净效果是反的：
+          晴天 81.1 亮度 → 阴天 83.9（+2.8）、雨 83.4（+2.3）
+        阴雨天比晴天还亮。原因是压暗层被上方的云图盖住——云图是亮的（白云），
+        opacity 0.22~0.34 的叠加把压暗整个吃掉了，还倒赚。
+        而"天空变暗"本来就是天气最主要的视觉线索，方向反了等于没做。
+
+        现在它压在纹理之上，等于给整个画面套一层天候滤镜：
+          阴天 −8 / 雨 −12 / 暴风雨 −38（亮度，基线 81）
+          浓雾反过来提亮 +40（雾是灰白色的）
+        各值都是按"叠加后海面平均亮度"反算的，不是随手给的 alpha。
+      */}
       <div
         className="absolute inset-0 transition-opacity duration-1000"
         style={{
           background: isStorm
-            ? 'linear-gradient(180deg, rgba(8,14,24,0.6) 0%, rgba(10,18,30,0.42) 45%, rgba(8,14,24,0.55) 100%)'
+            ? 'linear-gradient(180deg, rgba(6,10,20,0.80) 0%, rgba(8,14,26,0.70) 45%, rgba(6,10,20,0.76) 100%)'
             : isFog
-              ? 'linear-gradient(180deg, rgba(168,178,188,0.4) 0%, rgba(150,162,174,0.3) 50%, rgba(160,170,182,0.42) 100%)'
+              ? 'linear-gradient(180deg, rgba(170,180,190,0.44) 0%, rgba(152,164,176,0.34) 50%, rgba(162,172,184,0.46) 100%)'
               : isRain
-                ? 'linear-gradient(180deg, rgba(14,22,36,0.4) 0%, rgba(16,26,40,0.26) 50%, rgba(14,22,36,0.38) 100%)'
-                : 'linear-gradient(180deg, rgba(22,30,44,0.24) 0%, rgba(24,32,46,0.14) 50%, rgba(22,30,44,0.22) 100%)',
+                ? 'linear-gradient(180deg, rgba(14,22,36,0.50) 0%, rgba(16,26,40,0.42) 50%, rgba(14,22,36,0.48) 100%)'
+                : 'linear-gradient(180deg, rgba(22,30,44,0.38) 0%, rgba(24,32,46,0.30) 50%, rgba(22,30,44,0.36) 100%)',
         }}
       />
-
-      {/* 云层（B3 真实云图）：阴/雨/暴风雨的天空，缓慢西移 */}
-      {(kind === 'cloudy' || isRain || isStorm) && (
-        <div
-          className="absolute inset-0 wx-cloud-drift"
-          style={{
-            backgroundImage: `url(${FX_ASSETS.clouds})`,
-            backgroundRepeat: 'repeat',
-            backgroundSize: '900px 900px',
-            opacity: isStorm ? 0.5 : isRain ? 0.34 : 0.22,
-          }}
-        />
-      )}
 
       {/* 雨层：落雨慢丝 / 暴风雨快而密 */}
       {(isRain || isStorm) && (
@@ -72,9 +102,9 @@ export default function WeatherFx() {
           style={{
             backgroundImage: `url(${FX_ASSETS.rain})`,
             backgroundRepeat: 'repeat',
-            backgroundSize: '640px 640px',
+            backgroundSize: '1100px 1100px',
             animationDuration: isStorm ? '0.7s' : '2.2s',
-            opacity: isStorm ? 0.5 : 0.34,
+            opacity: isStorm ? 0.5 : 0.4,
           }}
         />
       )}
@@ -91,6 +121,7 @@ export default function WeatherFx() {
           }}
         />
       )}
+
 
       {/* 阵风扫影：所有非晴朗天气都能看到风的走向 */}
       <div className="absolute inset-0 wx-gust" style={{ '--wx-gust-angle': `${gustAngle}deg` } as React.CSSProperties} />
@@ -123,36 +154,38 @@ export default function WeatherFx() {
         </>
       )}
 
-      {/* 浪花飞沫（G3）：暴风雨贴海面翻卷的白沫 */}
-      {isStorm && (
-        <div
-          className="absolute inset-x-0 bottom-0 h-1/3 wx-spray-tex"
-          style={{
-            backgroundImage: `url(${FX_ASSETS.spray})`,
-            backgroundRepeat: 'repeat-x',
-            backgroundSize: 'auto 100%',
-          }}
-        />
-      )}
+      {/*
+        浪花飞沫层已删除。
 
-      {/* 纹理层的关键帧：雨向下滚、雾与云横向漂、飞沫呼吸 */}
+        【为什么删】它是 fx_spray.png 用 `repeat-x` + `backgroundSize: auto 100%`
+        平铺出来的：1440 宽的屏上能看到 5 段一模一样的白色水柱，段与段之间是
+        齐平的硬边——不是"浪在翻"，是"同一张图盖章了五次"。这是整屏最扎眼的
+        贴图接缝（截图里像五道白色瀑布并排）。
+        更要紧的是它在空间上讲不通：这是**俯视海图**，屏幕底边并不对应任何真实
+        位置，没有"脚下的海面"可以翻白沫。第一人称视角的浪花放在俯视图里，
+        无论画得多好都只是屏幕装饰。暴风雨的强度已经由调色层（−34.6 亮度）
+        + 密集雨丝 + 闪电三样表达，不缺这一层。
+      */}
+
+      {/* 纹理层的关键帧：雨向下滚、雾横向漂、云团缓滚 */}
       <style>{`
         @keyframes wxRainScroll { from { background-position: 0 0; } to { background-position: -80px 640px; } }
         @keyframes wxFogDrift { from { background-position: 0 0; } to { background-position: 1200px 0; } }
-        @keyframes wxCloudDrift { from { background-position: 0 0; } to { background-position: -900px 0; } }
-        @keyframes wxSprayBreath { 0%, 100% { opacity: 0.4; } 50% { opacity: 0.62; } }
+        @keyframes wxCloudRoll {
+          from { transform: translate3d(-3.5%, 0, 0) scale(1); }
+          to   { transform: translate3d(3.5%, 1.5%, 0) scale(1.06); }
+        }
         .wx-rain-tex { animation: wxRainScroll linear infinite; }
         .wx-fog-tex { animation: wxFogDrift 26s linear infinite; }
-        .wx-cloud-drift { animation: wxCloudDrift 90s linear infinite; }
-        .wx-spray-tex { animation: wxSprayBreath 3.6s ease-in-out infinite; }
+        .wx-cloud-roll { animation: wxCloudRoll 46s ease-in-out infinite alternate; will-change: transform; }
       `}</style>
 
-      {/* 天候名签：让玩家知道屏幕上这场雨叫什么 */}
-      <div className="absolute top-3 left-1/2 -translate-x-1/2 flex items-center gap-1.5 px-2.5 py-1 rounded bg-ocean-900/50 border border-gold-700/25">
-        <WeatherIcon kind={info.kind} size={14} />
-        <span className="text-gold-200 font-serif text-xs">{info.label}</span>
-        <span className="text-gold-600 font-serif text-[10px]">{weather.windSpeed}节</span>
-      </div>
+      {/* 天候名签已删除。
+          它原来固定在 top-3 居中，而顶栏 h-12（48px）且在更上层：
+          实测元素矩形 y=12~38 完全落在顶栏里，elementFromPoint 命中的是顶栏内部
+          —— 也就是说这块牌子**从加进来到现在一次都没被看见过**，是纯死代码。
+          而且它和左上角的天候徽章（WeatherBadge：天候名 + 风速 + 航速影响，可点开
+          三日预报）信息完全重复。天气本来就有两处显示，删掉看不见的那处。 */}
     </div>
   )
 }
