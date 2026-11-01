@@ -13,6 +13,7 @@ import { ShipAnimation } from './ShipAnimation'
 import { MapOverlays } from './MapOverlays'
 import MapClickHandler from './MapClickHandler'
 import OceanLabels from './OceanLabels'
+import RhumbLines from './RhumbLines'
 import VintageMapOverlay from './VintageMapOverlay'
 import { loadLandData, fetchLandGeojsonForRender } from '@/utils/landCheck'
 import { buildPaperSprite, landPaperPatternMarkup } from '@/utils/paperTexture'
@@ -460,6 +461,9 @@ export default function MapView() {
                 <GeoJSON key="borders" data={geoData.borders} style={bordersStyle} interactive={false} />
               )}
 
+              {/* 等角航线网：自带 z=380 的 pane，低于 overlayPane(400) 的陆地填充，
+                  所以压到陆地上的那半截会被自动盖住，只留海面部分 */}
+              <RhumbLines />
               <LandPaperPattern />
               <MapController />
               <MapOverlays />

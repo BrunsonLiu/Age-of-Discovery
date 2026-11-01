@@ -137,6 +137,7 @@ import { advanceAlongRoute } from '../src/utils/sailStep'
 import { decidePixelRatio, PIXEL_RATIO_STEP, SLOW_FRAME_MS, MIN_SAMPLES } from '../src/utils/adaptiveResolution'
 import { isTapGesture, TAP_SLOP_MOUSE, TAP_SLOP_TOUCH } from '../src/utils/tapGesture'
 import { landPaperPatternMarkup, PAPER_TILE } from '../src/utils/paperTexture'
+import { buildRhumbNetwork, RHUMB_CENTERS } from '../src/utils/rhumbLines'
 
 let passed = 0
 let failed = 0
@@ -3728,6 +3729,90 @@ console.log('== 57. 3D 点击判定：手指抖动不该让航向设不上 ==')
 
   // 单元尺寸要够大：太小则大斑驳会周期性重复（256 时一屏只放两格，肉眼能认出）
   assert(PAPER_TILE >= 384, `单元边长 ${PAPER_TILE} 太小，大斑驳会周期性重复（要求 ≥384）`)
+}
+
+
+/* ==========================================================================
+ * 等角航线网（rhumb lines）
+ *
+ * 这块是纯几何，可以精确断言——不需要截图。要守住的是三件事：
+ *   ① 采样点必须**落在一条直线上**（墨卡托下等角航线是直线；不共线就说明
+ *      投影/反投影写错了，画到屏幕上会是一条弯的"方位线"，等于说谎）；
+ *   ② 方位角的方向要对（0° 朝北、90° 朝东）；
+ *   ③ 高纬必须夹住（墨卡托在极点发散，不夹会渲染出 NaN 或飞出画面）。
+ * ========================================================================== */
+{
+  const mercY = (lat: number) => Math.log(Math.tan(Math.PI / 4 + (lat * Math.PI) / 360))
+  const net = (center: [number, number], opt?: Parameters<typeof buildRhumbNetwork>[1]) =>
+    buildRhumbNetwork(center, { steps: 1, bands: [1], ...opt })
+
+  // —— ① 共线：首尾定义一条直线，中间点偏离必须 ≈ 0 ——
+  {
+    const rings = buildRhumbNetwork([38, -28], { steps: 8, bands: [0.5, 1] })
+    let worst = 0
+    for (const ring of rings) {
+      for (const line of ring) {
+        const p0 = [(line[0][1] * Math.PI) / 180, mercY(line[0][0])]
+        const p1 = [(line[line.length - 1][1] * Math.PI) / 180, mercY(line[line.length - 1][0])]
+        const dx = p1[0] - p0[0], dy = p1[1] - p0[1]
+        const len = Math.hypot(dx, dy)
+        if (len < 1e-9) continue
+        for (let i = 1; i < line.length - 1; i++) {
+          const q = [(line[i][1] * Math.PI) / 180, mercY(line[i][0])]
+          const dev = Math.abs((q[0] - p0[0]) * dy - (q[1] - p0[1]) * dx) / len
+          if (dev > worst) worst = dev
+        }
+      }
+    }
+    assert(worst < 1e-9, `采样点必须共线（最大偏离 ${worst.toExponential(2)}）—— 不共线说明投影写错了，画出来是弯的`)
+  }
+
+  // —— ② 方位角 0 朝北、90 朝东 ——
+  {
+    const [north] = net([0, 0], { bearings: 4 }).flat()
+    const [east] = net([0, 0], { bearings: 4 }).flat().slice(1)
+    const endN = north[north.length - 1], endE = east[east.length - 1]
+    assert(Math.abs(endN[1]) < 0.01 && endN[0] > 10,
+      `方位角 0° 应基本沿经线向北（终点 ${endN}）`)
+    assert(Math.abs(endE[0]) < 0.01 && endE[1] > 10,
+      `方位角 90° 应基本沿纬线向东（终点 ${endE}）—— 墨卡托下正东是水平直线`)
+  }
+
+  // —— ③ 高纬夹住：极点上墨卡托发散，不夹会出现 Infinity/NaN ——
+  {
+    // 只取 8 个方位、2 段：断言数量够用即可，32×3 圈×5 点会刷出近千条重复断言，
+    // 让"最终结果"的数字虚高（曾从 3081 涨到 4051，看着像加了 970 条测试）
+    const rings = buildRhumbNetwork([80, 0], { radius: 3, steps: 2, bearings: 8 })
+    for (const ring of rings) {
+      for (const line of ring) {
+        for (const [lat, lng] of line) {
+          assert(Number.isFinite(lat) && Math.abs(lat) <= 85.001,
+            `纬度必须夹在 ±85°（得到 ${lat}）`)
+          assert(Number.isFinite(lng) && lng >= -180 && lng < 180,
+            `经度必须折回 [-180,180)（得到 ${lng}）`)
+        }
+      }
+    }
+  }
+
+  // —— 半径翻倍 → 端点必须更远（敏感度断言，防"参数不起作用"）——
+  {
+    const far = (r: number) => {
+      const line = net([0, 0], { bearings: 4, radius: r }).flat()[0]
+      return line[line.length - 1][0]
+    }
+    assert(far(1.2) > far(0.6) + 5,
+      `半径翻倍端点纬度必须明显更远（0.6→${far(0.6).toFixed(1)}°, 1.2→${far(1.2).toFixed(1)}°）`)
+  }
+
+  // —— 罗经点必须都在开阔海面上（不能压到大港口的家门口，否则线会糊在岸线里）——
+  {
+    assert(RHUMB_CENTERS.length >= 3, '罗经点至少 3 个，否则默认视野里只有一束平行线，读不出"网"')
+    for (const [lat, lng] of RHUMB_CENTERS) {
+      assert(Math.abs(lat) < 60 && lng > -170 && lng < 170,
+        `罗经点 (${lat},${lng}) 应当在开阔洋面且避开极点附近`)
+    }
+  }
 }
 
 console.log(`\n最终结果：${passed} 通过 / ${failed} 失败`)
