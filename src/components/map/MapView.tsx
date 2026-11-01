@@ -15,10 +15,22 @@ import MapClickHandler from './MapClickHandler'
 import OceanLabels from './OceanLabels'
 import VintageMapOverlay from './VintageMapOverlay'
 import { loadLandData, fetchLandGeojsonForRender } from '@/utils/landCheck'
-import { UI_ASSETS } from '@/data/uiAssets'
+import { buildPaperSprite, landPaperPatternMarkup } from '@/utils/paperTexture'
 import { fetchBordersGeojson } from '@/utils/mapGeoJson'
 import 'leaflet/dist/leaflet.css'
 import { Compass, Map as MapIcon, Sailboat } from 'lucide-react'
+
+/*
+ * 浅滩 12 层的透明度。
+ *
+ * 为什么要 12 层：描边只能一级一级叠，每一层的边就是一道台阶。
+ * 3 层时实测台阶 20+ 个亮度级（肉眼是三条等宽色带）；
+ * 7 层降到 ~4.7，还能数出来；12 层摊成 ~2 个级差，肉眼就连成一片了。
+ *
+ * 数值是 0.045 起步、缓慢抬到 0.058：靠外那层面积最大、最容易被看成"描边"，
+ * 所以最淡；越靠岸叠加越多，自然就成了"水越浅越亮"。
+ */
+const SHALLOW_OPACITY = [0.045, 0.046, 0.047, 0.048, 0.049, 0.050, 0.051, 0.052, 0.053, 0.055, 0.056, 0.058]
 
 class MapErrorBoundary extends Component<{ children: React.ReactNode }, { hasError: boolean; error: string }> {
   constructor(props: { children: React.ReactNode }) {
@@ -85,14 +97,13 @@ function LandPaperPattern() {
     const ensure = () => {
       const svg = map.getPanes().overlayPane?.querySelector('svg')
       if (!svg || svg.querySelector('#landPaper')) return
+      const sprite = buildPaperSprite()
+      if (!sprite) return
       const NS = 'http://www.w3.org/2000/svg'
       const defs = document.createElementNS(NS, 'defs')
-      defs.innerHTML = `<pattern id="landPaper" patternUnits="userSpaceOnUse" width="240" height="240">`
-        + `<image href="${UI_ASSETS.parchment}" x="-60" y="-60" width="360" height="360" preserveAspectRatio="xMidYMid slice" />`
-        // 羊皮原图比陆地色亮一截，直接铺会把大陆洗成浅黄。叠一层原来的暖色把它压回来，
-        // 纹理仍在（颗粒是乘出来的），明度回到 #e7d5ab 附近。
-        + `<rect width="240" height="240" fill="#d8c39a" opacity="0.42" />`
-        + `</pattern>`
+      // 标记由 paperTexture 生成并单测锁死「尺寸必须等于单元、不能用 slice」——
+      // 这条约束在截图上测不出来（1~2 个色阶的台阶会被纹理自身的起伏淹没）。
+      defs.innerHTML = landPaperPatternMarkup(sprite)
       svg.insertBefore(defs, svg.firstChild)
     }
     ensure()
@@ -404,16 +415,35 @@ export default function MapView() {
             >
               {geoData.land && (
                 <>
-                  {/* 浅滩光晕：在陆地**下面**叠三层由粗到细的浅青描边，
+                  {/* 浅滩光晕：在陆地**下面**叠一叠由粗到细的浅蓝描边，
                       陆地的填充会盖住内侧，只留海岸外侧那一圈——模拟近岸浅水。
-                      三层而不是一层，是因为单层只有一条硬边，叠起来才有"由浅到深"的过渡。 */}
-                  {majorLand && [34, 22, 12].map((w, i) => (
+
+                      【为什么从 3 层改成 7 层】
+                      三层时每一级的透明度跨步太大（0.10 / 0.15 / 0.22），
+                      6 倍放大下能数出三条等宽色带，像地形等高线的"梯田"，
+                      而且最外一道是硬边——深蓝直接跳进青绿，读起来像荧光笔描边。
+                      层数加密、每层透明度摊薄之后，相邻两级只差 1~2 个色阶，
+                      叠加出来的就是连续的水深过渡。
+
+                      【色相为什么从 #9fd3c6 换成 #7fa3bd】
+                      原来那个是薄荷青绿（G≈B），而海面是深蓝（B 明显高于 G）。
+                      近岸浅水应该是"同一族颜色更亮"，不是换一种颜色——
+                      青绿压在深蓝上，海和岸之间像被画了一条荧光带。
+                      现在只提亮、不换色相：RGB 三个通道同向抬高，B 仍然最高。
+
+                      【为什么外圈只给 0.05】
+                      描边是**居中**画的，一半被陆地盖住，所以露出来的最外侧
+                      就对应权重最大的那一层。它决定"海与浅滩交界有多生硬"，
+                      必须极淡；真正厚的水色由内侧几层叠出来。 */}
+                  {majorLand && [76, 64, 54, 45, 37, 30, 24, 19, 14, 10, 7, 4].map((w, i) => (
                     <GeoJSON
                       key={`shallows-${w}`}
                       data={majorLand}
                       style={{
                         fillColor: 'transparent', fillOpacity: 0,
-                        color: '#9fd3c6', weight: w, opacity: [0.10, 0.15, 0.22][i],
+                        color: '#7fa3bd',
+                        weight: w,
+                        opacity: SHALLOW_OPACITY[i],
                         lineJoin: 'round', lineCap: 'round',
                       }}
                       interactive={false}

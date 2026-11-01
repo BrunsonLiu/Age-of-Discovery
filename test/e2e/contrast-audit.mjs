@@ -75,7 +75,24 @@ const items = await page.evaluate((VW, VH) => {
     return { r: p[0], g: p[1], b: p[2], a: p[3] === undefined ? 1 : p[3] }
   }
   const visible = (el) => {
-    const r = el.getBoundingClientRect()
+    let r = el.getBoundingClientRect()
+    /*
+     * 【盲区：0×0 的包裹层】
+     * Leaflet 的 divIcon 包裹层是 0×0 的，文字靠溢出画在盒外——
+     * `getBoundingClientRect()` 于是返回 width=0，整批洋名/洲名标签
+     * 被这里一句 `width < 2` 全部跳过。它们恰恰是全屏面积最大的那片海上
+     * 唯一的文字（"大西洋""加勒比海"），颜色是 rgba(60,80,50,0.45)
+     * 压在深蓝海面上，实测对比 **1.03:1** —— 一个字都看不见，
+     * 而审计一直报"0 未达标"，给了个假的"已验证"。
+     *
+     * 盒宽为 0 时用 Range 量**真实文字范围**：它取的是字形实际占据的矩形。
+     */
+    if (r.width < 2 || r.height < 2) {
+      const range = document.createRange()
+      range.selectNodeContents(el)
+      const rr = range.getBoundingClientRect()
+      if (rr.width >= 2 && rr.height >= 2) r = rr
+    }
     if (r.width < 2 || r.height < 2) return null
     if (r.right < 2 || r.bottom < 2 || r.left > VW - 2 || r.top > VH - 2) return null
     const cs = getComputedStyle(el)

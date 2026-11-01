@@ -136,6 +136,7 @@ import { findSeaPath } from '../src/utils/seaRoute'
 import { advanceAlongRoute } from '../src/utils/sailStep'
 import { decidePixelRatio, PIXEL_RATIO_STEP, SLOW_FRAME_MS, MIN_SAMPLES } from '../src/utils/adaptiveResolution'
 import { isTapGesture, TAP_SLOP_MOUSE, TAP_SLOP_TOUCH } from '../src/utils/tapGesture'
+import { landPaperPatternMarkup, PAPER_TILE } from '../src/utils/paperTexture'
 
 let passed = 0
 let failed = 0
@@ -3693,6 +3694,40 @@ console.log('== 57. 3D 点击判定：手指抖动不该让航向设不上 ==')
   // —— pointercancel 不可能是点击（坐标不可靠、玩家本意不是点）——
   assert(!tap({ eventType: 'pointercancel' }), 'pointercancel 不应算点击')
   assert(!tap({ eventType: 'pointerdown' }), 'pointerdown 不应算点击')
+}
+
+
+/* ==========================================================================
+ * 羊皮纸 pattern：图片绘制尺寸必须精确等于 pattern 单元
+ *
+ * 【为什么这条只能在这一层测】
+ * 原来用的是美工给的 360px 位图：`<image width=360 x=-60 preserveAspectRatio=
+ * "xMidYMid slice">` 被裁成中心 240px 铺进 240px 的单元。左右边缘取自原图的
+ * 不同位置，于是每 240px 一道硬边（实测接缝落在 x=960 / y=480，正好是 240 的倍数）。
+ *
+ * 但在截图上**测不出来**：那道台阶只有 1.8 个亮度级，而纸张本身的斑驳起伏
+ * 已经比它大。我试过"相邻列差的自相关"，用改前的截图跑 r=0.184 照样通过——
+ * 判据没有区分力，留着就是假测试，所以删掉了，改在这里断言构造方式。
+ * ========================================================================== */
+{
+  const html = landPaperPatternMarkup('data:image/png;base64,AAAA')
+
+  assert(html.includes(`width="${PAPER_TILE}" height="${PAPER_TILE}">`),
+    `pattern 单元尺寸必须是 ${PAPER_TILE}×${PAPER_TILE}`)
+
+  const img = /<image[^>]*>/.exec(html)?.[0] ?? ''
+  assert(img.includes(`width="${PAPER_TILE}"`) && img.includes(`height="${PAPER_TILE}"`),
+    `图片的绘制尺寸必须精确等于单元尺寸（当前 ${img}）—— 差一个像素就会在边界露出原图的另一侧`)
+  assert(img.includes('x="0"') && img.includes('y="0"'),
+    '图片必须从单元原点开始画，偏移会把接缝推进画面中间')
+  assert(!img.includes('slice'),
+    '不允许 preserveAspectRatio="slice"：那会把图裁掉一圈，左右边缘来自原图不同位置')
+
+  // sprite 必须原样用上（不能拼错引号，否则 pattern 空白、整块陆地变成纯色）
+  assert(html.includes('href="data:image/png;base64,AAAA"'), 'sprite 的 href 必须原样写入')
+
+  // 单元尺寸要够大：太小则大斑驳会周期性重复（256 时一屏只放两格，肉眼能认出）
+  assert(PAPER_TILE >= 384, `单元边长 ${PAPER_TILE} 太小，大斑驳会周期性重复（要求 ≥384）`)
 }
 
 console.log(`\n最终结果：${passed} 通过 / ${failed} 失败`)

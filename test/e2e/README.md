@@ -62,6 +62,7 @@ npm run test:e2e:all      # 以上全部（不含 mobile:prod）
 | `font-actual.mjs` | **中文实际由哪个字体绘制**（CDP `CSS.getPlatformFontsForNode`）。CSS 里写的是字体栈，屏幕上用的是回落链里第一个含中文字形的字体；本项目还验证了「只有一个 400 字重 → 所有 font-bold 都是合成假粗体」这类看不见的缺陷 | dev server |
 | `shot.mjs` | 截图工具：`--vw --vh --dsf --clip=all\|bottom\|left\|side\|year\|res\|panelr\|panell --panel=port`。**只用来判断构图与布局，颜色/对齐/1-2px 一律读 DOM**（裁剪图会误导） | dev server |
 | `contrast-audit.mjs` | **文字对比度的真凭实据**：截图后对每段可见文字取「矩形 + 外扩 4px」的像素直方图，剔除接近前景色的分箱，用众数当背景色，按 WCAG AA 判（正文 4.5 / 大字 3.0）。为什么不能只读 CSS：背景是半透明面板叠在地图上，同一个文字色在海面和在羊皮纸上可读性差一倍——实测交易面板有过 1.03:1。`--panel=port\|trade\|fleet\|task\|achievement\|rival\|shipyard` 逐面板跑。**它自己也踩过三个坑**（SVG 用 fill 不读 color、禁用态不该算失败、被滚动容器裁掉的行要去掉），都写在注释里 | dev server |
+| `land-texture.mjs` | **陆地（羊皮纸）纹理的颗粒幅度**。取右侧大陆内部 500×380 的样区，只统计暖色（R>175 且 R-B>40）的像素，先扣掉列均值与行均值再算标准差——判据 grain ≥ 6，低于 4 就是「有纹理但看不见」。改前实测 3.21、改后 7.13。**接缝不在这里测**：旧位图 pattern 的台阶只有 1.8 个亮度级，两个统计判据（列差比值、自相关）都抓不到，改成在单测里断言构造方式（图片尺寸必须等于单元、不许 slice） | dev server |
 
 ## 写 e2e 时容易踩的坑
 
