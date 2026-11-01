@@ -59,7 +59,7 @@ export default function EventChoice({ choice, index, summary, onSelect }: EventC
               {tag.label}
             </span>
           )}
-          <ChevronRight size={16} className="text-gold-600 group-hover:text-gold-400 transition-colors" />
+          <ChevronRight size={16} className="text-gold-400 group-hover:text-gold-400 transition-colors" />
         </span>
       </div>
 

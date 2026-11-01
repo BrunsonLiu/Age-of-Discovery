@@ -17,8 +17,19 @@ export default function ParchmentCard({ title, subtitle, children, className = '
     <div
       className={`relative rounded-lg overflow-hidden ${className}`}
       style={{
+        /*
+         * 【底色为什么要再压暗一档】
+         * 原来 rgba(48,36,22,0.96) + 14% 的羊皮纸纹理，实测渲染出来是
+         * rgb(85,70,46)。这个亮度下，面板里最常用的 gold-500 (#c9a96e)
+         * 只有 4.09:1、gold-400 只有 4.11:1 —— **整套金色文字都刚好卡在
+         * AA 的 4.5 下面一点点**（对比度审计在 5 个面板里都量到了同一组数）。
+         * 与其把每一处文字都提亮（会丢掉层次），不如把底板压暗：
+         * 压到 rgb(56,46,33) 后，gold-500/400 都在 5.7:1 以上，
+         * 而 gold-600/700 这类"只该做描边"的暗金依旧不够——那部分单独清了。
+         * 顺带把 4% 的透底也收掉：半透明底板会让"底下是海还是陆地"改变可读性。
+         */
         background: `
-          linear-gradient(135deg, rgba(48, 36, 22, 0.96) 0%, rgba(60, 44, 26, 0.96) 50%, rgba(48, 36, 22, 0.96) 100%)
+          linear-gradient(135deg, rgba(40, 30, 18, 0.985) 0%, rgba(52, 38, 22, 0.985) 50%, rgba(40, 30, 18, 0.985) 100%)
         `,
         border: '2px solid rgba(201,169,110,0.6)',
         boxShadow: '0 8px 32px rgba(0,0,0,0.7), inset 0 1px 0 rgba(244,228,193,0.15)',
@@ -31,7 +42,7 @@ export default function ParchmentCard({ title, subtitle, children, className = '
           backgroundImage: `url(${UI_ASSETS.parchment})`,
           backgroundSize: 'cover',
           backgroundPosition: 'center',
-          opacity: 0.14,
+          opacity: 0.09,
         }}
       />
 

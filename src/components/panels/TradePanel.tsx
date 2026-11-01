@@ -55,7 +55,7 @@ function BuyRow({ portId, pg, fleet, usedCapacity, totalCapacity, onBuy }: {
         </span>
       </div>
       <div className="flex items-center justify-between">
-        <span className="text-gold-600 text-[13px]">库存: {stock}</span>
+        <span className="text-gold-400 text-[13px]">库存: {stock}</span>
         <div className="flex gap-1">
           {[1, 5, 10].map(qty => (
             <ActionButton
@@ -94,14 +94,14 @@ function SellRow({ portId, item, onSell }: {
     <div className="inlay--flat rounded p-2" data-testid="trade-sell-row" data-good-id={item.goodId}>
       <div className="flex items-center justify-between mb-1">
         <span className="text-gold-200 text-[13px] font-serif">
-          {good.nameCn}{!tradedHere && <span className="text-gold-600 text-[13px]">（本港不收，折价）</span>}
+          {good.nameCn}{!tradedHere && <span className="text-gold-400 text-[13px]">（本港不收，折价）</span>}
         </span>
         <span className="flex items-center gap-0.5 text-safe-400 text-[13px] font-serif" data-price={sellPrice}>
           <Coins size={10} /> {sellPrice}
         </span>
       </div>
       <div className="flex items-center justify-between">
-        <span className="text-gold-600 text-[13px]">持有: {item.quantity}</span>
+        <span className="text-gold-400 text-[13px]">持有: {item.quantity}</span>
         <div className="flex gap-1">
           {[1, 5, 10].map(qty => (
             <ActionButton
@@ -245,7 +245,7 @@ export default function TradePanel() {
           {tab === 'sell' && (
             <ScrollFade className="space-y-1.5 max-h-60 overflow-y-auto scroll-parchment">
               {fleet.cargo.length === 0 ? (
-                <p className="text-gold-600 text-[13px] font-serif text-center py-4">货舱空空如也</p>
+                <p className="text-gold-400 text-[13px] font-serif text-center py-4">货舱空空如也</p>
               ) : (
                 fleet.cargo.map(item => (
                   <SellRow key={item.goodId} portId={portId} item={item} onSell={handleSell} />

@@ -47,14 +47,14 @@ export default function ShipyardPanel() {
               return (
               <div key={ship.id} className="flex items-center justify-between text-[13px] mb-1">
                 <span className="text-gold-400 font-serif">
-                  {isFlagship && <Crown size={10} className="inline -mt-0.5 mr-1 text-gold-400" aria-hidden="true" />}{ship.name} <span className="text-gold-600">({shipTypeNames[ship.type]})</span>
+                  {isFlagship && <Crown size={10} className="inline -mt-0.5 mr-1 text-gold-400" aria-hidden="true" />}{ship.name} <span className="text-gold-400">({shipTypeNames[ship.type]})</span>
                 </span>
                 {canSell ? (
                   <ActionButton onClick={() => sellShip(ship.id)} variant="secondary">
                     <Coins size={10} /> {shipResaleValue(ship)}
                   </ActionButton>
                 ) : (
-                  <span className="text-gold-600 text-[13px]">
+                  <span className="text-gold-400 text-[13px]">
                     {fleet.ships.length <= 1 ? '唯一座舰' : isFlagship ? '旗舰（先改旗）' : '卸货后可售'}
                   </span>
                 )}
@@ -102,14 +102,14 @@ export default function ShipyardPanel() {
                         <Coins size={10} /> {template.price}
                       </ActionButton>
                     </div>
-                    <div className="flex items-center gap-3 text-gold-600 text-[13px]">
+                    <div className="flex items-center gap-3 text-gold-400 text-[13px]">
                       <span className="flex items-center gap-0.5"><Gauge size={10} /> {template.speed}节</span>
                       <span className="flex items-center gap-0.5"><ShipIcon size={10} /> 耐久{template.maxDurability}</span>
                       <span className="flex items-center gap-0.5"><Package size={10} /> {template.capacity}舱</span>
                       <span className="flex items-center gap-0.5"><Users size={10} /> {template.maxCrew}人</span>
                     </div>
                     {!canBuyRegion && (
-                      <p className="flex items-start gap-1 text-gold-600 text-[13px] mt-1 font-serif">
+                      <p className="flex items-start gap-1 text-gold-400 text-[13px] mt-1 font-serif">
                         <Anchor size={10} aria-hidden="true" className="mt-0.5 shrink-0" />
                         <span>此型船只在{template.regions.map(r => r === 'europe' ? '欧洲' : r === 'caribbean' ? '加勒比' : r === 'asia' ? '亚洲' : '非洲').join('、')}造船厂才有售</span>
                       </p>

@@ -41,7 +41,7 @@ export default function AchievementPanel() {
             { label: '历史目击', value: stats.historySeen },
           ].map(item => (
             <div key={item.label} className="inlay rounded px-2 py-1.5 border border-gold-700/20">
-              <div className="text-gold-600 text-[10px] font-serif">{item.label}</div>
+              <div className="text-gold-400 text-[10px] font-serif">{item.label}</div>
               <div className="text-gold-200 text-[15px] font-serif tabular-nums">{item.value}</div>
             </div>
           ))}
@@ -65,19 +65,19 @@ export default function AchievementPanel() {
                   <a.icon
                     size={13}
                     strokeWidth={1.7}
-                    className={`shrink-0 ${isUnlocked ? 'text-gold-300' : 'text-gold-700'}`}
+                    className={`shrink-0 ${isUnlocked ? 'text-gold-300' : 'text-gold-500'}`}
                     aria-hidden="true"
                   />
-                  <span className={`text-[13px] font-serif ${isUnlocked ? 'text-gold-100' : 'text-gold-600'}`}>
+                  <span className={`text-[13px] font-serif ${isUnlocked ? 'text-gold-100' : 'text-gold-400'}`}>
                     {a.title}
                   </span>
                   {isUnlocked ? (
                     <Trophy size={11} className="ml-auto text-gold-400" />
                   ) : (
-                    <Lock size={11} className="ml-auto text-gold-700" />
+                    <Lock size={11} className="ml-auto text-gold-500" />
                   )}
                 </div>
-                <p className={`text-[13px] font-serif mt-0.5 leading-relaxed ${isUnlocked ? 'text-gold-400' : 'text-gold-700'}`}>
+                <p className={`text-[13px] font-serif mt-0.5 leading-relaxed ${isUnlocked ? 'text-gold-400' : 'text-gold-500'}`}>
                   {a.description}
                 </p>
               </div>

@@ -166,7 +166,7 @@ export default function MiniGameOverlay({ gameId, onFinish }: MiniGameOverlayPro
               </ul>
             </div>
 
-            <p className="text-gold-600 text-[11px] font-serif text-center">
+            <p className="text-gold-400 text-[11px] font-serif text-center">
               这一段的操作会决定结局概率往哪边偏——手稳的人拿好结果。
             </p>
 

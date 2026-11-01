@@ -243,7 +243,7 @@ export default function PortDetail() {
                     <Coins size={10} /> {GAME_BALANCE.FEAST_COST}
                   </ActionButton>
                 </div>
-                <p className="text-gold-600 text-[10px] font-serif">士气低于 45 时，舰队可能爆发哗变——疲惫的船员比风暴更危险。</p>
+                <p className="text-gold-400 text-[10px] font-serif">士气低于 45 时，舰队可能爆发哗变——疲惫的船员比风暴更危险。</p>
               </div>
             </div>
           )}
@@ -271,7 +271,7 @@ export default function PortDetail() {
               <h4 className="text-gold-300 font-serif text-[13px] mb-1.5 flex items-center gap-1">
                 <Compass size={12} /> 酒馆·招募军官
               </h4>
-              <p className="text-gold-600 text-[10px] font-serif mb-1.5">
+              <p className="text-gold-400 text-[10px] font-serif mb-1.5">
                 军官按日支薪——养团队是长期投资，也是长期开销。
               </p>
               <div className="space-y-1.5">
@@ -293,7 +293,7 @@ export default function PortDetail() {
                         <div className="flex items-center justify-between mb-0.5">
                           <span className="text-gold-200 text-[13px] font-serif">
                             <o.icon size={11} className="inline -mt-0.5 mr-1" aria-hidden="true" />
-                            {o.name} <span className="text-gold-600">· {o.title}</span>
+                            {o.name} <span className="text-gold-400">· {o.title}</span>
                           </span>
                           {hired ? (
                             <span className="text-safe-400 text-[13px] font-serif">已在编</span>
@@ -308,7 +308,7 @@ export default function PortDetail() {
                           )}
                         </div>
                         <p className="text-gold-500 text-[10px] font-serif">{o.effect}</p>
-                        <p className="text-gold-600 text-[10px] font-serif">日薪 {o.dailyWage} 金币</p>
+                        <p className="text-gold-400 text-[10px] font-serif">日薪 {o.dailyWage} 金币</p>
                       </div>
                     </div>
                   )
@@ -322,7 +322,7 @@ export default function PortDetail() {
               <h4 className="text-gold-300 font-serif text-[13px] mb-1.5 flex items-center gap-1">
                 <Users size={12} /> 码头·寻访名船员
               </h4>
-              <p className="text-gold-600 text-[10px] font-serif mb-1.5">
+              <p className="text-gold-400 text-[10px] font-serif mb-1.5">
                 这些人有名字、有过去、有脾气。低士气会磨掉他们的忠诚——忠诚归零，人就会走。
               </p>
               <div className="space-y-1.5">
@@ -344,7 +344,7 @@ export default function PortDetail() {
                         <div className="flex items-center justify-between mb-0.5">
                           <span className="text-gold-200 text-[13px] font-serif">
                             <c.icon size={11} className="inline -mt-0.5 mr-1" aria-hidden="true" />
-                            {c.name} <span className="text-gold-600">· {c.title}</span>
+                            {c.name} <span className="text-gold-400">· {c.title}</span>
                           </span>
                           {hired ? (
                             <span className="text-safe-400 text-[13px] font-serif">已在船</span>
@@ -359,7 +359,7 @@ export default function PortDetail() {
                           )}
                         </div>
                         <p className="text-gold-500 text-[10px] font-serif">{c.perk}</p>
-                        <p className="text-gold-600 text-[10px] font-serif italic">“{c.quote}”</p>
+                        <p className="text-gold-400 text-[10px] font-serif italic">“{c.quote}”</p>
                       </div>
                     </div>
                   )

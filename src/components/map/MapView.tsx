@@ -387,7 +387,17 @@ export default function MapView() {
                 height: '100%',
                 backgroundColor: 'transparent',
               }}
-              zoomControl={true}
+              /*
+               * 【为什么关掉 Leaflet 自带的缩放按钮】
+               * 它固定渲染在左上角 z-index 1000 的 control 角里，但整块地图容器
+               * 是 z-index 0（层叠上下文），而顶栏是 50 —— 那两个 +/- 按钮
+               * **一直压在我们的木梁下面，玩家从来没看见过**。
+               * 对比度审计把它抓了出来：16px 粗体的「+」是 rgb(77,53,24) 压在
+               * rgb(28,19,9) 上，1.6:1。既然不可见也没人用过，就直接不建。
+               * 缩放本身走滚轮/双指捏合（见 useKeyboardControls 与 Leaflet 默认手势），
+               * 3D 视图另有自己的缩放手势。
+               */
+              zoomControl={false}
               minZoom={2}
               maxZoom={10}
               attributionControl={false}

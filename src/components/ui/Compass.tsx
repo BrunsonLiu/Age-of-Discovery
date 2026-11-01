@@ -135,11 +135,16 @@ export default function Compass({ windBearing = null, size = 'w-24 h-24' }: Comp
         <circle cx="100" cy="100" r="88" fill="url(#compassBg)" opacity={roseFailed ? 0.98 : 0.32} />
         <circle cx="100" cy="100" r="90" fill="none" stroke="#c9a96e" strokeWidth="1" opacity="0.5" />
 
-        {/* 真玫瑰无 NSEW 字母，字母由 SVG 叠在表盘外圈上 */}
+        {/* 真玫瑰无 NSEW 字母，字母由 SVG 叠在表盘外圈上。
+            【S/W/E 为什么要提亮】原先用 gold-700 (#8a6c2a)，压在 32% 不透明度的
+            深盘上实测只有 2.4~3.0:1 —— 三个方位字母基本糊在盘面里。
+            对比度审计把它抓出来了（这是它第一次抓到真问题而不是我自己的假阳性）。
+            改成 gold-500 (#c9a96e)：约 6:1，同时仍比 N 暗一档，
+            保留"北向被强调"的层级。 */}
         <text x="100" y="24" textAnchor="middle" fill="#d4a838" fontSize="16" fontFamily="'Pirata One', cursive" fontWeight="bold">N</text>
-        <text x="100" y="186" textAnchor="middle" fill="#8a6c2a" fontSize="13" fontFamily="'Crimson Text', serif">S</text>
-        <text x="16" y="105" textAnchor="middle" fill="#8a6c2a" fontSize="13" fontFamily="'Crimson Text', serif">W</text>
-        <text x="184" y="105" textAnchor="middle" fill="#8a6c2a" fontSize="13" fontFamily="'Crimson Text', serif">E</text>
+        <text x="100" y="186" textAnchor="middle" fill="#c9a96e" fontSize="13" fontFamily="'Crimson Text', serif">S</text>
+        <text x="16" y="105" textAnchor="middle" fill="#c9a96e" fontSize="13" fontFamily="'Crimson Text', serif">W</text>
+        <text x="184" y="105" textAnchor="middle" fill="#c9a96e" fontSize="13" fontFamily="'Crimson Text', serif">E</text>
 
         <g ref={divRef} style={{ transformOrigin: '100px 100px' }}>
           <polygon points="100,28 93,90 107,90" fill="#d4a838" opacity="0.95" filter="url(#needleGlow)" />

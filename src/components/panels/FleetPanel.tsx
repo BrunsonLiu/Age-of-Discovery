@@ -158,7 +158,7 @@ export default function FleetPanel() {
           <div className="rounded p-2 inlay border border-gold-700/20 space-y-1">
             <div className="flex items-center justify-between text-[13px] font-serif">
               <span className="text-gold-500 flex items-center gap-1"><Globe size={11} aria-hidden="true" />四方态度</span>
-              <span className="text-gold-600 text-[10px]">同一行为，两副面孔</span>
+              <span className="text-gold-400 text-[10px]">同一行为，两副面孔</span>
             </div>
             {FACTIONS.map(f => {
               const rep = factionRep[f.id] ?? 0
@@ -185,7 +185,7 @@ export default function FleetPanel() {
             <div className="rounded p-2 inlay border border-gold-700/20 space-y-1">
               <div className="flex items-center justify-between text-[13px] font-serif">
                 <span className="flex items-center gap-1 text-gold-500"><Award size={11} aria-hidden="true" />军官团</span>
-                <span className="text-gold-600">日薪合计 {totalWage} 金币</span>
+                <span className="text-gold-400">日薪合计 {totalWage} 金币</span>
               </div>
               {officers.map(id => {
                 const o = OFFICER_MAP.get(id)
@@ -205,7 +205,7 @@ export default function FleetPanel() {
             <div className="rounded p-2 inlay border border-gold-700/20 space-y-1.5">
               <div className="flex items-center justify-between text-[13px] font-serif">
                 <span className="text-gold-500 flex items-center gap-1"><Users size={11} /> 船上的人</span>
-                <span className="text-gold-600 text-[10px]">忠诚低会离船</span>
+                <span className="text-gold-400 text-[10px]">忠诚低会离船</span>
               </div>
               {crewRoster.map(m => {
                 const def = CREW_CHAR_MAP.get(m.id)
@@ -225,7 +225,7 @@ export default function FleetPanel() {
                           />
                         )}
                         <def.icon size={11} className="inline -mt-0.5 mr-1" aria-hidden="true" />
-                        {def.name} <span className="text-gold-600">· {def.title}</span>
+                        {def.name} <span className="text-gold-400">· {def.title}</span>
                       </span>
                       <span className={`text-[10px] ${
                         m.loyalty <= 25 ? 'text-danger-400' : m.loyalty < 50 ? 'text-gold-400' : 'text-safe-400'
@@ -239,7 +239,7 @@ export default function FleetPanel() {
                         style={{ width: `${m.loyalty}%` }}
                       />
                     </div>
-                    <p className="text-gold-600 text-[10px] mt-0.5">{def.perk}</p>
+                    <p className="text-gold-400 text-[10px] mt-0.5">{def.perk}</p>
                   </div>
                 )
               })}
@@ -298,7 +298,7 @@ export default function FleetPanel() {
                       onError={(e) => { e.currentTarget.style.visibility = 'hidden' }}
                     />
                     {isFlagship && <span title="旗舰" aria-label="旗舰"><Crown size={10} className="text-gold-400" /></span>}
-                    {ship.name} <span className="text-gold-600 text-[13px]">{shipTypeNames[ship.type]}</span>
+                    {ship.name} <span className="text-gold-400 text-[13px]">{shipTypeNames[ship.type]}</span>
                   </span>
                   <button
                     onClick={() => setPreviewId(previewId === ship.id ? null : ship.id)}
@@ -317,7 +317,7 @@ export default function FleetPanel() {
                   ) : (
                     <button
                       onClick={() => setFlagship(ship.id)}
-                      className="text-gold-600 hover:text-gold-300 text-[10px] font-serif transition-colors"
+                      className="text-gold-400 hover:text-gold-300 text-[10px] font-serif transition-colors"
                     >
                       设为旗舰
                     </button>
@@ -336,7 +336,7 @@ export default function FleetPanel() {
             <div className="border-t border-gold-700/30 pt-2">
               <div className="bg-gold-700/15 rounded p-2 mb-2 text-center">
                 <p className="flex items-center justify-center gap-1.5 text-gold-300 font-serif text-sm"><Map size={12} aria-hidden="true" />点击地图上的港口或任意位置开始航行</p>
-                <p className="text-gold-600 text-[13px] mt-1">你可以点击地图上任何位置来设定目的地</p>
+                <p className="text-gold-400 text-[13px] mt-1">你可以点击地图上任何位置来设定目的地</p>
               </div>
               {availableRoutes.length > 0 && (
                 <>

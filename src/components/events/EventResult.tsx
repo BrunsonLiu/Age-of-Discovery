@@ -73,7 +73,7 @@ export default function EventResult({ outcome, performance, onContinue }: EventR
         <ChangeIndicator value={outcome.fameChange ?? 0} icon={<Star size={12} />} label="声望" />
         {outcome.goldChange === 0 && outcome.foodChange === 0 && outcome.waterChange === 0 &&
          outcome.moraleChange === 0 && outcome.durabilityChange === 0 && outcome.crewChange === 0 && (outcome.fameChange ?? 0) === 0 && (
-          <p className="text-gold-600 text-xs font-serif">无资源变化</p>
+          <p className="text-gold-400 text-xs font-serif">无资源变化</p>
         )}
       </div>
 
@@ -108,7 +108,7 @@ export default function EventResult({ outcome, performance, onContinue }: EventR
               </div>
             )
           })}
-          <p className="text-gold-600 text-[10px] font-serif">
+          <p className="text-gold-400 text-[10px] font-serif">
             {Object.values(outcome.factionChange).some(v => (v ?? 0) > 0) && Object.values(outcome.factionChange).some(v => (v ?? 0) < 0)
               ? '有人记住了你的好处，也有人记住了你的坏处——海上没有只赚不赔的选择。'
               : Object.values(outcome.factionChange).some(v => (v ?? 0) > 0)
@@ -134,7 +134,7 @@ export default function EventResult({ outcome, performance, onContinue }: EventR
               </div>
             )
           })}
-          <p className="text-gold-600 text-[10px] font-serif">
+          <p className="text-gold-400 text-[10px] font-serif">
             酒馆里的传闻正在成形：他们开始用一个词来形容你。
           </p>
         </div>

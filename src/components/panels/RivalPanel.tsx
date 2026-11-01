@@ -5,10 +5,15 @@ import ScrollFade from '@/components/ui/ScrollFade'
 import { rivalPortrait } from '@/data/portraits'
 import type { Rival } from '@/types'
 
+/*
+ * 徽章的文字色用 .ink-bad / .ink-good，不用 danger-400 / safe-400。
+ * 那两个是**色块**色：压在深棕面板 rgb(46,35,21) 上实测
+ * 危险 2.84:1、安全 4.24:1 —— 10px 的小标签本来就难读，再暗一档就废了。
+ */
 const STYLE_BADGE: Record<Rival['style'], { label: string; cls: string }> = {
-  aggressive: { label: '亡命徒', cls: 'text-danger-400 border-danger-700/40' },
-  steady: { label: '稳健派', cls: 'text-safe-400 border-safe-700/40' },
-  explorer: { label: '探险家', cls: 'text-ocean-300 border-ocean-700/50' },
+  aggressive: { label: '亡命徒', cls: 'ink-bad border-danger-700/40' },
+  steady: { label: '稳健派', cls: 'ink-good border-safe-700/40' },
+  explorer: { label: '探险家', cls: 'text-ocean-200 border-ocean-700/50' },
 }
 
 /**
@@ -54,7 +59,7 @@ export default function RivalPanel() {
                     )}
                     <div className="flex items-center justify-between flex-1 min-w-0">
                       <span className="text-gold-200 font-serif text-sm">{r.name}</span>
-                      <span className={`text-[10px] font-serif px-1.5 py-0.5 rounded border ${badge.cls}`}>
+                      <span className={`text-[11px] font-serif px-1.5 py-0.5 rounded border ${badge.cls}`}>
                         {r.title} · {badge.label}
                       </span>
                     </div>
@@ -85,7 +90,7 @@ export default function RivalPanel() {
                       </div>
                     </div>
                   </div>
-                  <p className="text-gold-600 text-[10px] font-serif italic mt-1.5">
+                  <p className="text-gold-400 text-[10px] font-serif italic mt-1.5">
                     「{r.lastAction}」
                   </p>
                 </div>
@@ -113,7 +118,7 @@ export default function RivalPanel() {
                 <div className="text-gold-200">{myPorts} / {bestRivalPorts}</div>
               </div>
             </div>
-            <p className="text-gold-600 text-[10px] font-serif mt-1">
+            <p className="text-gold-400 text-[10px] font-serif mt-1">
               斜线后为同代最强。落后不可怕——可怕的是停下。
             </p>
           </div>
@@ -122,7 +127,7 @@ export default function RivalPanel() {
           <div>
             <div className="flex items-center gap-1 text-gold-300 font-serif text-[13px] mb-1.5"><Scroll size={11} aria-hidden="true" />最新见闻</div>
             {rivalNews.length === 0 ? (
-              <p className="text-gold-600 text-[13px] font-serif text-center py-3">
+              <p className="text-gold-400 text-[13px] font-serif text-center py-3">
                 还没有传闻。每隔几天，酒馆里就会有新消息。
               </p>
             ) : (
@@ -133,7 +138,7 @@ export default function RivalPanel() {
                     <div key={n.id} className="inlay--flat rounded p-2 border-l-2 border-gold-700/40">
                       <div className="flex items-center justify-between mb-0.5">
                         <span className="text-gold-400 text-[10px] font-serif">{rival?.name ?? '某位船长'}</span>
-                        <span className="text-gold-600 text-[10px] font-serif">第 {n.day} 天</span>
+                        <span className="text-gold-400 text-[10px] font-serif">第 {n.day} 天</span>
                       </div>
                       <p className="text-gold-300 text-[13px] font-serif">{n.text}</p>
                     </div>

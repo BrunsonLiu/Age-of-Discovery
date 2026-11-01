@@ -112,7 +112,7 @@ export default function TaskPanel() {
                             ✓ 交付领赏
                           </button>
                         ) : (
-                          <span className="text-gold-600 text-[13px] font-serif flex items-center gap-0.5">
+                          <span className="text-gold-400 text-[13px] font-serif flex items-center gap-0.5">
                             <Map size={10} /> 前往{ports.find(p => p.id === (task.targetPortId ?? task.portId))?.nameCn ?? '目的地'}
                           </span>
                         )}
@@ -129,7 +129,7 @@ export default function TaskPanel() {
               <Scroll size={14} /> 道听途说
             </h4>
             {availableTasks.length === 0 ? (
-              <p className="text-gold-600 text-[13px] font-serif italic">暂无新的传闻（有些线索要航行更久才会浮现）</p>
+              <p className="text-gold-400 text-[13px] font-serif italic">暂无新的传闻（有些线索要航行更久才会浮现）</p>
             ) : (
               <ScrollFade className="space-y-1.5 max-h-64 overflow-y-auto scroll-parchment">
                 {availableTasks.map(task => (
