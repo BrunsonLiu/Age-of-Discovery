@@ -5,9 +5,35 @@ import { useGameStore } from '@/store/useGameStore'
 import { useMapStore } from '@/store/useMapStore'
 import { ports } from '@/data/ports'
 import { chooseLabelSides, type LabelSide } from '@/utils/portLabels'
+import { portScaleOf, type PortScale } from '@/utils/portScale'
 
-function createPortIcon(isCurrent: boolean) {
-  const size = isCurrent ? 34 : 28
+/**
+ * 徽章直径按港口规模分级。
+ *
+ * 【为什么】20 个港口原来一模一样大，玩家在图上**无法区分大港和小补给站**，
+ * 而这两者在玩法上差得很远（大港有船坞、能招募、货多）。古海图就是靠符号大小
+ * 分级：大城画一座城，小村只有一个点。
+ * 数值：小 21 / 中 26 / 大 32；当前所在港口再 +4 并带辉光。
+ * 21px 是下限——再小锚的笔画就只有 1px 宽，糊成一团。
+ */
+const SCALE_SIZE: Record<PortScale, number> = { minor: 21, medium: 26, major: 32 }
+
+/**
+ * 统一的**命中框**尺寸（CSS px）。
+ *
+ * 【为什么不用徽章尺寸当命中框】按规模分级之后小港只有 21px，手机上点不中。
+ * 视觉可以有大中小，可点区域不能——这里固定 40（比任何一档徽章都大，
+ * 也超过 32px 的手指最小目标），徽章画在框中央。
+ */
+const HIT = 40
+
+/** 徽章的视觉直径（当前港口 +4 放大） */
+function badgeSize(isCurrent: boolean, scale: PortScale): number {
+  return isCurrent ? SCALE_SIZE[scale] + 4 : SCALE_SIZE[scale]
+}
+
+function createPortIcon(isCurrent: boolean, scale: PortScale) {
+  const size = badgeSize(isCurrent, scale)
   // 锚改用金色：徽章是深底，原来那个深褐锚在深底上等于没有。
   const color = isCurrent ? '#f0d88a' : '#d4b884'
   const glow = isCurrent
@@ -34,7 +60,9 @@ function createPortIcon(isCurrent: boolean) {
    * 读作"黄铜"，而奶油色锚在它上面仍然是 8:1 以上的对比，不受影响。
    */
   const html = `
+    <div style="width:${HIT}px;height:${HIT}px;display:flex;align-items:center;justify-content:center;">
     <div style="
+      position:relative;
       width:${size}px;height:${size}px;
       background:radial-gradient(circle at 34% 26%, #6b5030 0%, #4a3520 42%, #2a1c0e 100%);
       border:1.5px solid #c9a96e;border-radius:50%;
@@ -43,13 +71,15 @@ function createPortIcon(isCurrent: boolean) {
       transition: all 0.3s ease;
     ">
       ${anchorSvg}
+      ${scale === 'major' ? `<span style="position:absolute;inset:-4px;border-radius:50%;border:1px solid rgba(201,169,110,0.45);pointer-events:none;"></span>` : ''}
+    </div>
     </div>
   `
   return L.divIcon({
     html,
     className: 'port-marker-icon',
-    iconSize: [size, size],
-    iconAnchor: [size / 2, size / 2],
+    iconSize: [HIT, HIT],
+    iconAnchor: [HIT / 2, HIT / 2],
   })
 }
 
@@ -77,8 +107,18 @@ export function PortMarker() {
    */
   const zoom = useMapStore((s) => s.zoom)
   const namesAlwaysOn = zoom > 3
-  const OFFSET: Record<LabelSide, [number, number]> = {
-    top: [0, -16], right: [18, 0], bottom: [0, 16], left: [-18, 0],
+  /*
+   * 标签偏移必须按**徽章半径**算，不能用固定 16。
+   * 徽章现在按规模 21/26/32（当前港口再 +4），而 Leaflet 的 tooltip 偏移是
+   * 相对图标锚点（= 命中框中心）量的：固定 16 会让大港的标签压在徽章上。
+   * 留 4px 间隙，读起来是"贴在图钉旁边"而不是"叠在图钉上"。
+   */
+  const offsetFor = (side: LabelSide, scale: PortScale, isCurrent: boolean): [number, number] => {
+    const r = badgeSize(isCurrent, scale) / 2 + 4
+    if (side === 'top') return [0, -r]
+    if (side === 'bottom') return [0, r]
+    if (side === 'left') return [-r - 4, 0]
+    return [r + 4, 0]
   }
 
   return (
@@ -99,7 +139,7 @@ export function PortMarker() {
           <Marker
             key={port.id}
             position={[port.latitude, port.longitude]}
-            icon={createPortIcon(isCurrent)}
+            icon={createPortIcon(isCurrent, portScaleOf(port))}
             eventHandlers={{
               click: () => {
                 setSelectedPortId(port.id)
@@ -110,7 +150,7 @@ export function PortMarker() {
           >
             <Tooltip
               direction={side}
-              offset={OFFSET[side]}
+              offset={offsetFor(side, portScaleOf(port), isCurrent)}
               className="port-tooltip"
               permanent={namesAlwaysOn || isCurrent}
             >

@@ -26,23 +26,13 @@ export type PortRegion = 'caribbean' | 'europe' | 'africa' | 'asia'
  * 另加一个 size 字段，就得保证两份描述同一件事的数据永远一致，
  * 迟早会打架（改了一边忘了另一边）。能从既有数据推导的，就不要新增字段。
  */
-export type PortScale = 'major' | 'medium' | 'minor'
-
 /**
- * 从港口服务列表推导规模档位。
- *
- * 实测分布（20 个港口）：5 项 8 个 / 4 项 3 个 / 3 项 6 个 / 2 项 3 个。
- *
- * 【为什么这个档位值得做进模型】
- * 玩家在 3D 地图上看到一堆一模一样的小房子时，没法判断
- * "这个港值不值得绕过去"。大港（5 项服务，含船坞与招募）在模型上
- * 就该比小补给站大一圈——"要不要去"从「打开面板才知道」变成「一眼能看出来」。
+ * 规模档位与推导规则都挪到 `utils/portScale.ts`：2D 地图的港口徽章也要按它分级，
+ * 而本文件引了 three.js，2D 组件不该为了一个三行函数把整个 three 拖进主图包。
+ * 这里只做转出，保持 3D 侧的 import 路径不变。
  */
-export function portScaleOf(port: { services: readonly string[] }): PortScale {
-  if (port.services.length >= 5) return 'major'
-  if (port.services.length >= 3) return 'medium'
-  return 'minor'
-}
+import { portScaleOf, type PortScale } from '@/utils/portScale'
+export { portScaleOf, type PortScale }
 
 /** 港口模型需要的最小数据形状（只取建模用得到的字段） */
 export interface PortModelInput {
