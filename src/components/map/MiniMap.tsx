@@ -34,11 +34,15 @@ function project(lng: number, lat: number) {
 function drawLand(ctx: CanvasRenderingContext2D, geojson: GeoJSON.GeoJsonObject) {
   ctx.clearRect(0, 0, W, H)
 
-  // 世界底：必须与主图当前的海色同族。
-  // 这里原先是 #26414a（青绿），是海面转深蓝那次改造漏掉的一处——
-  // 主图已经是 #32465a 的深蓝灰，小地图却还是旧青绿，一块冷色斑压在右上角。
-  // 实测主图海面采样 rgb(50,70,90) ≈ #32465a，直接用同一个值。
-  ctx.fillStyle = '#32465a'
+  /*
+   * 世界底：必须和主图**实测**的海色一致。
+   *
+   * 这里换过两次：先是 #26414a（青绿，主图转深蓝时漏改），后来又照着
+   * "主图 rgb(50,70,90)" 改成 #32465a —— 但那个采样值是**小地图自己**的像素，
+   * 拿它当主图颜色属于自证。直接从开局截图上采主图海面是 rgb(62,82,100)，
+   * 也就是 #3e5264。差 12~16 个色阶，在小地图这么小的面积上足以读成"另一块料"。
+   */
+  ctx.fillStyle = '#3e5264'
   ctx.fillRect(0, 0, W, H)
 
   const polys: [number, number][][] = []
@@ -62,8 +66,15 @@ function drawLand(ctx: CanvasRenderingContext2D, geojson: GeoJSON.GeoJsonObject)
   ctx.fillStyle = '#d9c8a2'
   ctx.beginPath()
   for (const ring of polys) {
-    // 抽稀：小地图 168px 宽，一个多边形几百个点全画既慢又看不出区别
-    const step = Math.max(1, Math.floor(ring.length / 60))
+    /*
+     * 抽稀：小地图只有 168px 宽，多边形几百个点全画既慢又看不出区别。
+     *
+     * 但**不能抽太狠**：原来固定留 60 个点，一条上万点的海岸线就变成 60 段折线，
+     * 5 倍放大下整圈都是台阶锯齿（不是数据精度问题，是采样跨步太大）。
+     * 现在按 120 个点，点数只多一倍、绘制时间可以忽略，折角减半。
+     * 注意是"每隔 step 取一个点"而不是重采样，所以 step 越小越贴近原形状。
+     */
+    const step = Math.max(1, Math.floor(ring.length / 120))
     for (let i = 0; i < ring.length; i += step) {
       const [lng, lat] = ring[i]
       const { x, y } = project(lng, lat)
@@ -121,11 +132,25 @@ export default function MiniMap({ land }: { land: GeoJSON.GeoJsonObject | null }
       const w = Math.max(3, p2.x - p1.x)
       const h = Math.max(3, p2.y - p1.y)
 
-      ctx.fillStyle = 'rgba(240, 216, 138, 0.20)'
-      ctx.fillRect(p1.x, p1.y, w, h)
-      ctx.strokeStyle = '#f5e2a8'
-      ctx.lineWidth = 1.5
-      ctx.strokeRect(p1.x + 0.75, p1.y + 0.75, w - 1.5, h - 1.5)
+      /*
+       * 视野框：只用线，**不压暗也不点亮**。
+       *
+       * 走过两版都不行：
+       * · 原版在框内盖 20% 暖黄 —— 把框内的陆地洗白一档，小地图本来就小，
+       *   再一洗海陆分不清；
+       * · 改成 evenodd 压暗框外 —— 无论 alpha 给多少都让外面的陆色偏离主图
+       *   （0.15 就把 rgb(217,200,162) 压成 (186,172,141)，差 31 个色阶）。
+       *   而小地图存在的意义就是"和主图同一套料"，压暗等于自毁前提。
+       *
+       * 所以只画线：2px 亮金 + 外侧 1px 暗边。亮线在深蓝海面和浅色陆地上
+       * 都能立住，框内像素一点也不动。
+       */
+      ctx.strokeStyle = 'rgba(20, 14, 8, 0.55)'
+      ctx.lineWidth = 3.5
+      ctx.strokeRect(p1.x + 1.75, p1.y + 1.75, w - 3.5, h - 3.5)
+      ctx.strokeStyle = '#f7e8b8'
+      ctx.lineWidth = 2
+      ctx.strokeRect(p1.x + 1, p1.y + 1, w - 2, h - 2)
     }
 
     // 首帧的 getBounds() 可能还是"整个世界"（地图尚未完成初始化），
