@@ -15,6 +15,7 @@ import {
   MAP_WORLD_SIZE, lonToWorldX, latToWorldZ, worldXToLon, worldZToLat,
 } from '@/utils/mapProjection'
 import { buildLandGeometry, PLATE_THICKNESS } from './landGeometry'
+import { buildGrainCanvas } from '@/utils/landGrain'
 import { createPortModelKit, createShipModelKit, makePortModel, makeShipModel, portScaleOf } from './models'
 import { buildMap3DLayers } from './mapLayers3d'
 import { buildMap3DBorders } from './mapBorders3d'
@@ -88,6 +89,34 @@ const LIGHT_AMB = 0.78
  * 因为画面亮度主要来自它（0.72）而不是方向光。
  */
 const ENV_BASE = 0.72
+
+/**
+ * 陆地颗粒在世界空间平铺几次。
+ *
+ * 海图宽 20 世界单位 → 22 次 = 每格 0.9 单位。近景（约 5 单位横跨 1440px）
+ * 时一格占 260px，256 texel 的颗粒贴图正好接近 1:1 像素；再远会被 mip 抹平
+ * （那正是"远景不需要颗粒"想要的效果），再近才会开始变糊。
+ */
+const GRAIN_TILES = 22
+
+/**
+ * bump 强度。**这个数不能凭"看起来像多少"猜**，是扫出来的：
+ *
+ * 实测（近景、同机位、陆地相邻像素差 = HF 能量，海面 0.46 为对照）：
+ *   0      → 0.57   （没有颗粒）
+ *   0.03   → 0.57   （等于没有：第一版就是拍了个 0.03，白做一轮）
+ *   0.3    → 0.59
+ *   0.8    → 0.66
+ *   2      → 0.91
+ *   6      → 1.94
+ *   20     → 5.6（砂纸，每个像素都在闪）
+ *
+ * 取 4：HF 落在 1.4 上下 —— 肉眼能读出"有纹理"，但不会在移动时抖。
+ * 顺便记一个坑：0.03 这种"合理猜测"在这条曲线上小了两个数量级，
+ * 因为 bump 的输入是贴图的一阶差分，而颗粒贴图是 1:1 像素级的噪声，
+ * 差分本身就很小。凭感觉给数值，等于没加。
+ */
+const GRAIN_BUMP = 4
 
 export default function Map3DView() {
   const mountRef = useRef<HTMLDivElement>(null)
@@ -457,6 +486,46 @@ export default function Map3DView() {
       const lidMat = new THREE.MeshStandardMaterial({
         map: landTex, roughness: 0.88, metalness: 0.02,
       })
+      /*
+       * 陆地的高频细节：bumpMap（不是自绘着色器）。
+       *
+       * 【为什么不是 onBeforeCompile 注入 albedo 乘算】
+       * 试过，而且"看起来"完全正常：注入的源码确实进了片元着色器
+       * （canary 抓到 `texture2D(uGrain, vMapUv * uGrainScale)`）、
+       * uniform 里也确实放着一个 CanvasTexture，但屏幕上**一个像素都没变**。
+       * 把 uGrainScale 调到 1.2 / uGrainWeight 调到 1.0 也不变 ——
+       * 说明采样器没绑上：three 只给"材质自身属性"里的贴图建 uniform，
+       * 自定义 uniform 里的 Texture 在 setValueT1 拿到的是空值，
+       * 于是退回默认纹理（≈白），乘了等于没乘。
+       * HF（相邻像素差）实测 0.56 → 0.60，和海面 0.46 基本同档。
+       *
+       * 【为什么 bumpMap 反而更对】
+       * 1) 它是材质自带通道，uniform / UV 变换（repeat、wrap、channel）
+       *    全由 three 接管，不可能出现"代码在、画面上没有"；
+       * 2) 它扰动的是**法线**而不是颜色 —— 纸的"齿"、岩土的颗粒，
+       *    本来就是在掠射光下靠明暗读出来的，压 albedo 只会像脏点；
+       * 3) 代价只有一次额外采样。
+       *
+       * 颗粒贴图必须自己 repeat：bumpMap 用的是 uv0（0..1 铺满整张海图），
+       * 不 repeat 的话一张 256px 图摊在 20 世界单位上，近景是一团糊。
+       * 22 次 → 每格 0.9 单位，近景刚好 1:1 像素左右。
+       */
+      {
+        const grainCanvas = buildGrainCanvas(256)
+        if (grainCanvas) {
+          const grainTex = new THREE.CanvasTexture(grainCanvas)
+          grainTex.colorSpace = THREE.NoColorSpace
+          grainTex.wrapS = grainTex.wrapT = THREE.RepeatWrapping
+          grainTex.repeat.set(GRAIN_TILES, GRAIN_TILES)
+          grainTex.anisotropy = 4
+          grainTex.needsUpdate = true
+          lidMat.bumpMap = grainTex
+          lidMat.bumpScale = GRAIN_BUMP
+          disposables.push(grainTex)
+          lidMat.userData.grainMounted = true
+        }
+      }
+
       // 侧壁（海岸薄边）。
       //
       // 【为什么加 emissive】侧壁是垂直面，背对主光的那一面只被
@@ -762,6 +831,22 @@ export default function Map3DView() {
       key.shadow.camera.top = 14; key.shadow.camera.bottom = -14
       key.shadow.camera.near = 1; key.shadow.camera.far = 40
       key.shadow.bias = -0.0012
+      /*
+       * 阴影强度：0.55，不是默认的 1。
+       *
+       * 【为什么】阴影在 three 里是"把主光的贡献乘 0"——被遮住的地方只剩
+       * ambient + rim + 环境贴图。实测近景（港口 + 船，灯 intensity 3.0、
+       * 环境 0.72）：被阴影覆盖的像素只保住 **43%** 的亮度（中位数），
+       * 最暗的几个点从 202 掉到 7 —— 近景读作**黑洞**，不像影子。
+       * 真实白天的影子有天空散射补光，通常保住 60~75%。
+       *
+       * 【为什么调这一项，而不是调 ambient】
+       * ambient 会同时抬高画面里**所有**暗部，海面颜色跟着漂
+       * （之前踩过：动 ambient 会把海色从 (9,56,74) 推成灰）。
+       * `LightShadow.intensity` 只作用于阴影因子本身：受光面一个像素都不动，
+       * 只有被遮住的部分变浅。这是唯一"只改影子、不改画面"的旋钮。
+       */
+      key.shadow.intensity = 0.55
       scene.add(key)
       const rim = new THREE.DirectionalLight(0x6f9fd8, LIGHT_RIM)
       rim.position.set(7, 3, -6)

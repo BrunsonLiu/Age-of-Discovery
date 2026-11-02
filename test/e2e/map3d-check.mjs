@@ -295,7 +295,15 @@ check(layerBaseline.pirates?.line2 === 3 && layerBaseline.pirates?.mesh === 3,
 check(layerBaseline.winds?.inst === 1, `风带箭头是 1 个 InstancedMesh（实得 ${layerBaseline.winds?.inst}）`)
 check(layerBaseline.borders?.segments > 10000,
   `国界线合并成 1 个 LineSegments2，含 ${layerBaseline.borders?.segments} 段`)
-check(layerBaseline.borders?.dashed === true, '国界线是虚线')
+/*
+ * 国界线必须是**实线**。
+ *
+ * 曾经是虚线（dashed + dashSize 0.05），但 LineSegments2 的 dash 相位是按
+ * 每段各自的累积距离算的，而 borders.geojson 是 393 段独立线段 ——
+ * 每段都从"实"开始、段长又不同，近景下就变成长短错位的碎段，
+ * 读起来像陆地裂开的缝。2D 视图的国界是细实线，3D 跟它一致。
+ */
+check(layerBaseline.borders?.dashed !== true, '国界线是实线（虚线会因逐段重置相位而碎成"裂缝"）')
 
 // 逐个点击底栏按钮，验证 visible 跟着翻转
 const toggleByLabel = async ariaLabel => {

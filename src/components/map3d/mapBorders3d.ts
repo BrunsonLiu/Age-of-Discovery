@@ -72,21 +72,30 @@ export function buildMap3DBorders(geojson: BordersGeoJson): Map3DBorders {
   const geo = new LineSegmentsGeometry()
   geo.setPositions(pos)
 
+  /*
+   * 【为什么是实线，不是虚线】
+   *
+   * 原来 dashed + dashSize 0.05 / gapSize 0.035（约 100km 一格）。
+   * 但 LineSegments2 的 dash 相位是**按每段各自的累积距离**算的
+   * （computeLineDistances 逐段重置），而 borders.geojson 是 393 段独立线段：
+   * 每段开头都从"实"开始，段长又各不相同 —— 于是近景下这些线变成
+   * 长短不一、还互相错位的碎段，读起来像**陆地表面裂开的缝**，
+   * 而不是国界线（3 倍放大截图非常明显）。
+   *
+   * 2D 视图的国界本来就是细实线（#7a5a30），3D 跟着实线才一致；
+   * 实线在远处也不会摩尔纹（1px 轴对齐线段）。透明度同时降一档：
+   * 实线比虚线"重"，0.55 会盖住贴图上的地形色。
+   */
   const material = new LineMaterial({
     color: BORDER_COLOR,
-    linewidth: 1.1,
+    linewidth: 1,
     transparent: true,
-    opacity: 0.55,
-    dashed: true,
-    dashSize: 0.05,
-    gapSize: 0.035,
+    opacity: 0.42,
     depthWrite: false,
   })
 
   const lines = new LineSegments2(geo, material)
   lines.name = 'map3d-borders'
-  // 虚线必须显式算距离累积，否则 dashSize/gapSize 无效
-  lines.computeLineDistances()
   lines.renderOrder = 3
 
   return {
