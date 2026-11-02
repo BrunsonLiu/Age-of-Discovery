@@ -143,7 +143,17 @@ export default function Map3DView() {
       renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5))
       renderer.setSize(width, height)
       renderer.shadowMap.enabled = true
-      renderer.shadowMap.type = THREE.PCFShadowMap
+      /*
+       * PCFSoft 而不是 PCF。
+       *
+       * 【为什么要换】阴影相机是 ±14 世界单位 / 2048² 贴图 ≈ 73 texel/单位，
+       * 而港口底座只有 0.3 单位宽 —— 一个投影在屏幕上只有几十 texel，
+       * 边缘是一格一格的台阶（8 倍放大下非常明显，像像素画）。
+       * PCF 只用固定 4 个采样点做硬边，PCFSoft 的核更大、过渡更宽，台阶被抹开。
+       * 只影响阴影边缘，不动光的强度与颜色 —— 海面颜色因此完全不变
+       * （换 ambient 会连带改海色，已经排除过）。
+       */
+      renderer.shadowMap.type = THREE.PCFSoftShadowMap
       renderer.toneMapping = THREE.ACESFilmicToneMapping
       renderer.toneMappingExposure = 1.42
       renderer.outputColorSpace = THREE.SRGBColorSpace

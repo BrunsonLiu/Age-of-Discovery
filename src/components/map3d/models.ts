@@ -91,10 +91,65 @@ export interface PortModelKit {
   deckMat: THREE.MeshStandardMaterial
 }
 
+/**
+ * 给港口底座上一层逐顶点的明暗。
+ *
+ * 【为什么必须做】底座是 `CylinderGeometry(0.15, 0.19, 0.075, 16)` + 单一纯色
+ * `0x8a5a2c`，光滑着色 —— 5 倍放大下就是一块**均匀的橙色蛋糕**：
+ * 侧面每一处亮度完全一样，既没有"这是块地"的厚度感，也没有石头/泥土的质感。
+ * 整个港口模型里最扎眼的就是它，因为它面积最大。
+ *
+ * 做法与海岸侧壁一致（那边也是不受光的顶点色）：
+ *   顶面（法线朝上）→ 踩实的深土 #6d4626
+ *   上缘            → #8a5a2c（原来的颜色）
+ *   底部            → #452b12（贴水/接地处压暗）
+ * 同时把材质换成 flatShading —— 16 个侧面各成一片，读作削出来的岩块，
+ * 而不是一根光滑的圆柱。
+ *
+ * 【为什么转线性】顶点色属于工作色彩空间（线性），直接塞 sRGB 百分比会被
+ * ACES 提亮，颜色会整体浮起来发白（海岸侧壁踩过这个坑）。
+ */
+function paintPortBase(g: THREE.BufferGeometry): void {
+  const srgbToLinear = (v: number) => (v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4))
+  /*
+   * 明暗顺序：顶面最亮、上缘次之、底部最暗。
+   * 第一版把顶面做得比侧面暗（想做"踩实的深土"），结果整个底座读成一个**碗**
+   * ——光从上方来，水平面必然吃到最多光，把它压暗就是在跟光打架。
+   * 与海岸侧壁那次是同一个教训：垂直面/水平面的相对亮度不能靠"题材想象"定。
+   */
+  const TOP: [number, number, number] = [0x9c / 255, 0x6d / 255, 0x3c / 255]
+  const RIM: [number, number, number] = [0x85 / 255, 0x55 / 255, 0x29 / 255]
+  const LOW: [number, number, number] = [0x6a / 255, 0x45 / 255, 0x22 / 255]
+
+  const pos = g.attributes.position
+  const nrm = g.attributes.normal
+  const h = 0.075
+  const col = new Float32Array(pos.count * 3)
+  for (let i = 0; i < pos.count; i++) {
+    const c = nrm.getY(i) > 0.85
+      ? TOP
+      : (() => {
+          // y 从 -h/2（底）到 +h/2（顶）
+          const t = Math.min(1, Math.max(0, pos.getY(i) / h + 0.5))
+          return [
+            LOW[0] + (RIM[0] - LOW[0]) * t,
+            LOW[1] + (RIM[1] - LOW[1]) * t,
+            LOW[2] + (RIM[2] - LOW[2]) * t,
+          ] as [number, number, number]
+        })()
+    col[i * 3] = srgbToLinear(c[0])
+    col[i * 3 + 1] = srgbToLinear(c[1])
+    col[i * 3 + 2] = srgbToLinear(c[2])
+  }
+  g.setAttribute('color', new THREE.BufferAttribute(col, 3))
+}
+
 /** 建一套港口模型用的几何体与材质（20 个港口共用，别每个港口各建一份） */
 export function createPortModelKit(): PortModelKit {
+  const base = new THREE.CylinderGeometry(0.15, 0.19, 0.075, 16)
+  paintPortBase(base)
   return {
-    base: new THREE.CylinderGeometry(0.15, 0.19, 0.075, 16),
+    base,
     house: new THREE.BoxGeometry(0.055, 0.07, 0.055),
     roof: new THREE.ConeGeometry(0.048, 0.05, 4),
     pole: new THREE.CylinderGeometry(0.007, 0.007, 0.19, 5),
@@ -102,7 +157,11 @@ export function createPortModelKit(): PortModelKit {
     tower: new THREE.CylinderGeometry(0.03, 0.036, 0.17, 8),
     towerTop: new THREE.ConeGeometry(0.046, 0.055, 8),
     unit: new THREE.BoxGeometry(1, 1, 1),
-    baseMat: new THREE.MeshStandardMaterial({ color: 0x8a5a2c, roughness: 0.78, metalness: 0.04 }),
+    // 底座的颜色全部来自顶点色（见 paintPortBase），所以 color 保持白。
+    // flatShading：16 个侧面各成一片，读作削出来的岩块而不是光滑圆柱。
+    baseMat: new THREE.MeshStandardMaterial({
+      vertexColors: true, flatShading: true, roughness: 0.86, metalness: 0,
+    }),
     houseMat: new THREE.MeshStandardMaterial({ color: 0xd8c9a4, roughness: 0.9 }),
     roofMat: {
       caribbean: new THREE.MeshStandardMaterial({ color: 0xb4522f, roughness: 0.85 }),

@@ -165,7 +165,14 @@ export function buildLandGeometry(geojson: GeoJsonLike): LandGeometry {
    */
   const WALL_TOP: [number, number, number] = [108 / 255, 88 / 255, 56 / 255]
   const WALL_MID: [number, number, number] = [64 / 255, 51 / 255, 32 / 255]
-  const WALL_LOW: [number, number, number] = [26 / 255, 18 / 255, 10 / 255]
+  /*
+   * 水线色：从 26/18/10 抬到 52/36/20。
+   * 原来那档渲染出来是 rgb(12,6,3)——纯黑。远看像水面下的阴影没问题，
+   * 但近景（港口就在岸边）时侧壁占很大面积，那一片直接读成**黑洞**，
+   * 而且它的边界是海岸多边形的锯齿，看起来像模型破了个口。
+   * 抬到约 rgb(24,15,8) 就够：仍然明显暗于顶棱，但不再吃掉细节。
+   */
+  const WALL_LOW: [number, number, number] = [52 / 255, 36 / 255, 20 / 255]
   /*
    * 【必须先转线性】顶点色在 three 里属于**工作色彩空间（线性）**，
    * 直接塞 sRGB 的百分比会被当成线性值，再经 ACES 一提亮就发白浮起来——
