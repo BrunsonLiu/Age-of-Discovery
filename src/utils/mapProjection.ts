@@ -18,9 +18,35 @@
  */
 export const MAP_WORLD_SIZE = 20
 
+/**
+ * Mercator 能表示的纬度上限（±85.05112878°）。
+ *
+ * 【为什么必须夹住】mercNorm 里是 log(tan(π/4 + lat·π/360))，
+ * lat → -90 时 tan → 0、log → -∞，归一化值发散。
+ * 实测 land.geojson 有 **269 个顶点在 -89.999**（南极绕极那一圈），
+ * 直接投影出来 z ≈ 37 —— 而海图边界只有 ±10。
+ * 后果不是"南极有点歪"，而是 2.5D 里从海图南沿拉出一张 **27 单位长的
+ * 米黄色纸片**，把屏幕左下角整块盖住（贴图被拉到极限，糊成一片纯色），
+ * 侧壁也跟着拉出一条斜穿全屏的橙线。3D 视图一拉远就能看见。
+ *
+ * 夹在标准 Mercator 边界上，正好得到 z = ±10 = 海图边沿，
+ * 也就是"南极在这张海图上被裁在底边"，与 painted-land.png 的口径一致。
+ */
+export const MERCATOR_LAT_LIMIT = 85.05112878
+
+/** 夹到 Mercator 可表示范围（超出部分没有对应的世界坐标） */
+function clampLat(lat: number): number {
+  if (!Number.isFinite(lat)) return 0
+  return lat > MERCATOR_LAT_LIMIT
+    ? MERCATOR_LAT_LIMIT
+    : lat < -MERCATOR_LAT_LIMIT
+      ? -MERCATOR_LAT_LIMIT
+      : lat
+}
+
 /** 纬度 → Mercator 归一化值（0=北极，1=南极） */
 export function mercNorm(lat: number): number {
-  return (1 - Math.log(Math.tan(Math.PI / 4 + lat * Math.PI / 360)) / Math.PI) / 2
+  return (1 - Math.log(Math.tan(Math.PI / 4 + clampLat(lat) * Math.PI / 360)) / Math.PI) / 2
 }
 
 /** 经度 → 世界 X */
@@ -32,7 +58,6 @@ export function lonToWorldX(lon: number): number {
 export function latToWorldZ(lat: number): number {
   return mercNorm(lat) * MAP_WORLD_SIZE - MAP_WORLD_SIZE / 2
 }
-
 /** 世界 X → 经度 */
 export function worldXToLon(x: number): number {
   return x / MAP_WORLD_SIZE * 360 - 180

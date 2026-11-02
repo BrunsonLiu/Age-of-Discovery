@@ -19,6 +19,7 @@ import {
 } from '../src/utils/eventSummary'
 import { adjustOutcome, clampOutcomeToFleet } from '../src/utils/outcomeAdjust'
 import { buildTerrainSymbols } from '../src/utils/terrainDecor'
+import { latToWorldZ, mercNorm, MAP_WORLD_SIZE, MERCATOR_LAT_LIMIT } from '../src/utils/mapProjection'
 import { durabilityColor, loadColor, DANGER_COLOR, WARN_COLOR, SAFE_COLOR } from '../src/utils/shipVitals'
 import {
   STANCES, forecastSegment, stanceLedgers, segmentCountFor, segmentIndexFor, nextSegmentBoundary,
@@ -3988,6 +3989,46 @@ console.log('== 57. 3D 点击判定：手指抖动不该让航向设不上 ==')
   // ④ 阈值本身要落在"能分开平原和山地"的区间里，且被后面的人改坏时能立刻发现
   assert(PEAK_MIN_ELEV > 0.05 && PEAK_MIN_ELEV < 0.3,
     `峰值阈值 ${PEAK_MIN_ELEV} 落在实测有效区间（0.05~0.3）内`)
+}
+
+/*
+ * 投影：极地纬度必须被夹在 Mercator 边界上。
+ *
+ * 【为什么值得单独测】这不是"数值精度"问题，是**画面级**的：
+ * land.geojson 有 269 个顶点在 -89.999（南极绕极那一圈），
+ * mercNorm 在这里数学上发散（tan→0、log→-∞），未夹住时 z ≈ 37，
+ * 而海图边界只有 10 —— 2.5D 里从南沿拉出一张 27 单位长的米黄纸片，
+ * 把屏幕左下角整块糊掉。
+ *
+ * 【为什么每一条都要有对照组】只断言"极地 = 10"是不够的：
+ * 把 clampLat 写成"永远返回 ±85"也能过。所以同时断言赤道仍是 0、
+ * 中间纬度仍然单调、UV 仍落在 [0,1]。
+ */
+{
+  const SOUTH = latToWorldZ(-89.999)
+  const NORTH = latToWorldZ(89.999)
+  assert(Math.abs(SOUTH - MAP_WORLD_SIZE / 2) < 1e-6,
+    `南极点必须夹到海图南沿 z=${MAP_WORLD_SIZE / 2}（实得 ${SOUTH.toFixed(3)}）`)
+  assert(Math.abs(NORTH + MAP_WORLD_SIZE / 2) < 1e-6,
+    `北极点必须夹到海图北沿 z=${-MAP_WORLD_SIZE / 2}（实得 ${NORTH.toFixed(3)}）`)
+  // 夹的不能过头：赤道仍在地图纵向正中
+  assert(Math.abs(latToWorldZ(0)) < 1e-9, `赤道仍在 z=0（实得 ${latToWorldZ(0)}）`)
+  // 夹的边界要**正好**落在海图沿上，否则陆地会在地图外露出一条缝或压进海里
+  assert(Math.abs(latToWorldZ(MERCATOR_LAT_LIMIT) + MAP_WORLD_SIZE / 2) < 1e-6,
+    `Mercator 纬度上界必须正好落在海图北沿（实得 ${latToWorldZ(MERCATOR_LAT_LIMIT).toFixed(4)}）`)
+  // 单调：北为负、越往北 z 越小（数组从 -85 排到 +85，所以 z 必须递减）
+  const seq = [-85, -60, -30, 0, 30, 60, 85].map(latToWorldZ)
+  assert(seq.every((v, i) => i === 0 || v < seq[i - 1]),
+    `z 必须随纬度单调递减（实得 ${seq.map(v => v.toFixed(2)).join(' ')}）`)
+  // 全部落在海图纵向范围内——几何越界就是从这条破了开始的
+  assert(seq.every(v => v >= -MAP_WORLD_SIZE / 2 - 1e-6 && v <= MAP_WORLD_SIZE / 2 + 1e-6),
+    '常量纬度必须都落在海图纵向范围内')
+  assert([-89.999, -85, 0, 85, 89.999].every(l => {
+    const v = mercNorm(l)
+    return v >= -1e-9 && v <= 1 + 1e-9
+  }), 'UV 的 v 必须在 [0,1]（超出会被 ClampToEdge 拉成一条糊边）')
+  // 非有限输入不能把 NaN 传染进几何（NaN 顶点会让整块网格消失）
+  assert(Number.isFinite(latToWorldZ(NaN)), 'NaN 纬度不能产出 NaN 世界坐标')
 }
 
 console.log(`\n最终结果：${passed} 通过 / ${failed} 失败`)
