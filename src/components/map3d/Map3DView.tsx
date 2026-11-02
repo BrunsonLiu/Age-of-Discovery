@@ -310,7 +310,7 @@ export default function Map3DView() {
         portKit.towerMat, portKit.woodMat, portKit.deckMat,
         // 屋顶材质按 region 分四套（Record），要展开成单个材质再登记
         ...Object.values(portKit.roofMat),
-        shipKit.hull, shipKit.deck, shipKit.mast, shipKit.sail, shipKit.bowsprit,
+        shipKit.hull, shipKit.deck, shipKit.mast, shipKit.sail, shipKit.yard, shipKit.bowsprit,
         shipKit.hullMat, shipKit.deckMat, shipKit.mastMat, shipKit.sailMat,
       )
 

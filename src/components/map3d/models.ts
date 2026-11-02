@@ -282,7 +282,8 @@ export interface ShipModelKit {
   hull: THREE.BufferGeometry
   deck: THREE.BoxGeometry
   mast: THREE.CylinderGeometry
-  sail: THREE.PlaneGeometry
+  sail: THREE.BufferGeometry
+  yard: THREE.CylinderGeometry
   bowsprit: THREE.CylinderGeometry
   hullMat: THREE.MeshStandardMaterial
   deckMat: THREE.MeshStandardMaterial
@@ -290,22 +291,65 @@ export interface ShipModelKit {
   sailMat: THREE.MeshStandardMaterial
 }
 
+/**
+ * 船的几何。
+ *
+ * 【原来为什么像"一张漂在水上的棕色饼 + 三根棍子"】
+ * 三处叠加错了：
+ * ① 船体：`CylinderGeometry(0.5, 0.3, 0.32)` 先 `scale(1.7, 1, 0.8)` 再 `rotateX(90°)`，
+ *    圆柱的**高**只有 0.32、而半径 0.5 被 X 拉成 0.85 —— 转完之后船体
+ *    横向 1.7、纵向只有 0.32，是"横着比竖着宽"的澡盆。俯视看就是一张饼。
+ * ② 桅杆：按 x = -0.28 / 0.08 / 0.38 排——那是**横向**（船宽方向），
+ *    三根桅杆并排立在船的左右舷之间。
+ * ③ 帆：`rotation.y = π/2` 让帆面朝左右。方帆的帆面应该**垂直于龙骨**（朝前后），
+ *    转了 90° 之后帆变成两片侧向的鳍，从默认的西南向俯视几乎看成一条边。
+ *
+ * 现在：船体沿 Z（船首方向）拉长到 1.3、横向 0.4、竖向 0.25；
+ * 桅杆沿 Z 排在同一条龙骨线上；帆面朝前后，并带一点**鼓胀**（正弦鼓起 0.07），
+ * 这样即使在侧视角度也不会退化成一条线。
+ * 另外每根桅杆加一根横桁（yard）：帆被看成一条边的时候，横桁仍然清晰可见，
+ * 一眼就能读出"这是帆船"——真实帆船的横桁本来也比帆宽。
+ */
 export function createShipModelKit(): ShipModelKit {
-  const hull = new THREE.CylinderGeometry(0.5, 0.3, 0.32, 6, 1)
-  hull.scale(1.7, 1, 0.8)
+  // 圆柱的"高"就是船长：转 90° 之后沿 Z 展开
+  const hull = new THREE.CylinderGeometry(0.20, 0.13, 1.30, 8, 1)
   hull.rotateX(Math.PI / 2)
+  hull.scale(1, 0.62, 1)
+
+  // 帆：带鼓胀的曲面（平面在 XY，法线 +Z；沿 +Z 方向鼓起 = 顺风鼓帆）
+  const sail = new THREE.PlaneGeometry(0.36, 0.30, 8, 1)
+  {
+    const pos = sail.attributes.position
+    for (let i = 0; i < pos.count; i++) {
+      const u = (pos.getX(i) + 0.18) / 0.36
+      pos.setZ(i, Math.sin(Math.PI * u) * 0.07)
+    }
+    pos.needsUpdate = true
+    sail.computeVertexNormals()
+  }
+
   return {
     hull,
-    deck: new THREE.BoxGeometry(0.92, 0.05, 0.4),
-    mast: new THREE.CylinderGeometry(0.02, 0.028, 0.9, 6),
-    sail: new THREE.PlaneGeometry(0.42, 0.4),
-    bowsprit: new THREE.CylinderGeometry(0.016, 0.016, 0.4, 6),
+    deck: new THREE.BoxGeometry(0.34, 0.04, 1.02),
+    mast: new THREE.CylinderGeometry(0.018, 0.024, 0.9, 6),
+    sail,
+    yard: new THREE.CylinderGeometry(0.013, 0.013, 0.44, 6),
+    bowsprit: new THREE.CylinderGeometry(0.014, 0.014, 0.44, 6),
     hullMat: new THREE.MeshStandardMaterial({ color: 0x5c2e0a, roughness: 0.88 }),
     deckMat: new THREE.MeshStandardMaterial({ color: 0x8b5a2b, roughness: 0.9 }),
     mastMat: new THREE.MeshStandardMaterial({ color: 0x3f2410, roughness: 0.9 }),
+    /*
+     * 帆：暖米色，不是白。
+     *
+     * 原来 color 0xf6ecd6 + emissive 0x2a2418@1，实测渲染出来是 rgb(226,213,187)
+     * ——亮度是旁边海面 rgb(25,73,85) 的 **11 倍**，全屏最亮的东西变成三块帆布。
+     * 而这张图的基调是"暗桌上的铜木海图"，最亮的不该是玩家的船帆。
+     * 现在压到 0xded0b0、自发光减半（自发光是常数项，在暗部占比很大，
+     * 它才是"发光感"的来源），目标是落在 rgb(200,186,160) 附近。
+     */
     sailMat: new THREE.MeshStandardMaterial({
-      color: 0xf6ecd6, roughness: 0.92, side: THREE.DoubleSide,
-      emissive: 0x2a2418, emissiveIntensity: 1,
+      color: 0xded0b0, roughness: 0.92, side: THREE.DoubleSide,
+      emissive: 0x1a1710, emissiveIntensity: 0.5,
     }),
   }
 }
@@ -315,29 +359,38 @@ export function makeShipModel(kit: ShipModelKit): THREE.Group {
   const g = new THREE.Group()
 
   const hull = new THREE.Mesh(kit.hull, kit.hullMat)
-  hull.position.y = 0.09
+  hull.position.y = 0.06
   hull.castShadow = true
   g.add(hull)
 
   const deck = new THREE.Mesh(kit.deck, kit.deckMat)
-  deck.position.y = 0.25
+  deck.position.y = 0.17
   g.add(deck)
 
-  for (const x of [-0.28, 0.08, 0.38]) {
+  // 桅杆沿龙骨（Z）排：前 / 中 / 后。船首是 +Z，所以最前那根离桅顶最近。
+  for (const z of [-0.36, 0.04, 0.40]) {
     const m = new THREE.Mesh(kit.mast, kit.mastMat)
-    m.position.set(x, 0.25 + 0.45, 0)
+    m.position.set(0, 0.17 + 0.45, z)
     m.castShadow = true
     g.add(m)
-    const s = new THREE.Mesh(kit.sail, kit.sailMat)
-    s.rotation.y = Math.PI / 2
-    s.position.set(x, 0.25 + 0.48, 0)
-    s.castShadow = true
-    g.add(s)
+
+    // 方帆：帆面垂直于龙骨（朝前后），不做 rotation.y
+    const sail = new THREE.Mesh(kit.sail, kit.sailMat)
+    sail.position.set(0, 0.17 + 0.46, z)
+    sail.castShadow = true
+    g.add(sail)
+
+    // 横桁：比帆更宽，帆看成一条边时靠它保住"帆船"的轮廓
+    const yard = new THREE.Mesh(kit.yard, kit.mastMat)
+    yard.rotation.z = Math.PI / 2
+    yard.position.set(0, 0.17 + 0.46 + 0.17, z)
+    g.add(yard)
   }
 
+  // 船首斜桁：从船头向前上方伸出
   const bs = new THREE.Mesh(kit.bowsprit, kit.mastMat)
-  bs.rotation.x = Math.PI / 2
-  bs.position.set(0, 0.33, 0.5)
+  bs.rotation.x = Math.PI / 2 - 0.22
+  bs.position.set(0, 0.22, 0.74)
   g.add(bs)
 
   g.scale.setScalar(0.8)
