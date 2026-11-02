@@ -182,8 +182,33 @@ export interface BuildTerrainOptions {
    * 也为了测试在"必须按格数精确断言"时可以关掉这个随机因素。
    */
   clusterStrength?: number
+  /**
+   * 高程采样器（返回 0~1 相对高度，采样不到返回负数）。
+   *
+   * 【为什么要有】原来 `kind` 是纯随机的：`rand() < 0.62 ? 'peak' : 'tree'`。
+   * 结果**撒哈拉、亚马逊、西伯利亚低地里都长着山**，而阿特拉斯、阿尔卑斯、
+   * 安第斯这些真山脉的符号密度和别处一样。地图上的地形符号和真实地形无关，
+   * 那它就只是装饰，而且是会说谎的装饰。
+   *
+   * 注入成参数而不是在函数里读图片：这样纯逻辑仍可单测
+   * （测试传一个假的采样器，断言"高地出山、平地不出山"）。
+   * 不传时行为与旧版完全一致（退回纯随机）。
+   */
+  elevationAt?: (lat: number, lng: number) => number
   seed?: number
 }
+
+/**
+ * "高峰"的最低相对高度（归一化亮度，在格内取 ±0.5° 最大值之后实测）：
+ *   阿尔卑斯 0.11~0.37 ／ 安第斯 0.57 ／ 喜马拉雅 0.66
+ *   撒哈拉腹地 0.10 ／ 法国平原 0.04
+ *
+ * 取 0.12 是**保守**的选择：它只保证"法国平原、撒哈拉腹地不会长出山"，
+ * 不承诺"阿尔卑斯一定有山"——因为这份高程图在 1.1° 的格子里分不开
+ * 阿尔卑斯山谷（0.106）和撒哈拉腹地（0.102）。要让山脉走向真的对上，
+ * 需要更细的高程数据，不是调阈值能解决的。
+ */
+export const PEAK_MIN_ELEV = 0.12
 
 /**
  * 生成地形符号。
@@ -246,6 +271,7 @@ export function buildTerrainSymbols(
   const insetMul = opts.insetMul ?? 0.6
   /** 团簇：0 = 均匀铺满（旧观感），1 = 极端起伏。见下方 CLUSTER 注释 */
   const clusterStrength = opts.clusterStrength ?? 1
+  const elevationAt = opts.elevationAt
   const rand = mulberry32(opts.seed ?? 20261030)
 
   const polys = extractRings(geojson)
@@ -303,8 +329,32 @@ export function buildTerrainSymbols(
          */
         // 高纬度出雪峰，其余按 2:1 混山与树
         const snowy = Math.abs(lat) > 55
-        const kind: TerrainKind = snowy ? 'peak' : (rand() < 0.62 ? 'peak' : 'tree')
+        let kind: TerrainKind = snowy ? 'peak' : (rand() < 0.62 ? 'peak' : 'tree')
         const scale = 0.8 + rand() * 0.45
+
+        /*
+         * 按真实高程改判 kind。
+         *
+         * 【顺序很关键】必须在 `rand()` **已经消耗完**之后再改判。
+         * 若把"高程不达标就 continue"写在前面，被跳过的格子就少消耗两次随机数，
+         * 后面所有格子的 kind/scale 会整体错位——团簇那次踩过一模一样的坑
+         * （实测挪了 2/3 的符号位置）。这里只覆盖结果，不动随机序列。
+         */
+        if (elevationAt) {
+          const elev = elevationAt(lat, lng)
+          /*
+           * 高程只做**否决**，不做指定：
+           *   低于 PEAK_MIN_ELEV 的地方不出山峰（改成树）
+           * 高于阈值的地方仍然按原来的 62% 概率出山 —— 不去"指定山顶在哪"。
+           *
+           * 【为什么不指定】试过按高程强制放山（elev≥阈值 → peak），实测阿尔卑斯
+           * 一带只剩一两座、撒哈拉腹地反而更多：这份 2048 宽的高程图在 1.1° 的格子里
+           * 取到最大值后，阿尔卑斯山谷 0.106、撒哈拉腹地 0.102 —— **两者重叠**。
+           * 数据分不开的东西，判据再花哨也只是把它随机化，反而让山脉走向消失。
+           * 做否决是安全的：只会删掉"平原上的山"，不会把山搬到别处。
+           */
+          if (elev >= 0 && elev < PEAK_MIN_ELEV && kind === 'peak') kind = 'tree'
+        }
 
         /*
          * 团簇：古地图的山脉是"一簇一簇"的，中间隔着大片留白的平原。

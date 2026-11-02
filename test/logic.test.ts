@@ -138,7 +138,7 @@ import { decidePixelRatio, PIXEL_RATIO_STEP, SLOW_FRAME_MS, MIN_SAMPLES } from '
 import { isTapGesture, TAP_SLOP_MOUSE, TAP_SLOP_TOUCH } from '../src/utils/tapGesture'
 import { landPaperPatternMarkup, PAPER_TILE } from '../src/utils/paperTexture'
 import { buildRhumbNetwork, RHUMB_CENTERS } from '../src/utils/rhumbLines'
-import { hasSnow, SNOW_LAT, rankMaxForZoom } from '../src/utils/terrainDecor'
+import { hasSnow, SNOW_LAT, rankMaxForZoom, PEAK_MIN_ELEV } from '../src/utils/terrainDecor'
 import { chooseLabelSides } from '../src/utils/portLabels'
 import { ports } from '../src/data/ports'
 
@@ -3936,6 +3936,58 @@ console.log('== 57. 3D 点击判定：手指抖动不该让航向设不上 ==')
   // 确定性：同样的输入两次必须一致（缩放平移时标签不能在两侧之间跳）
   const again = chooseLabelSides(ports)
   assert(ports.every((p) => again[p.id] === sides[p.id]), '同样的港口两次必须得到同样的方位')
+}
+
+
+/* ==========================================================================
+ * 地形符号按高程"否决"山峰
+ *
+ * 【守的是什么】地形符号原来是纯随机决定山/树的，于是撒哈拉、亚马逊这些
+ * 又平又低的地方也长满了山。高程数据能可靠回答的是"这里够高吗"，
+ * 回答不了"山峰的准确位置"——所以只做否决：低于阈值的地方不许出山峰。
+ *
+ * 三个不变量：
+ *   ① 否决**只改 kind，不挪位置**（随机序列不能因为改判而错位）；
+ *   ② 采样失败（返回负数）等同于没给采样器，不能把地形整层清空；
+ *   ③ 阈值之上的行为与没有采样器时**完全一致**（不凭空造山、也不额外删山）。
+ * ========================================================================== */
+{
+  const box = {
+    type: 'FeatureCollection',
+    features: [{
+      type: 'Feature',
+      properties: {},
+      geometry: {
+        type: 'Polygon',
+        coordinates: [[[10, -10], [50, -10], [50, 30], [10, 30], [10, -10]]],
+      },
+    }],
+  }
+  const base = buildTerrainSymbols(box, { maxSymbols: 100000 })
+
+  // ① 低位采样器：拒绝所有山峰，但位置必须一模一样
+  const flat = buildTerrainSymbols(box, { maxSymbols: 100000, elevationAt: () => 0 })
+  assert(flat.length === base.length,
+    `否决只改种类、不删点（${base.length} → ${flat.length}）`)
+  assert(flat.every((s, i) => s.lat === base[i].lat && s.lng === base[i].lng),
+    '否决不允许挪动任何符号的位置——随机序列一旦错位，整片山的分布就变了')
+  assert(flat.every(s => s.kind === 'tree'),
+    `全部低于阈值时不该有山峰（实得 ${flat.filter(s => s.kind === 'peak').length} 个）`)
+
+  // ② 采样失败：返回负数要等同于"没有高程数据"
+  const failed = buildTerrainSymbols(box, { maxSymbols: 100000, elevationAt: () => -1 })
+  assert(failed.length === base.length, '采样失败不能删点')
+  assert(failed.every((s, i) => s.kind === base[i].kind),
+    '采样失败时必须与"没有采样器"完全一致，不能悄悄把山全变成树')
+
+  // ③ 高处采样器：与没有采样器时完全一致（不该凭空造山、也不该额外删山）
+  const high = buildTerrainSymbols(box, { maxSymbols: 100000, elevationAt: () => 1 })
+  assert(high.length === base.length && high.every((s, i) => s.kind === base[i].kind),
+    '阈值之上必须与原始行为逐点一致')
+
+  // ④ 阈值本身要落在"能分开平原和山地"的区间里，且被后面的人改坏时能立刻发现
+  assert(PEAK_MIN_ELEV > 0.05 && PEAK_MIN_ELEV < 0.3,
+    `峰值阈值 ${PEAK_MIN_ELEV} 落在实测有效区间（0.05~0.3）内`)
 }
 
 console.log(`\n最终结果：${passed} 通过 / ${failed} 失败`)

@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMap } from 'react-leaflet'
 import L from 'leaflet'
 import { buildTerrainSymbols, hasSnow, rankMaxForZoom, type TerrainSymbol } from '@/utils/terrainDecor'
+import { loadElevationSampler, type ElevationSampler } from '@/utils/elevation'
 
 /**
  * 地形装饰层：把 terrainDecor 生成的山丘 / 树丛画到地图上。
@@ -179,7 +180,27 @@ function drawSymbol(
 
 export default function TerrainDecor({ geojson }: { geojson: GeoJSON.GeoJsonObject }) {
   const map = useMap()
-  const symbols = useMemo(() => buildTerrainSymbols(geojson), [geojson])
+
+  /*
+   * 高程采样器：决定"山画在哪里"。
+   *
+   * 【为什么要等它】符号一旦生成就是固定的世界坐标，先按随机画一遍、等高程到了
+   * 再重画一遍，屏幕上会看到整片山"跳"一次。高程图只有 394KB，等它比看它跳好。
+   * 加载失败（离线/资源 404）就退回不看高程的旧行为——不能让地形整层消失。
+   */
+  const [elev, setElev] = useState<{ ready: boolean; fn: ElevationSampler | null }>({ ready: false, fn: null })
+  useEffect(() => {
+    let alive = true
+    loadElevationSampler(`${import.meta.env.BASE_URL}data/elev-map.png`).then((fn) => {
+      if (alive) setElev({ ready: true, fn })
+    })
+    return () => { alive = false }
+  }, [])
+
+  const symbols = useMemo(
+    () => (elev.ready ? buildTerrainSymbols(geojson, { elevationAt: elev.fn ?? undefined }) : []),
+    [geojson, elev],
+  )
   const rafRef = useRef<number | null>(null)
 
   useEffect(() => {
