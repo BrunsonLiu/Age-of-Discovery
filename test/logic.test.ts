@@ -138,7 +138,9 @@ import { decidePixelRatio, PIXEL_RATIO_STEP, SLOW_FRAME_MS, MIN_SAMPLES } from '
 import { isTapGesture, TAP_SLOP_MOUSE, TAP_SLOP_TOUCH } from '../src/utils/tapGesture'
 import { landPaperPatternMarkup, PAPER_TILE } from '../src/utils/paperTexture'
 import { buildRhumbNetwork, RHUMB_CENTERS } from '../src/utils/rhumbLines'
-import { hasSnow, SNOW_LAT } from '../src/utils/terrainDecor'
+import { hasSnow, SNOW_LAT, rankMaxForZoom } from '../src/utils/terrainDecor'
+import { chooseLabelSides } from '../src/utils/portLabels'
+import { ports } from '../src/data/ports'
 
 let passed = 0
 let failed = 0
@@ -3835,6 +3837,105 @@ console.log('== 57. 3D 点击判定：手指抖动不该让航向设不上 ==')
   assert(hasSnow(-55), '南纬 55° 应当有雪顶（雪线是纬度的绝对值）')
   // 防止有人把判据写成"只认北半球"
   assert(hasSnow(-60) === hasSnow(60), '南北半球必须对称')
+}
+
+
+/* ==========================================================================
+ * 地形符号的缩放分级（rankMaxForZoom）
+ *
+ * 【守的是什么】符号是"1.1° 一格"撒出来的，屏幕间距 = 步长 × 像素/度。
+ * 拉远不筛会糊成一片，拉近不加密就只剩十几座山（伊比利亚整块内陆实测过）。
+ * 所以阈值的两条性质必须成立：**单调不减**（拉近不会反而变稀，也不会让
+ * 已经出现的符号消失——嵌套），**放大后确实更密**。
+ * ========================================================================== */
+{
+  const zs = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+  const rs = zs.map(rankMaxForZoom)
+  for (let i = 0; i < rs.length; i++) {
+    assert(rs[i] > 0 && rs[i] <= 1, `zoom ${zs[i]} 的 rank 阈值必须在 (0,1]，实得 ${rs[i]}`)
+    if (i > 0) assert(rs[i] >= rs[i - 1], `阈值必须随缩放单调不减：zoom ${zs[i - 1]} ${rs[i - 1]} → zoom ${zs[i]} ${rs[i]}`)
+  }
+  assert(rankMaxForZoom(10) === 1, '最大缩放必须全画')
+  assert(rankMaxForZoom(2) < 0.1, `最远缩放必须只留很少一部分（实得 ${rankMaxForZoom(2)}）`)
+  // 越界/异常输入要给一个可用的值，不能是 NaN（NaN 比较恒 false，会让过滤整段失效）
+  assert(Number.isFinite(rankMaxForZoom(-5)) && rankMaxForZoom(-5) > 0, '缩放为负也要给出有效阈值')
+  assert(rankMaxForZoom(NaN) === 1, 'NaN 缩放要退化成"全画"，不能变成 NaN 阈值')
+
+  // 用一块够大的陆地量一遍：放大到 zoom 6 时画出来的符号必须明显多于 zoom 4
+  const block40 = {
+    type: 'FeatureCollection',
+    features: [{
+      type: 'Feature',
+      properties: {},
+      geometry: {
+        type: 'Polygon',
+        coordinates: [[[10, -10], [50, -10], [50, 30], [10, 30], [10, -10]]],
+      },
+    }],
+  }
+  const big = buildTerrainSymbols(block40, { maxSymbols: 100000 })
+  const at4 = big.filter((s) => s.rank <= rankMaxForZoom(4)).length
+  const at6 = big.filter((s) => s.rank <= rankMaxForZoom(6)).length
+  assert(at6 > at4 * 1.8,
+    `放大到 zoom 6 必须明显更密（zoom4 ${at4} 个 → zoom6 ${at6} 个，要求 ≥1.8×）`)
+}
+
+
+/* ==========================================================================
+ * 港口名写在哪一侧（chooseLabelSides）
+ *
+ * 挨着的港口标签会叠在一起：实测「塞维利亚 × 加的斯」重叠 41×8px（zoom 4）、
+ * 「伦敦 × 阿姆斯特丹」27×4px（先按 id 取模轮换时）。轮换与几何无关，
+ * 解决一对就把冲突推到另一对。现在按"背离最近邻居"选边。
+ *
+ * 断言用的是**几何不变量**而不是具体返回值：标签方向与"指向邻居"的方向
+ * 必须点积为负（即背对邻居）。写死返回值只能测到当前这 20 个港口。
+ * ========================================================================== */
+{
+  const sides = chooseLabelSides(ports)
+
+  // 方向 → 屏幕向量（北是 -y）
+  const VEC: Record<string, [number, number]> = {
+    top: [0, -1], right: [1, 0], bottom: [0, 1], left: [-1, 0],
+  }
+  const rows = Object.entries(sides)
+  assert(rows.length === ports.length, `每个港口都要有方位（${rows.length}/${ports.length}）`)
+  for (const [, v] of rows) assert(v in VEC, `方位只能是 top/right/bottom/left，实得 ${v}`)
+
+  // 每个有近邻的港口：选的方向必须背对最近的那个邻居
+  for (const p of ports) {
+    let nb = null
+    let bestD = Infinity
+    for (const q of ports) {
+      if (q.id === p.id) continue
+      const dLng = (q.longitude - p.longitude) * Math.cos((p.latitude * Math.PI) / 180)
+      const dLat = q.latitude - p.latitude
+      const d = Math.hypot(dLng, dLat)
+      if (d < bestD) { bestD = d; nb = { dLng, dLat } }
+    }
+    if (!nb || bestD > 12) continue
+    const v = VEC[sides[p.id]]
+    // 邻居在屏幕上的方向向量（北 = -y）
+    const [nx, ny] = [nb.dLng, -nb.dLat]
+    const dot = v[0] * nx + v[1] * ny
+    assert(dot < 0,
+      `港口 ${p.id} 的标签必须背对最近邻居（点积 ${dot.toFixed(3)}，方位 ${sides[p.id]}）`)
+  }
+
+  // 两组实际冲突必须分开
+  assert(sides[6] !== sides[20], `塞维利亚与加的斯必须不同侧（实得 ${sides[6]} / ${sides[20]}）`)
+  assert(sides[8] !== sides[15], `伦敦与阿姆斯特丹必须不同侧（实得 ${sides[8]} / ${sides[15]}）`)
+  // 塞维利亚在加的斯北边 → 塞维利亚写上面、加的斯写下面
+  assert(sides[6] === 'top' && sides[20] === 'bottom',
+    `南北相邻应一上一下（塞维利亚 ${sides[6]}、加的斯 ${sides[20]}）`)
+
+  // 孤立的港口默认写上方
+  const lone = chooseLabelSides([{ id: 1, latitude: 0, longitude: 0 }])
+  assert(lone[1] === 'top', `附近没有别的港口时默认写上方（实得 ${lone[1]}）`)
+
+  // 确定性：同样的输入两次必须一致（缩放平移时标签不能在两侧之间跳）
+  const again = chooseLabelSides(ports)
+  assert(ports.every((p) => again[p.id] === sides[p.id]), '同样的港口两次必须得到同样的方位')
 }
 
 console.log(`\n最终结果：${passed} 通过 / ${failed} 失败`)

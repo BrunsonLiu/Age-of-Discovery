@@ -1,8 +1,10 @@
+import { useMemo } from 'react'
 import { Marker, Tooltip } from 'react-leaflet'
 import L from 'leaflet'
 import { useGameStore } from '@/store/useGameStore'
 import { useMapStore } from '@/store/useMapStore'
 import { ports } from '@/data/ports'
+import { chooseLabelSides, type LabelSide } from '@/utils/portLabels'
 
 function createPortIcon(isCurrent: boolean) {
   const size = isCurrent ? 34 : 28
@@ -58,10 +60,32 @@ export function PortMarker() {
   const setActivePanel = useGameStore((s) => s.setActivePanel)
   const discoverPort = useGameStore((s) => s.discoverPort)
 
+  /*
+   * 每个港口名写在哪一侧：按"最近的邻居"决定，背离它写。
+   * 见 utils/portLabels.ts —— 挨着的港口（塞维利亚/加的斯、伦敦/阿姆斯特丹）
+   * 会因此天然分开，不需要碰撞消解。
+   * 偏移必须跟着方向走，否则文字会压在图标上。
+   */
+  const sides = useMemo(() => chooseLabelSides(ports), [])
+  /*
+   * 拉远到 zoom ≤3 时，20 个港口名会挤成一团（实测 zoom 3 下
+   * 「哈瓦那 × 韦拉克鲁斯」重叠 21×12px、「托尔图加 × 圣胡安」17×11px）。
+   * 那一级缩放下名字本来也读不动，留着只是噪声。
+   * 所以只让**当前所在港口**常显名字，其余港口改成悬停才显示——
+   * 信息没有减少，只是把"一直挂着"换成"要的时候出现"。
+   * 默认缩放是 5，所以这条只在玩家主动拉远时生效。
+   */
+  const zoom = useMapStore((s) => s.zoom)
+  const namesAlwaysOn = zoom > 3
+  const OFFSET: Record<LabelSide, [number, number]> = {
+    top: [0, -16], right: [18, 0], bottom: [0, 16], left: [-18, 0],
+  }
+
   return (
     <>
       {ports.map((port) => {
         const isCurrent = port.id === currentPortId
+        const side = sides[port.id] ?? 'top'
         const isDiscovered = discoveredPorts.includes(port.id)
         const showDiscoveredMarker = isCurrent || isDiscovered
 
@@ -85,10 +109,10 @@ export function PortMarker() {
             }}
           >
             <Tooltip
-              direction="top"
-              offset={[0, -16]}
+              direction={side}
+              offset={OFFSET[side]}
               className="port-tooltip"
-              permanent={true}
+              permanent={namesAlwaysOn || isCurrent}
             >
               {/* 港口名是地图上最常被读的字，12px → 13px。
                   当前港口原先用 fontWeight:bold 强调——中文只有 400 字重，

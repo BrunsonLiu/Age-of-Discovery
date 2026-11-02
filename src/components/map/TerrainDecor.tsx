@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef } from 'react'
 import { useMap } from 'react-leaflet'
 import L from 'leaflet'
-import { buildTerrainSymbols, hasSnow, type TerrainSymbol } from '@/utils/terrainDecor'
+import { buildTerrainSymbols, hasSnow, rankMaxForZoom, type TerrainSymbol } from '@/utils/terrainDecor'
 
 /**
  * 地形装饰层：把 terrainDecor 生成的山丘 / 树丛画到地图上。
@@ -225,13 +225,10 @@ export default function TerrainDecor({ geojson }: { geojson: GeoJSON.GeoJsonObje
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
       ctx.clearRect(0, 0, size.x, size.y)
 
-      // zoom 分级：拉远只画 rank 小的那一部分。
-      // 符号的世界坐标是 2.2 度一格，拉远时一屏能装下好几千个格子，
-      // 全画会糊成一片色块；拉近时格子间距被拉开，才有必要全画。
-      // 因为按 rank 过滤（而不是按数量截断），高低缩放下的符号是**嵌套**的：
-      // 拉近后原地那些符号还在，只是周围多了新的，不会"山跟着跳"。
-      const z = map.getZoom()
-      const rankMax = z <= 2 ? 0.18 : z === 3 ? 0.3 : z === 4 ? 0.48 : z === 5 ? 0.68 : 1
+      // zoom 分级：拉远只画 rank 小的那一部分，拉近逐层放出来。
+      // 阈值表挪到 utils（`rankMaxForZoom`）—— 它是纯逻辑，可以单测
+      // "必须随缩放单调不减"和"放大后确实更密"，比埋在这里的魔法数字可靠。
+      const rankMax = rankMaxForZoom(map.getZoom())
 
       // 视口裁剪：数据里上万颗符号，一屏通常只有几百颗，
       // 剩下的连投影都不必算。

@@ -31,6 +31,29 @@ export type TerrainKind = 'peak' | 'tree'
  * 而且是事实错误（热带石灰岩山不会有永久积雪），不只是不好看。
  * 抽成纯函数是为了能单测：绘制层在 canvas 里，断言不到像素级的"有没有雪"。
  */
+/**
+ * 每个缩放级别画到哪一档 rank。**拉远稀、拉近密**。
+ *
+ * 【为什么需要它】符号是"1.1° 一格"撒出来的，屏幕上的间距 = 步长 × 该缩放的
+ * 像素/度。zoom 2 时一屏能装下几千格，全画会糊成一片；zoom 6 时格子被拉开，
+ * 不画就只剩十几座山。所以按 rank（0~1 的随机值）过滤，而且是**嵌套**的：
+ * 阈值单调不减 → 拉近之后原地那些符号还在，只是周围多了新的，山不会跟着跳。
+ *
+ * 【数值怎么定的】总符号约 5000 个。低缩放那几档乘了 0.26 的系数，
+ * 让"画出来的数量"和步长还是 2.2° 时保持一致（曾经 0.18/0.30/0.48/0.68）；
+ * zoom 6 起才把多出来的密度放出来（0.45 → 0.72 → 1.0）。
+ */
+const RANK_TABLE: Record<number, number> = {
+  1: 0.04, 2: 0.05, 3: 0.08, 4: 0.13, 5: 0.19,
+  6: 0.45, 7: 0.72, 8: 1, 9: 1, 10: 1,
+}
+
+export function rankMaxForZoom(z: number): number {
+  if (!Number.isFinite(z)) return 1
+  const clamped = Math.max(1, Math.min(10, Math.round(z)))
+  return RANK_TABLE[clamped] ?? 1
+}
+
 export const SNOW_LAT = 48
 
 export function hasSnow(latDeg: number): boolean {
@@ -192,7 +215,16 @@ export function buildTerrainSymbols(
   opts: BuildTerrainOptions = {},
 ): TerrainSymbol[] {
   const topBlocks = opts.topBlocks ?? 14
-  const stepDeg = opts.stepDeg ?? 2.2
+  /*
+   * 撒点步长。2.2° → 1.1°：**近景陆地不再空**。
+   *
+   * 【为什么改】符在屏幕上的间距 = 步长 × 当前缩放的像素/度。2.2° 在 zoom 6
+   * 下约 100px，而符号本身只有 26px 宽——伊比利亚整块内陆只剩十来座山，
+   * 放大之后反而更空。步长减半 → 全局符号数 ×4（约 5200 个），
+   * 低缩放由 rank 阈值筛掉大部分（见 rankMaxForZoom），观感不变；
+   * 高缩放才把多出来的那几层放出来。
+   */
+  const stepDeg = opts.stepDeg ?? 1.1
   const maxSymbols = opts.maxSymbols ?? 26000
   /*
    * 离岸内缩：采样点必须离海岸有这么远，否则不出符号。
@@ -201,6 +233,8 @@ export function buildTerrainSymbols(
    * 而内缩是按度数算的。0.16 × 2.2° ≈ 0.35°，在 zoom 4 下只有 ~4px，
    * 远小于符号的半宽 13px —— 海岸边的山会把一只角伸进海里。
    * 提到 0.3（≈0.66°，zoom 4 下约 7px）能削减一半的溢出。
+   * 步长改成 1.1° 之后系数同步翻倍到 0.6 —— 内缩是"步长 × 系数"，
+   * 不跟着改的话实际内缩会缩回 0.33°，海岸溢出又回来了。
    *
    * 【为什么没有提到 0.5】试过：0.5 = 1.1°，挪威那种窄半岛上**一个符号都不剩了**
    * （实测整个斯堪的纳维亚北端变空白）。海岸线附近的符号比偶尔一只角伸进海里
@@ -209,7 +243,7 @@ export function buildTerrainSymbols(
    * 这是近似不是根治：根治要把符号裁剪到陆地多边形里，得每帧重建 1400+
    * 个多边形的 Path2D，代价远大于收益。
    */
-  const insetMul = opts.insetMul ?? 0.3
+  const insetMul = opts.insetMul ?? 0.6
   /** 团簇：0 = 均匀铺满（旧观感），1 = 极端起伏。见下方 CLUSTER 注释 */
   const clusterStrength = opts.clusterStrength ?? 1
   const rand = mulberry32(opts.seed ?? 20261030)
@@ -286,7 +320,10 @@ export function buildTerrainSymbols(
          * 两次取值都用 hashCell 而不是 rand()——见 hashCell 的注释。
          */
         if (clusterStrength > 0) {
-          const CLUSTER = 2
+          // 粗格 = CLUSTER × CLUSTER 个细格。步长从 2.2° 减半到 1.1° 之后，
+          // CLUSTER 要跟着翻倍，团簇的**物理尺寸**才不变（仍约 4.4° 见方），
+          // 否则山会碎成一堆小簇。
+          const CLUSTER = 4
           const region = hashCell(Math.floor(c / CLUSTER), Math.floor(r / CLUSTER), 0x5eed)
           const clustered = region > 0.42 ? 0.85 : 0.12
           const density = 1 - clusterStrength + clusterStrength * clustered
