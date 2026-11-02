@@ -23,10 +23,18 @@ function createPortIcon(isCurrent: boolean) {
     </svg>
   `
 
+  /*
+   * 【为什么把底色从近黑改成黄铜渐变】
+   * 原来是 #3a2a18 → #1c130a，压在浅米色的陆地上就是一枚**黑孔**——
+   * 1:1 看过去像地图被戳了个洞，不像图钉。真实海图上的港口记号是
+   * 钉在图上的一枚铜钉/蜡封：外圈有厚度、面有受光。
+   * 现在用暖褐渐变（#5a4225 → #2a1c0e）+ 一道顶部内高光，
+   * 读作"黄铜"，而奶油色锚在它上面仍然是 8:1 以上的对比，不受影响。
+   */
   const html = `
     <div style="
       width:${size}px;height:${size}px;
-      background:linear-gradient(180deg, #3a2a18 0%, #1c130a 100%);
+      background:radial-gradient(circle at 34% 26%, #6b5030 0%, #4a3520 42%, #2a1c0e 100%);
       border:1.5px solid #c9a96e;border-radius:50%;
       display:flex;align-items:center;justify-content:center;
       ${glow}${pulse}
@@ -88,8 +96,20 @@ export function PortMarker() {
                   改用"提亮 + 加宽字距"：字距是排印里最干净的强调手段，
                   而且不会改变字形本身。 */}
               <span className="font-serif text-[13px]" style={{
-                color: isCurrent ? '#fff2cf' : '#e3c98a',
-                letterSpacing: isCurrent ? '0.06em' : '0.02em',
+                color: isCurrent ? '#fff6dc' : '#f0dfb4',
+                letterSpacing: isCurrent ? '0.08em' : '0.05em',
+                /*
+                 * 描边只做上下左右四个方向，**不做对角**。
+                 * 八向版本在 5 倍放大下是"气泡字"：对角的两份描边把衬线的
+                 * 细笔画（横画两端、撇捺收笔）整片糊掉，13px 的中文直接读成
+                 * 一团带边的色块。四向 + 一层模糊阴影就够了：模糊负责让字
+                 * 从花哨的纸纹里脱开，方向描边负责给深蓝海面上的字一个边界。
+                 */
+                textShadow: [
+                  '1px 0 0 #2b1e0e', '-1px 0 0 #2b1e0e',
+                  '0 1px 0 #2b1e0e', '0 -1px 0 #2b1e0e',
+                  '0 0 5px rgba(20, 13, 6, 0.55)',
+                ].join(', '),
               }}>
                 {port.nameCn}
               </span>
@@ -102,19 +122,29 @@ export function PortMarker() {
           background: none !important;
           border: none !important;
         }
+        /*
+         * 【为什么把底板整个去掉】
+         * 原来港口名是一块深色圆角牌子 + 金色细边 + 一个指向图标的小三角，
+         * 那是网页 tooltip 的做法。而这张图上真正像"海图"的文字（大西洋、
+         * 加勒比海）是**直接印在纸上**的衬线字，没有任何底板。
+         * 两者并排时，港口名看起来像浮在地图上的控件，地名反倒像地图本身。
+         * 现在港口名也走"印在图上"：奶油色字 + 深褐描边，没有底板、没有箭头。
+         *
+         * 【为什么需要描边而不是只用阴影】
+         * 港口骑在海岸线上，标签一侧压在陆地（浅米色）、另一侧压在海面（深蓝）。
+         * 只靠一种文字颜色，总有一半读不出来：深墨在海上消失，浅奶在陆上发虚。
+         * 描边（四向 1px + 对角 1px）同时给两边提供边界对比，
+         * 这是纸质地图标注地名的常规做法。
+         */
         .port-tooltip {
-          background: linear-gradient(180deg, rgba(48, 36, 20, 0.96) 0%, rgba(22, 16, 8, 0.96) 100%) !important;
-          border: 1px solid rgba(201, 169, 110, 0.5) !important;
-          border-radius: 2px !important;
-          color: #dcbe7c !important;
-          padding: 1px 6px !important;
-          box-shadow: 0 2px 6px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 238, 186, 0.16) !important;
-          font-size: 11px !important;
+          background: transparent !important;
+          border: none !important;
+          border-radius: 0 !important;
+          padding: 0 !important;
+          box-shadow: none !important;
           white-space: nowrap !important;
         }
-        .port-tooltip::before {
-          border-top-color: rgba(201, 169, 110, 0.5) !important;
-        }
+        .port-tooltip::before { display: none !important; }
         @keyframes portPulse {
           0%, 100% { transform: scale(1); box-shadow: 0 0 10px rgba(212,168,56,0.7), 0 0 20px rgba(212,168,56,0.3); }
           50% { transform: scale(1.1); box-shadow: 0 0 15px rgba(212,168,56,0.9), 0 0 30px rgba(212,168,56,0.4); }

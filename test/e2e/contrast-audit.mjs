@@ -162,6 +162,7 @@ const items = await page.evaluate((VW, VH) => {
       cls: ((el.getAttribute && el.getAttribute('class')) || '').toString().slice(0, 46),
       parentCls: ((el.parentElement?.getAttribute?.('class')) || '').toString().slice(0, 40),
       color: cs.color,
+      shadow: cs.textShadow,
       fg, fs, bold,
       rect: { x: Math.max(0, r.left), y: Math.max(0, r.top), w: Math.min(r.width, VW - r.left), h: Math.min(r.height, VH - r.top) },
     })
@@ -240,12 +241,71 @@ const measured = await page.evaluate(async (b64, items) => {
 }, b64, items)
 
 // ---- 汇总 ----
+/*
+ * 描边字（奶油字 + 深褐描边）。
+ *
+ * 【为什么 WCAG 的"字 vs 底色"这里不适用】
+ * 港口名骑在海岸线上：左边是浅米色陆地（rgb 163,146,116）、右边是深蓝海面。
+ * 任何**单一**文字色都会有一半读不出来——所以这类标注的标准做法是
+ * 「填充色 + 一圈深色描边」，描边本身提供边界对比（这也是 Google 地图
+ * 在卫星图上的做法）。
+ * 但审计按"字形颜色 vs 它周围像素的众数"算，奶油字压浅色陆地得 2.81:1，
+ * 而实际上描边（#2b1e0e）与填充是 12:1，字形靠描边立边界、完全读得清。
+ *
+ * 所以：如果元素带 text-shadow，且其中某个颜色与填充色的对比 ≥4.5，
+ * 就认定它是描边字，改判「填充 vs 描边」，并单独归到 halo 一类里报出来——
+ * 不静默通过，让"这里用的是描边而不是实底"这件事在输出里可见。
+ * 用浅色发光的（比如洋名的 0 0 8px 米色）不会被误判：发光色与浅色字对比很低。
+ */
+const shadowColors = (sh) => {
+  if (!sh || sh === 'none') return []
+  const out = []
+  const re = /rgba?\(([^)]+)\)/g
+  let m
+  while ((m = re.exec(sh))) {
+    const p = m[1].split(',').map(Number)
+    if (p.length >= 3 && Number.isFinite(p[0])) out.push({ r: p[0], g: p[1], b: p[2] })
+  }
+  return out
+}
+
 const need = (it) => (it.fs >= 18 || (it.fs >= 14 && it.bold)) ? 3 : 4.5
-const graded = measured.filter(m => m.contrast != null).map(m => ({ ...m, need: need(m), pass: m.contrast >= need(m) }))
+// Node 侧的对比度计算（页面里那两个 lum/ratio 在 evaluate 作用域内，这里用不到）
+const linN = (v) => { const s = v / 255; return s <= 0.04045 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4) }
+const lumN = (r, g, b) => 0.2126 * linN(r) + 0.7152 * linN(g) + 0.0722 * linN(b)
+const ratioN = (a, b) => { const hi = Math.max(a, b), lo = Math.min(a, b); return (hi + 0.05) / (lo + 0.05) }
+
+const graded = measured.filter(m => m.contrast != null).map((m) => {
+  const n = need(m)
+  const halo = shadowColors(m.shadow)
+    .map((c) => ratioN(lumN(m.fg.r, m.fg.g, m.fg.b), lumN(c.r, c.g, c.b)))
+    .reduce((a, b) => Math.max(a, b), 0)
+  const outlined = halo >= 4.5
+  return {
+    ...m, need: n,
+    halo: +halo.toFixed(2),
+    outlined,
+    pass: outlined || m.contrast >= n,
+  }
+})
 const fails = graded.filter(m => !m.pass).sort((a, b) => a.contrast - b.contrast)
 
 console.log(`\n视口 ${VW}×${VH}${PANEL ? ` · 面板 ${PANEL}` : ''} · 可见文字 ${graded.length} 段`)
 console.log(`  未达标 ${fails.length} 段（AA：正文 4.5 / 大字 3.0）`)
+/*
+ * 靠描边通过的要单独报：这类元素"字 vs 底色"是不达标的（奶油字压浅色陆地 2.81），
+ * 靠的是深色描边立边界。把它藏进"0 未达标"里等于悄悄放行——
+ * 必须让读输出的人知道这一部分不是靠实底达标的。
+ */
+{
+  const haloed = graded.filter((m) => m.outlined && m.contrast < m.need)
+  if (haloed.length) {
+    console.log(`  其中 ${haloed.length} 段靠描边达标（字 vs 底色不足，改判字 vs 描边）：`)
+    for (const m of haloed) {
+      console.log(`    · 「${m.txt}」字 vs 底色 ${m.contrast}:1，字 vs 描边 ${m.halo}:1 @(${Math.round(m.rect.x)},${Math.round(m.rect.y)})`)
+    }
+  }
+}
 
 if (fails.length) {
   console.log('\n最差的 25 段：')
