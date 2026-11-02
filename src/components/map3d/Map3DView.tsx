@@ -199,8 +199,51 @@ export default function Map3DView() {
       sea.receiveShadow = true
       scene.add(sea)
 
+      /*
+       * 外圈几何：**中间挖掉世界范围的方环**，不是一整块大平面。
+       *
+       * 【为什么必须是环】原来是一块 90×90 的平面压在海图本体下面，两块面重合。
+       * 为了不 z-fighting 把它压低 0.016 世界单位，结果两条边之间留了一道
+       * 竖直的缝——斜视时从缝里看到背景，海面上出现一条 2px 的暗线
+       * （实测亮度 47 → 36 → 47）。试过同高 + polygonOffset，暗线仍在
+       * （掠射角度下 polygonOffsetFactor 会把面推得极远，不可控）。
+       * 挖成方环之后两块面**只共享一条边、不再重叠**，可以同高，
+       * 既没有缝也没有 z-fighting。
+       */
+      const outerGeo = (() => {
+        const half = 45
+        const shape = new THREE.Shape()
+        shape.moveTo(-half, -half)
+        shape.lineTo(half, -half)
+        shape.lineTo(half, half)
+        shape.lineTo(-half, half)
+        shape.closePath()
+        /*
+         * 内沿往里多盖 0.3 单位（OVERLAP）。
+         *
+         * 【为什么不能正好贴着海图本体的边】实测那道 2px 暗线不是缝隙，
+         * 换洋红验过：它属于**海面本体**——painted-sea.png 最外一行本身是深色
+         * （ClampToEdge 采样到贴图边框），于是海图四边各有一圈暗边。
+         * 方环多盖一点，把海面那圈暗边压在下面，交界就落在贴图内部正常的区域。
+         * 环比海面高 0.002，重叠区由环胜出；因为两者颜色已校准到相差 ≤2 级，
+         * 交界本身看不出来。
+         */
+        const OVERLAP = 0.3
+        const h = MAP_WORLD_SIZE / 2 - OVERLAP
+        const hole = new THREE.Path()
+        hole.moveTo(-h, -h)
+        hole.lineTo(-h, h)
+        hole.lineTo(h, h)
+        hole.lineTo(h, -h)
+        hole.closePath()
+        shape.holes.push(hole)
+        // 只建在 XY 平面：绕 X 的放平动作交给下面 mesh 的 rotation.x，
+        // 在几何里再转一次会变成"转两遍"，方环直接立起来（实测整片外圈消失）
+        return new THREE.ShapeGeometry(shape)
+      })()
+
       const outer = new THREE.Mesh(
-        new THREE.PlaneGeometry(90, 90),
+        outerGeo,
         /*
          * 【为什么用 MeshBasicMaterial（不受光）】
          * 这层是"海图之外的水"，铺满屏幕四周，不参与任何光照叙事。
@@ -213,7 +256,7 @@ export default function Map3DView() {
         new THREE.MeshBasicMaterial({ color: 0x0a2230 })
       )
       outer.rotation.x = -Math.PI / 2
-      outer.position.set(MAP_WORLD_SIZE / 2, -PLATE_THICKNESS - 0.02, 0)
+      outer.position.set(MAP_WORLD_SIZE / 2, -PLATE_THICKNESS - 0.004 + 0.002, 0)
       scene.add(outer)
       disposables.push(seaGeo, seaMat, outer.geometry, outer.material)
 
@@ -237,7 +280,7 @@ export default function Map3DView() {
        * three 的 ACES 在暗部是**提亮**的（x=0.35 会输出 0.49），反解 ACES 得到
        * 输入约 (0.010,0.031,0.042)。实测按此设置后外圈落在 rgb(11,38,50)。
        */
-      const OUTER_BASE: [number, number, number] = [0.010, 0.031, 0.042]
+      const OUTER_BASE: [number, number, number] = [0.0052, 0.0435, 0.068]
       const outerMat = outer.material as THREE.MeshBasicMaterial
       /** 海盗事件把海面染红时的加项（emissive 的等价物，不受光材质只能加到颜色上） */
       let pirateR = 0, pirateG = 0, pirateB = 0
