@@ -220,16 +220,36 @@ export default function Map3DView() {
        * 挖成方环之后两块面**只共享一条边、不再重叠**，可以同高，
        * 既没有缝也没有 z-fighting。
        */
-      const outerGeo = (() => {
-        const half = 45
+      /** 方环几何（形状坐标在 XY 平面，放平交给 mesh.rotation.x） */
+      const squareRing = (halfOuter: number, halfInner: number) => {
         const shape = new THREE.Shape()
-        shape.moveTo(-half, -half)
-        shape.lineTo(half, -half)
-        shape.lineTo(half, half)
-        shape.lineTo(-half, half)
+        shape.moveTo(-halfOuter, -halfOuter)
+        shape.lineTo(halfOuter, -halfOuter)
+        shape.lineTo(halfOuter, halfOuter)
+        shape.lineTo(-halfOuter, halfOuter)
         shape.closePath()
+        const hole = new THREE.Path()
+        hole.moveTo(-halfInner, -halfInner)
+        hole.lineTo(-halfInner, halfInner)
+        hole.lineTo(halfInner, halfInner)
+        hole.lineTo(halfInner, -halfInner)
+        hole.closePath()
+        shape.holes.push(hole)
+        // 只建在 XY 平面：绕 X 的放平动作交给 mesh 的 rotation.x，
+        // 在几何里再转一次会变成"转两遍"，方环直接立起来（实测整片外圈消失）
+        return new THREE.ShapeGeometry(shape)
+      }
+
+      const OUTER_HALF = 45
+      const OUTER_OVERLAP = 0.3
+      /** 方环内沿（= 海图本体的边往里多盖 0.3） */
+      const RING_INNER = MAP_WORLD_SIZE / 2 - OUTER_OVERLAP
+      /** 淡出带宽度 */
+      const FADE_W = 1.5
+
+      const outerGeo = (() => {
         /*
-         * 内沿往里多盖 0.3 单位（OVERLAP）。
+         * 内沿往里多盖 0.3 单位（OUTER_OVERLAP）。
          *
          * 【为什么不能正好贴着海图本体的边】实测那道 2px 暗线不是缝隙，
          * 换洋红验过：它属于**海面本体**——painted-sea.png 最外一行本身是深色
@@ -238,19 +258,71 @@ export default function Map3DView() {
          * 环比海面高 0.002，重叠区由环胜出；因为两者颜色已校准到相差 ≤2 级，
          * 交界本身看不出来。
          */
-        const OVERLAP = 0.3
-        const h = MAP_WORLD_SIZE / 2 - OVERLAP
-        const hole = new THREE.Path()
-        hole.moveTo(-h, -h)
-        hole.lineTo(-h, h)
-        hole.lineTo(h, h)
-        hole.lineTo(h, -h)
-        hole.closePath()
-        shape.holes.push(hole)
-        // 只建在 XY 平面：绕 X 的放平动作交给下面 mesh 的 rotation.x，
-        // 在几何里再转一次会变成"转两遍"，方环直接立起来（实测整片外圈消失）
-        return new THREE.ShapeGeometry(shape)
+        return squareRing(OUTER_HALF, RING_INNER)
       })()
+
+      /*
+       * 外圈的"由内向外压暗"是**烘进一张灰度贴图**的，并按世界坐标取 UV。
+       *
+       * 【为什么要压暗】外圈是纯色的，一直铺到 ±45 世界单位；不压的话它
+       * 和中间那块有笔触的海面是同一个亮度，读起来像一桶没有内容的水。
+       * 往外渐暗到 58%，远处的边自己沉进桌面的暗色里，视线自然收在海图上。
+       *
+       * 【为什么用贴图而不是顶点色】方环是 ShapeGeometry，顶点只在轮廓上
+       * （8 个），做不出连续梯度；退化成"四角一色"会变成一圈斜的棱。
+       * 手工细分又要在两条腿上各切十几段，不如一张 Smoothstep 图省事。
+       *
+       * 【UV 必须按世界坐标算】方环有 4 条腿，按默认 UV（ShapeGeometry 直接
+       * 拿形状坐标当 UV）也能用，但四条腿在贴图里的取值区间完全不同，
+       * 亮度会在四个角上突变。这里用 (x + 45) / 90 的世界归一化坐标，
+       * 梯度就与"离海图多远"严格一致。灰度图是**乘数**，必须
+       * NoColorSpace —— 用 sRGB 解码会把 0.58 解成 0.29，一圈边直接黑掉。
+       */
+      const outerVignette = (() => {
+        const S = 256
+        const c = document.createElement('canvas')
+        c.width = c.height = S
+        const g = c.getContext('2d')!
+        const img = g.createImageData(S, S)
+        /** 压暗走完的距离（世界单位）；再往外保持最深 */
+        const SPAN = 14
+        const MIN_V = 0.58
+        for (let py = 0; py < S; py++) {
+          for (let px = 0; px < S; px++) {
+            const wx = ((px + 0.5) / S) * 2 * OUTER_HALF - OUTER_HALF
+            const wy = ((py + 0.5) / S) * 2 * OUTER_HALF - OUTER_HALF
+            // 到中心的"切比雪夫距离"：方环的内沿整条边正好是 RING_INNER，
+            // 用欧氏距离的话四个角（14）比边中点（9.7）远得多，会先暗下去，
+            // 在海图四角外面留下四块深斑。
+            const d = Math.max(Math.abs(wx), Math.abs(wy))
+            const t = Math.min(1, Math.max(0, (d - RING_INNER) / SPAN))
+            const v = 1 - (1 - MIN_V) * (t * t * (3 - 2 * t))
+            const q = Math.round(v * 255)
+            const o = (py * S + px) * 4
+            img.data[o] = q
+            img.data[o + 1] = q
+            img.data[o + 2] = q
+            img.data[o + 3] = 255
+          }
+        }
+        g.putImageData(img, 0, 0)
+        const t = new THREE.CanvasTexture(c)
+        t.colorSpace = THREE.NoColorSpace
+        t.minFilter = THREE.LinearFilter
+        t.magFilter = THREE.LinearFilter
+        t.wrapS = THREE.ClampToEdgeWrapping
+        t.wrapT = THREE.ClampToEdgeWrapping
+        return t
+      })()
+      {
+        const p = outerGeo.attributes.position
+        const uv = new Float32Array(p.count * 2)
+        for (let i = 0; i < p.count; i++) {
+          uv[i * 2] = (p.getX(i) + OUTER_HALF) / (OUTER_HALF * 2)
+          uv[i * 2 + 1] = (p.getY(i) + OUTER_HALF) / (OUTER_HALF * 2)
+        }
+        outerGeo.setAttribute('uv', new THREE.BufferAttribute(uv, 2))
+      }
 
       const outer = new THREE.Mesh(
         outerGeo,
@@ -263,12 +335,84 @@ export default function Map3DView() {
          * 不受光材质只有一个可调项（颜色），与海面的对应关系稳定可调，
          * 天气也只需要走同一个 setSeaColor 就能同步。
          */
-        new THREE.MeshBasicMaterial({ color: 0x0a2230 })
+        new THREE.MeshBasicMaterial({ color: 0x0a2230, map: outerVignette })
       )
       outer.rotation.x = -Math.PI / 2
       outer.position.set(MAP_WORLD_SIZE / 2, -PLATE_THICKNESS - 0.004 + 0.002, 0)
       scene.add(outer)
-      disposables.push(seaGeo, seaMat, outer.geometry, outer.material)
+
+      /*
+       * 海图边缘的「淡出带」。
+       *
+       * 【为什么需要】海面贴图是一块**有限的 20×20 单位**，方环是纯色。
+       * 两者靠"颜色校准到 ±2 级"只能消掉**颜色**的阶跃，消不掉**纹理**的：
+       * 3 倍放大截图里，交界是一条笔直的斜线，线外侧的波纹、笔触同时消失，
+       * 像把海图剪了个正方形。颜色对了不等于边界不存在。
+       *
+       * 【做法】在最后 1.5 单位内，把外圈的水色按 alpha 0→1 盖上去，
+       * 让波纹"化"进水色，而不是被一刀切。带子外沿正好落在方环内沿
+       * （alpha=1 处的颜色与方环同源），三块面之间没有任何颜色阶跃。
+       *
+       * 【为什么是 4 条四边形，不是 ShapeGeometry 挖个细环】Earcut 处理细环时
+       * 会插一条贯穿整条带的"洞桥"三角形，顶点 alpha 在桥的两端插值，
+       * 边界上就会冒出一道斜楔。手工 4 条带，内外两个边界全部落在顶点上，
+       * 梯度只沿边的法线方向线性变化，不可能歪。
+       *
+       * 【为什么 depthWrite=false】带子是半透明的覆盖层，压在海面上方 0.003；
+       * 写深度会让它挡住同一位置后续要画的半透明物件（航线箭头、尾迹）。
+       */
+      const fadeMat = new THREE.MeshBasicMaterial({
+        color: 0x0a2230,
+        vertexColors: true,
+        transparent: true,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+      })
+      const fadeGeo = (() => {
+        const pos: number[] = []
+        const col: number[] = []
+        const idx: number[] = []
+        /**
+         * 一条带。a0..a3 逐顶点给 alpha——**不要按"内/外"起变量名**：
+         * 第一版写成 (aOut0, aIn0, aIn1, aOut1) 并按"先外后内"填，
+         * 结果两条边的 alpha 各自沿 x 变化、沿 y 是常数，
+         * 剖面测出来是一段 1.2 单位长的平板色（不是梯度），
+         * 而截图上看不出问题——遮蔽贴图渐变只能靠像素剖面。
+         */
+        const strip = (
+          x0: number, y0: number, x1: number, y1: number,
+          x2: number, y2: number, x3: number, y3: number,
+          a0: number, a1: number, a2: number, a3: number,
+        ) => {
+          const b = pos.length / 3
+          pos.push(x0, y0, 0, x1, y1, 0, x2, y2, 0, x3, y3, 0)
+          col.push(
+            1, 1, 1, a0, 1, 1, 1, a1,
+            1, 1, 1, a2, 1, 1, 1, a3,
+          )
+          idx.push(b, b + 1, b + 2, b, b + 2, b + 3)
+        }
+        const o = RING_INNER
+        const i = RING_INNER - FADE_W
+        // 内沿（离海图中心近）= 0，外沿（贴着方环）= 1
+        // 北 / 南（shape 的 y 正 = 世界 z 负）
+        strip(-o, i, o, i, o, o, -o, o, 0, 0, 1, 1)
+        strip(o, -o, -o, -o, -o, -i, o, -i, 1, 1, 0, 0)
+        // 西 / 东（四角已由南北两条盖住，这里只补中间那段）
+        strip(-o, -i, -i, -i, -i, i, -o, i, 1, 0, 0, 1)
+        strip(o, i, i, i, i, -i, o, -i, 1, 0, 0, 1)
+        const geo = new THREE.BufferGeometry()
+        geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
+        geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 4))
+        geo.setIndex(idx)
+        return geo
+      })()
+      const fade = new THREE.Mesh(fadeGeo, fadeMat)
+      fade.rotation.x = -Math.PI / 2
+      fade.position.set(MAP_WORLD_SIZE / 2, -PLATE_THICKNESS - 0.004 + 0.003, 0)
+      scene.add(fade)
+
+      disposables.push(seaGeo, seaMat, outer.geometry, outer.material, outerVignette, fadeGeo, fadeMat)
 
       /*
        * 海色只有一处写法。
@@ -297,11 +441,14 @@ export default function Map3DView() {
       const setSeaColor = (r: number, g: number, b: number) => {
         seaMat.color.setRGB(r, g, b)
         const k = SEA_BASE_R > 0 ? r / SEA_BASE_R : 1
-        outerMat.color.setRGB(
-          OUTER_BASE[0] * k + pirateR,
-          OUTER_BASE[1] * k + pirateG,
-          OUTER_BASE[2] * k + pirateB,
-        )
+        const or = OUTER_BASE[0] * k + pirateR
+        const og = OUTER_BASE[1] * k + pirateG
+        const ob = OUTER_BASE[2] * k + pirateB
+        outerMat.color.setRGB(or, og, ob)
+        // 淡出带必须和方环**逐位相同**：两者都是不受光材质、都没有颜色乘数，
+        // 只要差一级，内沿（alpha 从 0 走到 1 的地方）就会重新长出一条细线的
+        // 影子——那正是这次要消灭的东西。
+        fadeMat.color.setRGB(or, og, ob)
       }
       setSeaColor(SEA_BASE_R, SEA_BASE_G, SEA_BASE_B)
 
