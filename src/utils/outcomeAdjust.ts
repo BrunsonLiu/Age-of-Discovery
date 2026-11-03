@@ -1,5 +1,5 @@
 import type { EventOutcome, Fleet } from '@/types'
-import { applyTraitToOutcome } from '@/data/traits'
+import { applyTraitToOutcome, getTrait } from '@/data/traits'
 import { scaleOutcomeMagnitude } from './segment'
 
 /**
@@ -45,6 +45,57 @@ export function adjustOutcome(raw: EventOutcome, ctx: OutcomeAdjustContext): Eve
     return { ...adjusted, moraleChange: Math.ceil(adjusted.moraleChange / 2) }
   }
   return adjusted
+}
+
+/**
+ * 天赋这一次**具体做了什么**（反事实：把天赋摘掉，用同一条流水线再算一遍）。
+ *
+ * 【为什么必须把它显示出来】五个天赋的效果全都实现了（商界血脉走 priceMultiplier，
+ * 铁壁/魅力/医生走 applyTraitToOutcome，探险家走事件触发率），但**没有一处显示**。
+ * 玩家在开局花了一次点击选它，此后整局都看不到它起过作用 ——
+ * 一次看不见后果的选择，在心理上等于没选。更糟的是他会据此认为
+ * "后面那些选择大概也一样"，从而不再认真对待任何一个。
+ *
+ * 航段姿态已经有一模一样的处理（outcomeAdjustDelta + 横幅"这一段的风险被放大到 1.45 倍"），
+ * 天赋照同一套做：**只说它省了什么，不夸大**。
+ *
+ * @returns null = 这个天赋在本次结算里没有生效（例如铁壁遇到的是加耐久的好事）
+ */
+export interface TraitEffect {
+  traitId: string
+  /** 给玩家看的一句话，例如「铁壁舰长 · 少损 4 点耐久」 */
+  text: string
+  /** 受影响量的绝对值合计，用来判断值不值得显示 */
+  magnitude: number
+}
+
+export function traitEffect(
+  raw: EventOutcome,
+  ctx: OutcomeAdjustContext,
+): TraitEffect | null {
+  if (!ctx.trait) return null
+  const withTrait = adjustOutcome(raw, ctx)
+  const without = adjustOutcome(raw, { ...ctx, trait: null })
+
+  const dur = (without.durabilityChange ?? 0) - (withTrait.durabilityChange ?? 0)
+  const crew = (without.crewChange ?? 0) - (withTrait.crewChange ?? 0)
+  const morale = (withTrait.moraleChange ?? 0) - (without.moraleChange ?? 0)
+  const magnitude = Math.abs(dur) + Math.abs(crew) + Math.abs(morale)
+  if (magnitude === 0) return null
+
+  const name = getTrait(ctx.trait)?.name ?? ctx.trait
+  // 只描述**主要**那一项：一次事件里三条同时变化的情况几乎不存在，
+  // 而罗列三条会把一行说明变成一张表。
+  let detail = ''
+  if (Math.abs(dur) >= Math.abs(crew) && Math.abs(dur) >= Math.abs(morale) && dur !== 0) {
+    detail = `少损 ${Math.abs(dur)} 点耐久`
+  } else if (Math.abs(crew) >= Math.abs(morale) && crew !== 0) {
+    detail = `少损 ${Math.abs(crew)} 名船员`
+  } else if (morale !== 0) {
+    detail = `多得 ${Math.abs(morale)} 点士气`
+  }
+  if (!detail) return null
+  return { traitId: ctx.trait, text: `${name} · ${detail}`, magnitude }
 }
 
 /**

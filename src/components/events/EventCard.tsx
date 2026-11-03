@@ -7,7 +7,7 @@ import { onUiCommand } from '@/utils/uiBus'
 import { UI_ASSETS } from '@/data/uiAssets'
 import { GAME_BALANCE } from '@/data/gameConfig'
 import { STANCES } from '@/utils/segment'
-import { adjustOutcome, clampOutcomeToFleet, outcomeAdjustDelta } from '@/utils/outcomeAdjust'
+import { adjustOutcome, clampOutcomeToFleet, outcomeAdjustDelta, traitEffect } from '@/utils/outcomeAdjust'
 import { summarizeChoice, type ChoiceSummary } from '@/utils/eventSummary'
 import EventChoiceComponent from './EventChoice'
 import EventResult from './EventResult'
@@ -32,6 +32,8 @@ export default function EventCard() {
   const [bannerFailed, setBannerFailed] = useState(false)
   /** 待玩的小游戏：选了带 miniGame 的选项后，先玩再结算 */
   const [miniGame, setMiniGame] = useState<{ id: MiniGameId; choice: number } | null>(null)
+  /** 天赋这一次具体做了什么（反事实差值）。结算屏上单独一行 */
+  const [traitNote, setTraitNote] = useState<string | null>(null)
   /** 本次操作的表现分（0..1），用于结算提示 */
   const [performance, setPerformance] = useState<number | null>(null)
 
@@ -107,11 +109,20 @@ export default function EventCard() {
     // 「什么」由随机数决定，「有多惨」由玩家的航段姿态决定。
     // 这一步在这里做（而不是等到结算），是为了让结算屏显示的数字
     // 与实际扣掉的数字完全一致——显示与实际不符会摧毁本作的因果承诺。
-    const adjusted = adjustOutcome(raw, {
+    const adjustCtx = {
       stanceMagnitudeMul: STANCES[stance].eventMagnitudeMul,
       trait: fleet.trait,
       hasQuartermaster: officers.includes('quartermaster'),
-    })
+    }
+    const adjusted = adjustOutcome(raw, adjustCtx)
+
+    /*
+     * 天赋做了什么 —— 用**反事实**算：把 trait 摘掉，同一条流水线再跑一遍，取差值。
+     * 这和姿态横幅（"风险被放大到 1.45 倍"）是同一套做法：
+     * 玩家要看到的是"我的选择改变了什么"，而不是"系统有一堆系数"。
+     * 差值算出来再 clamp 会失真，所以这里用未 clamp 的 adjustOutcome 结果比对。
+     */
+    setTraitNote(traitEffect(raw, adjustCtx)?.text ?? null)
     // 库存不足时按实际能扣的量显示（例如只剩 3 罐水，事件要 10 罐 → 显示 -3）
     const effective = clampOutcomeToFleet(adjusted, fleet, GAME_BALANCE.MORALE_MAX)
 
@@ -161,6 +172,7 @@ export default function EventCard() {
     setOutcome(null)
     setChoiceIndex(null)
     setPerformance(null)
+    setTraitNote(null)
     clearCurrentEvent()
   }
 
@@ -178,6 +190,7 @@ export default function EventCard() {
     setOutcome(null)
     setChoiceIndex(null)
     setPerformance(null)
+    setTraitNote(null)
     clearCurrentEvent()
   }
 
@@ -311,7 +324,7 @@ export default function EventCard() {
                 </div>
               </>
             ) : (
-              <EventResult outcome={outcome} performance={performance} onContinue={handleContinue} />
+              <EventResult outcome={outcome} performance={performance} traitNote={traitNote} onContinue={handleContinue} />
             )}
           </div>
         </div>

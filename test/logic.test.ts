@@ -27,6 +27,7 @@ import {
 import { readFileSync } from 'node:fs'
 import { birdPose, flagYaw, smokePose } from '../src/utils/portLife'
 import { DIALOGUE_RULES, pickDialogue, unreachableScripts, type DialogueContext } from '../src/utils/dialogueTriggers'
+import { traitEffect } from '../src/utils/outcomeAdjust'
 import { npcLegAt, npcPose } from '../src/utils/npcShips'
 import { getRouteGeometry } from '../src/utils/routePath'
 import { durabilityColor, loadColor, DANGER_COLOR, WARN_COLOR, SAFE_COLOR } from '../src/utils/shipVitals'
@@ -34,7 +35,7 @@ import {
   STANCES, forecastSegment, stanceLedgers, segmentCountFor, segmentIndexFor, nextSegmentBoundary,
   dailyFoodUse, dailyWaterUse, dailyWearRate, settleWear, describeStanceTradeoff,
 } from '../src/utils/segment'
-import { generateRouteIntel, settleOfficerWages, advanceRivals, selectBuyPrice, selectSellPrice, selectPriceTone, OFFER_PRICE_RATIO, dynamicSellPrice, selectBestDeal, selectCargoSale, selectReturnLeg } from '../src/store/useGameStore'
+import { generateRouteIntel, settleOfficerWages, advanceRivals, selectBuyPrice, selectSellPrice, selectPriceTone, OFFER_PRICE_RATIO, dynamicSellPrice, selectBestDeal, selectCargoSale, selectDealTalentBonus, selectReturnLeg } from '../src/store/useGameStore'
 import { FACTIONS, factionAttitude, portFaction } from '../src/data/factions'
 import { CREW_CHARS, CREW_CHAR_MAP } from '../src/data/crewChars'
 import { TITLES, currentTitle, dominantAxis } from '../src/data/titles'
@@ -4622,6 +4623,86 @@ console.log('== 57. 3D 点击判定：手指抖动不该让航向设不上 ==')
   assert(buyMusket != null, '加的斯必须经营火枪（它是军械装船港，也是它唯一的出口）')
   assert(sellMusket != null && sellMusket <= buyMusket,
     `加的斯→塞维利亚的火枪不能反向套利（买 ${buyMusket} / 卖 ${sellMusket}）`)
+}
+
+/*
+ * 天赋的「痕迹」：这两条函数负责把开局那一次选择，变成局内看得见的一句话。
+ *
+ * 【为什么值得单独测】五个天赋的效果全都实现了，但改之前**一处都没显示**：
+ * 商界血脉藏在动态价格的系数里，铁壁/魅力/医生藏在事件结算的乘法里，
+ * 玩家一次也看不到自己的选择起过作用——那么"选天赋"就只是开局的一个仪式。
+ * 这两条函数的判据不是"有没有返回东西"，而是**数字必须对得上账**。
+ */
+{
+  // ---- ① 事件侧：反事实差值 ----
+  const ctx = { stanceMagnitudeMul: 1, trait: 'bulwark', hasQuartermaster: false }
+  const hurt = { goldChange: 0, foodChange: 0, waterChange: 0, moraleChange: 0, durabilityChange: -20, crewChange: 0 }
+
+  const bulwark = traitEffect(hurt, ctx)
+  assert(bulwark !== null, '铁壁舰长遇到扣耐久的事件必须留下痕迹')
+  // 20 × 0.85 = 17 → 少损 3 点
+  assert(bulwark!.text.includes('铁壁舰长'), `痕迹里应写明是谁（实得「${bulwark!.text}」）`)
+  assert(bulwark!.text.includes('少损 3 点耐久'), `铁壁应少损 3 点（20→17），实得「${bulwark!.text}」`)
+  assert(bulwark!.magnitude === 3, `magnitude 应为 3（实得 ${bulwark!.magnitude}）`)
+
+  // 没触发条件时不显示（加耐久的好事，铁壁帮不上忙）——否则它会开始吹牛
+  assert(traitEffect({ ...hurt, durabilityChange: 8 }, ctx) === null,
+    '铁壁遇到"耐久增加"的事件不该声称自己省了东西')
+  // 没选天赋
+  assert(traitEffect(hurt, { ...ctx, trait: null }) === null, '没有天赋时不该有任何痕迹')
+  // 别的天赋不越界
+  assert(traitEffect(hurt, { ...ctx, trait: 'surgeon' }) === null,
+    '随船医生不该对"不掉人"的事件留痕迹')
+
+  // 魅力：士气 +10 → 13，多得 3
+  const moraleUp = traitEffect({ ...hurt, durabilityChange: 0, moraleChange: 10 }, { ...ctx, trait: 'leader' })
+  assert(moraleUp?.text.includes('多得 3 点士气'), `魅力应多得 3 点士气（实得「${moraleUp?.text}」）`)
+  // 医生：船员 -8 → -6，少损 2
+  const crewLose = traitEffect({ ...hurt, durabilityChange: 0, crewChange: -8 }, { ...ctx, trait: 'surgeon' })
+  assert(crewLose?.text.includes('少损 2 名船员'), `医生应少损 2 名（实得「${crewLose?.text}」）`)
+
+  /*
+   * ---- ② 商界血脉：卡片上的"多赚 N 金"必须与真实差价对得上 ----
+   * 这是本项目最核心的承诺：屏幕上的数字必须等于实际发生的变化。
+   * 判据不是"bonus > 0"，而是把"有天赋"与"没天赋"两条真实路径都走一遍，
+   * 看差额是不是正好等于卡片上那句话。
+   */
+  const st0 = useGameStore.getState()
+  const mk = (trait: string | null) => ({
+    ...st0,
+    fleet: { ...st0.fleet, trait, currentPortId: 6, isSailing: false, gold: 1000, cargo: [],
+      ships: st0.fleet.ships.map(sh => ({ ...sh, usedCapacity: 0 })) },
+  } as typeof st0)
+
+  const merchantState = mk('merchant')
+  const deal = selectBestDeal(merchantState)
+  assert(deal !== null, '塞维利亚在商界血脉下必须有一单（否则下面无从对账）')
+  const bonus = selectDealTalentBonus(merchantState, deal!)
+  assert(bonus != null && bonus > 0, `商界血脉在这一单上必须多赚（实得 ${bonus}）`)
+
+  /*
+   * 同一条航线的"没天赋"版本：用同一批价格函数重新算。
+   *
+   * 【为什么按**每件边际**对账，而不是按总利润】
+   * 买价不同 → floor(金币/买价) 不同 → 件数会差 1（实测 12 件 vs 11 件），
+   * 于是"总利润差"里混进了件数差，两边永远对不上。
+   * 第一版就是这么写的，报出「1474 + 165 ≠ 1309」——公式错了，不是函数错了。
+   * 真正要钉的是：**每件多赚的部分 × 件数 == 卡片上那句话**。
+   */
+  const bare = mk(null)
+  const buy0 = selectBuyPrice(bare, 6, deal!.goodId)!
+  const sell0 = selectSellPrice(bare, deal!.toPortId, deal!.goodId)!
+  const unitWith = deal!.sell - deal!.buy
+  const unitWithout = sell0 - buy0
+  assert(unitWith > unitWithout, `有天赋的每件边际必须更高（${unitWith} vs ${unitWithout}）`)
+  assert((unitWith - unitWithout) * deal!.qty === bonus,
+    `对账失败：每件多赚 ${unitWith - unitWithout} × ${deal!.qty} 件 应等于 ${bonus}（实得 ${(unitWith - unitWithout) * deal!.qty}）`)
+  // 加成不可能超过这一单本身的利润（否则那句话就不叫"多赚"了）
+  assert(bonus! < deal!.totalProfit, `天赋加成 ${bonus} 不该超过整单利润 ${deal!.totalProfit}`)
+
+  // 别的天赋不该被算成"多赚"
+  assert(selectDealTalentBonus(mk('bulwark'), deal!) === null,
+    '铁壁舰长不该在贸易单上显示"多赚"（它影响的是事件，不是价格）')
 }
 
 console.log(`\n最终结果：${passed} 通过 / ${failed} 失败`)

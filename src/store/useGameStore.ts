@@ -2315,6 +2315,35 @@ export interface ReturnLeg {
   days: number
 }
 
+/**
+ * 商界血脉这一单具体多赚了多少（反事实：把特质摘掉，用同一个 selectBuyPrice /
+ * selectSellPrice 再算一遍，取两边差价之和）。
+ *
+ * 【为什么必须显示】天赋效果全靠 priceMultiplier 里的一行 `m -= 0.05` 生效，
+ * 而价格本来就是动态的（库存/声望/名船员都在改系数），玩家**永远不可能**
+ * 从 85→219 这种数字里看出"这 5% 是我选的天赋带来的"。
+ * 于是开局那次选择，在整局里一次都没有被验证过。
+ *
+ * 只算买卖两侧的价差，不含数量与天数 —— 那是 deal 自己的事。
+ * @returns null = 不是商界血脉，或者这一单没有因为特质而变好
+ */
+export function selectDealTalentBonus(
+  state: GameState,
+  deal: { goodId: number; toPortId: number; buy: number; sell: number; qty: number },
+): number | null {
+  if (state.fleet.trait !== 'merchant') return null
+  const from = state.fleet.currentPortId
+  if (!from) return null
+  const bare: GameState = { ...state, fleet: { ...state.fleet, trait: null } }
+  const buy0 = selectBuyPrice(bare, from, deal.goodId)
+  const sell0 = selectSellPrice(bare, deal.toPortId, deal.goodId)
+  if (buy0 == null || sell0 == null) return null
+  // 没有特质时买得更贵、卖得更便宜，两项都算进去
+  const perUnit = (buy0 - deal.buy) + (deal.sell - sell0)
+  const total = perUnit * deal.qty
+  return total > 0 ? total : null
+}
+
 export function selectReturnLeg(state: GameState): ReturnLeg | null {
   const here = state.fleet.currentPortId
   const back = state.lastPortId

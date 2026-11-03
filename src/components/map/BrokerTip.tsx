@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { Coins, X, Anchor, PackageOpen } from 'lucide-react'
-import { useGameStore, selectBestDeal, selectCargoSale, selectReturnLeg } from '@/store/useGameStore'
+import { useGameStore, selectBestDeal, selectCargoSale, selectDealTalentBonus, selectReturnLeg } from '@/store/useGameStore'
 
 /**
  * 港口左下角的一张小卡，负责**把一笔生意从头做到尾**。
@@ -49,12 +49,17 @@ export default function BrokerTip({ placement = 'float' }: { placement?: 'float'
 
   const lastPortId = useGameStore(s => s.lastPortId)
 
-  const { sale, deal, back } = useMemo(
-    () => ({
-      sale: selectCargoSale(useGameStore.getState()),
-      deal: selectBestDeal(useGameStore.getState()),
-      back: selectReturnLeg(useGameStore.getState()),
-    }),
+  const { sale, deal, back, talentBonus } = useMemo(
+    () => {
+      const st = useGameStore.getState()
+      const d = selectBestDeal(st)
+      return {
+        sale: selectCargoSale(st),
+        deal: d,
+        back: selectReturnLeg(st),
+        talentBonus: d ? selectDealTalentBonus(st, d) : null,
+      }
+    },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [portId, isSailing, gold, fame, marketStock, cargo, lastPortId],
   )
@@ -80,7 +85,7 @@ export default function BrokerTip({ placement = 'float' }: { placement?: 'float'
   const key = mode === 'sell'
     ? `sell:${portId}:${sale!.qty}:${sale!.total}`
     : mode === 'buy'
-      ? `buy:${portId}:${deal!.goodId}:${deal!.toPortId}`
+      ? `buy:${portId}:${deal!.goodId}:${deal!.toPortId}:${talentBonus ?? 0}`
       : `return:${portId}:${back!.toPortId}`
   if (dismissed === key) return null
 
@@ -181,6 +186,16 @@ export default function BrokerTip({ placement = 'float' }: { placement?: 'float'
               <div className="mt-1.5 font-serif text-[13px] text-gold-400">
                 {deal!.toPortName} · {deal!.days} 天 · {deal!.nm} 海里 · 买 {deal!.qty} 件
               </div>
+              {/*
+                天赋的痕迹。这一行是整个开局选择唯一的"兑现时刻"：
+                商界血脉的 −5% 藏在动态价格里，玩家从 85→219 这种数字里
+                永远看不出哪一部分是它带来的。这里用反事实算出确切金额。
+              */}
+              {talentBonus != null && (
+                <div className="mt-1 font-serif text-[12px] ink-good">
+                  商界血脉 · 这一单多赚 {talentBonus} 金
+                </div>
+              )}
               <div className="mt-2 flex items-center justify-between gap-3">
                 <span className="flex items-baseline gap-1 font-serif text-gold-200">
                   <Coins size={15} className="translate-y-[1px]" aria-hidden="true" />

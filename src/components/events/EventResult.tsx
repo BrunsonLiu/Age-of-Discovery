@@ -14,6 +14,12 @@ interface EventResultProps {
   outcome: EventOutcome
   /** 本次小游戏的表现分（0..1）。有值则展示"操作如何影响结果" */
   performance?: number | null
+  /**
+   * 天赋这一次具体做了什么，例如「铁壁舰长 · 少损 4 点耐久」。
+   * 由 EventCard 用**反事实**（把天赋摘掉再算一遍）得出，见 utils/outcomeAdjust。
+   * null = 这个天赋在本次结算里没生效，不显示。
+   */
+  traitNote?: string | null
   onContinue: () => void
 }
 
@@ -37,7 +43,7 @@ function ChangeIndicator({ value, icon, label }: { value: number; icon: React.Re
   )
 }
 
-export default function EventResult({ outcome, performance, onContinue }: EventResultProps) {
+export default function EventResult({ outcome, performance, traitNote, onContinue }: EventResultProps) {
   const grade = performance != null ? miniGameGrade(performance) : null
 
   return (
@@ -74,6 +80,16 @@ export default function EventResult({ outcome, performance, onContinue }: EventR
         {outcome.goldChange === 0 && outcome.foodChange === 0 && outcome.waterChange === 0 &&
          outcome.moraleChange === 0 && outcome.durabilityChange === 0 && outcome.crewChange === 0 && (outcome.fameChange ?? 0) === 0 && (
           <p className="text-gold-400 text-xs font-serif">无资源变化</p>
+        )}
+        {/*
+          天赋的痕迹：紧跟在"资源变化"下面，因为它解释的正是上面那些数字。
+          用 Ink-good 而不是金色 —— 它是一条"你占了便宜"的说明，
+          与损失项的红色形成对照；同时字色独立于金色主题，不会被当成标题。
+        */}
+        {traitNote && (
+          <p className="pt-1.5 mt-1 border-t border-gold-700/25 text-[12px] font-serif ink-good">
+            {traitNote}
+          </p>
         )}
       </div>
 
