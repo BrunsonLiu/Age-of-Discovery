@@ -71,7 +71,19 @@ export default {
         },
       },
       fontFamily: {
-        pirate: ['"Pirata One"', 'cursive'],
+        /*
+         * 【为什么必须给中文衬线，而且不能留 cursive】
+         * Pirata One 没有中文字形。原来栈里只有 `cursive` 兜底 ——
+         * Windows 上 cursive = **KaiTi（楷体）**，于是所有 font-pirate 的中文
+         * （主按钮「翻开日志」、舰队名、面板标题、生涯总结三行）都由楷体绘制：
+         * 一张羊皮纸海图配楷体书名，就是那股廉价感的来源。
+         * CDP 实测（CSS.getPlatformFontsForNode）：「翻开日志」→ KaiTi(custom=false)。
+         *
+         * 注意 `.pirate-title` 这个 CSS 类上一轮已经修过，但**工具类 font-pirate
+         * 是另一条路**，两处都得改 —— 只改一处会留下"标题对了、按钮还是楷体"。
+         * 拉丁仍走 Pirata One，汉字落到自托管子集（Noto Serif SC）。
+         */
+        pirate: ['"Pirata One"', '"Noto Serif SC"', 'serif'],
         // 中文字形不在 Crimson Text 里，必须显式给一个中文衬线，
         // 否则回退到浏览器默认 serif（Windows = 宋体 SimSun，小字发虚）
         serif: ['"Crimson Text"', '"Noto Serif SC"', 'Georgia', 'serif'],

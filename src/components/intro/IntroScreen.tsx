@@ -105,7 +105,7 @@ export default function IntroScreen() {
             合成一行短语后信息一点没少（自由探索 / 低买高卖 / 风暴奇遇 / 冒险线索），
             开局少一次点击。
           */}
-          <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1.5 text-gold-500 font-serif text-xs mt-6 max-w-md">
+          <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1.5 text-gold-300 font-serif text-xs mt-6 max-w-md">
             <span className="flex items-center gap-1"><Map size={11} aria-hidden="true" />自由探索</span>
             <span className="flex items-center gap-1"><Coins size={11} aria-hidden="true" />低买高卖</span>
             <span className="flex items-center gap-1"><CloudLightning size={11} aria-hidden="true" />风暴奇遇</span>
@@ -119,7 +119,7 @@ export default function IntroScreen() {
       content: (
         <>
           <h2 className="pirate-title text-3xl text-gold-300 mb-2">你想怎么玩？</h2>
-          <p className="font-serif text-gold-500 text-sm leading-relaxed max-w-md mb-4">
+          <p className="font-serif text-gold-300 text-sm leading-relaxed max-w-md mb-4">
             没有对错，选一个就好。
           </p>
           <div className="grid grid-cols-1 gap-2.5 w-full max-w-md">
@@ -131,21 +131,42 @@ export default function IntroScreen() {
                   onClick={() => setGameMode(m.id)}
                   data-mode={m.id}
                   aria-pressed={selected}
-                  className={`text-left rounded-lg border p-3 transition-all ${
+                  className={`relative overflow-hidden text-left rounded-lg border p-3 transition-all inlay ${
                     selected
-                      ? 'border-gold-400 bg-gold-700/30 shadow-lg shadow-gold-900/40'
-                      : 'border-gold-700/30 inlay hover:border-gold-500/50 hover:bg-black/32'
+                      ? 'border-gold-200 shadow-[inset_0_0_0_1px_rgba(240,216,138,0.35),0_0_16px_rgba(212,168,56,0.22)]'
+                      : 'border-gold-700/30 hover:border-gold-500/50'
                   }`}
                 >
+                  {/*
+                    【选中态为什么不再提高底色】
+                    原来选中是 `bg-gold-700/30` —— 把卡片底色从 rgb(76,58,29) 提亮，
+                    而卡片里的字是金褐色。实测：同一段说明文字在**未选中**卡上是
+                    4.26~4.49:1，在**选中**卡上掉到 3.18:1（差分掩膜实测，
+                    见 .workbuddy/probe-textcr2.mjs）。也就是说"选中"这个动作
+                    把玩家正要读的那张卡变得最难读。
+                    现在选中改由**金环 + 左侧 3px 色条 + 标题提亮**表达，底色始终是
+                    陷进去的深槽，字色与选中状态彻底解耦。
+                  */}
+                  {selected && (
+                    <span aria-hidden="true"
+                      className="absolute left-0 top-2 bottom-2 w-[3px] rounded-full bg-gold-200" />
+                  )}
                   <div className="flex items-center gap-2">
-                    <m.icon size={18} strokeWidth={1.6} className={selected ? 'text-gold-200' : 'text-gold-400'} aria-hidden="true" />
-                    <span className={`pirate-title text-lg ${selected ? 'text-gold-200' : 'text-gold-400'}`}>{m.title}</span>
-                    {selected && <span className="ml-auto text-gold-300 text-xs font-serif">已选</span>}
+                    <m.icon size={18} strokeWidth={1.6} className={selected ? 'text-gold-100' : 'text-gold-300'} aria-hidden="true" />
+                    <span className={`pirate-title text-lg ${selected ? 'text-gold-100' : 'text-gold-200'}`}>{m.title}</span>
+                    {selected && <span className="ml-auto text-gold-200 text-xs font-serif">已选</span>}
                   </div>
-                  <p className="text-gold-500 text-xs font-serif mt-1">{m.tagline}</p>
+                  {/*
+                    tagline 原来是 text-gold-500、条目是 text-gold-600 + 11px。
+                    实测这两档在深棕卡上只有 3.22 / 2.25~2.93:1，
+                    而它们正是"这个模式到底怎么玩"的全部信息 —— 最该读清的反而最看不见。
+                    gold-600 在本项目里只用于描边，不当字色（既有规范）。
+                    另外 11px 低于中文 UI 的 12px 下限。
+                  */}
+                  <p className="text-gold-200 text-xs font-serif mt-1">{m.tagline}</p>
                   <ul className="mt-1.5 space-y-0.5">
                     {m.points.map(p => (
-                      <li key={p} className="text-gold-600 text-[11px] font-serif">· {p}</li>
+                      <li key={p} className="text-gold-300 text-xs font-serif">· {p}</li>
                     ))}
                   </ul>
                 </button>
@@ -159,29 +180,68 @@ export default function IntroScreen() {
     {
       content: (
         <>
-          <h2 className="pirate-title text-3xl text-gold-300 mb-5">选择你的天赋</h2>
-          <p className="font-serif text-gold-200 text-sm leading-relaxed max-w-md mb-4">
+          <h2 className="pirate-title text-2xl sm:text-3xl text-gold-300 mb-3 sm:mb-5">选择你的天赋</h2>
+          <p className="font-serif text-gold-200 text-sm leading-relaxed max-w-md mb-3 sm:mb-4">
             每一位传奇船长都有自己的立身之道。选择一项天赋，它将伴随你整个航海生涯，影响贸易、海战与探索的每一次抉择。
           </p>
-          <div className="grid grid-cols-1 gap-2 w-full max-w-md">
+          {/*
+            小屏（375×667）必须收紧：五张卡 + 44px 徽章 + 13px 说明，
+            实测面板高度 705px > 视口 667px，上下各被裁掉一截。
+            收紧的三处是"内边距 / 卡片间距 / 标题字号"，**不动徽章尺寸** ——
+            徽章是这屏唯一的识别线索，缩回去就又变回棕色糊块。
+          */}
+          <div className="grid grid-cols-1 gap-1.5 sm:gap-2 w-full max-w-md">
             {traits.map(trait => {
               const selected = selectedTrait === trait.id
               return (
                 <button
                   key={trait.id}
                   onClick={() => setSelectedTrait(trait.id)}
-                  className={`text-left rounded-lg border p-2.5 transition-all ${
+                  className={`relative overflow-hidden text-left rounded-lg border p-2 sm:p-2.5 transition-all inlay ${
                     selected
-                      ? 'border-gold-400 bg-gold-700/30 shadow-lg shadow-gold-900/40'
-                      : 'border-gold-700/30 inlay hover:border-gold-500/50 hover:bg-black/32'
+                      ? 'border-gold-200 shadow-[inset_0_0_0_1px_rgba(240,216,138,0.35),0_0_16px_rgba(212,168,56,0.22)]'
+                      : 'border-gold-700/30 hover:border-gold-500/50'
                   }`}
                 >
-                  <div className="flex items-center gap-2.5">
-                    <Badge kind="trait" id={trait.id} fallback={trait.icon} size={30} />
-                    <span className={`pirate-title text-lg ${selected ? 'text-gold-200' : 'text-gold-400'}`}>{trait.name}</span>
-                    <span className="ml-auto text-gold-600 text-xs font-serif">{trait.title}</span>
+                  {/* 选中态与模式卡同一套（金环 + 左侧色条），底色不变，理由见上 */}
+                  {selected && (
+                    <span aria-hidden="true"
+                      className="absolute left-0 top-2 bottom-2 w-[3px] rounded-full bg-gold-200" />
+                  )}
+                  {/*
+                    【为什么徽章独占左列、文字整体缩进】
+                    第一版是"徽章 + 名字"在同一行、效果说明从卡片左边缘起 ——
+                    于是名字缩进 56px、说明从 0 起，两行左右错开一个徽章的宽度。
+                    单看一行不显眼，五行叠起来就是"没对齐"的观感（截图里最刺眼的
+                    就是这条斜的锯齿）。
+                    改成 flex 行：徽章垂直居中当左列，右侧一栏装"名字+头衔"和"效果"，
+                    所有文字共用同一条左基线。
+                  */}
+                  <div className="flex items-center gap-3">
+                    {/*
+                      【徽章从 30px 加到 44px】
+                      这五枚是手绘 SVG（钱袋+金币 / 盾+剑 / 舵轮 / 罗盘 / 柳叶刀+橙子），
+                      原图 512×512。缩到 30px 时细节全丢 —— 6 倍放大看只是一团棕色，
+                      唯一能区分五个天赋的视觉线索等于没有。
+                      同时补一层 drop-shadow：徽章本身是黄铜/棕木色，卡片底也是棕色，
+                      不给一点投影就没有轮廓（"同色系糊在一起"）。
+                    */}
+                    <Badge kind="trait" id={trait.id} fallback={trait.icon} size={44}
+                      className="shrink-0 drop-shadow-[0_1px_2px_rgba(0,0,0,0.75)]" />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-baseline gap-2">
+                        <span className={`pirate-title text-lg ${selected ? 'text-gold-100' : 'text-gold-200'}`}>{trait.name}</span>
+                        {/* 头衔是"味道"，原来是 gold-600（实测 2.25~3.09:1，几乎读不出） */}
+                        <span className="ml-auto text-gold-300 text-xs font-serif">{trait.title}</span>
+                      </div>
+                      {/*
+                        效果说明是这一屏真正的决策信息（"价格优惠 5%"），所以
+                        比头衔亮一档、字号 12 → 13。原来 gold-500 + 12px，
+                        在选中卡上实测只有 3.18:1。
+                      */}
+                      <p className="text-gold-200 text-[13px] font-serif mt-0.5 leading-relaxed">{trait.effect}</p>
+                    </div>
                   </div>
-                  <p className="text-gold-500 text-xs font-serif mt-1 leading-relaxed">{trait.effect}</p>
                 </button>
               )
             })}
@@ -271,9 +331,11 @@ export default function IntroScreen() {
         className="absolute inset-0 w-full h-full object-cover opacity-90"
       />
       <div
-        className={`parchment-bg-dark gold-border rounded-xl p-8 max-w-lg w-full mx-4 relative
+        className={`parchment-bg-dark gold-border rounded-xl p-5 sm:p-8 max-w-lg w-full mx-4 relative
           transition-all duration-300 ${fade ? 'opacity-100 scale-100' : 'opacity-0 scale-95'}`}
       >
+        {/* 内衬细框：与外框（2px 实金边）组成"装裱"的两道线，见 .panel-frame */}
+        <span aria-hidden="true" className="panel-frame" />
         <div className="text-center min-h-[320px] flex flex-col items-center justify-center">
           {page.content}
         </div>

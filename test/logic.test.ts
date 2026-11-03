@@ -25,7 +25,7 @@ import {
   GRATICULE_MERIDIANS, GRATICULE_PARALLELS, GRATICULE_STEP_DEG,
 } from '../src/utils/chartLines'
 import { readFileSync } from 'node:fs'
-import { birdPose, flagYaw, smokePose, SMOKE_PERIOD } from '../src/utils/portLife'
+import { birdPose, flagYaw, smokePose } from '../src/utils/portLife'
 import { DIALOGUE_RULES, pickDialogue, unreachableScripts, type DialogueContext } from '../src/utils/dialogueTriggers'
 import { npcLegAt, npcPose } from '../src/utils/npcShips'
 import { getRouteGeometry } from '../src/utils/routePath'

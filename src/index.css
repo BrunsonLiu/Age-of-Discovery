@@ -270,10 +270,38 @@ body {
   }
 
   .parchment-bg-dark {
-    background: linear-gradient(135deg, rgba(48, 36, 22, 0.97) 0%, rgba(60, 44, 26, 0.97) 100%);
+    /*
+     * 在原来的对角渐变**之上**叠一层极淡的顶部光晕。
+     *
+     * 【为什么要加】首分钟面板背后是精绘的母港夜景（月光、灯火、帆影），
+     * 而面板本身是一块从 #302416 到 #3c2c1a 的纯渐变 —— 两者并排时，
+     * "最便宜的一层"恰好是玩家要盯着做选择的那一层。
+     * 顶部光晕让面板读作"被上方的灯照着的一块板"，而不是一张贴纸。
+     *
+     * 强度 0.09：实测再高（0.16）会让标题背后的金边泛白，
+     * 再低（0.05）在 900px 高的面板上看不出梯度。
+     */
+    background:
+      radial-gradient(120% 70% at 50% 0%, rgba(255, 222, 156, 0.09) 0%, rgba(255, 222, 156, 0) 62%),
+      linear-gradient(135deg, rgba(48, 36, 22, 0.97) 0%, rgba(60, 44, 26, 0.97) 100%);
     color: #f4e4c1;
     border: 1px solid rgba(201, 169, 110, 0.5);
     box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+  }
+
+  /*
+   * 首分钟面板的内衬细框（.panel-frame）。
+   *
+   * 外框是 2px 实金边，已经是"贴纸"的读法；纸质奖状/铜牌的做法是
+   * **外框细、内框再细一道**，两道线之间的留白让整块板读作"被装裱的"。
+   * 只给开场面板用（教学浮卡 max-w-xs 太小，再加一道框会挤）。
+   */
+  .panel-frame {
+    position: absolute;
+    inset: 9px;
+    border: 1px solid rgba(229, 195, 92, 0.20);
+    border-radius: 8px;
+    pointer-events: none;
   }
 
   .gold-border {
@@ -319,7 +347,12 @@ body {
     @apply px-4 py-2 rounded font-serif transition-all duration-200;
     letter-spacing: 0.04em;
     background: linear-gradient(180deg, #d4a838 0%, #b08d3a 100%);
-    color: #1c1408;
+    /*
+     * 墨色从 #1c1408 压到 #120d04：差分掩膜实测主按钮上的字在渐变下端
+     * （#b08d3a）只有 4.2:1。18px 属于"大字"（阈值 3:1）本来就过，
+     * 但按钮是全屏唯一的主行动点，多留一点余量没有代价。
+     */
+    color: #120d04;
     border: 2px solid #d4a838;
     text-shadow: 0 1px 0 rgba(255, 255, 255, 0.3);
   }
