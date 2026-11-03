@@ -282,7 +282,16 @@ body {
   }
 
   .pirate-title {
-    font-family: 'Pirata One', cursive;
+    /*
+     * 【为什么必须显式给中文衬线】原来是 'Pirata One', cursive。
+     * Pirata One 没有中文字形，浏览器回落到 **cursive** 这个通用族 ——
+     * Windows 上 cursive 是 **KaiTi（楷体）**。CDP 实测（CSS.getPlatformFontsForNode）
+     * 事件标题的 4 个汉字全部由 KaiTi 绘制：一张羊皮纸海图配楷体书名，
+     * 廉价感主要来自这里，而不是字号或颜色。
+     * 加 'Noto Serif SC'（项目自托管的那个 woff2）后，拉丁仍用 Pirata One，
+     * 汉字落到同一套衬线上，与地图/面板的 serif 一致。
+     */
+    font-family: 'Pirata One', 'Noto Serif SC', serif;
     color: var(--gold-accent);
     text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
   }

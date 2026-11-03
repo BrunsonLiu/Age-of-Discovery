@@ -258,8 +258,24 @@ export default function EventCard() {
                     onError={() => setBannerFailed(true)}
                   />
                   <h2
-                    className="pirate-title absolute inset-0 flex items-center justify-center text-center px-12 text-lg leading-tight"
-                    style={{ color: '#3a2410', textShadow: '0 1px 0 rgba(255, 240, 200, 0.35)' }}
+                    className="pirate-title absolute inset-0 flex items-center justify-center text-center px-12 text-[20px] leading-tight tracking-[0.06em]"
+                    style={{
+                      /*
+                       * 墨字 + 纸色描边（与地图港口名同一套做法）。
+                       * 缎带中间压着深红的纹样，纯深棕字在花纹上会糊掉；
+                       * 反过来给纸色描边，字在浅米色缎带与深红纹样上都立得住。
+                       * 另外自托管字体的子集只有一种很细的字重（CDP 实测
+                       * postScriptName = NotoSerifSC-ExtraLight），20px 下笔画偏轻，
+                       * 用 0.35px 的 currentColor 描边加一点肉，不改变字形。
+                       */
+                      color: '#2a1a08',
+                      WebkitTextStroke: '0.35px #2a1a08',
+                      textShadow: [
+                        '1px 0 0 #f3e2ba', '-1px 0 0 #f3e2ba',
+                        '0 1px 0 #f3e2ba', '0 -1px 0 #f3e2ba',
+                        '0 0 4px rgba(247, 236, 208, 0.65)',
+                      ].join(', '),
+                    }}
                   >
                     {currentEvent.title}
                   </h2>
