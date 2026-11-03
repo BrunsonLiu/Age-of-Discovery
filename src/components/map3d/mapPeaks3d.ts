@@ -58,7 +58,21 @@ export interface Map3DPeaks {
  * 配色直接取 2D 的 drawPeakAt：填充 rgba(138,106,62,0.72)（羊皮纸上的土黄），
  * 描边 rgba(63,44,20,0.75)（墨褐）。两个视图用同一组数，切过去才不会"换画风"。
  */
-function buildPeakTexture(snow: boolean): { texture: THREE.Texture } {
+/**
+ * 三种"山脊组合"。
+ *
+ * 【为什么需要变体】只有一种贴图时，整片高原是一模一样的三角组按网格排开 ——
+ * 3 倍放大下读作"一排排帐篷"，比不加符号更像贴图（实测喜马拉雅一带最明显）。
+ * 三种组合（主峰偏左/居中/偏右、肩峰数量不同）随机分配，重复感立刻消失。
+ * 代价只是每种雪态多一张 128×64 的贴图、多两次 draw call。
+ */
+const VARIANTS = [
+  { left: 26, right: 104, main: 64, hw: 20, hh: 44 },
+  { left: 34, right: 92, main: 60, hw: 18, hh: 38 },
+  { left: 22, right: 78, main: 74, hw: 19, hh: 48 },
+] as const
+
+function buildPeakTexture(snow: boolean, variant = 0): { texture: THREE.Texture } {
   /*
    * 【为什么一张贴图里画一组山，而不是一座】
    *
@@ -120,10 +134,11 @@ function buildPeakTexture(snow: boolean): { texture: THREE.Texture } {
     }
   }
 
-  // 底边 y=56（留 8px 给描边溢出）。主峰居中，两侧肩峰更小更淡
-  peak(26, 56, 15, 34, true)
-  peak(104, 56, 13, 30, true)
-  peak(64, 56, 20, 44, false)
+  // 底边 y=56（留 8px 给描边溢出）。主峰 + 两侧更小更淡的肩峰
+  const v = VARIANTS[Math.max(0, Math.min(VARIANTS.length - 1, variant))]
+  peak(v.left, 56, Math.round(v.hw * 0.75), Math.round(v.hh * 0.77), true)
+  peak(v.right, 56, Math.round(v.hw * 0.65), Math.round(v.hh * 0.68), true)
+  peak(v.main, 56, v.hw, v.hh, false)
 
   const texture = new THREE.CanvasTexture(canvas)
   texture.colorSpace = THREE.SRGBColorSpace
@@ -161,9 +176,23 @@ export function buildMap3DPeaks(symbols: TerrainSymbol[], y: number, facing: Pea
   const textures: THREE.Texture[] = []
   const dummy = new THREE.Object3D()
 
+  /*
+   * 按"雪态 × 变体"分组：每种组合一个 InstancedMesh。
+   *
+   * 【为什么分组落在构建期】实例矩阵在缩放时才重算，分组也必须在那之前定死，
+   * 否则 setScale 每次都要重新分配；而符号集合是 static 的，分一次就够。
+   * 分组依据是 s.rank（0~1 的稳定随机），保证同一座山永远用同一个变体。
+   */
+  const buckets: { list: TerrainSymbol[]; isSnow: boolean; variant: number }[] = []
   for (const [list, isSnow] of [[bare, false], [snow, true]] as const) {
-    if (!list.length) continue
-    const { texture } = buildPeakTexture(isSnow)
+    for (let v = 0; v < VARIANTS.length; v++) {
+      const part = list.filter(s => Math.min(VARIANTS.length - 1, Math.floor(s.rank * VARIANTS.length)) === v)
+      if (part.length) buckets.push({ list: part, isSnow, variant: v })
+    }
+  }
+
+  for (const { list, isSnow, variant } of buckets) {
+    const { texture } = buildPeakTexture(isSnow, variant)
     textures.push(texture)
     const mat = new THREE.MeshBasicMaterial({
       map: texture,
@@ -176,7 +205,7 @@ export function buildMap3DPeaks(symbols: TerrainSymbol[], y: number, facing: Pea
     mesh.instanceMatrix.setUsage(THREE.StaticDrawUsage)
     // 实例分布在整个海图上，包围球按默认几何算会错 → 关掉视锥剔除
     mesh.frustumCulled = false
-    mesh.name = isSnow ? 'map3d-peaks-snow' : 'map3d-peaks'
+    mesh.name = `${isSnow ? 'map3d-peaks-snow' : 'map3d-peaks'}-${variant}`
     mesh.renderOrder = 3
 
     for (let i = 0; i < list.length; i++) {
@@ -192,7 +221,7 @@ export function buildMap3DPeaks(symbols: TerrainSymbol[], y: number, facing: Pea
        * 需要不整齐时改大小与是否有雪，不改方向。
        */
       dummy.rotation.set(0, 0, 0)
-      dummy.scale.setScalar(0.8 + s.scale * 0.4)
+      dummy.scale.setScalar(0.72 + s.scale * 0.62)
       dummy.updateMatrix()
       mesh.setMatrixAt(i, dummy.matrix)
     }
@@ -225,7 +254,7 @@ export function buildMap3DPeaks(symbols: TerrainSymbol[], y: number, facing: Pea
           const s = list[i]
           dummy.position.set(lonToWorldX(s.lng), y, latToWorldZ(s.lat))
           dummy.rotation.set(0, 0, 0)
-          dummy.scale.setScalar((0.8 + s.scale * 0.4) * k)
+          dummy.scale.setScalar((0.72 + s.scale * 0.62) * k)
           dummy.updateMatrix()
           mesh.setMatrixAt(i, dummy.matrix)
         }

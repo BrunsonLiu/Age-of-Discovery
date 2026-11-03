@@ -31,6 +31,21 @@ function project(lng: number, lat: number) {
   }
 }
 
+/**
+ * 缩略图的三色。
+ *
+ * 【为什么从写死值改成从主图**实测**取】原来海是 #3e5264、陆是 #d9c8a2，
+ * 而主图开局实测：海 rgb(74,87,104) = #4a5768、陆 rgb(208,186,150) = #d0ba96。
+ * 差 10~20 个色阶，在 168px 的小面积上足以读成"另一块料"（这就是之前
+ * "缩略图像贴了张截图"的来源）。
+ * 注意：**不要拿缩略图自己的像素去校准主图**（曾犯过：把小地图的采样值
+ * 当成主图颜色，属于自证）。
+ */
+const MINI_SEA = '#47586a'
+const MINI_LAND = '#d0ba96'
+/** 与主图海岸线同一个色（LAND_BASE.color '#3d2810'），压一点透明度 */
+const MINI_COAST = 'rgba(61, 40, 16, 0.55)'
+
 function drawLand(ctx: CanvasRenderingContext2D, geojson: GeoJSON.GeoJsonObject) {
   ctx.clearRect(0, 0, W, H)
 
@@ -42,7 +57,7 @@ function drawLand(ctx: CanvasRenderingContext2D, geojson: GeoJSON.GeoJsonObject)
    * 拿它当主图颜色属于自证。直接从开局截图上采主图海面是 rgb(62,82,100)，
    * 也就是 #3e5264。差 12~16 个色阶，在小地图这么小的面积上足以读成"另一块料"。
    */
-  ctx.fillStyle = '#3e5264'
+  ctx.fillStyle = MINI_SEA
   ctx.fillRect(0, 0, W, H)
 
   const polys: [number, number][][] = []
@@ -63,7 +78,7 @@ function drawLand(ctx: CanvasRenderingContext2D, geojson: GeoJSON.GeoJsonObject)
   }
   walk(geojson)
 
-  ctx.fillStyle = '#d9c8a2'
+  ctx.fillStyle = MINI_LAND
   ctx.beginPath()
   for (const ring of polys) {
     /*
@@ -84,6 +99,19 @@ function drawLand(ctx: CanvasRenderingContext2D, geojson: GeoJSON.GeoJsonObject)
     ctx.closePath()
   }
   ctx.fill()
+
+  /*
+   * 海岸描边：一条 1px 的深褐线。
+   *
+   * 【为什么要加】缩略图原来只有"两色色块"，没有任何线 —— 放大 5 倍看，
+   * 它读起来像一张独立的矢量小地图（slate 蓝 + 奶油白），而不是主图的缩微版。
+   * 主图的海岸是 #3d2810 实线，缩略图沿同一条边描一次，两者才像同一张图。
+   * 用同一条 path 再 stroke 一遍，代价可以忽略（只在陆地数据变化时画一次）。
+   */
+  ctx.strokeStyle = MINI_COAST
+  ctx.lineWidth = 0.9
+  ctx.lineJoin = 'round'
+  ctx.stroke()
 }
 
 export default function MiniMap({ land }: { land: GeoJSON.GeoJsonObject | null }) {

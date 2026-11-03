@@ -30,7 +30,17 @@ interface MapState {
 export const useMapStore = create<MapState>()(
   persist(
     (set) => ({
-      center: [25, -20],
+      /*
+       * 开局视野：以**船所在的海域**为中心，而不是大西洋正中央。
+       *
+       * 【为什么改】原默认 (25°N, 20°W) / zoom 5 实测构图（1440×900）：
+       * 左半屏是空海 + 一个"大西洋"标签，塞维利亚的船被挤到**右上角**，
+       * 正压在右上角的缩略图和"3D 海图"按钮下面 —— 全屏最重要的那个点
+       * 正好在最差的位置。
+       * 改成 (34°N, 9°W)：船落在画面中部偏右上、伊比利亚占住中央，
+       * 地中海入口与北非海岸都在框内，西侧仍留出大西洋（那是航线图要用的）。
+       */
+      center: [34, -9],
       zoom: 5,
       showWindOverlay: false,
       showCurrentOverlay: false,
