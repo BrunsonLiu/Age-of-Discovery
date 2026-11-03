@@ -17,6 +17,7 @@ import {
 import { buildLandGeometry, PLATE_THICKNESS } from './landGeometry'
 import { buildGrainCanvas } from '@/utils/landGrain'
 import { birdPose } from '@/utils/portLife'
+import { buildCloudShadowCanvas, cloudBlobs } from '@/utils/cloudShadow'
 import {
   animatePortLife, createBirdTexture, createPortModelKit, createShipModelKit,
   makePortModel, makeShipModel, portScaleOf,
@@ -578,6 +579,54 @@ export default function Map3DView() {
       wallMesh.castShadow = true; wallMesh.receiveShadow = true
       scene.add(lidMesh, wallMesh)
       disposables.push(land.lid, land.wall, lidMat, wallMat)
+
+      /*
+       * ---- 云影 ----
+       *
+       * 【为什么是"贴地"的一层，不是空中的一块板】云影是投影，应该贴地表；
+       * 空中放板在斜视时会露出边缘、低仰角时糊住半个天。
+       *
+       * 【为什么必须用 offset 平移 + 可平铺贴图】这层的存在感全靠"在动"。
+       * 非平铺的图一平移就会露边，只能靠淡入淡出遮丑，那会变成明暗脉搏。
+       *
+       * 【为什么颜色接近纯黑、透明度只有 0.26】云影不该改色相，只该压暗。
+       * 用普通混合（不是 multiply）是因为 multiply 在 alpha 边缘会失真，
+       * 而这层要的恰恰是"边缘柔和地消失"。
+       *
+       * 【为什么比海图更大（90×90）】拉到最远（dist≈40）时可见范围约 ±25，
+       * 90 保证平面边缘始终在画面外；再小就会看到"云的边界"。
+       */
+      const cloudTex = (() => {
+        const canvas = buildCloudShadowCanvas(cloudBlobs())
+        if (!canvas) return null
+        const t = new THREE.CanvasTexture(canvas)
+        t.colorSpace = THREE.NoColorSpace
+        t.wrapS = t.wrapT = THREE.RepeatWrapping
+        // 一张图覆盖 90/2.2 ≈ 41 世界单位：云团直径约 4~8 单位，
+        // 与"一条船几秒钟穿过一朵云"的观感对得上
+        t.repeat.set(2.2, 2.2)
+        t.needsUpdate = true
+        return t
+      })()
+      let cloudMesh: THREE.Mesh | null = null
+      if (cloudTex) {
+        const cloudMat = new THREE.MeshBasicMaterial({
+          color: 0x050a10,
+          map: cloudTex,
+          transparent: true,
+          opacity: 0.26,
+          depthWrite: false,
+        })
+        const cloudGeo = new THREE.PlaneGeometry(90, 90).rotateX(-Math.PI / 2)
+        cloudMesh = new THREE.Mesh(cloudGeo, cloudMat)
+        // 0.012：比陆地顶面（y=0）高一点点、比港口底座顶面（≈0.06）低，
+        // 所以影子落在陆地与海面上，但不会"从下往上"盖住建筑
+        cloudMesh.position.set(MAP_WORLD_SIZE / 2, 0.012, 0)
+        cloudMesh.renderOrder = 2
+        cloudMesh.name = 'map3d-cloudshadow'
+        scene.add(cloudMesh)
+        disposables.push(cloudGeo, cloudMat, cloudTex)
+      }
 
       // ---- 微缩港口 ----
       const portKit = createPortModelKit()
@@ -1299,6 +1348,23 @@ export default function Map3DView() {
           // 但 uniform 仍会被写。7 条线的开销可以忽略，不做可见性判断。
           for (let i = 0; i < currentMats.length; i++) {
             currentMats[i].dashOffset -= dt * 0.15
+          }
+
+          /*
+           * 云影漂移：只改贴图 offset，不动平面。
+           *
+           * 速度 0.0035 /s（一张图 = 41 世界单位，也就是约 0.14 单位/秒，
+           * 一条 3 节船的速度量级）：云要"慢到你不确定它是不是在动"才对，
+           * 快了像地板在滑。
+           * offset 会无限增大，但 RepeatWrapping 下取模在 GPU 里做，
+           * 而 float 精度在几十公里之后才掉——一局游戏根本到不了。
+           */
+          if (cloudMesh) {
+            const cm = cloudMesh.material as THREE.MeshBasicMaterial
+            if (cm.map) {
+              cm.map.offset.x += dt * 0.0035
+              cm.map.offset.y += dt * 0.0012
+            }
           }
 
           // ---- 海盗事件：海面泛红（3D 演出的唯一可靠形式）----
