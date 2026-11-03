@@ -8,8 +8,9 @@ import { useGameStore } from '@/store/useGameStore'
 import { useMapStore } from '@/store/useMapStore'
 import { useFxStore as useFx } from '@/store/useFxStore'
 import { ports } from '@/data/ports'
+import { routes } from '@/data/routes'
 import { findNearestOceanPoint, isOnLand, fetchLandGeojsonForRender } from '@/utils/landCheck'
-import { getRouteGeometry, toLatLngList } from '@/utils/routePath'
+import { getRouteGeometry, toLatLngList, type RouteGeometry } from '@/utils/routePath'
 import { calculateBearing } from '@/utils/navigation'
 import {
   MAP_WORLD_SIZE, lonToWorldX, latToWorldZ, worldXToLon, worldZToLat,
@@ -18,6 +19,7 @@ import { buildLandGeometry, PLATE_THICKNESS } from './landGeometry'
 import { buildGrainCanvas } from '@/utils/landGrain'
 import { birdPose } from '@/utils/portLife'
 import { buildCloudShadowCanvas, cloudBlobs } from '@/utils/cloudShadow'
+import { advanceNpc, npcPose, type NpcLegState } from '@/utils/npcShips'
 import {
   animatePortLife, createBirdTexture, createPortModelKit, createShipModelKit,
   makePortModel, makeShipModel, portScaleOf,
@@ -754,6 +756,49 @@ export default function Map3DView() {
       // （配套改动见 EventCard.tsx：3D 模式下遮罩 70%→45% 且去掉背景模糊，
       //   让玩家能看清"事件发生在这片海域"。）
 
+      /*
+       * ---- NPC 商船：让海上"有别人" ----
+       *
+       * 【和"海盗事件的 3D 演出"的区别】上面那段注释否掉的是**跟着事件卡走**的
+       * 敌船（卡片占屏幕中央 416×562，玩家船正好在中心，贴着它的演出全被挡住）。
+       * 这里是常驻的世界元素：散在各个海域、和事件无关，不存在被卡片遮挡的问题。
+       *
+       * 【为什么固定 4 条腿、来回跑】航线几何是 A* 算的，新的一对港口要现算。
+       * 商船如果每到港就换目的地，就会周期性触发 A*（低端机上是可见卡顿）。
+       * 定期船本来就在两地之间往返，折返形态是自然的。
+       *
+       * 【为什么速度按"海里/秒"给】玩家船的真实速度是"海里/天"，跟视觉时间
+       * 不是一个量纲；NPC 只用来看，20 nm/s 意味着 420 海里的塞维利亚—里斯本
+       * 要约 21 秒跑完 —— 你能看出它在动，但它不会窜。
+       */
+      // 加勒比 / 北海 / 印度洋 / 东非：四条腿分在不同海域。
+      // **故意避开 6↔7（塞维利亚—里斯本）**：玩家开局就停在那儿，
+      // 同屏挤着"玩家的船 + 港口 + 一艘商船"，三者在几十个像素里分不清谁是谁。
+      const NPC_ROUTE_IDS = [1, 25, 13, 27] as const
+      const NPC_SPEED_NM = 20
+      const NPC_SCALE = 0.72
+      const npcs: { group: THREE.Group; geom: RouteGeometry; st: NpcLegState }[] = []
+      for (let i = 0; i < NPC_ROUTE_IDS.length; i++) {
+        const r = routes.find(x => x.id === NPC_ROUTE_IDS[i])
+        if (!r) continue
+        const a = ports.find(p => p.id === r.fromPortId)
+        const b = ports.find(p => p.id === r.toPortId)
+        if (!a || !b) continue
+        const geom = getRouteGeometry([a.latitude, a.longitude], [b.latitude, b.longitude])
+        if (!(geom.totalNm > 0)) continue
+        const g = makeShipModel(shipKit)
+        // 比玩家的座舰小一圈：玩家船必须一眼认出来，商船只是"别人"
+        g.scale.setScalar(NPC_SCALE)
+        g.name = `map3d-npc-${i}`
+        scene.add(g)
+        npcs.push({
+          group: g,
+          geom,
+          // 起点错开：4 条船都从港口出发、同时出海会很假
+          st: { posNm: geom.totalNm * (0.15 + i * 0.21), sign: i % 2 === 0 ? 1 : -1 },
+        })
+      }
+
       // ---- 航线（与 2D 的虚线同一份几何） ----
       const routeMat = new LineMaterial({
         color: 0xe8c46a, linewidth: 2.4, transparent: true, opacity: 0.9,
@@ -1348,6 +1393,29 @@ export default function Map3DView() {
           // 但 uniform 仍会被写。7 条线的开销可以忽略，不做可见性判断。
           for (let i = 0; i < currentMats.length; i++) {
             currentMats[i].dashOffset -= dt * 0.15
+          }
+
+          /*
+           * NPC 商船：推进里程 → 摆位置 → 插值朝向。
+           *
+           * 朝向必须插值（与玩家船同一套最短弧写法）：折返那一刻航向会直接
+           * 反 180°，硬赋值就是一帧之内原地转过半圈，看起来像瞬移。
+           */
+          for (const npc of npcs) {
+            npc.st = advanceNpc(npc.st, npc.geom.totalNm, NPC_SPEED_NM, dt)
+            const pose = npcPose(npc.geom, npc.st)
+            npc.group.position.set(
+              lonToWorldX(pose.lng),
+              -PLATE_THICKNESS + 0.02,
+              latToWorldZ(pose.lat),
+            )
+            const targetYaw = -pose.bearing * Math.PI / 180 + Math.PI
+            let dYaw = targetYaw - npc.group.rotation.y
+            dYaw = Math.atan2(Math.sin(dYaw), Math.cos(dYaw))
+            npc.group.rotation.y += dYaw * Math.min(1, dt * 4)
+            // 与玩家船同频的轻摇，但幅度小一半（商船装得满，不该晃得比战舰厉害）
+            npc.group.rotation.z = Math.sin(tNow / 1000 * 1.5 + npc.geom.totalNm) * 0.018
+            npc.group.rotation.x = Math.sin(tNow / 1000 * 0.9 + npc.geom.totalNm) * 0.012
           }
 
           /*

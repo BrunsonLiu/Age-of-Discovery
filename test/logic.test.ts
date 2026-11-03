@@ -22,6 +22,8 @@ import { buildTerrainSymbols } from '../src/utils/terrainDecor'
 import { latToWorldZ, mercNorm, MAP_WORLD_SIZE, MERCATOR_LAT_LIMIT } from '../src/utils/mapProjection'
 import { birdPose, flagYaw, smokePose, SMOKE_PERIOD } from '../src/utils/portLife'
 import { DIALOGUE_RULES, pickDialogue, unreachableScripts, type DialogueContext } from '../src/utils/dialogueTriggers'
+import { advanceNpc, npcPose } from '../src/utils/npcShips'
+import { getRouteGeometry } from '../src/utils/routePath'
 import { durabilityColor, loadColor, DANGER_COLOR, WARN_COLOR, SAFE_COLOR } from '../src/utils/shipVitals'
 import {
   STANCES, forecastSegment, stanceLedgers, segmentCountFor, segmentIndexFor, nextSegmentBoundary,
@@ -4196,6 +4198,76 @@ console.log('== 57. 3D 点击判定：手指抖动不该让航向设不上 ==')
     `说话人登记数应覆盖 14 个角色（实得 ${Object.keys(SPEAKERS).length}）`)
   const noPortrait = Object.values(SPEAKERS).filter(sp => !sp.portrait).map(sp => sp.id)
   assert(noPortrait.length === 0, `说话人缺立绘：${noPortrait.join(',')}`)
+}
+
+/*
+ * NPC 商船的航行动力学。
+ *
+ * 【要钉的三件事】① 里程永远不越界（越界会让 positionAtNm 钳到端点、
+ * 船"贴在港口上不动"）；② 走到端点必须反射回来而不是跳回起点（跳回 =
+ * 船凭空消失又出现）；③ 朝向在折返点附近不能是 NaN（NaN 会让整艘船消失）。
+ */
+{
+  const TOTAL = 420
+  const SPD = 20
+
+  // ① 正常推进：位移 = 速度 × 时间
+  {
+    const st = advanceNpc({ posNm: 100, sign: 1 }, TOTAL, SPD, 2)
+    assert(Math.abs(st.posNm - 140) < 1e-9, `2 秒应前进 40 海里（实得 ${st.posNm - 100}）`)
+    assert(st.sign === 1, '没到端点时方向不变')
+  }
+  // ② 到端点反射，且不越界
+  {
+    const st = advanceNpc({ posNm: TOTAL - 5, sign: 1 }, TOTAL, SPD, 2)
+    assert(st.posNm <= TOTAL && st.posNm >= 0, `里程不能越界（实得 ${st.posNm}）`)
+    assert(st.sign === -1, '越过终点后必须掉头')
+    // 反程同样要反射
+    const back = advanceNpc({ posNm: 3, sign: -1 }, TOTAL, SPD, 2)
+    assert(back.sign === 1 && back.posNm >= 0 && back.posNm <= TOTAL, '越过起点后必须掉头且在界内')
+  }
+  // ③ 长时间运行后仍然有界（反射公式写错的话会越漂越远）
+  {
+    let st = { posNm: 0, sign: 1 as 1 | -1 }
+    for (let i = 0; i < 5000; i++) st = advanceNpc(st, TOTAL, SPD, 0.016)
+    assert(st.posNm >= 0 && st.posNm <= TOTAL, `5000 帧后里程仍须有界（实得 ${st.posNm.toFixed(2)}）`)
+  }
+  // ④ 非法输入不许把状态改坏（totalNm=0 的退化航线真的存在）
+  {
+    const st = { posNm: 10, sign: 1 as 1 | -1 }
+    assert(advanceNpc(st, 0, SPD, 1).posNm === 10, '航程为 0 时不应推进')
+    assert(advanceNpc(st, TOTAL, 0, 1).posNm === 10, '速度为 0 时不应推进')
+  }
+
+  // ⑤ 姿态：端点位置必须等于几何端点，朝向必须有限且在 0~360
+  {
+    const geom = getRouteGeometry([37.4, -5.99], [38.7, -9.14]) // 塞维利亚 → 里斯本
+    assert(geom.totalNm > 0, '测试航线总里程必须为正（几何没建出来时这条会先挂）')
+    const start = npcPose(geom, { posNm: 0, sign: 1 })
+    assert(Math.abs(start.lat - geom.from[0]) < 1e-6 && Math.abs(start.lng - geom.from[1]) < 1e-6,
+      '里程 0 必须在航线起点')
+    const end = npcPose(geom, { posNm: geom.totalNm, sign: 1 })
+    assert(Math.abs(end.lat - geom.to[0]) < 1e-6 && Math.abs(end.lng - geom.to[1]) < 1e-6,
+      '里程 = 总里程 必须在航线终点')
+    for (const nm of [0, geom.totalNm * 0.5, geom.totalNm]) {
+      const pose = npcPose(geom, { posNm: nm, sign: 1 })
+      assert(Number.isFinite(pose.bearing) && pose.bearing >= 0 && pose.bearing <= 360,
+        `朝向必须是 0~360 的有限值（nm=${nm.toFixed(1)} 实得 ${pose.bearing}）`)
+    }
+    /*
+     * 端点上的朝向必须是"进来的航向"，不能退化成正北 0。
+     * 第一版在端点拿 geom.to 兜底，而那儿就是 boat 自己 → bearing = 0，
+     * 船在掉头那一帧突然指北。这条断言就是钉这个的。
+     */
+    const beforeEnd = npcPose(geom, { posNm: geom.totalNm - 0.5, sign: 1 })
+    const atEnd = npcPose(geom, { posNm: geom.totalNm, sign: 1 })
+    assert(Math.abs(atEnd.bearing - beforeEnd.bearing) < 30,
+      `终点前的朝向必须连续（${beforeEnd.bearing.toFixed(1)} → ${atEnd.bearing.toFixed(1)}）`)
+    // 反程在起点同理
+    const atStart = npcPose(geom, { posNm: 0, sign: -1 })
+    assert(atStart.bearing !== 0 || geom.totalNm === 0,
+      '反程到起点时朝向不能退化成正北')
+  }
 }
 
 console.log(`\n最终结果：${passed} 通过 / ${failed} 失败`)
