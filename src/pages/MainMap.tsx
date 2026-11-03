@@ -45,6 +45,7 @@ import { achievements } from '@/data/achievements'
 import { BG_ASSETS } from '@/data/envAssets'
 import { OPENING_SCRIPT_ID } from '@/utils/dialogue'
 import { pickDialogue } from '@/utils/dialogueTriggers'
+import { skyAt } from '@/utils/skyClock'
 import { ports } from '@/data/ports'
 import { useDialogueStore } from '@/store/useDialogueStore'
 
@@ -144,7 +145,10 @@ export default function MainMap() {
    * · 已经有对白开着就不弹：否则会顶掉玩家正在读的那一段；
    * · 额度（day >= 2+2×(已看-1)）：防止"水少+士气低+船破+到港"四连弹。
    */
-  const flagshipDurability = fleet.ships.find(sh => sh.id === fleet.flagshipId)?.durability ?? 100
+  const flagship = fleet.ships.find(sh => sh.id === fleet.flagshipId)
+  const flagshipDurability = flagship?.durability ?? 100
+  /** 旗舰编制上限：船员招满时会有"吊床都得轮着睡"那段彩蛋 */
+  const flagshipMaxCrew = flagship?.maxCrew ?? 0
   const portHasShipyard = fleet.currentPortId !== null
     && (ports.find(p => p.id === fleet.currentPortId)?.services.includes('shipyard') ?? false)
   useEffect(() => {
@@ -161,6 +165,18 @@ export default function MainMap() {
       portHasShipyard,
       discoveredCount: discoveredPorts.length,
       weatherKind: weather.kind,
+      isSailing: fleet.isSailing,
+      crewCount: crewRoster.length,
+      crewMax: flagshipMaxCrew,
+      completedTasks: completedTasks.length,
+      /*
+       * 日照只为"夜航"那一条彩蛋服务。
+       * 【为什么这里也调 skyAt】它只按"时刻 + 航程增量"算，不持有进度状态以外
+       * 任何东西；2D 的 rAF 与 3D 的帧循环也在调，三处拿同一个公式，
+       * 所以不会出现"触发时机上的天色和画面上的天色不一致"。
+       */
+      lit: skyAt(performance.now(), useGameStore.getState().routeProgress ?? 0).lit,
+      wellStocked: fleet.food >= 80 && fleet.water >= 80,
       seen: dialogueSeen,
     })
     if (id) useDialogueStore.getState().open(id)
@@ -168,6 +184,8 @@ export default function MainMap() {
     gamePhase, tutorialActive, dialogueSeen,
     fleet.day, fleet.gold, fleet.fame, fleet.morale, fleet.water, fleet.currentPortId,
     flagshipDurability, portHasShipyard, discoveredPorts.length, weather.kind,
+    fleet.isSailing, crewRoster.length, completedTasks.length, fleet.food,
+    flagshipMaxCrew,
   ])
 
   const windBearing = weather.windDir || prevailingWindBearing(mapCenter[0])

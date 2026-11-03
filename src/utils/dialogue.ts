@@ -228,6 +228,86 @@ export const DIALOGUE_SCRIPTS: DialogueScript[] = [
     ],
   },
   {
+    id: 'egg_night_helm',
+    speakerId: 'pilot',
+    lines: [
+      '夜里别盯着罗盘看，船长。看星。',
+      '罗盘只告诉你北在哪，星星会告诉你自己在哪。',
+    ],
+  },
+  {
+    id: 'egg_storm_chaplain',
+    speakerId: 'chaplain',
+    lines: [
+      '别发誓，也别许愿。风暴不听这些。',
+      '把帆收了、把人绑好——这才是今天该做的祷告。',
+    ],
+  },
+  {
+    id: 'egg_no_crew',
+    speakerId: 'boatswain',
+    lines: [
+      '船长，船上除了你我，没人了。',
+      '帆我可以一个人升。可风向变了，我一个人看不全。',
+    ],
+  },
+  {
+    id: 'egg_full_crew',
+    speakerId: 'quartermaster',
+    lines: [
+      '人满得连吊床都得轮着睡。',
+      '好事——至少下次打架，我们不是被追着跑的那一方。',
+    ],
+  },
+  {
+    id: 'egg_first_task',
+    speakerId: 'quartermaster',
+    lines: [
+      '委托结了。钱进账，名声也进账。',
+      '商会那帮人现在会记得你的名字——这是好事，也是麻烦。',
+    ],
+  },
+  {
+    id: 'egg_ten_ports',
+    speakerId: 'scholar',
+    lines: [
+      '十座港口。地图上你走过的地方，已经比很多船长一辈子都多。',
+      '可地图也快画满了……剩下的空白，才是我想去的地方。',
+    ],
+  },
+  {
+    id: 'egg_rich_maria',
+    speakerId: 'maria',
+    lines: [
+      '你现在的身家，够买下半条街了。',
+      '我不眼红。我只是想知道——你打算用它换什么。',
+    ],
+  },
+  {
+    id: 'egg_fame_jack',
+    speakerId: 'blackjack',
+    lines: [
+      '到处都在传你的名字。传得比我的还响。',
+      '我年轻时也想过要这个。后来发现，名字越响，越有人想试你。',
+    ],
+  },
+  {
+    id: 'egg_stocked',
+    speakerId: 'cook',
+    lines: [
+      '舱里塞满了。面粉、咸肉、一桶酸菜。',
+      '我这辈子第一次不知道该做什么——那就都做一遍。',
+    ],
+  },
+  {
+    id: 'egg_day50',
+    speakerId: 'diego',
+    lines: [
+      '五十天了。你数日子，我数你还剩几根桅杆。',
+      '别生气。我押的是你——三根都还在。',
+    ],
+  },
+  {
     id: 'egg_first_dock',
     speakerId: 'purser',
     lines: [

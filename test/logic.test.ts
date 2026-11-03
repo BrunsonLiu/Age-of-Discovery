@@ -1060,8 +1060,8 @@ console.log('== 30. 剧情对白系统（戴夫式角色致辞）==')
    * 曾经这里写的是 1（全游戏只有开场三句），而 14 张立绘早就躺在素材里
    * 没进过一句台词。数量掉回去时必须有人解释。
    */
-  assert(DIALOGUE_SCRIPTS.length === 14,
-    `剧本表 14 段（1 段开场 + 13 段彩蛋），实得 ${DIALOGUE_SCRIPTS.length}`)
+  assert(DIALOGUE_SCRIPTS.length === 24,
+    `剧本表 24 段（1 段开场 + 23 段彩蛋），实得 ${DIALOGUE_SCRIPTS.length}`)
   const script = getScript(OPENING_SCRIPT_ID)
   assert(!!script, '开局致辞剧本存在')
   assert(script!.lines.length === 3, '开局致辞三句台词')
@@ -4142,6 +4142,8 @@ console.log('== 57. 3D 点击判定：手指抖动不该让航向设不上 ==')
     day: 5, gold: 500, fame: 0, morale: 70, water: 80,
     durability: 100, currentPortId: null, portHasShipyard: false,
     discoveredCount: 2, weatherKind: 'clear', seen: ['opening_pilot'],
+    isSailing: false, crewCount: 2, crewMax: 8, completedTasks: 0,
+    lit: 0.9, wellStocked: false,
   }
   const withSeen = (c: Partial<DialogueContext>, seen: string[] = ['opening_pilot']) =>
     ({ ...base, ...c, seen })
@@ -4179,6 +4181,55 @@ console.log('== 57. 3D 点击判定：手指抖动不该让航向设不上 ==')
     '港口不能修船时不该提"船坞就在那儿"')
   assert(pickDialogue(withSeen({ durability: 60, currentPortId: 3, portHasShipyard: true })) === 'egg_shipyard',
     '停在能修船的港口且耐久 60 时必须提船坞')
+
+  // ⑥b 新一批规则：处境类必须**先于**通用类触发（风暴 > 夜航 > 停靠）
+  {
+    const ctx = (c: Partial<DialogueContext>) => withSeen(c)
+    assert(pickDialogue(ctx({ isSailing: true, weatherKind: 'storm' })) === 'egg_storm_chaplain',
+      '海上遇到风暴时必须先谈风暴')
+    assert(pickDialogue(ctx({ isSailing: true, lit: 0.1 })) === 'egg_night_helm',
+      '夜航（日照 0.1）必须触发罗盘/星星那段')
+    // 停泊时不该谈夜航：isSailing=false 时 lit 再低也不触发
+    assert(pickDialogue(ctx({ isSailing: false, lit: 0.05, currentPortId: null, day: 5 })) === null,
+      '停泊时不能触发夜航那段（否则白天看"夜里别盯着罗盘"就穿帮了）')
+    // 船员为 0 才说"除了你我没人了"
+    assert(pickDialogue(ctx({ crewCount: 0, day: 5 })) === 'egg_no_crew', '没船员时要说"船上没人"')
+    assert(pickDialogue(ctx({ crewCount: 1 })) !== 'egg_no_crew', '有 1 个船员时不能说"船上没人"')
+    // 招满 + 至少 3 人才说"吊床轮着睡"
+    assert(pickDialogue(ctx({ crewCount: 8, crewMax: 8 })) === 'egg_full_crew', '招满时要说吊床那段')
+    assert(pickDialogue(ctx({ crewCount: 2, crewMax: 8 })) !== 'egg_full_crew', '没招满时不该说招满的话')
+    assert(pickDialogue(ctx({ crewCount: 2, crewMax: 2 })) !== 'egg_full_crew',
+      '编制只有 2 人时不该说"打赢的那一方"（门槛是 ≥3）')
+    // 仓库充足只在海上说（停泊时本来就该补给，不算新闻）
+    assert(pickDialogue(ctx({ isSailing: true, wellStocked: true })) === 'egg_stocked',
+      '海上且补给充足时聊"舱里塞满了"')
+    assert(pickDialogue(ctx({ isSailing: false, wellStocked: true })) !== 'egg_stocked',
+      '停泊时不说"舱里塞满了"')
+    // 大额门槛
+    /*
+     * 【同一字段的阈值必须按降序排，否则被低门槛那条吃掉】
+     * 这里成对断言：高门槛选中"高那条"，中门槛选中"低那条"。
+     * 只断言高门槛那条的话，把顺序调反（12000 排到 2500 后面）照样能过 ——
+     * 因为 2500 那条会先命中，测试就变成了"断言一个错误的结果"。
+     */
+    assert(pickDialogue(ctx({ gold: 12000 })) === 'egg_rich_maria',
+      '金币 12000 时选中玛丽亚那条（高门槛在前）')
+    assert(pickDialogue(ctx({ gold: 3000 })) === 'egg_rich_blackjack',
+      '金币 3000 时选中杰克那条（没到玛丽亚的门槛）')
+    assert(pickDialogue(ctx({ fame: 45 })) === 'egg_fame_jack',
+      '声望 45 时选中杰克那条（高门槛在前）')
+    assert(pickDialogue(ctx({ fame: 25 })) === 'egg_fame_maria',
+      '声望 25 时选中玛丽亚那条')
+    assert(pickDialogue(ctx({ discoveredCount: 11 })) === 'egg_ten_ports',
+      '发现 11 港时选中"十座港口"那条')
+    assert(pickDialogue(ctx({ discoveredCount: 7 })) === 'egg_many_ports',
+      '发现 7 港时选中"六座港口"那条')
+    assert(pickDialogue(ctx({ day: 55 })) === 'egg_day50', '第 55 天选中"五十天"那条')
+    assert(pickDialogue(ctx({ day: 21 })) === 'egg_stars_diego', '第 21 天选中"数星星"那条')
+    assert(pickDialogue(ctx({ day: 50 })) === 'egg_day50', '第 50 天有迭戈那段')
+    assert(pickDialogue(ctx({ completedTasks: 1 })) === 'egg_first_task', '完成第一个委托后有对白')
+    assert(pickDialogue(ctx({ discoveredCount: 10 })) === 'egg_ten_ports', '发现 10 港后有对白')
+  }
 
   // ⑦ 写得再漂亮，只要没进规则表就等于不存在
   assert(unreachableScripts().length === 0,
