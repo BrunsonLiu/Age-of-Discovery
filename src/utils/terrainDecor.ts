@@ -235,6 +235,66 @@ export const PEAK_MIN_ELEV = 0.12
  * 同样的 2.2 度经度，在赤道是 245km，在 60°N 只有 122km。不补偿的话
  * 高纬会挤成两倍密。按 1/cos(lat) 放大经度步长，让地面距离大致一致。
  */
+/**
+ * 山峰符号的「山脊」判据（3D 用）。
+ *
+ * 【为什么不能只用绝对高程】实测这份 2048×1024 高程图**分不开沙漠与低山**：
+ * 撒哈拉腹地中位 0.114、p90 0.231，阿尔卑斯中位 0.298 —— 区间重叠。
+ * 绝对阈值 0.25 的命中率是：阿尔卑斯 79%／落基山 82%／喜马拉雅 94%，
+ * 但**伊比利亚只有 2%**（那里真有条系统山），地中海一带反而最空。
+ *
+ * 【改成「比邻域高」就对上了】山脊的定义本来就是相对高度。取 8 个方向
+ * 1.5° 邻域的**均值**，本站点高出它 0.02 即算山脊，再加 0.18 的绝对下限。
+ * 实测命中率（采样网格 0.4°）：
+ *   阿尔卑斯 88% ／ 安第斯 60% ／ 喜马拉雅 57% ／ 伊比利亚 39%
+ *   阿特拉斯 43% ／ 落基山 48% ／ 戈壁 23% ／ 撒哈拉腹地 19%
+ *   法国平原 0% ／ 亚马逊 0% ／ 澳洲内陆 0% ／ 东欧平原 0%
+ * 也就是：**平原一个不出、真山脉密集、沙漠只剩岩台**（撒哈拉确实有
+ * 提贝斯提、阿哈加尔、塔西里这些高块，19% 比任何真山脉都低）。
+ *
+ * 【为什么用均值而不是"高于邻域最大值"】后者看着更严，实测方向是反的：
+ * 高程图经过 ±3 texel 取最大值的平滑，邻域最大值几乎总比本站点高一点，
+ * 于是阿尔卑斯只剩 27%、落基山 3% —— 真山反而被删光。
+ * 而"等于邻域均值"这种平坦高原会被自然排除（差值 0 < 0.02）。
+ *
+ * 抽成纯函数：预处理，可单测；也避免把判据埋进 useEffect。
+ * 非 peak 的符号**原样保留**（树仍交给 2D；3D 侧在调用处只取 peak）。
+ */
+export const RIDGE_MIN_ELEV = 0.18
+/** 邻域半径（度）。1.5° ≈ 符号间距，正好是"比周围一圈高" */
+export const RIDGE_RADIUS_DEG = 1.5
+/** 高出邻域均值多少算山脊。0.02 是实测：再小则高原也过关，再大则真山被删 */
+export const RIDGE_DELTA = 0.02
+
+export function filterPeaksByElevation(
+  symbols: TerrainSymbol[],
+  elev: ((lat: number, lng: number) => number) | null | undefined,
+  minElev: number = RIDGE_MIN_ELEV,
+  ridgeDelta: number = RIDGE_DELTA,
+): TerrainSymbol[] {
+  if (!elev) return symbols
+  const D = RIDGE_RADIUS_DEG
+  return symbols.filter(s => {
+    if (s.kind !== 'peak') return true
+    const v = elev(s.lat, s.lng)
+    // 采样失败（负数）时保留：宁可多一座山，也不要因为图没加载好让地形整片消失
+    if (v < 0) return true
+    if (v < minElev) return false
+    // 经度方向的步长要按纬度补偿，否则高纬的邻域会窄一半
+    const dLng = D / Math.max(0.25, Math.cos((s.lat * Math.PI) / 180))
+    let sum = 0
+    for (const [dla, dln] of [
+      [D, 0], [-D, 0], [0, D], [0, -D],
+      [D, D], [D, -D], [-D, D], [-D, -D],
+    ] as const) {
+      const n = elev(s.lat + dla, s.lng + dln * dLng)
+      // 邻域采样失败时按"很低"处理：只会让这座山更容易留下
+      sum += n < 0 ? 0 : n
+    }
+    return v >= sum / 8 + ridgeDelta
+  })
+}
+
 export function buildTerrainSymbols(
   geojson: GeoJSON.GeoJsonObject,
   opts: BuildTerrainOptions = {},

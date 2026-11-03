@@ -24,7 +24,28 @@ export const NO_ELEVATION = -1
  * 只读一次、常驻内存：2048×1024 的 ImageData 是 8MB，换来的是上万个符号生成时
  * 不用反复解码。加载失败返回 null（调用方退回"不看高程"的旧行为，不能让地图空白）。
  */
-export async function loadElevationSampler(url: string): Promise<ElevationSampler | null> {
+/**
+ * 已加载过的采样器（按 url 缓存 Promise）。
+ *
+ * 【为什么必须缓存】2D 的 TerrainDecor 与 2.5D 的地形符号都要用它。
+ * 不缓存就是**解码两次 2048×1024 的 PNG、常驻两份 8MB ImageData**，
+ * 而且两次解码都在主线程上（`getImageData` + 逐点采样），
+ * 切视图时会各卡一下。缓存的是 Promise 而不是结果：
+ * 两个视图几乎同时请求，只有这样才能合并成一次加载。
+ */
+const samplerCache = new Map<string, Promise<ElevationSampler | null>>()
+
+export function loadElevationSampler(url: string): Promise<ElevationSampler | null> {
+  const hit = samplerCache.get(url)
+  if (hit) return hit
+  const p = loadElevationSamplerUncached(url)
+  samplerCache.set(url, p)
+  // 失败不缓存：网络一时抽风之后再想加载还有机会（缓存了 null 就永远没有高程）
+  p.then((fn) => { if (!fn) samplerCache.delete(url) })
+  return p
+}
+
+async function loadElevationSamplerUncached(url: string): Promise<ElevationSampler | null> {
   try {
     const img = new Image()
     img.src = url

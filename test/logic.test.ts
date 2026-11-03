@@ -18,7 +18,7 @@ import {
   CHIP_MIN_EV, type AdjustedOutcome, type ChoiceSummary,
 } from '../src/utils/eventSummary'
 import { adjustOutcome, clampOutcomeToFleet } from '../src/utils/outcomeAdjust'
-import { buildTerrainSymbols } from '../src/utils/terrainDecor'
+import { buildTerrainSymbols, filterPeaksByElevation } from '../src/utils/terrainDecor'
 import { latToWorldZ, lonToWorldX, mercNorm, MAP_WORLD_SIZE, MERCATOR_LAT_LIMIT } from '../src/utils/mapProjection'
 import {
   coastSegments, graticuleSegments,
@@ -4485,6 +4485,73 @@ console.log('== 57. 3D 点击判定：手指抖动不该让航向设不上 ==')
     assert(out.major.length > out.minor.length,
       `大陆组线段（${out.major.length / 6}）应多于小岛组（${out.minor.length / 6}）`)
   }
+}
+
+/*
+ * 3D 山峰符号的高程筛选。
+ *
+ * 【为什么单独测这一层】它决定"沙漠里会不会长出山"。阈值写错一格的表现
+ * 不是报错，而是**整片西非铺满三角**（实测过一次），只能靠肉眼发现。
+ * 这里用假采样器把它变成可断言的：高地留、低地删、非 peak 不动、采样失败保留。
+ */
+{
+  const mk = (kind: 'peak' | 'tree', lat: number, lng: number): { lat: number; lng: number; kind: 'peak' | 'tree'; scale: number; rank: number } =>
+    ({ lat, lng, kind, scale: 1, rank: 0.5 })
+  const syms = [
+    mk('peak', 46, 10),   // 阿尔卑斯
+    mk('peak', 22, 15),   // 撒哈拉
+    mk('tree', 22, 15),   // 树不看高程
+    mk('peak', 30, 80),   // 采样失败（返回 -1）
+  ]
+  /*
+   * 假采样器：46°N 一圈 0.30（山脊），其余 0.15（平原），30°N 采样失败（-1）。
+   *
+   * 【为什么要把"山脊"做成窄窄一条】第一版写成 `lat > 40 ? 0.30 : 0.15`，
+   * 于是 46°N 的邻域里全是 0.30 —— 那是一片**高原**，不是山脊，
+   * 判据（比邻域均值高 0.02）把它正确地删掉了，而断言写的是"必须留"。
+   * 是断言错了，不是判据错了：这里改成 ±0.5° 的窄脊，两侧才真的是低的。
+   */
+  const elev = (lat: number) =>
+    lat === 30 ? -1 : (lat > 45.5 && lat < 46.5) ? 0.30 : 0.15
+
+  // ① 门槛 0.25：阿尔卑斯留、撒哈拉的山删
+  const kept = filterPeaksByElevation(syms, elev, 0.25)
+  assert(kept.filter(x => x.kind === 'peak').length === 2,
+    `0.25 门槛下应只剩 2 座山（阿尔卑斯 + 采样失败那座），实得 ${kept.filter(x => x.kind === 'peak').length}`)
+  assert(kept.some(x => x.kind === 'peak' && x.lat === 46), '阿尔卑斯（0.30）必须留下')
+  assert(!kept.some(x => x.kind === 'peak' && x.lat === 22), '撒哈拉（0.15）的山必须被删掉')
+  // ② 非 peak 一个都不许动
+  assert(kept.filter(x => x.kind === 'tree').length === 1, '树不参与高程筛选（原样保留）')
+  // ③ 采样失败时保留：图没加载好不该让地形整片消失
+  assert(kept.some(x => x.kind === 'peak' && x.lat === 30), '采样失败（-1）的山必须保留')
+  // ④ 没有采样器时原样返回（离线回退）
+  assert(filterPeaksByElevation(syms, null, 0.25).length === syms.length,
+    '没有高程采样器时必须原样返回')
+  // ⑤ 门槛提高必须单调变少（敏感度断言，不是抽样）
+  const a = filterPeaksByElevation(syms, elev, 0.2).length
+  const b = filterPeaksByElevation(syms, elev, 0.4).length
+  assert(a >= b, `门槛提高后保留数不能变多（0.2 → ${a}，0.4 → ${b}）`)
+
+  /*
+   * ⑥ 山脊判据（默认门槛 0.14）：这一条是"沙漠不长山"真正的把关人。
+   *
+   * 造一块"平原"：所有采样值都等于 0.20（高于 0.14，但不比邻居高）。
+   * 绝对阈值会把它全留下；山脊判据必须一个都不留。
+   * 再造一条"山脊"：中间一列高、两侧低，中间那列必须留下。
+   */
+  const flat = (): number => 0.20
+  const flatSyms = [mk('peak', 20, 20), mk('peak', 22, 22)]
+  assert(filterPeaksByElevation(flatSyms, flat).length === 0,
+    '等高的一片地（0.20）不该长出山：山脊判据必须要求"比邻域高"')
+  const ridge = (lat: number, lng: number) => (Math.abs(lng - 20) < 0.8 ? 0.32 : 0.18)
+  const ridgeSyms = [mk('peak', 20, 20), mk('peak', 20, 24)]
+  const ridgeKept = filterPeaksByElevation(ridgeSyms, ridge)
+  assert(ridgeKept.length === 1 && ridgeKept[0].lng === 20,
+    `只该留下脊线上的那座（实得 ${ridgeKept.map(x => x.lng).join(',') || '无'}）`)
+  // ⑦ 低于下限（0.14）的一律不算，即使它是局部高点
+  const lowRidge = (lat: number, lng: number) => (Math.abs(lng - 20) < 0.8 ? 0.10 : 0.02)
+  assert(filterPeaksByElevation([mk('peak', 20, 20)], lowRidge).length === 0,
+    '低于 0.14 的地方即使是局部高点也不该出山（澳洲内陆实测 27% → 0%）')
 }
 
 console.log(`\n最终结果：${passed} 通过 / ${failed} 失败`)

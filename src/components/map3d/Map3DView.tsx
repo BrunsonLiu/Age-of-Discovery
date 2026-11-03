@@ -28,6 +28,9 @@ import {
 import { buildMap3DLayers } from './mapLayers3d'
 import { buildMap3DBorders } from './mapBorders3d'
 import { buildMap3DCoastline } from './mapCoastline3d'
+import { buildMap3DPeaks, type PeakFacing } from './mapPeaks3d'
+import { buildTerrainSymbols, filterPeaksByElevation } from '@/utils/terrainDecor'
+import { loadElevationSampler } from '@/utils/elevation'
 import { buildMap3DGraticule } from './mapGraticule3d'
 import { fetchBordersGeojson } from '@/utils/mapGeoJson'
 import { decidePixelRatio } from '@/utils/adaptiveResolution'
@@ -138,6 +141,30 @@ const GRAIN_BUMP = 4
  * 港口叠加的线，也不额外在海图上盖一层全屏 overdraw。
  */
 const GRATICULE_Y = -PLATE_THICKNESS + 0.002
+
+/**
+ * 地形符号的世界高度：比陆地顶面高 0.004（在海岸墨线 0.006 之下）。
+ * 符号是"画在纸面上"的，压得太高会在斜视时和陆地脱开、看起来浮空。
+ */
+const PEAK_Y = 0.004
+
+/**
+ * 地形符号的撒点步长（度）与参与撒点的陆地块数。
+ *
+ * 2D 用的也是 1.1°，但 3D 的符号**世界尺寸固定**（0.30 单位 ≈ 11px），
+ * 不按屏幕像素缩放，所以远景下 1.1° 会显得偏密：默认视野 40 单位宽
+ * 就是 130° 经度，一格 1.1° ≈ 11px —— 正好一个符号挨着一个符号。
+ * 取 1.8°（≈18px 一格）给山脊之间留出纸面。
+ * topBlocks 与 2D 一致（14 块）：小岛不撒符号。
+ */
+const TERRAIN_STEP_DEG = 1.6
+
+/**
+ * 山符号的朝向。A/B 两版都拍过：'flat' 平铺在纸面 / 'upright' 竖直立起。
+ * 结论见调用处注释。
+ */
+const PEAK_FACING: PeakFacing = 'flat'
+const TERRAIN_TOP_BLOCKS = 14
 
 /**
  * 陆地贴图向羊皮纸色混合的比例（0 = 原彩色喷绘，1 = 纯羊皮纸）。
@@ -701,6 +728,54 @@ export default function Map3DView() {
        */
       const coastBase = coast.materials.map(m => m.color.clone())
       const gratBase = graticule.material.color.clone()
+
+      /*
+       * ---- 地形符号（山）----
+       *
+       * 【为什么必须等高程图】符号一旦生成就是固定的世界坐标。
+       * 先按"不看高程"撒一遍、等高程到了再重撒，屏幕上会看到整片山跳一次
+       * （2D 的 TerrainDecor 也是为这个才等它）。高程图 394KB，比看它跳便宜。
+       * 加载失败就退回不看高程的旧行为——不能让地形整层消失。
+       *
+       * 【为什么是异步 .then 而不是 await】这一段在 useEffect 的 async 初始化里，
+       * await 会把整张海图的出现推迟到高程解码之后；.then 让它先出图、
+       * 山晚一两帧补上（那时玩家还在看开场对白）。
+       */
+      /**
+       * 山的容器组。
+       *
+       * 【为什么要有这一层】'upright' 朝向需要让所有符号一起绕竖轴转向相机。
+       * 逐个实例改矩阵是每帧几千次 compose；而所有山共用一个朝向，
+       * 只需要转这个**组**（每帧一次），成本可忽略。
+       * 'flat' 时这个组什么都不做，只是容器。
+       */
+      const peakGroup = new THREE.Group()
+      peakGroup.name = 'map3d-peak-group'
+      scene.add(peakGroup)
+      /** 山材质的基色（白）：不受光，昼夜要手动乘 */
+      const peakBase = new THREE.Color(1, 1, 1)
+      /** 已经建好的山材质（帧循环里要乘昼夜倍率；异步补建后才有内容） */
+      const peakMats: THREE.MeshBasicMaterial[] = []
+      let peaks: ReturnType<typeof buildMap3DPeaks> | null = null
+      loadElevationSampler(`${import.meta.env.BASE_URL}data/elev-map.png`).then((elev) => {
+        if (disposed) return
+        const symbols = buildTerrainSymbols(geojson as unknown as GeoJSON.GeoJsonObject, {
+          elevationAt: elev ?? undefined,
+          topBlocks: TERRAIN_TOP_BLOCKS,
+          stepDeg: TERRAIN_STEP_DEG,
+        })
+        /*
+         * 3D 用的是「比邻域均值高」的山脊判据，不是绝对高程 ——
+         * 原因与实测数字写在 filterPeaksByElevation 的注释里：
+         * 绝对阈值 0.25 会让伊比利亚只有 2%（那里真有山），
+         * 改成相对高度后 39%，而法国平原/亚马逊/澳洲内陆/东欧平原都是 0%。
+         */
+        const strong = filterPeaksByElevation(symbols, elev)
+        peaks = buildMap3DPeaks(strong, PEAK_Y, PEAK_FACING)
+        for (const m of peaks.meshes) peakGroup.add(m)
+        for (const m of peaks.materials) m.color.copy(peakBase)
+        for (const mat of peaks.materials) peakMats.push(mat)
+      })
 
       /*
        * ---- 云影 ----
@@ -1740,6 +1815,11 @@ export default function Map3DView() {
           }
           graticule.material.color.copy(gratBase).multiplyScalar(lineMul)
           coolLine(graticule.material.color, nightK)
+          // 山也是不受光材质（画在纸上的墨迹），同一套倍率
+          for (const mat of peakMats) {
+            mat.color.copy(peakBase).multiplyScalar(lineMul)
+            coolLine(mat.color, nightK)
+          }
 
           /*
            * 外圈与淡出带同理：它们也是不受光材质，**不跟就会在夜里亮成一块**。
@@ -1794,6 +1874,11 @@ export default function Map3DView() {
          * （每个 Sprite 各占一次）。海鸥同理，而且远看只是一粒灰。
          */
         {
+          // 竖直朝向的山：整组绕竖轴对准相机（相机只绕 Y 转，所以这样正好）
+          if (PEAK_FACING === 'upright') peakGroup.rotation.y = camState.az
+          // 山符号在屏幕上大致定尺寸：只在缩放变化时重算实例矩阵
+          peaks?.setScale(camState.dist)
+
           const tSec = tNow / 1000
           const detail = camState.dist < 22
           let bi = 0
@@ -1962,6 +2047,10 @@ export default function Map3DView() {
         // 图层组里的 Line2 / 填充 / 箭头资源不在 disposables 里，单独释放
         layers.dispose()
         borders?.dispose()
+        coast.dispose()
+        graticule.dispose()
+        // 山是异步补建的：切视图时它可能还没建好（peaks 为 null），也可能已建好
+        peaks?.dispose()
         renderer?.dispose()
         if (renderer && renderer.domElement.parentNode === mount) {
           mount.removeChild(renderer.domElement)
