@@ -16,7 +16,11 @@ import {
 } from '@/utils/mapProjection'
 import { buildLandGeometry, PLATE_THICKNESS } from './landGeometry'
 import { buildGrainCanvas } from '@/utils/landGrain'
-import { createPortModelKit, createShipModelKit, makePortModel, makeShipModel, portScaleOf } from './models'
+import { birdPose } from '@/utils/portLife'
+import {
+  animatePortLife, createBirdTexture, createPortModelKit, createShipModelKit,
+  makePortModel, makeShipModel, portScaleOf,
+} from './models'
 import { buildMap3DLayers } from './mapLayers3d'
 import { buildMap3DBorders } from './mapBorders3d'
 import { fetchBordersGeojson } from '@/utils/mapGeoJson'
@@ -117,6 +121,12 @@ const GRAIN_TILES = 22
  * 差分本身就很小。凭感觉给数值，等于没加。
  */
 const GRAIN_BUMP = 4
+
+/**
+ * 每个港口上空的海鸥数量。
+ * 2 只：1 只读作"一个黑点在转"，3 只以上在微缩尺度上开始像虫群。
+ */
+const BIRDS_PER_PORT = 2
 
 export default function Map3DView() {
   const mountRef = useRef<HTMLDivElement>(null)
@@ -582,6 +592,33 @@ export default function Map3DView() {
         shipKit.hull, shipKit.deck, shipKit.mast, shipKit.sail, shipKit.yard, shipKit.bowsprit,
         shipKit.hullMat, shipKit.deckMat, shipKit.mastMat, shipKit.sailMat,
       )
+
+      /*
+       * 海鸥：所有港口共用**一个** InstancedMesh。
+       *
+       * 【为什么不是每港一个 sprite】20 个港 × 2 只 = 40 次 draw call，
+       * 而它们加起来不到屏幕的 0.1%。InstancedMesh 把 34 只鸟压成 1 次。
+       *
+       * 【为什么几何要放平（rotateX(-90°)）】相机是俯视 30~40°，竖着的
+       * 平面在屏幕上几乎是**一条线**（正视自己朝向后就等于边看一张纸）。
+       * 放平之后俯视看到的才是"从上面看一只展翅的鸟"。
+       */
+      const birdGeo = new THREE.PlaneGeometry(0.032, 0.016).rotateX(-Math.PI / 2)
+      const birdTex = createBirdTexture()
+      const birdMat = new THREE.MeshBasicMaterial({
+        map: birdTex,
+        transparent: true,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+      })
+      const birds = new THREE.InstancedMesh(birdGeo, birdMat, ports.length * BIRDS_PER_PORT)
+      birds.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
+      // 实例矩阵每帧都在动，包围球按默认几何算出来是错的 → 直接关掉视锥剔除
+      birds.frustumCulled = false
+      birds.name = 'map3d-birds'
+      scene.add(birds)
+      disposables.push(birdGeo, birdMat, birdTex)
+      const birdDummy = new THREE.Object3D()
 
       const portGroup = new THREE.Group()
       const portObjects: { group: THREE.Group; id: number; label: ScreenLabel }[] = []
@@ -1376,6 +1413,47 @@ export default function Map3DView() {
           const found = state.discoveredPorts.includes(po.id)
           po.group.visible = found
           po.label.shown = found
+        }
+
+        /*
+         * ---- 港口待机动画：旗 / 烟 / 海鸥 ----
+         *
+         * 【为什么这批动画值得单独写一段】目前画面里所有运动都绑在玩家操作上：
+         * 开船才有尾迹、设了航线才有流动虚线、进港才有光环脉冲。玩家一停手，
+         * 20 个港口就是 20 块静止的摆件。这三样是**待机时也在动**的东西，
+         * 而且便宜：旗与烟只是改矩阵/透明度，海鸥是 1 个 InstancedMesh。
+         *
+         * detail 的门槛 22：远景下烟不到 2 个像素，隐藏它省的是 draw call
+         * （每个 Sprite 各占一次）。海鸥同理，而且远看只是一粒灰。
+         */
+        {
+          const tSec = tNow / 1000
+          const detail = camState.dist < 22
+          let bi = 0
+          for (const po of portObjects) {
+            animatePortLife(po.group, tSec, detail && po.group.visible)
+            const tier = po.group.userData.portScale as string | undefined
+            const hasBird = tier === 'major' || tier === 'medium'
+            for (let k = 0; k < BIRDS_PER_PORT; k++) {
+              if (detail && hasBird && po.group.visible) {
+                const pose = birdPose(k, tSec, po.id)
+                birdDummy.position.set(
+                  po.group.position.x + pose.dx,
+                  pose.dy,
+                  po.group.position.z + pose.dz,
+                )
+                birdDummy.rotation.set(0, pose.yaw, 0)
+                birdDummy.scale.setScalar(1)
+              } else {
+                // 未发现 / 太远：缩成 0（InstancedMesh 的实例数固定，只能这样隐藏）
+                birdDummy.position.set(0, -50, 0)
+                birdDummy.scale.setScalar(0)
+              }
+              birdDummy.updateMatrix()
+              birds.setMatrixAt(bi++, birdDummy.matrix)
+            }
+          }
+          birds.instanceMatrix.needsUpdate = true
         }
 
         // 「当前所在港口」光环：位置 + 脉冲 + 贴合底座尺寸

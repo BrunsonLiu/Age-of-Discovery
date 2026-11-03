@@ -20,6 +20,7 @@ import {
 import { adjustOutcome, clampOutcomeToFleet } from '../src/utils/outcomeAdjust'
 import { buildTerrainSymbols } from '../src/utils/terrainDecor'
 import { latToWorldZ, mercNorm, MAP_WORLD_SIZE, MERCATOR_LAT_LIMIT } from '../src/utils/mapProjection'
+import { birdPose, flagYaw, smokePose, SMOKE_PERIOD } from '../src/utils/portLife'
 import { durabilityColor, loadColor, DANGER_COLOR, WARN_COLOR, SAFE_COLOR } from '../src/utils/shipVitals'
 import {
   STANCES, forecastSegment, stanceLedgers, segmentCountFor, segmentIndexFor, nextSegmentBoundary,
@@ -4029,6 +4030,92 @@ console.log('== 57. 3D 点击判定：手指抖动不该让航向设不上 ==')
   }), 'UV 的 v 必须在 [0,1]（超出会被 ClampToEdge 拉成一条糊边）')
   // 非有限输入不能把 NaN 传染进几何（NaN 顶点会让整块网格消失）
   assert(Number.isFinite(latToWorldZ(NaN)), 'NaN 纬度不能产出 NaN 世界坐标')
+}
+
+/*
+ * 港口待机动画（青烟 / 海鸥 / 旗）的纯数学。
+ *
+ * 【为什么只测数学不测画面】这三样跑在 3D 帧循环里，帧循环没法测
+ * （dt 不确定、无头浏览器 rAF 还慢）。而它们出错的典型形态恰恰是数学层的：
+ * 相位同步（20 个港一起冒烟）、两端不归零（一片闪烁的圆点）、
+ * 半径漂走（鸟越飞越远最后离开港口）。这些都能在纯函数里钉死。
+ */
+{
+  /*
+   * ① 烟：p 必须在 [0,1)；p→0 与 p→1 时几乎透明；rise / scale 是 p 的单调函数。
+   *
+   * 【为什么不能按 t 采样后断言"上升"】p = (t/周期 + 相位) % 1 —— t 增大的
+   * 过程中 p 会绕回 0，rise 随之归零。第一版就是按 t 采一整个周期，
+   * 正好跨过一次绕回，于是断言"必须持续上升"必然失败（实测 rise 差值 -0.01）。
+   * 要钉的性质是"rise 随 p 单调"，所以按 p 排序后再断言。
+   */
+  {
+    const many = [] as { p: number; rise: number; scale: number; alpha: number }[]
+    for (const seed of [1, 7, 42]) {
+      for (let i = 0; i < 120; i++) many.push(smokePose(0, i * 0.1, seed))
+    }
+    assert(many.every(s => s.p >= 0 && s.p < 1), '烟的周期位置必须落在 [0,1)')
+    const byP = [...many].sort((a, b) => a.p - b.p)
+    assert(byP.every((s, i) => i === 0 || s.rise >= byP[i - 1].rise - 1e-9),
+      '烟的高度必须随 p 单调上升（同一缕不能中途回落）')
+    assert(byP.every((s, i) => i === 0 || s.scale >= byP[i - 1].scale - 1e-9),
+      '烟的体积必须随 p 单调变大（要散开）')
+    assert(byP[byP.length - 1].rise - byP[0].rise > 0.2,
+      `烟的高度变化必须明显（实得 ${(byP[byP.length - 1].rise - byP[0].rise).toFixed(2)}）`)
+    // 两端淡出：取最靠近 p=0 与 p=1 的样本
+    assert(byP[0].alpha < 0.12, `刚出生的烟必须几乎透明（实得 ${byP[0].alpha.toFixed(2)}）`)
+    assert(byP[byP.length - 1].alpha < 0.12, `散尽前的烟必须几乎透明（实得 ${byP[byP.length - 1].alpha.toFixed(2)}）`)
+    // 中段必须有浓度，否则整段都看不见
+    assert(Math.max(...many.map(s => s.alpha)) > 0.7, '烟在中段必须足够浓（否则粒子白做）')
+  }
+  {
+    const a = smokePose(0, 1.234, 1).p
+    const b = smokePose(0, 1.234, 2).p
+    assert(Math.abs(a - b) > 0.05, `不同港口的烟相位必须错开（实得 ${a.toFixed(2)} vs ${b.toFixed(2)}）`)
+  }
+
+  // ② 海鸥：绕港盘旋，半径不能漂走
+  {
+    const radius: number[] = []
+    for (let i = 0; i < 60; i++) {
+      const b = birdPose(0, i * 0.4, 3)
+      radius.push(Math.hypot(b.dx, b.dz))
+    }
+    assert(Math.min(...radius) > 0.24 && Math.max(...radius) < 0.4,
+      `海鸥半径必须在 0.24~0.4（实得 ${Math.min(...radius).toFixed(3)}~${Math.max(...radius).toFixed(3)}）`)
+    const b = birdPose(0, 2.0, 3)
+    assert(b.dy > 0.28 && b.dy < 0.38, `海鸥高度必须在房子与塔之间（实得 ${b.dy.toFixed(3)}）`)
+    assert(Number.isFinite(b.yaw), '海鸥朝向不能是 NaN（会让实例矩阵变成 NaN，整批鸟消失）')
+  }
+  {
+    /*
+     * 两只鸟必须**反向**盘旋。
+     *
+     * 【判据为什么是角速度符号，而不是比较 yaw 数值】
+     * 第一版比较的是两只鸟同一时刻的 yaw（|Δ|>0.5 或符号不同）——
+     * 那是拿"数值巧合"当性质：相位不同时它们本来就会落在任意角度上，
+     * 同向盘旋也可能碰巧通过，反向也可能碰巧失败。真正要保证的是
+     * **绕行方向相反**，所以取同一只鸟前后 0.1 秒的极角差看符号。
+     */
+    const angAt = (i: number, t: number) => {
+      const b = birdPose(i, t, 3)
+      return Math.atan2(b.dz, b.dx)
+    }
+    /** 极角差折回 (-π, π]，避免跨 ±π 时符号翻转 */
+    const delta = (i: number) => {
+      const d = angAt(i, 1.1) - angAt(i, 1.0)
+      return Math.atan2(Math.sin(d), Math.cos(d))
+    }
+    assert(Math.sign(delta(0)) === -Math.sign(delta(1)),
+      `同港两只海鸥必须反向盘旋（实得角速度 ${delta(0).toFixed(3)} / ${delta(1).toFixed(3)}）`)
+  }
+
+  // ③ 旗：摆动幅度有界，且不能是常数
+  {
+    const ys = Array.from({ length: 40 }, (_, i) => flagYaw(i * 0.05, 5))
+    assert(Math.max(...ys.map(Math.abs)) < 0.45, '旗的摆幅必须小于 0.45 rad（再大就像抽筋）')
+    assert(Math.max(...ys) - Math.min(...ys) > 0.2, '旗必须真的在动（幅度不能塌成常数）')
+  }
 }
 
 console.log(`\n最终结果：${passed} 通过 / ${failed} 失败`)

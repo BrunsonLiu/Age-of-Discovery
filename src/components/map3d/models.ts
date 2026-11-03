@@ -32,6 +32,7 @@ export type PortRegion = 'caribbean' | 'europe' | 'africa' | 'asia'
  * 这里只做转出，保持 3D 侧的 import 路径不变。
  */
 import { portScaleOf, type PortScale } from '@/utils/portScale'
+import { flagYaw, smokePose } from '@/utils/portLife'
 export { portScaleOf, type PortScale }
 
 /** 港口模型需要的最小数据形状（只取建模用得到的字段） */
@@ -79,6 +80,11 @@ export interface PortModelKit {
    * 糊进底座里看不见——栈桥要的是"这个港有个码头"，看不见就白做。
    */
   deckMat: THREE.MeshStandardMaterial
+  /**
+   * 烟的材料模板（每缕会 clone 一份，因为 SpriteMaterial 的 opacity 是材质级的，
+   * 共用一份就变成"三缕烟一起淡出"）。贴在软边径向渐变图上。
+   */
+  smokeMat: THREE.SpriteMaterial
 }
 
 /**
@@ -134,6 +140,51 @@ function paintPortBase(g: THREE.BufferGeometry): void {
   g.setAttribute('color', new THREE.BufferAttribute(col, 3))
 }
 
+/**
+ * 烟与海鸥的贴图（各一张，20 个港口共用）。
+ *
+ * 【为什么画在 canvas 而不是用现成素材】这两个都是 16~32px 的小东西：
+ * 烟只要"软边圆斑"，鸟只要"两笔 V 形"。为它们各导一张 PNG 会多两个网络请求，
+ * 而且尺寸一旦不匹配，缩放后边缘会发灰。
+ *
+ * 都用 alpha 通道表达形状、不用 alphaTest 硬切（硬切在低分辨率下会锯齿）。
+ */
+export function createSmokeTexture(): THREE.Texture {
+  const S = 64
+  const c = document.createElement('canvas')
+  c.width = c.height = S
+  const g = c.getContext('2d')!
+  const grd = g.createRadialGradient(S / 2, S / 2, 0, S / 2, S / 2, S / 2)
+  // 中心不太实、边缘完全透明：烟是散射体，没有硬芯
+  grd.addColorStop(0, 'rgba(255,255,255,0.85)')
+  grd.addColorStop(0.45, 'rgba(255,255,255,0.45)')
+  grd.addColorStop(1, 'rgba(255,255,255,0)')
+  g.fillStyle = grd
+  g.fillRect(0, 0, S, S)
+  const t = new THREE.CanvasTexture(c)
+  t.colorSpace = THREE.SRGBColorSpace
+  return t
+}
+
+export function createBirdTexture(): THREE.Texture {
+  const W = 48, H = 24
+  const c = document.createElement('canvas')
+  c.width = W; c.height = H
+  const g = c.getContext('2d')!
+  g.strokeStyle = '#2b2118'
+  g.lineWidth = 3
+  g.lineCap = 'round'
+  // 展翅的 "M"：两个上凸的弧，中间一点向下的身体
+  g.beginPath()
+  g.moveTo(6, 16)
+  g.quadraticCurveTo(15, 3, 24, 14)
+  g.quadraticCurveTo(33, 3, 42, 16)
+  g.stroke()
+  const t = new THREE.CanvasTexture(c)
+  t.colorSpace = THREE.SRGBColorSpace
+  return t
+}
+
 /** 建一套港口模型用的几何体与材质（20 个港口共用，别每个港口各建一份） */
 export function createPortModelKit(): PortModelKit {
   const base = new THREE.CylinderGeometry(0.15, 0.19, 0.075, 16)
@@ -143,7 +194,9 @@ export function createPortModelKit(): PortModelKit {
     house: new THREE.BoxGeometry(0.055, 0.07, 0.055),
     roof: new THREE.ConeGeometry(0.048, 0.05, 4),
     pole: new THREE.CylinderGeometry(0.007, 0.007, 0.19, 5),
-    flag: new THREE.PlaneGeometry(0.095, 0.05),
+    // 原点挪到左边缘：旗要绕**杆**摆。不挪的话旋转绕旗面中心，
+    // 两端反向甩，读起来像风车而不是旗（几何与 20 个港共用，挪一次即可）
+    flag: new THREE.PlaneGeometry(0.072, 0.038).translate(0.036, 0, 0),
     tower: new THREE.CylinderGeometry(0.03, 0.036, 0.17, 8),
     towerTop: new THREE.ConeGeometry(0.046, 0.055, 8),
     unit: new THREE.BoxGeometry(1, 1, 1),
@@ -164,6 +217,13 @@ export function createPortModelKit(): PortModelKit {
     towerMat: new THREE.MeshStandardMaterial({ color: 0xcfbc98, roughness: 0.9 }),
     woodMat: new THREE.MeshStandardMaterial({ color: 0x6b4426, roughness: 0.88 }),
     deckMat: new THREE.MeshStandardMaterial({ color: 0xa87f4c, roughness: 0.85 }),
+    smokeMat: new THREE.SpriteMaterial({
+      map: createSmokeTexture(),
+      color: 0xc9c2b2,
+      transparent: true,
+      depthWrite: false,
+      opacity: 1,
+    }),
   }
 }
 
@@ -238,13 +298,17 @@ export function makePortModel(kit: PortModelKit, port: PortModelInput): THREE.Gr
   }
 
   // ---- 旗（杆 + 面）----
+  /** 每根旗的旗面（待机动画要原地摆，见 animatePortLife） */
+  const flags: THREE.Mesh[] = []
   const addFlag = (x: number, z: number) => {
     const pole = new THREE.Mesh(kit.pole, kit.poleMat)
     pole.position.set(x, baseTopY + 0.095, z)
     town.add(pole)
     const flag = new THREE.Mesh(kit.flag, kit.flagMat)
-    flag.position.set(x + 0.048, baseTopY + 0.15, z)
+    // x 就是杆的位置（几何原点已在左边缘，见 createPortModelKit）
+    flag.position.set(x, baseTopY + 0.15, z)
     town.add(flag)
+    flags.push(flag)
   }
 
   if (scale === 'major') {
@@ -319,13 +383,83 @@ export function makePortModel(kit: PortModelKit, port: PortModelInput): THREE.Gr
     g.add(dock)
   }
 
+  /*
+   * ---- 青烟 ----
+   *
+   * 烟必须从**屋顶**出来，而不是港口中心：20 个港同屏时，从中心升起的那一坨
+   * 会盖住塔楼，看起来像港口失火。坐标复用上面 addHouse 的位置
+   * （烟挂在 town 里，跟着建筑群一起转）。
+   *
+   * 【为什么大港 2 缕、中港 1 缕、小港没有】
+   * 每个 Sprite 是一次独立 draw call（SpriteMaterial 的 opacity 是材质级的，
+   * 不能共用一份，否则三缕烟一起淡出）。20 个港如果都 2 缕就是 40 个 draw call，
+   * 而小补给站在多数机位下只有几个像素——给它们加烟纯属浪费。
+   * 大港 2 缕错开相位才读得出"烟柱"，1 缕只是一个会动的点。
+   */
+  const puffs: THREE.Sprite[] = []
+  // 大港 3 缕：2 缕叠出来更像"两个点"，3 缕才连成一根柱；中港 1 缕。
+  // 合计 8×3 + 9×1 = 33 个 sprite（每 sprite 一次 draw call，而且只在近景可见）。
+  const puffCount = scale === 'major' ? 3 : scale === 'medium' ? 1 : 0
+  const chimney: [number, number] = scale === 'major' ? [-0.03, -0.05]
+    : scale === 'medium' ? [-0.048, -0.008] : [-0.018, 0.008]
+  for (let i = 0; i < puffCount; i++) {
+    const mat = kit.smokeMat.clone()
+    const sp = new THREE.Sprite(mat)
+    sp.position.set(chimney[0], baseTopY + 0.13, chimney[1])
+    sp.scale.setScalar(0.05)
+    sp.userData.baseY = baseTopY + 0.13
+    sp.userData.baseX = chimney[0]
+    sp.userData.baseZ = chimney[1]
+    town.add(sp)
+    puffs.push(sp)
+  }
+
   g.userData.portScale = scale
   g.userData.portId = port.id
   g.userData.baseTopR = baseTopR
+  g.userData.portLife = { flags, puffs, seed: port.id }
   g.scale.setScalar(0.8)
   return g
 }
 
+
+/**
+ * 每帧更新一个港口的待机动画（旗 / 烟）。
+ *
+ * 【为什么 detail 是开关而不是"按距离淡出"】
+ * 角度和透明度连续变化没问题，但 draw call 的代价是阶跃的：烟在屏幕上只有
+ * 2 个像素时仍然各占一次 draw call。远景（dist > 22）直接整组隐藏，
+ * 省下的是一次次的绘制；近景才恢复。所以是布尔开关，不是渐变。
+ *
+ * 数学全在 utils/portLife（纯函数、可单测），这里只做赋值。
+ */
+export function animatePortLife(group: THREE.Group, t: number, detail: boolean): void {
+  const life = group.userData.portLife as
+    | { flags: THREE.Mesh[]; puffs: THREE.Sprite[]; seed: number }
+    | undefined
+  if (!life) return
+
+  // 旗：幅度小、频率快，读作"风里的布"
+  for (let i = 0; i < life.flags.length; i++) {
+    life.flags[i].rotation.y = flagYaw(t, life.seed + i)
+  }
+
+  // 烟：远景就别画了
+  for (let i = 0; i < life.puffs.length; i++) {
+    const sp = life.puffs[i]
+    sp.visible = detail
+    if (!detail) continue
+    const pose = smokePose(i, t, life.seed)
+    sp.position.set(
+      (sp.userData.baseX as number) + pose.sway,
+      (sp.userData.baseY as number) + pose.rise,
+      sp.userData.baseZ as number,
+    )
+    sp.scale.setScalar(pose.scale)
+    // 峰值 0.34：再高就变成一块白斑（软边 sprite 在深色海面上尤其显眼）
+    sp.material.opacity = pose.alpha * 0.42
+  }
+}
 
 export interface ShipModelKit {
   hull: THREE.BufferGeometry
