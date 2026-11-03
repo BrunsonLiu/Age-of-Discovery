@@ -61,6 +61,18 @@ export default function BrokerTip({ placement = 'float' }: { placement?: 'float'
 
   if (isSailing || pendingVoyage || activePanel || gamePhase !== 'playing') return null
 
+  /*
+   * 兜底文案从「本港行情已平」改成「这里没有适合你的货」。
+   *
+   * 【为什么原来的说法在撒谎】selectBestDeal 返回 null 有**三种**完全不同的原因：
+   *   ① 这一港确实没有能赚的货（加的斯在改价格表前就是：最好一条 2 金/天）
+   *   ② 有货，但玩家买不起（金不够一件）
+   *   ③ 有货，但装不下（舱满）
+   * 原来三种情况都说"行情已平"，②③ 时它就是在编一个市场事实。
+   * 玩家带着 500 金站在加的斯，屏幕写"本港行情已平"，而其实那里有一单军火生意
+   * 只是他做不起 —— 这正是本项目最不能接受的那种"屏幕在骗人"。
+   * 新文案只陈述"对你而言没有合适的"，不声称市场状态；副行仍然给下一步去哪。
+   */
   // 优先级：把手里的货换成钱 → 接一单新的 → 什么都没得做就指条回程
   const mode: 'sell' | 'buy' | 'return' | null = sale ? 'sell' : deal ? 'buy' : back ? 'return' : null
   if (!mode) return null
@@ -89,7 +101,7 @@ export default function BrokerTip({ placement = 'float' }: { placement?: 'float'
       <div className="mx-auto rounded-lg overflow-hidden" style={cardStyle}>
         <div className="flex items-center justify-between pl-3 pr-1.5 pt-1.5">
           <span className="font-serif text-[13px] tracking-wide text-gold-400">
-            {mode === 'sell' ? '货已到港' : mode === 'buy' ? '掮客递来一单' : '本港行情已平'}
+            {mode === 'sell' ? '货已到港' : mode === 'buy' ? '掮客递来一单' : '这里没有适合你的货'}
           </span>
           <button
             type="button"

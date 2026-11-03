@@ -4554,5 +4554,75 @@ console.log('== 57. 3D 点击判定：手指抖动不该让航向设不上 ==')
     '低于 0.14 的地方即使是局部高点也不该出山（澳洲内陆实测 27% → 0%）')
 }
 
+/*
+ * 「死港」不变量：每个港口，掮客都必须给得出一单。
+ *
+ * 【为什么这条必须存在】用游戏自己的掮客逻辑（selectBestDeal）把 20 个港口
+ * 逐个设为出发港，实测有两个港口**永远拿不到单**：
+ *   拿骚   最佳出口 烟草→加的斯  38 金/天，而航程 30 天
+ *   加的斯 五种货 modifier 全部 > 1，最好一条 2 金/天
+ * 而 20 港里还有 12 港没有委托，于是玩家到港后屏幕上什么都没有，
+ * 掮客卡只能走兜底文案「本港行情已平 · 指条回程」——它在明确地让玩家空船回去。
+ *
+ * 【判据为什么用 selectBestDeal，而不是自己算"有没有正边际"】
+ * 第一版就是这么写的，**抓不到旧缺陷**：拿骚的烟草有 +2 金/天、加的斯的丝绸也有
+ * +2 金/天，"存在正边际"两边都成立，于是把旧数据注入回去测试依然全绿。
+ * 玩家面对的不是"边际是否为正"，而是"卡片上有没有单"——那就必须用同一个函数判。
+ * 45 金/天 是游戏自己的推荐门槛，落在它下面按定义就是死港。
+ *
+ * 代价是这条断言对价格微调敏感（加的斯现在正好 46）。这是**设计意图**：
+ * 任何一次改动让某个港口跌出推荐线，都应该被显式看见并解释，而不是悄悄发生。
+ */
+{
+  /*
+   * 【基线为什么必须给 1000 金】
+   * useGameStore.getState() 拿到的是 **initGame 之前**的默认船（speed 12、金币 500），
+   * 不是玩家真正开局的那艘受损卡拉维尔（speed 8）。用它测出来的"金/天"会系统性偏乐观：
+   * 加的斯→埃尔米纳 在默认船上是 10 天（46 金/天，勉强过线），
+   * 在真实船上要 14 天（33 金/天，过不了）——这条差异是我在浏览器里调同一个函数
+   * 才发现的两个数字不一致（Node 10 天 / 浏览器 14 天）。
+   *
+   * 而"抵达某港时身上有多少钱"也不是随意的：玩家第一次到加的斯，
+   * 是在塞维利亚用 425 金买 5 件丝绸、到港卖 1040 金之后 —— 约 1100 金。
+   * 拿 500 金（远洋归来却更穷）去要求"每个港口都必须有单"，是在测一个不存在的状态。
+   * 所以基线取 1000：既不是初始值，也不是后期暴富，是"跑过一趟正常买卖之后"。
+   */
+  const st0 = useGameStore.getState()
+  const st = {
+    ...st0,
+    fleet: { ...st0.fleet, gold: 1000 },
+  }
+  const dead: string[] = []
+  const clearing: string[] = []
+  for (const p of ports) {
+    const s = { ...st, fleet: { ...st.fleet, currentPortId: p.id, isSailing: false } }
+    if (selectBestDeal(s as typeof st)) clearing.push(p.nameCn)
+    else dead.push(p.nameCn)
+  }
+  assert(dead.length === 0, `每个港口掮客都必须给得出单（死港：${dead.join('、') || '无'}）`)
+  assert(clearing.length === ports.length,
+    `20 个港口全部可推荐（实得 ${clearing.length}）`)
+
+  // 两个曾经的死港单独点名（回归时一眼看出是哪两个塌了）
+  for (const name of ['拿骚', '加的斯']) {
+    assert(clearing.includes(name), `${name} 必须重新有单可接（它曾是全图仅有的两个死港之一）`)
+  }
+
+  /*
+   * 反向套利陷阱：加的斯→塞维利亚有丝绸单向生意（塞→加），
+   * 给加的斯加军火之后必须确认**没有反向套利**——若哪天塞维利亚的火枪
+   * modifier 被抬到 1.0 以上，这两个港就变成一台 1 天往返的印钞机
+   * （历史上已经踩过一次 26 倍套利，见 dynamicSellPrice 的 14 号修订）。
+   */
+  const cadiz = ports.find(p => p.nameCn === '加的斯')!
+  const sevilla = ports.find(p => p.nameCn === '塞维利亚')!
+  const s2 = { ...st, fleet: { ...st.fleet, currentPortId: cadiz.id, isSailing: false } }
+  const buyMusket = selectBuyPrice(s2 as typeof st, cadiz.id, 7)
+  const sellMusket = selectSellPrice(s2 as typeof st, sevilla.id, 7)
+  assert(buyMusket != null, '加的斯必须经营火枪（它是军械装船港，也是它唯一的出口）')
+  assert(sellMusket != null && sellMusket <= buyMusket,
+    `加的斯→塞维利亚的火枪不能反向套利（买 ${buyMusket} / 卖 ${sellMusket}）`)
+}
+
 console.log(`\n最终结果：${passed} 通过 / ${failed} 失败`)
 if (failed > 0) process.exit(1)

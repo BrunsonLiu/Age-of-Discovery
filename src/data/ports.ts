@@ -53,6 +53,15 @@ export const portGoods: PortGood[] = [
   { portId: 3, goodId: 4, price: 125, stock: 25, priceModifier: 1.4 },
   { portId: 3, goodId: 1, price: 14, stock: 80, priceModifier: 1.2 },
   { portId: 3, goodId: 9, price: 260, stock: 20, priceModifier: 1.45 },
+  /*
+   * 【拿骚的出口：上一票的缴获】
+   * 拿骚原来只有烟草（0.7）一种便宜货，而**最近的烟草买家在 30 天外的加的斯**
+   * —— 实测最佳出口 38 金/天，低于游戏自己的推荐门槛 45，于是掮客在这一港
+   * 永远不给单。它是全图仅有的两个"死港"之一。
+   * 海盗共和国不生产什么，它转手刚抢来的东西；这里用蔗糖（西印度最常见的散货）
+   * 表达这一点：0.9 → 到圣胡安（2 天）74 金/天，落进中位区间（全图中位 98）。
+   */
+  { portId: 3, goodId: 5, price: 50, stock: 60, priceModifier: 0.9 },
 
   /* ---- 托尔图加(4)：法国海盗岛，产烟草/朗姆酒，渴求武器 ---- */
   { portId: 4, goodId: 3, price: 28, stock: 150, priceModifier: 0.6 },
@@ -170,6 +179,18 @@ export const portGoods: PortGood[] = [
   { portId: 20, goodId: 9, price: 275, stock: 25, priceModifier: 1.55 },
   { portId: 20, goodId: 1, price: 16, stock: 60, priceModifier: 1.3 },
   { portId: 20, goodId: 10, price: 175, stock: 30, priceModifier: 1.4 },
+  /*
+   * 【加的斯的出口：军械】
+   * 原来这一港五种货的 modifier **全部 > 1**（1.7 / 1.4 / 1.55 / 1.3 / 1.4）
+   * —— 字面上"只进不出"。实测最好的一条也算不出正利润（丝绸→哈瓦那 2 金/天），
+   * 加上"20 港里 12 港没有委托"，玩家到港后屏幕上真的什么都没有，
+   * 只能空船返航（掮客卡的兜底文案就是"本港行情已平 · 指条回程"）。
+   *
+   * 史实：加的斯是西印度舰队的**军械与补给装船港**，船队去新大陆前在此配枪炮。
+   * 0.8 → 到埃尔米纳（火枪换象牙，三角贸易的经典一段）46 金/天。
+   * 不是把加的斯变富，只是让它"有货可装"。
+   */
+  { portId: 20, goodId: 7, price: 75, stock: 40, priceModifier: 0.8 },
 ]
 
 /**
