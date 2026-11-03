@@ -4,6 +4,7 @@ import { tasks } from '@/data/tasks'
 import { goods } from '@/data/goods'
 import { ports } from '@/data/ports'
 import ParchmentCard from '@/components/ui/ParchmentCard'
+import ActionButton from '@/components/ui/ActionButton'
 import ScrollFade from '@/components/ui/ScrollFade'
 import { useFxStore as useFx } from '@/store/useFxStore'
 
@@ -70,7 +71,7 @@ export default function TaskPanel() {
                   return (
                     <div key={task.id} className="inlay--flat rounded p-2">
                       <div className="flex items-center gap-1.5 mb-1">
-                        <span className="text-[10px] px-1 py-0.5 rounded bg-gold-700/30 text-gold-300 font-serif shrink-0">
+                        <span className="text-[11px] px-1 py-0.5 rounded bg-gold-700/30 text-gold-300 font-serif shrink-0">
                           {typeLabels[task.type] ?? task.type}
                         </span>
                         <span className="text-gold-200 text-[13px] font-serif">{task.title}</span>
@@ -135,7 +136,7 @@ export default function TaskPanel() {
                 {availableTasks.map(task => (
                   <div key={task.id} className="inlay--flat rounded p-2">
                     <div className="flex items-center gap-1.5 mb-1">
-                      <span className="text-[10px] px-1 py-0.5 rounded bg-gold-700/30 text-gold-300 font-serif shrink-0">
+                      <span className="text-[11px] px-1 py-0.5 rounded bg-gold-700/30 text-gold-300 font-serif shrink-0">
                         {typeLabels[task.type] ?? task.type}
                       </span>
                       <span className="text-gold-200 text-[13px] font-serif">{task.title}</span>
@@ -146,12 +147,21 @@ export default function TaskPanel() {
                         <Coins size={10} /> {task.reward.gold}
                         {task.reward.fame && <span className="ml-1">+{task.reward.fame}声望</span>}
                       </span>
-                      <button
+                      {/*
+                        【"记下这条"原来是纯文本按钮】
+                        text-gold-400 + hover 变亮，没有任何边界 —— 在这一行里
+                        它和左边的奖励数值（"金 200 +10 声望"）是同级字号、
+                        同级颜色，读起来像描述的后半句，而不是一个可点的动作。
+                        改成铜牌（.plate-btn，与港口服务、买卖数量按钮同一套），
+                        并压扁内边距：这张卡片本来就矮，不能因为一个按钮高 12px。
+                      */}
+                      <ActionButton
                         onClick={() => acceptTask(task.id)}
-                        className="text-gold-400 hover:text-gold-300 text-[13px] font-serif transition-colors"
+                        variant="secondary"
+                        className="!px-2.5 !py-1 !text-[13px] shrink-0"
                       >
                         记下这条
-                      </button>
+                      </ActionButton>
                     </div>
                   </div>
                 ))}

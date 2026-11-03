@@ -48,12 +48,22 @@ export default function RivalPanel() {
               return (
                 <div key={r.id} className="inlay border border-gold-700/20 rounded p-2.5">
                   <div className="flex items-center gap-2.5 mb-1.5">
+                    {/*
+                      立绘加装裱，和港口面板的立绘同一套（1px 金线 + 2px 暗卡纸 + 内侧暗角）。
+                      40×56 的头像如果不装框，在深褐卡片上就是"一块贴上去的图"，
+                      而它旁边的名字、头衔、三列数值都是铜木语言。
+                      注意：JSX 的 `{a && (` 里面只能有一个表达式，注释必须放在括号外面。
+                    */}
                     {portrait && (
                       <img
                         src={portrait}
                         alt=""
                         aria-hidden="true"
-                        className="w-10 h-14 object-cover object-top rounded border border-gold-700/30 shrink-0"
+                        className="w-10 h-14 object-cover object-top rounded-sm shrink-0"
+                        style={{
+                          boxShadow:
+                            'inset 0 0 0 1px rgba(206,172,108,0.6), inset 0 0 0 2px rgba(18,12,5,0.88), 0 1px 4px rgba(0,0,0,0.5)',
+                        }}
                         onError={(e) => { e.currentTarget.style.visibility = 'hidden' }}
                       />
                     )}
@@ -66,31 +76,31 @@ export default function RivalPanel() {
                   </div>
                   <div className="grid grid-cols-3 gap-1 text-center">
                     <div>
-                      <div className="text-gold-500 text-[10px] font-serif flex items-center justify-center gap-0.5">
-                        <Coins size={9} /> 金币
+                      <div className="text-gold-500 text-[11px] font-serif flex items-center justify-center gap-0.5">
+                        <Coins size={11} /> 金币
                       </div>
                       <div className={`text-[13px] font-serif ${r.gold >= fleet.gold ? 'text-gold-300' : 'text-gold-500'}`}>
                         {r.gold}
                       </div>
                     </div>
                     <div>
-                      <div className="text-gold-500 text-[10px] font-serif flex items-center justify-center gap-0.5">
-                        <Star size={9} /> 声望
+                      <div className="text-gold-500 text-[11px] font-serif flex items-center justify-center gap-0.5">
+                        <Star size={11} /> 声望
                       </div>
                       <div className={`text-[13px] font-serif ${r.fame >= fleet.fame ? 'text-gold-300' : 'text-gold-500'}`}>
                         {r.fame}
                       </div>
                     </div>
                     <div>
-                      <div className="text-gold-500 text-[10px] font-serif flex items-center justify-center gap-0.5">
-                        <MapIcon size={9} /> 探索
+                      <div className="text-gold-500 text-[11px] font-serif flex items-center justify-center gap-0.5">
+                        <MapIcon size={11} /> 探索
                       </div>
                       <div className={`text-[13px] font-serif ${r.portsFound >= myPorts ? 'text-gold-300' : 'text-gold-500'}`}>
                         {r.portsFound}/20
                       </div>
                     </div>
                   </div>
-                  <p className="text-gold-400 text-[10px] font-serif italic mt-1.5">
+                  <p className="text-gold-400 text-[11px] font-serif italic mt-1.5">
                     「{r.lastAction}」
                   </p>
                 </div>
@@ -106,19 +116,19 @@ export default function RivalPanel() {
             </div>
             <div className="grid grid-cols-3 gap-1 text-center text-[13px] font-serif">
               <div>
-                <div className="text-gold-500 text-[10px]">财富</div>
+                <div className="text-gold-500 text-[11px]">财富</div>
                 <div className="text-gold-200">{fleet.gold} / {bestRivalGold}</div>
               </div>
               <div>
-                <div className="text-gold-500 text-[10px]">声望</div>
+                <div className="text-gold-500 text-[11px]">声望</div>
                 <div className="text-gold-200">{fleet.fame} / {bestRivalFame}</div>
               </div>
               <div>
-                <div className="text-gold-500 text-[10px]">探索</div>
+                <div className="text-gold-500 text-[11px]">探索</div>
                 <div className="text-gold-200">{myPorts} / {bestRivalPorts}</div>
               </div>
             </div>
-            <p className="text-gold-400 text-[10px] font-serif mt-1">
+            <p className="text-gold-400 text-[11px] font-serif mt-1">
               斜线后为同代最强。落后不可怕——可怕的是停下。
             </p>
           </div>
@@ -137,8 +147,8 @@ export default function RivalPanel() {
                   return (
                     <div key={n.id} className="inlay--flat rounded p-2 border-l-2 border-gold-700/40">
                       <div className="flex items-center justify-between mb-0.5">
-                        <span className="text-gold-400 text-[10px] font-serif">{rival?.name ?? '某位船长'}</span>
-                        <span className="text-gold-400 text-[10px] font-serif">第 {n.day} 天</span>
+                        <span className="text-gold-400 text-[11px] font-serif">{rival?.name ?? '某位船长'}</span>
+                        <span className="text-gold-400 text-[11px] font-serif">第 {n.day} 天</span>
                       </div>
                       <p className="text-gold-300 text-[13px] font-serif">{n.text}</p>
                     </div>
