@@ -479,12 +479,17 @@ export function animatePortLife(group: THREE.Group, t: number, detail: boolean):
 }
 
 export interface ShipModelKit {
+  /** 'player' 才有桅顶红旗（见 createShipModelKit 的说明） */
+  kind: 'player' | 'merchant'
   hull: THREE.BufferGeometry
   deck: THREE.BoxGeometry
   mast: THREE.CylinderGeometry
   sail: THREE.BufferGeometry
   yard: THREE.CylinderGeometry
   bowsprit: THREE.CylinderGeometry
+  /** 桅顶红旗：与港口旗共用同一份几何/材质（0.072×0.038 的小三角旗） */
+  flag: THREE.PlaneGeometry
+  flagMat: THREE.MeshStandardMaterial
   hullMat: THREE.MeshStandardMaterial
   deckMat: THREE.MeshStandardMaterial
   mastMat: THREE.MeshStandardMaterial
@@ -510,7 +515,16 @@ export interface ShipModelKit {
  * 另外每根桅杆加一根横桁（yard）：帆被看成一条边的时候，横桁仍然清晰可见，
  * 一眼就能读出"这是帆船"——真实帆船的横桁本来也比帆宽。
  */
-export function createShipModelKit(): ShipModelKit {
+/**
+ * @param kind 'player' = 玩家座舰（暖米色帆 + 桅顶红旗）；
+ *             'merchant' = NPC 商船（冷灰帆、无旗）。
+ *
+ * 【为什么必须区分】原来两边共用同一个套件，只靠 0.72 的缩放区分。
+ * 实测默认视野下船长只有 30~40px，缩放差 28% 在小尺寸上几乎读不出来 ——
+ * 玩家经常分不清"哪艘是我的船"。改颜色（帆的色相）比改尺寸更容易在
+ * 这个尺度上被认出来，红旗是第二重保险（在深色海面上红色最跳）。
+ */
+export function createShipModelKit(kind: 'player' | 'merchant' = 'player'): ShipModelKit {
   // 圆柱的"高"就是船长：转 90° 之后沿 Z 展开
   const hull = new THREE.CylinderGeometry(0.20, 0.13, 1.30, 8, 1)
   hull.rotateX(Math.PI / 2)
@@ -529,13 +543,24 @@ export function createShipModelKit(): ShipModelKit {
   }
 
   return {
+    kind,
     hull,
     deck: new THREE.BoxGeometry(0.34, 0.04, 1.02),
     mast: new THREE.CylinderGeometry(0.018, 0.024, 0.9, 6),
     sail,
     yard: new THREE.CylinderGeometry(0.013, 0.013, 0.44, 6),
     bowsprit: new THREE.CylinderGeometry(0.014, 0.014, 0.44, 6),
-    hullMat: new THREE.MeshStandardMaterial({ color: 0x5c2e0a, roughness: 0.88 }),
+    // 红旗：右边缘对齐桅杆（几何原点在左边缘），这样绕 Y 摆动时像旗
+    // 尺寸按"远景也能看见"定：0.14×0.075 × 船体 0.8 ≈ 0.11 世界单位（默认视野约 4px）
+    flag: new THREE.PlaneGeometry(0.14, 0.075).translate(0.07, 0, 0),
+    flagMat: new THREE.MeshStandardMaterial({
+      color: 0xc0392b, roughness: 0.85, side: THREE.DoubleSide,
+      // 一点自发光：暗侧（背光面）也要读得出是红的，否则远景就是一粒黑点
+      emissive: 0x3a0f0a, emissiveIntensity: 0.6,
+    }),
+    hullMat: new THREE.MeshStandardMaterial({
+      color: kind === 'merchant' ? 0x6b4a24 : 0x5c2e0a, roughness: 0.88,
+    }),
     deckMat: new THREE.MeshStandardMaterial({ color: 0x8b5a2b, roughness: 0.9 }),
     mastMat: new THREE.MeshStandardMaterial({ color: 0x3f2410, roughness: 0.9 }),
     /*
@@ -548,7 +573,12 @@ export function createShipModelKit(): ShipModelKit {
      * 它才是"发光感"的来源），目标是落在 rgb(200,186,160) 附近。
      */
     sailMat: new THREE.MeshStandardMaterial({
-      color: 0xded0b0, roughness: 0.92, side: THREE.DoubleSide,
+      /*
+       * 商船用冷灰帆（0xb9bdb6）：亮度与玩家帆（0xded0b0）接近，
+       * 只改色相 —— 改亮度会让某一方在海面上"更亮"，反而变成"谁是主角"的误导。
+       */
+      color: kind === 'merchant' ? 0xa8b2b4 : 0xded0b0,
+      roughness: 0.92, side: THREE.DoubleSide,
       emissive: 0x1a1710, emissiveIntensity: 0.5,
     }),
   }
@@ -585,6 +615,19 @@ export function makeShipModel(kit: ShipModelKit): THREE.Group {
     yard.rotation.z = Math.PI / 2
     yard.position.set(0, 0.17 + 0.46 + 0.17, z)
     g.add(yard)
+  }
+
+  /*
+   * 桅顶红旗（只给玩家）。
+   * 【为什么加这个】商船与座舰的差别原来只有缩放，近景能看出来、远景不能。
+   * 红旗是"最高饱和度的最小色块"，在深青绿海面上是全图最跳的颜色之一，
+   * 30px 尺度下也能一眼锁定自己的船。几何只有 4 个三角形。
+   */
+  if (kit.kind === 'player') {
+    const flag = new THREE.Mesh(kit.flag, kit.flagMat)
+    // 挂在后桅顶下方一点（桅顶 y=1.07，旗中心 1.00）
+    flag.position.set(0.02, 1.0, 0.40)
+    g.add(flag)
   }
 
   // 船首斜桁：从船头向前上方伸出

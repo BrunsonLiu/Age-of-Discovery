@@ -827,7 +827,13 @@ export default function Map3DView() {
 
       // ---- 微缩港口 ----
       const portKit = createPortModelKit()
-      const shipKit = createShipModelKit()
+      const shipKit = createShipModelKit('player')
+      /*
+       * NPC 用**另一个套件**（冷灰帆、无红旗）。
+       * 原来两家共用一个套件、只靠 0.72 缩放区分 —— 默认视野下船长 30~40px，
+       * 28% 的尺寸差几乎读不出来。材质各一份的代价只是多两份 uniform。
+       */
+      const npcKit = createShipModelKit('merchant')
       disposables.push(
         portKit.base, portKit.house, portKit.roof, portKit.pole, portKit.flag,
         portKit.tower, portKit.towerTop, portKit.unit,
@@ -977,7 +983,7 @@ export default function Map3DView() {
         if (!a || !b) continue
         const geom = getRouteGeometry([a.latitude, a.longitude], [b.latitude, b.longitude])
         if (!(geom.totalNm > 0)) continue
-        const g = makeShipModel(shipKit)
+        const g = makeShipModel(npcKit)
         // 比玩家的座舰小一圈：玩家船必须一眼认出来，商船只是"别人"
         g.scale.setScalar(NPC_SCALE)
         g.name = `map3d-npc-${i}`
