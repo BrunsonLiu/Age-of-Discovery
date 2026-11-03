@@ -19,7 +19,8 @@ import { buildLandGeometry, PLATE_THICKNESS } from './landGeometry'
 import { buildGrainCanvas } from '@/utils/landGrain'
 import { birdPose } from '@/utils/portLife'
 import { buildCloudShadowCanvas, cloudBlobs } from '@/utils/cloudShadow'
-import { advanceNpc, npcPose, type NpcLegState } from '@/utils/npcShips'
+import { NPC_LEGS, NPC_SPEED_NM, npcLegAt, npcPose } from '@/utils/npcShips'
+import { skyAt } from '@/utils/skyClock'
 import {
   animatePortLife, createBirdTexture, createPortModelKit, createShipModelKit,
   makePortModel, makeShipModel, portScaleOf,
@@ -131,15 +132,6 @@ const GRAIN_BUMP = 4
  */
 const BIRDS_PER_PORT = 2
 
-/**
- * 一昼夜多少秒（实时）。
- *
- * 8 分钟：比"看完一单生意"长得多，比"一局游戏"短得多。
- * 再快会让人误以为有时间压力（这游戏不是赶时间的），再慢则看不出变化。
- */
-const DAY_CYCLE_SEC = 480
-/** 一趟完整航程额外把太阳往前推多少（0~1 个昼夜） */
-const VOYAGE_SUN_PUSH = 0.35
 /** 主光的两种色温端点（正午暖白 / 深夜冷蓝） */
 const SUN_COLOR_DAY = new THREE.Color(0xfff1dc)
 /** 夜里的水面偏冷：**乘数**（三通道接近 1），不是插值目标色 */
@@ -796,15 +788,11 @@ export default function Map3DView() {
        * 不是一个量纲；NPC 只用来看，20 nm/s 意味着 420 海里的塞维利亚—里斯本
        * 要约 21 秒跑完 —— 你能看出它在动，但它不会窜。
        */
-      // 加勒比 / 北海 / 印度洋 / 东非：四条腿分在不同海域。
-      // **故意避开 6↔7（塞维利亚—里斯本）**：玩家开局就停在那儿，
-      // 同屏挤着"玩家的船 + 港口 + 一艘商船"，三者在几十个像素里分不清谁是谁。
-      const NPC_ROUTE_IDS = [1, 25, 13, 27] as const
-      const NPC_SPEED_NM = 20
+      // 航线清单与速度在 utils/npcShips（2D 用同一份）
       const NPC_SCALE = 0.72
-      const npcs: { group: THREE.Group; geom: RouteGeometry; st: NpcLegState }[] = []
-      for (let i = 0; i < NPC_ROUTE_IDS.length; i++) {
-        const r = routes.find(x => x.id === NPC_ROUTE_IDS[i])
+      const npcs: { group: THREE.Group; geom: RouteGeometry; phase0: number }[] = []
+      for (let i = 0; i < NPC_LEGS.length; i++) {
+        const r = routes.find(x => x.id === NPC_LEGS[i].routeId)
         if (!r) continue
         const a = ports.find(p => p.id === r.fromPortId)
         const b = ports.find(p => p.id === r.toPortId)
@@ -819,8 +807,7 @@ export default function Map3DView() {
         npcs.push({
           group: g,
           geom,
-          // 起点错开：4 条船都从港口出发、同时出海会很假
-          st: { posNm: geom.totalNm * (0.15 + i * 0.21), sign: i % 2 === 0 ? 1 : -1 },
+          phase0: NPC_LEGS[i].phase0,
         })
       }
 
@@ -1270,10 +1257,14 @@ export default function Map3DView() {
       let lastWeatherKind: string | null = null
       /** 天气倍率（只在天气变化时更新，光照每帧用） */
       let weatherDim = 1
-      /** 日相 0~1：0 = 日出前、0.25 = 正午、0.75 = 深夜 */
-      let sunPhase = 0.18
-      /** 上一次的航程进度（只认增量，避免到港归零时太阳倒退） */
-      let lastRouteProgress = 0
+      /*
+       * 日相不在这里推进。
+       *
+       * 【为什么】2D 与 2.5D 是两套渲染。如果各自 `phase += dt/周期`，
+       * 两边起点不同 → 切视图时天色会跳；而且谁先跑谁"对"。
+       * 改成读 utils/skyClock 的纯函数 `skyAt(nowMs, 进度)`：同一时刻问两次
+       * 答案相同，两个视图天然对齐，谁也不必同步谁。
+       */
       /**
        * 上一帧时间戳，用来算 dt。
        *
@@ -1433,8 +1424,10 @@ export default function Map3DView() {
            * 反 180°，硬赋值就是一帧之内原地转过半圈，看起来像瞬移。
            */
           for (const npc of npcs) {
-            npc.st = advanceNpc(npc.st, npc.geom.totalNm, NPC_SPEED_NM, dt)
-            const pose = npcPose(npc.geom, npc.st)
+            // 位置是**时刻的函数**（不是累加）：与 2D 那份地图用的是同一个公式，
+            // 所以同一时刻切换视图，船在同一个地方。
+            const st = npcLegAt(npc.geom.totalNm, NPC_SPEED_NM, npc.phase0, tNow)
+            const pose = npcPose(npc.geom, st)
             npc.group.position.set(
               lonToWorldX(pose.lng),
               -PLATE_THICKNESS + 0.02,
@@ -1578,15 +1571,7 @@ export default function Map3DView() {
          * 航线的金色虚线、货价都要读得清。夜里最暗只到 0.72 倍并偏蓝，
          * 不是"关灯"。
          */
-        {
-          const prog = Math.max(0, Math.min(1, state.routeProgress ?? 0))
-          if (prog > lastRouteProgress) {
-            sunPhase += (prog - lastRouteProgress) * VOYAGE_SUN_PUSH
-          }
-          lastRouteProgress = prog
-          sunPhase += dt / DAY_CYCLE_SEC
-          if (sunPhase >= 1) sunPhase -= Math.floor(sunPhase)
-        }
+        const sky = skyAt(tNow, state.routeProgress ?? 0)
 
         /*
          * 灯光只有一个写入口：天气 × 日相。
@@ -1595,8 +1580,7 @@ export default function Map3DView() {
          * 分段线性会在日出/日落那一刻出现"速度突变"（亮度曲线打一个折）。
          */
         {
-          // sunPhase 0.25 = 正午、0.75 = 深夜
-          const lit = 0.5 + 0.5 * Math.sin(sunPhase * Math.PI * 2)
+          const lit = sky.lit
           const sunLightMul = 0.72 + 0.34 * lit
           key.intensity = LIGHT_KEY * weatherDim * sunLightMul
           rim.intensity = LIGHT_RIM * weatherDim * (0.55 + 0.45 * lit)

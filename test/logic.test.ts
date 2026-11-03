@@ -22,7 +22,7 @@ import { buildTerrainSymbols } from '../src/utils/terrainDecor'
 import { latToWorldZ, mercNorm, MAP_WORLD_SIZE, MERCATOR_LAT_LIMIT } from '../src/utils/mapProjection'
 import { birdPose, flagYaw, smokePose, SMOKE_PERIOD } from '../src/utils/portLife'
 import { DIALOGUE_RULES, pickDialogue, unreachableScripts, type DialogueContext } from '../src/utils/dialogueTriggers'
-import { advanceNpc, npcPose } from '../src/utils/npcShips'
+import { npcLegAt, npcPose } from '../src/utils/npcShips'
 import { getRouteGeometry } from '../src/utils/routePath'
 import { durabilityColor, loadColor, DANGER_COLOR, WARN_COLOR, SAFE_COLOR } from '../src/utils/shipVitals'
 import {
@@ -4201,45 +4201,57 @@ console.log('== 57. 3D 点击判定：手指抖动不该让航向设不上 ==')
 }
 
 /*
- * NPC 商船的航行动力学。
+ * NPC 商船的航行动力学（按时刻求位置，无状态）。
  *
  * 【要钉的三件事】① 里程永远不越界（越界会让 positionAtNm 钳到端点、
- * 船"贴在港口上不动"）；② 走到端点必须反射回来而不是跳回起点（跳回 =
- * 船凭空消失又出现）；③ 朝向在折返点附近不能是 NaN（NaN 会让整艘船消失）。
+ * 船"贴在港口上不动"）；② 折返是三角波：端点处位置连续，只有方向翻转；
+ * ③ 同一时刻问两次答案必须完全相同（2D 与 2.5D 各问一次，必须一致）。
  */
 {
   const TOTAL = 420
   const SPD = 20
 
-  // ① 正常推进：位移 = 速度 × 时间
+  // ① 位移 = 速度 × 时间（从相位 0 出发）
   {
-    const st = advanceNpc({ posNm: 100, sign: 1 }, TOTAL, SPD, 2)
-    assert(Math.abs(st.posNm - 140) < 1e-9, `2 秒应前进 40 海里（实得 ${st.posNm - 100}）`)
-    assert(st.sign === 1, '没到端点时方向不变')
+    const a = npcLegAt(TOTAL, SPD, 0, 0)
+    const b = npcLegAt(TOTAL, SPD, 0, 2000)
+    assert(Math.abs(a.posNm - 0) < 1e-9, `t=0 必须从起点出发（实得 ${a.posNm}）`)
+    assert(Math.abs(b.posNm - 40) < 1e-9, `2 秒应前进 40 海里（实得 ${b.posNm}）`)
   }
-  // ② 到端点反射，且不越界
+  // ② 折返：越过终点后方向翻转，且位置连续、不越界
   {
-    const st = advanceNpc({ posNm: TOTAL - 5, sign: 1 }, TOTAL, SPD, 2)
-    assert(st.posNm <= TOTAL && st.posNm >= 0, `里程不能越界（实得 ${st.posNm}）`)
-    assert(st.sign === -1, '越过终点后必须掉头')
-    // 反程同样要反射
-    const back = advanceNpc({ posNm: 3, sign: -1 }, TOTAL, SPD, 2)
-    assert(back.sign === 1 && back.posNm >= 0 && back.posNm <= TOTAL, '越过起点后必须掉头且在界内')
+    const T = 5 // 秒到终点（100 海里 / 20 nm/s）
+    const before = npcLegAt(100, SPD, 0, T * 1000 - 100)
+    const at = npcLegAt(100, SPD, 0, T * 1000)
+    const after = npcLegAt(100, SPD, 0, T * 1000 + 100)
+    assert(before.sign === 1 && after.sign === -1, '越过终点后必须掉头')
+    assert(Math.abs(at.posNm - 100) < 1e-6, `端点处必须在终点（实得 ${at.posNm}）`)
+    // 位置连续：端点前后各 0.1 秒，里程差 ≤ 2 海里（而不是跳回 0）
+    assert(Math.abs(before.posNm - after.posNm) < 3,
+      `折返处位置必须连续（${before.posNm.toFixed(2)} → ${after.posNm.toFixed(2)}）`)
   }
-  // ③ 长时间运行后仍然有界（反射公式写错的话会越漂越远）
+  // ③ 长时间（一整天）不越界
   {
-    let st = { posNm: 0, sign: 1 as 1 | -1 }
-    for (let i = 0; i < 5000; i++) st = advanceNpc(st, TOTAL, SPD, 0.016)
-    assert(st.posNm >= 0 && st.posNm <= TOTAL, `5000 帧后里程仍须有界（实得 ${st.posNm.toFixed(2)}）`)
+    let ok = true
+    for (let ms = 0; ms < 86400_000; ms += 7_919) {
+      const st = npcLegAt(TOTAL, SPD, 0.3, ms)
+      if (!(st.posNm >= 0 && st.posNm <= TOTAL)) ok = false
+    }
+    assert(ok, '一整天内里程必须始终落在 [0, 总里程]')
   }
-  // ④ 非法输入不许把状态改坏（totalNm=0 的退化航线真的存在）
+  // ④ 同一时刻问两次，答案必须逐位相同（这就是 2D/3D 一致的保证）
   {
-    const st = { posNm: 10, sign: 1 as 1 | -1 }
-    assert(advanceNpc(st, 0, SPD, 1).posNm === 10, '航程为 0 时不应推进')
-    assert(advanceNpc(st, TOTAL, 0, 1).posNm === 10, '速度为 0 时不应推进')
+    const a = npcLegAt(TOTAL, SPD, 0.42, 12_345)
+    const b = npcLegAt(TOTAL, SPD, 0.42, 12_345)
+    assert(a.posNm === b.posNm && a.sign === b.sign, '同一时刻两次查询必须完全一致')
+  }
+  // ⑤ 退化输入不许产出 NaN
+  {
+    const st = npcLegAt(0, SPD, 0, 1000)
+    assert(Number.isFinite(st.posNm) && st.posNm === 0, '航程为 0 时位置必须是 0，不能 NaN')
   }
 
-  // ⑤ 姿态：端点位置必须等于几何端点，朝向必须有限且在 0~360
+  // ⑥ 姿态：端点位置必须等于几何端点，朝向必须有限且在 0~360
   {
     const geom = getRouteGeometry([37.4, -5.99], [38.7, -9.14]) // 塞维利亚 → 里斯本
     assert(geom.totalNm > 0, '测试航线总里程必须为正（几何没建出来时这条会先挂）')
@@ -4256,14 +4268,13 @@ console.log('== 57. 3D 点击判定：手指抖动不该让航向设不上 ==')
     }
     /*
      * 端点上的朝向必须是"进来的航向"，不能退化成正北 0。
-     * 第一版在端点拿 geom.to 兜底，而那儿就是 boat 自己 → bearing = 0，
+     * 第一版在端点拿 geom.to 兜底，而那儿就是船自己 → bearing = 0，
      * 船在掉头那一帧突然指北。这条断言就是钉这个的。
      */
     const beforeEnd = npcPose(geom, { posNm: geom.totalNm - 0.5, sign: 1 })
     const atEnd = npcPose(geom, { posNm: geom.totalNm, sign: 1 })
     assert(Math.abs(atEnd.bearing - beforeEnd.bearing) < 30,
       `终点前的朝向必须连续（${beforeEnd.bearing.toFixed(1)} → ${atEnd.bearing.toFixed(1)}）`)
-    // 反程在起点同理
     const atStart = npcPose(geom, { posNm: 0, sign: -1 })
     assert(atStart.bearing !== 0 || geom.totalNm === 0,
       '反程到起点时朝向不能退化成正北')

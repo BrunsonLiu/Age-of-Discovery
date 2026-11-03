@@ -177,6 +177,39 @@ body {
   mix-blend-mode: multiply;
 }
 
+/*
+ * 天时（2D）：夜里压暗偏冷、黎明黄昏偏暖。
+ *
+ * 【为什么不用 filter: brightness() 一把梭】filter 是**整体**改变，
+ * 羊皮纸陆地会被压成一块灰；而这两层分别是 multiply（压暗、偏蓝）
+ * 与 overlay（暖色进入高光），叠在纸纹之上读起来还是"同一张图，光线变了"。
+ *
+ * 【为什么透明度由 JS 写、不写死在 CSS 里】日相是连续的（8 分钟一昼夜），
+ * 只能每帧从 utils/skyClock 取。写在这里的 opacity 是**初始值**，
+ * 首帧就会被 rAF 覆盖——留着是为了没跑 rAF 时也不至于全亮或全黑。
+ *
+ * 【为什么两层都 pointer-events: none】它们压在地图上，
+ * 一旦接管指针，点海面设定航向就会失效（整张图变成不可点）。
+ */
+.sky-night,
+.sky-warm {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  will-change: opacity;
+}
+
+.sky-night {
+  background: #0b1f3d;
+  mix-blend-mode: multiply;
+}
+
+.sky-warm {
+  background: linear-gradient(190deg, #ffb066 0%, #ff9a4a 40%, transparent 100%);
+  mix-blend-mode: overlay;
+}
+
 .vintage-vignette {
   position: absolute;
   inset: 0;

@@ -10,6 +10,7 @@ import MiniMap from './MiniMap'
 import { buildMajorLand, featureArea } from '@/utils/terrainDecor'
 import { RouteLine } from './RouteLine'
 import { ShipAnimation } from './ShipAnimation'
+import NpcShips2D from './NpcShips2D'
 import { MapOverlays } from './MapOverlays'
 import MapClickHandler from './MapClickHandler'
 import OceanLabels from './OceanLabels'
@@ -473,13 +474,16 @@ export default function MapView() {
               <OceanLabels />
               <RouteLine />
               <PortMarker />
+              {/* NPC 商船放在玩家船之前：同屏时玩家船压在它们上面 */}
+              <NpcShips2D />
               <ShipAnimation />
             </MapContainer>
           </MapErrorBoundary>
         </>
       )}
 
-      <VintageMapOverlay dimmed={renderMode === '3d'} />
+      {/* sky 只在 2D 开：2.5D 是自己算光照的，再叠一层色片会变成两套昼夜叠加 */}
+      <VintageMapOverlay dimmed={renderMode === '3d'} sky={renderMode !== '3d'} />
     </div>
   )
 }
