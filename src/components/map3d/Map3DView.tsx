@@ -127,6 +127,14 @@ const GRAIN_TILES = 22
 const GRAIN_BUMP = 4
 
 /**
+ * 陆地贴图向羊皮纸色混合的比例（0 = 原彩色喷绘，1 = 纯羊皮纸）。
+ *
+ * 值是 A/B 出来的：0 / 0.45 / 0.65 / 0.85 各拍一张比较。
+ * 详见下方 toned 截图的对比结论。
+ */
+const LAND_PARCHMENT_MIX = 0.55
+
+/**
  * 每个港口上空的海鸥数量。
  * 2 只：1 只读作"一个黑点在转"，3 只以上在微缩尺度上开始像虫群。
  */
@@ -540,6 +548,41 @@ export default function Map3DView() {
        * 不 repeat 的话一张 256px 图摊在 20 世界单位上，近景是一团糊。
        * 22 次 → 每格 0.9 单位，近景刚好 1:1 像素左右。
        */
+      /*
+       * ---- 陆地的"图纸调子" ----
+       *
+       * 【为什么必须做】2D 与 2.5D 是同一个游戏的两张脸，现在它们不是：
+       *   2D  = 奶油羊皮纸 + 墨线海岸 + 树木/山形符号（波托兰海图）
+       *   2.5D = painted-land 的彩色喷绘，**一根线都没有**
+       * 切一次视图像换了个游戏，而且技术更强的那个说服力反而更弱。
+       *
+       * 【做法】把贴图色向羊皮纸色混合。2D 的纸色是 rgb(219,197,157)
+       * （utils/paperTexture 的 BASE），这里用同一个数——两个视图同一个"纸"。
+       *
+       * 【为什么用 onBeforeCompile 的常量混色，而不是给材质设 color】
+       * color 是**乘数**：只能压暗、不能提亮，也不可能把绿色调成奶油色
+       * （乘法在数学上改不了色相方向）。这里要的是"往奶油色靠"，
+       * 只能 mix。而常量 mix 不涉及贴图采样——上次给自定义 uniform 塞
+       * CanvasTexture 时采样器根本没绑上（白做了一个颗粒），这次没有那个风险。
+       */
+      {
+        const anchoropts = { mix: LAND_PARCHMENT_MIX }
+        lidMat.onBeforeCompile = (shader) => {
+          const anchor = '#include <map_fragment>'
+          lidMat.userData.toneInjected = shader.fragmentShader.includes(anchor)
+          if (!lidMat.userData.toneInjected) return
+          shader.uniforms.uParchMix = { value: anchoropts.mix }
+          shader.fragmentShader = shader.fragmentShader
+            .replace(
+              '#include <map_fragment>',
+              `#include <map_fragment>
+              // 只动色相/明度，不动 alpha；羊皮纸色与 2D 的纸纹同源
+              diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.859, 0.773, 0.616), uParchMix);`,
+            )
+            .replace('#include <common>', '#include <common>\nuniform float uParchMix;')
+        }
+      }
+
       {
         const grainCanvas = buildGrainCanvas(256)
         if (grainCanvas) {

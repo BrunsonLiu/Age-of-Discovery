@@ -113,9 +113,16 @@ function paintPortBase(g: THREE.BufferGeometry): void {
    * ——光从上方来，水平面必然吃到最多光，把它压暗就是在跟光打架。
    * 与海岸侧壁那次是同一个教训：垂直面/水平面的相对亮度不能靠"题材想象"定。
    */
-  const TOP: [number, number, number] = [0x9c / 255, 0x6d / 255, 0x3c / 255]
-  const RIM: [number, number, number] = [0x85 / 255, 0x55 / 255, 0x29 / 255]
-  const LOW: [number, number, number] = [0x6a / 255, 0x45 / 255, 0x22 / 255]
+  /*
+   * 【2026-11-03 改色：从"橙色木头"到"砂岩"】
+   * 陆地改成羊皮纸调子之后，原来那套 0x9c6d3c 的橙棕在奶油底子上像一只木桶，
+   * 而且和船体、屋顶的红棕撞色。砂岩更接近"从海图上凸起的一块岩台"：
+   * 色相往黄灰挪、饱和度压下去，同时**保持三段明暗关系不变**
+   * （顶面最亮 → 上缘 → 底部最暗），那条曲线是量出来的，不动。
+   */
+  const TOP: [number, number, number] = [0xa8 / 255, 0x92 / 255, 0x72 / 255]
+  const RIM: [number, number, number] = [0x8e / 255, 0x78 / 255, 0x59 / 255]
+  const LOW: [number, number, number] = [0x6f / 255, 0x5c / 255, 0x42 / 255]
 
   const pos = g.attributes.position
   const nrm = g.attributes.normal
@@ -204,6 +211,16 @@ export function createPortModelKit(): PortModelKit {
     // flatShading：16 个侧面各成一片，读作削出来的岩块而不是光滑圆柱。
     baseMat: new THREE.MeshStandardMaterial({
       vertexColors: true, flatShading: true, roughness: 0.86, metalness: 0,
+      /*
+       * 【为什么要一点 emissive】球状底座的背光面只吃到 ambient，
+       * 实测渲染出来是 rgb(6,4,3) —— 纯黑。在这个尺度上它读作
+       * **"模型缺了一块"**，而不是暗面（4 倍放大截图里最刺眼的东西）。
+       * 加一层很暗的暖色自发光当"地面反光"，暗面回到 rgb(28,22,16) 左右：
+       * 仍然明显暗于顶面，但不再是洞。
+       * 不能用调高 ambient 的办法——那会同时抬亮海面，把海色与昼夜校准全打乱。
+       */
+      emissive: 0x2a2018,
+      emissiveIntensity: 0.55,
     }),
     houseMat: new THREE.MeshStandardMaterial({ color: 0xd8c9a4, roughness: 0.9 }),
     roofMat: {
