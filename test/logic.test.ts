@@ -28,6 +28,7 @@ import { readFileSync } from 'node:fs'
 import { birdPose, flagYaw, smokePose } from '../src/utils/portLife'
 import { DIALOGUE_RULES, pickDialogue, unreachableScripts, type DialogueContext } from '../src/utils/dialogueTriggers'
 import { traitEffect } from '../src/utils/outcomeAdjust'
+import { groupJournal, journalHeadline } from '../src/utils/captainLog'
 import { npcLegAt, npcPose } from '../src/utils/npcShips'
 import { getRouteGeometry } from '../src/utils/routePath'
 import { durabilityColor, loadColor, DANGER_COLOR, WARN_COLOR, SAFE_COLOR } from '../src/utils/shipVitals'
@@ -4703,6 +4704,76 @@ console.log('== 57. 3D 点击判定：手指抖动不该让航向设不上 ==')
   // 别的天赋不该被算成"多赚"
   assert(selectDealTalentBonus(mk('bulwark'), deal!) === null,
     '铁壁舰长不该在贸易单上显示"多赚"（它影响的是事件，不是价格）')
+}
+
+/*
+ * 船长日志：一天一行。
+ *
+ * 【为什么这些必须逐条过判据】这一层的全部价值在于**文体纪律**：
+ * ≤24 字、不带数字、只在有事时写。它不像价格那样有对账可以兜底，
+ * 一旦有人往表里追加一句"耐久 -17、金币 +240，士气受损"，它不会报错，
+ * 只会悄悄变回一张报表 —— 而没人会为此开 issue。
+ */
+{
+  const mkEntry = (type: string, o: Partial<{ durabilityChange: number; crewChange: number; moraleChange: number; goldChange: number }>, day = 3) => ({
+    event: { id: 1, title: 'T', type, choices: [{ text: 'C', outcomes: [] }] },
+    choiceIndex: 0,
+    outcome: { probability: 1, goldChange: 0, foodChange: 0, waterChange: 0, moraleChange: 0, durabilityChange: 0, crewChange: 0, ...o },
+    day,
+  }) as unknown as Parameters<typeof journalHeadline>[0][number]
+
+  assert(journalHeadline([]) === null, '没有条目的一天不该有日志行（凑数的"风平浪静"会让真正的平静失去分量）')
+
+  const stormBad = journalHeadline([mkEntry('storm', { durabilityChange: -20 })])
+  const stormOk = journalHeadline([mkEntry('storm', { moraleChange: 5 })])
+  assert(stormBad === '风把帆撕了一道口子。', `风暴受损应有对应的一句（实得「${stormBad}」）`)
+  assert(stormOk !== stormBad, '风暴里没受损时不该说"帆被撕了"（同一事件要分好坏两说）')
+
+  // 未知类型落到兜底句，而不是抛错或返回 undefined
+  const unknown = journalHeadline([mkEntry('no-such-type', { goldChange: 10 })])
+  assert(typeof unknown === 'string' && unknown.length > 0, '未知事件类型必须有兜底句')
+
+  /*
+   * 全部文案过三关：≤24 字 / 无阿拉伯数字 / 非空。
+   * 遍历的是所有真实事件类型（含好坏两种），所以以后往表里加句子也会被这条拦住。
+   */
+  const types = ['storm', 'pirate', 'disease', 'accident', 'discovery', 'treasure', 'kraken', 'ghost',
+    'festival', 'smuggle', 'siren', 'volcano', 'fog', 'faction', 'crew', 'reckoning', 'historical', 'bogus']
+  /*
+   * 逐条断言会把这些检查刷成 70 多条，把上面几千条单测的计数冲得看不出变化
+   * （本项目已经踩过一次）。所以先收集违规，再聚合成三条断言。
+   */
+  const seen = new Set<string>()
+  const tooLong: string[] = []
+  const hasDigit: string[] = []
+  for (const t of types) {
+    for (const o of [{ durabilityChange: -30 }, { goldChange: 40 }]) {
+      const line = journalHeadline([mkEntry(t, o)])!
+      seen.add(line)
+      if (line.length > 24) tooLong.push(`${t}:${line}(${line.length})`)
+      if (/[0-9０-９]/.test(line)) hasDigit.push(`${t}:${line}`)
+    }
+  }
+  assert(tooLong.length === 0, `日志行必须 ≤24 字（超长：${tooLong.join(' / ') || '无'}）`)
+  assert(hasDigit.length === 0, `日志行里不许出现数字（违规：${hasDigit.join(' / ') || '无'}）`)
+  assert(seen.size >= 12, `日志行不该千篇一律（只见到 ${seen.size} 种）`)
+
+  // 同一天多件事：由"最重"的那件定调（耐久 ×5、人命 ×10 的权重与结算屏一致）
+  const mixed = journalHeadline([
+    mkEntry('festival', { moraleChange: 8 }),
+    mkEntry('pirate', { durabilityChange: -40, crewChange: -2 }),
+  ])
+  assert(mixed === '他们的刀比我们快。', `同一天应以最重的事件定调（实得「${mixed}」）`)
+
+  // 按天分组：新的在前、天内保持发生顺序
+  const log = [mkEntry('storm', {}, 2), mkEntry('festival', {}, 2), mkEntry('discovery', {}, 5)]
+  const days = groupJournal(log)
+  assert(days.length === 2, `应分成 2 天（实得 ${days.length}）`)
+  assert(days[0].day === 5, '最新的那一天必须排在最前')
+  assert(days[1].entries.length === 2, '同一天的两条必须归到一组')
+  assert(days[1].entries[0].event.type === 'storm', '同一天内保持发生顺序')
+  // 分组不能丢条目
+  assert(days.reduce((n, d) => n + d.entries.length, 0) === log.length, '分组不许丢条目')
 }
 
 console.log(`\n最终结果：${passed} 通过 / ${failed} 失败`)

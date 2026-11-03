@@ -58,7 +58,33 @@ await clickIn('跳过引导', '跳过引导'); await sleep(400)
 await page.keyboard.press('Escape'); await sleep(400)
 await page.keyboard.press('Escape'); await sleep(800)
 
-if (PANEL) {
+if (PANEL === 'event') {
+  /*
+   * 航海日志（左栏）没有 data-tut，而且平时是空的 —— 要先塞几条记录才有字可审。
+   * 直接写 eventLog 而不是走事件流程：这一步只是为了"让面板里有典型的文字"，
+   * 内容取自真实事件的样子（日期 + 标题 + 我选了 + 结果 + 史实小注）。
+   */
+  await page.evaluate(() => {
+    const mk = (day, type, title, choice, desc, note, o) => ({
+      event: { id: 9000 + day, title, type, choices: [{ text: choice, outcomes: [] }] },
+      choiceIndex: 0,
+      day,
+      outcome: {
+        probability: 1, goldChange: 0, foodChange: 0, waterChange: 0, moraleChange: 0,
+        durabilityChange: 0, crewChange: 0, description: desc, historicalNote: note, ...o,
+      },
+    })
+    window.__gameStore.setState({
+      eventLog: [
+        mk(2, 'discovery', '一片没有名字的海岸', '靠近看看', '礁石上晒着鱼干，没有人。', '大航海时代的探险者常在未标注海岸留下补给点。', { goldChange: 20 }),
+        mk(3, 'festival', '水手的节日', '让他们闹一晚', '甲板上有人拉起了手风琴。', '船上的节庆是维持士气的少数手段之一。', { moraleChange: 8 }),
+        mk(3, 'storm', '风暴来了', '顶着风走', '帆被撕开，索具在风里尖叫。', '十七世纪帆船在风暴中最常见的损失是帆与桅。', { durabilityChange: -12, crewChange: -1 }),
+      ],
+    })
+    window.__gameStore.getState().setActivePanel('event')
+  })
+  await sleep(900)
+} else if (PANEL) {
   await page.evaluate((t) => document.querySelector(`[data-tut="${t}"]`)?.click(), PANEL)
   await sleep(900)
 }
