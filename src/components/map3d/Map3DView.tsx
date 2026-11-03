@@ -131,6 +131,21 @@ const GRAIN_BUMP = 4
  */
 const BIRDS_PER_PORT = 2
 
+/**
+ * 一昼夜多少秒（实时）。
+ *
+ * 8 分钟：比"看完一单生意"长得多，比"一局游戏"短得多。
+ * 再快会让人误以为有时间压力（这游戏不是赶时间的），再慢则看不出变化。
+ */
+const DAY_CYCLE_SEC = 480
+/** 一趟完整航程额外把太阳往前推多少（0~1 个昼夜） */
+const VOYAGE_SUN_PUSH = 0.35
+/** 主光的两种色温端点（正午暖白 / 深夜冷蓝） */
+const SUN_COLOR_DAY = new THREE.Color(0xfff1dc)
+/** 夜里的水面偏冷：**乘数**（三通道接近 1），不是插值目标色 */
+const NIGHT_SEA_TINT_BASE = new THREE.Color(1, 1, 1)
+const SUN_COLOR_NIGHT = new THREE.Color(0x8fa8d8)
+
 export default function Map3DView() {
   const mountRef = useRef<HTMLDivElement>(null)
   const [phase, setPhase] = useState<'loading' | 'ready' | 'error'>('loading')
@@ -478,6 +493,15 @@ export default function Map3DView() {
        */
       const OUTER_BASE: [number, number, number] = [0.0052, 0.0435, 0.068]
       const outerMat = outer.material as THREE.MeshBasicMaterial
+      /**
+       * 外圈/淡出带的**基色**（未乘日相）。
+       *
+       * 【为什么必须留一份基色】这两块是不受光材质，光照压不暗它们；
+       * 而日相要每帧写一次颜色。如果直接在材质色上乘，就会一帧一帧地
+       * 连乘下去（晚上一秒变纯黑）。所以：setSeaColor 写基色，
+       * 每帧的日相段用 `基色 × 日相色` 覆盖回去。
+       */
+      const outerBaseColor = new THREE.Color()
       /** 海盗事件把海面染红时的加项（emissive 的等价物，不受光材质只能加到颜色上） */
       let pirateR = 0, pirateG = 0, pirateB = 0
       const setSeaColor = (r: number, g: number, b: number) => {
@@ -486,6 +510,7 @@ export default function Map3DView() {
         const or = OUTER_BASE[0] * k + pirateR
         const og = OUTER_BASE[1] * k + pirateG
         const ob = OUTER_BASE[2] * k + pirateB
+        outerBaseColor.setRGB(or, og, ob)
         outerMat.color.setRGB(or, og, ob)
         // 淡出带必须和方环**逐位相同**：两者都是不受光材质、都没有颜色乘数，
         // 只要差一级，内沿（alpha 从 0 走到 1 的地方）就会重新长出一条细线的
@@ -1243,6 +1268,12 @@ export default function Map3DView() {
        * 没有第二张贴图，就用调色表达同一件事。
        */
       let lastWeatherKind: string | null = null
+      /** 天气倍率（只在天气变化时更新，光照每帧用） */
+      let weatherDim = 1
+      /** 日相 0~1：0 = 日出前、0.25 = 正午、0.75 = 深夜 */
+      let sunPhase = 0.18
+      /** 上一次的航程进度（只认增量，避免到港归零时太阳倒退） */
+      let lastRouteProgress = 0
       /**
        * 上一帧时间戳，用来算 dt。
        *
@@ -1522,14 +1553,88 @@ export default function Map3DView() {
            * 净效果变成 46.6（比晴天暗 14.5%）—— 看起来像"阴天"而不是"雾"。
            * 压到 0.3 后，海色提亮占主导，整体略暗但偏灰白，才是雾。
            */
-          const dim = weatherKind === 'fog' ? 1 - gloom * 0.3 : 1 - gloom * 1.1
-          key.intensity = LIGHT_KEY * dim
-          rim.intensity = LIGHT_RIM * dim
-          ambient.intensity = LIGHT_AMB * dim
-          scene.environmentIntensity = ENV_BASE * dim
-          // 侧壁是不受光材质，不吃上面这四行，必须自己跟一次——
-          // 否则暴风雨里整张海图都暗了，只有海岸那圈还是晴天的亮度。
-          wallMat.color.setScalar(0.55 + 0.45 * dim)
+          /*
+           * 这里**只记天气倍数，不直接写灯**——
+           * 因为灯光现在有两个乘数：天气（阶跃、只在变化时变）与日相
+           * （连续、每帧变）。两处各写一遍必然打架：谁后写谁赢，
+           * 表现就是"天阴了之后太阳再也不动"。
+           * 所以写入口收在帧末的 applyLighting()，两个乘数在那儿相乘。
+           */
+          weatherDim = weatherKind === 'fog' ? 1 - gloom * 0.3 : 1 - gloom * 1.1
+        }
+
+        /*
+         * ---- 日相：太阳在走 ----
+         *
+         * 【为什么不是"跟航程进度"】那是最直觉的方案（出航清晨、到港黄昏），
+         * 但有两个硬伤：① 停泊时画面完全静止，正好是玩家看港口细节的时候；
+         * ② routeProgress 到港会归零，太阳会当场跳回清晨。
+         * 所以改成**实时推进 + 航程给一个向前的推力**：
+         *   - 一昼夜 8 分钟（480s），慢到不会让人以为要赶时间；
+         *   - 航程进度每增加 1，太阳额外前推 0.35 —— 一趟远洋确实"过了一天"，
+         *     但只认**增量**（进度归零不倒退），所以到港那一刻不会跳。
+         *
+         * 【为什么夜里也不能压太黑】这是个要看数字的海图。地中海的港口编号、
+         * 航线的金色虚线、货价都要读得清。夜里最暗只到 0.72 倍并偏蓝，
+         * 不是"关灯"。
+         */
+        {
+          const prog = Math.max(0, Math.min(1, state.routeProgress ?? 0))
+          if (prog > lastRouteProgress) {
+            sunPhase += (prog - lastRouteProgress) * VOYAGE_SUN_PUSH
+          }
+          lastRouteProgress = prog
+          sunPhase += dt / DAY_CYCLE_SEC
+          if (sunPhase >= 1) sunPhase -= Math.floor(sunPhase)
+        }
+
+        /*
+         * 灯光只有一个写入口：天气 × 日相。
+         *
+         * 日相曲线用 sin 而不是分段：正弦在两端都是平滑的，
+         * 分段线性会在日出/日落那一刻出现"速度突变"（亮度曲线打一个折）。
+         */
+        {
+          // sunPhase 0.25 = 正午、0.75 = 深夜
+          const lit = 0.5 + 0.5 * Math.sin(sunPhase * Math.PI * 2)
+          const sunLightMul = 0.72 + 0.34 * lit
+          key.intensity = LIGHT_KEY * weatherDim * sunLightMul
+          rim.intensity = LIGHT_RIM * weatherDim * (0.55 + 0.45 * lit)
+          ambient.intensity = LIGHT_AMB * weatherDim * (0.6 + 0.4 * lit)
+          scene.environmentIntensity = ENV_BASE * weatherDim * (0.65 + 0.35 * lit)
+          // 主光色温：深夜偏冷蓝 → 正午偏暖白。用同一个 lit 插值，
+          // 不让"亮度"和"色温"各走一条曲线（那会在某个时段出现灰绿）。
+          key.color.setRGB(
+            SUN_COLOR_NIGHT.r + (SUN_COLOR_DAY.r - SUN_COLOR_NIGHT.r) * lit,
+            SUN_COLOR_NIGHT.g + (SUN_COLOR_DAY.g - SUN_COLOR_NIGHT.g) * lit,
+            SUN_COLOR_NIGHT.b + (SUN_COLOR_DAY.b - SUN_COLOR_NIGHT.b) * lit,
+          )
+          // 侧壁是不受光材质，吃不到上面任何一项，必须自己跟一次——
+          // 否则夜里整张海图都暗了，只有海岸那圈还是白天的亮度。
+          wallMat.color.setScalar((0.55 + 0.45 * weatherDim) * (0.62 + 0.38 * lit))
+
+          /*
+           * 外圈与淡出带同理：它们也是不受光材质，**不跟就会在夜里亮成一块**。
+           * 白天两块面已经校准到与海面同色，夜里必须一起暗下去，
+           * 否则又会出现"白天看不见、夜里裂一条线"的边界——这次的裂缝是"亮"的。
+           * 压到 0.8 并偏冷（不是 0.62，那会比受光的海面还暗，反倒更显眼）。
+           */
+          /*
+           * 【不能用 lerp 向一个"亮的夜间色"插值】基色的线性值只有 0.005~0.07，
+           * lerp 到 0.72 那种亮度等于把它整体乘 4 倍 —— 实测夜里外圈从 41.5
+           * 变成 **113.9**（比白天亮 2.7 倍，一条亮缝横在海图边上）。
+           * 要的是"相对压暗 + 偏冷"，所以走**乘数**：三通道各自接近 1 的系数。
+           */
+          const night = 1 - lit
+          const seaNightMul = 0.80 + 0.20 * lit
+          outerMat.color.copy(outerBaseColor).multiplyScalar(seaNightMul)
+          outerMat.color.multiply(NIGHT_SEA_TINT_BASE)
+          outerMat.color.setRGB(
+            outerMat.color.r * (1 - 0.10 * night),
+            outerMat.color.g * (1 - 0.05 * night),
+            outerMat.color.b * (1 + 0.06 * night),
+          )
+          fadeMat.color.copy(outerMat.color)
         }
 
         camState.fx += (camTarget.x - camState.fx) * 0.12

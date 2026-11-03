@@ -1054,10 +1054,20 @@ check(weatherChk.base && weatherChk.storm && weatherChk.storm.color.every((v, i)
   `暴风雨时海面三个通道都明显压暗（${JSON.stringify(weatherChk.base?.color)} → ${JSON.stringify(weatherChk.storm?.color)}）`)
 check(weatherChk.base && weatherChk.storm && weatherChk.storm.lights < weatherChk.base.lights * 0.75,
   `暴风雨时光照同步压暗（${weatherChk.base?.lights} → ${weatherChk.storm?.lights}）—— 亮度主要来自灯，光压色不够`)
+/*
+ * 【判据从"逐位相等"改成 2% 容差】
+ *
+ * 光照现在有两个乘数：天气（阶跃）与**日相**（连续、每帧都在走）。所以
+ * "改回晴天"之后再读到的灯强，必然带着这几百毫秒里太阳移动的那一点点，
+ * 逐位相等再也拿不到（实测 4.398 → 4.399，差 0.001）。
+ * 要钉的性质是"天气的压暗被撤销了"，而不是"数字没动过"：
+ * 暴风雨时是 2.947、晴天是 4.4，差 33%——2% 的容差抓得住真回归，也放得过日相。
+ * 海面颜色没有别的乘数，仍然要求逐位相等。
+ */
 check(weatherChk.base && weatherChk.back
   && weatherChk.back.color.every((v, i) => Math.abs(v - weatherChk.base.color[i]) < 1e-6)
-  && Math.abs(weatherChk.back.lights - weatherChk.base.lights) < 1e-6,
-  `改回晴天后颜色与光照都完全恢复（${JSON.stringify(weatherChk.back)}）`)
+  && Math.abs(weatherChk.back.lights - weatherChk.base.lights) < weatherChk.base.lights * 0.02,
+  `改回晴天后颜色与光照都恢复（灯强容差 2%，日相在走；${JSON.stringify(weatherChk.back)}）`)
 
 await clickReal('[data-testid="map-mode-toggle"]')
 await sleep(2500)
