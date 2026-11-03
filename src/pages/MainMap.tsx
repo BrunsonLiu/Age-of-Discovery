@@ -44,6 +44,8 @@ import { CREW_CHAR_MAP } from '@/data/crewChars'
 import { achievements } from '@/data/achievements'
 import { BG_ASSETS } from '@/data/envAssets'
 import { OPENING_SCRIPT_ID } from '@/utils/dialogue'
+import { pickDialogue } from '@/utils/dialogueTriggers'
+import { ports } from '@/data/ports'
 import { useDialogueStore } from '@/store/useDialogueStore'
 
 const totalTasks = tasks.length
@@ -128,6 +130,46 @@ export default function MainMap() {
   const mapCenter = useMapStore((s) => s.center)
   // 风向以真实天气状态为准（天气按海域生成、持续 1-3 天；初始回退到纬度风带）
   const weather = useGameStore(s => s.weather)
+
+  /*
+   * 剧情线触发点②：彩蛋对白（14 个角色，见 utils/dialogueTriggers 的规则表）。
+   *
+   * 【为什么统一走 pickDialogue，而不是给每个条件各写一个 useEffect】
+   * 分散写会出两个必然的 bug：一是同一帧里两条条件同时成立、两个 open 抢着
+   * 设 scriptId（后一个覆盖前一个，玩家只看到一段）；二是没有任何地方能回答
+   * "现在到底该不该弹"。规则表 + 一个入口，条件和优先级都只在一个地方。
+   *
+   * 【三条护栏，全都来自踩过的坑】
+   * · 教学进行中不弹：教学是全屏遮罩，对白压在底下既看不全也推进不了；
+   * · 已经有对白开着就不弹：否则会顶掉玩家正在读的那一段；
+   * · 额度（day >= 2+2×(已看-1)）：防止"水少+士气低+船破+到港"四连弹。
+   */
+  const flagshipDurability = fleet.ships.find(sh => sh.id === fleet.flagshipId)?.durability ?? 100
+  const portHasShipyard = fleet.currentPortId !== null
+    && (ports.find(p => p.id === fleet.currentPortId)?.services.includes('shipyard') ?? false)
+  useEffect(() => {
+    if (gamePhase !== 'playing' || tutorialActive) return
+    if (useDialogueStore.getState().scriptId) return
+    const id = pickDialogue({
+      day: fleet.day,
+      gold: fleet.gold,
+      fame: fleet.fame,
+      morale: fleet.morale,
+      water: fleet.water,
+      durability: flagshipDurability,
+      currentPortId: fleet.currentPortId,
+      portHasShipyard,
+      discoveredCount: discoveredPorts.length,
+      weatherKind: weather.kind,
+      seen: dialogueSeen,
+    })
+    if (id) useDialogueStore.getState().open(id)
+  }, [
+    gamePhase, tutorialActive, dialogueSeen,
+    fleet.day, fleet.gold, fleet.fame, fleet.morale, fleet.water, fleet.currentPortId,
+    flagshipDurability, portHasShipyard, discoveredPorts.length, weather.kind,
+  ])
+
   const windBearing = weather.windDir || prevailingWindBearing(mapCenter[0])
   const windSpeed = weather.windSpeed
 

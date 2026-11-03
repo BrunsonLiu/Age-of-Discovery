@@ -8,7 +8,10 @@
  * 新增一段剧情 = 在 DIALOGUE_SCRIPTS 里加一条数据 + 在触发点调 open(id)，
  * 组件、键盘、防重播机制全部自动就位。
  */
-import { officerPortrait } from '@/data/portraits'
+import { crewPortrait, officerPortrait, rivalPortrait } from '@/data/portraits'
+import { CREW_CHARS } from '@/data/crewChars'
+import { OFFICERS } from '@/data/officers'
+import { RIVALS } from '@/data/rivals'
 
 const BASE = (import.meta as unknown as { env?: { BASE_URL?: string } }).env?.BASE_URL || '/'
 
@@ -24,7 +27,51 @@ export interface Speaker {
   side: 'left' | 'right'
 }
 
+/**
+ * 说话人登记表。
+ *
+ * 【为什么从数据表生成，而不是手抄一遍】
+ * 14 张立绘早就躺在 assets/portraits/ 里，但这里曾经**只登记了老领航员一个**：
+ * 其余 13 张脸即使写了台词也调不出来（getSpeaker 返回 undefined，组件只会
+ * 渲染一个没有立绘的对话框）。名字/头衔本来就在 crewChars / officers / rivals
+ * 里，手抄一份迟早和原表对不上（改名只改一处 → 对话里还是旧名）。
+ * 所以这里按 id 生成，portrait 也走同一套 portraits 映射。
+ *
+ * 阵营分边：自己人从左入场，对手从右——这是纯粹的舞台调度，
+ * 不需要玩家学，但能让他们一眼分清"谁在说话"。
+ */
+const crewSpeakers: Record<string, Speaker> = Object.fromEntries(
+  CREW_CHARS.map((c) => [c.id, {
+    id: c.id,
+    name: c.name,
+    title: c.title,
+    portrait: crewPortrait(c.id),
+    side: 'left' as const,
+  }]),
+)
+
+const officerSpeakers: Record<string, Speaker> = Object.fromEntries(
+  OFFICERS.map((o) => [o.id, {
+    id: o.id,
+    name: o.name,
+    title: o.title,
+    portrait: officerPortrait(o.id),
+    side: 'left' as const,
+  }]),
+)
+
+const rivalSpeakers: Record<string, Speaker> = Object.fromEntries(
+  RIVALS.map((r) => [r.id, {
+    id: r.id,
+    name: r.name,
+    title: r.title,
+    portrait: rivalPortrait(r.id),
+    side: 'right' as const,
+  }]),
+)
+
 export const SPEAKERS: Record<string, Speaker> = {
+  // 老领航员的头衔在官员表里只是"引航人"，开场致辞需要更具体的身份
   pilot: {
     id: 'pilot',
     name: '老领航员',
@@ -32,6 +79,9 @@ export const SPEAKERS: Record<string, Speaker> = {
     portrait: officerPortrait('pilot'),
     side: 'left',
   },
+  ...crewSpeakers,
+  ...officerSpeakers,
+  ...rivalSpeakers,
 }
 
 export interface DialogueScript {
@@ -65,6 +115,124 @@ export const DIALOGUE_SCRIPTS: DialogueScript[] = [
       `${BASE}assets/portraits/officer_pilot_calm.png`,
       `${BASE}assets/portraits/officer_pilot_serious.png`,
       `${BASE}assets/portraits/officer_pilot_hope.png`,
+    ],
+  },
+
+  /*
+   * ---- 下面这些是"彩蛋"：与主线无关，只在特定处境下出现一次 ----
+   *
+   * 【写作规矩（定下来免得以后越写越多、越写越像说明书）】
+   * 1) 每段 2~3 句，每句 ≤ 40 字。弹对话层是**打断**玩家的，
+   *    信息量必须小、笑点必须短；长段落在"第一分钟"里就是灾难。
+   * 2) 不承诺任何数值效果。"喝了朗姆酒士气+5"这种话一旦写进台词，
+   *    玩家就会去找那个效果，找不到就是不诚实。
+   * 3) 每段必须能看出是谁在说：水手长粗、账房算计、学者爱反驳、
+   *    厨子满嘴吃的、少爷天真、对手挑衅。换个说话人还能成立 = 没写好。
+   * 4) 彩蛋要"擦边不走题"：可以调侃时代（复式记账、地圆说、贵族少爷），
+   *    但不能出现游戏里不存在的东西，否则玩家会去找。
+   */
+  {
+    id: 'egg_low_water',
+    speakerId: 'cook',
+    lines: [
+      '水桶见底了，船长。现在每人口粮一杯——我按滴数。',
+      '别问我怎么数到一滴的。说起来我又渴了。',
+    ],
+  },
+  {
+    id: 'egg_low_morale',
+    speakerId: 'boatswain',
+    lines: [
+      '他们已经三顿没见着热的东西了，船长。',
+      '人心跟索具一样：绷太紧会断，松太久会烂。',
+    ],
+  },
+  {
+    id: 'egg_damaged',
+    speakerId: 'surgeon',
+    lines: [
+      '船身上的口子比船员还多。我能缝人，船长。',
+      '船得你自己找人缝。',
+    ],
+  },
+  {
+    id: 'egg_broke_cook',
+    speakerId: 'cook',
+    lines: [
+      '今晚三道菜：咸肉、咸鱼、咸饼干。',
+      '我知道听起来很咸。可它确实是三道菜。',
+    ],
+  },
+  {
+    id: 'egg_shipyard',
+    speakerId: 'quartermaster',
+    lines: [
+      '船坞就在那儿。你要是打算让它继续漏水，我就当没看见。',
+      '不过我建议修——沉了的船不给发军饷。',
+    ],
+  },
+  {
+    id: 'egg_rich_blackjack',
+    speakerId: 'blackjack',
+    lines: [
+      '听说你发财了。别慌，我只是听说。',
+      '我这人不抢朋友。问题是我朋友不多。',
+    ],
+  },
+  {
+    id: 'egg_fame_maria',
+    speakerId: 'maria',
+    lines: [
+      '别把我当对手，船长。把我当账期。',
+      '账期到了，事情就变得很难看。',
+    ],
+  },
+  {
+    id: 'egg_many_ports',
+    speakerId: 'scholar',
+    lines: [
+      '六座港口了。可还有人坚持说西边是海的尽头。',
+      '我量过三次。他们的尺子，三次都比我的短。',
+    ],
+  },
+  {
+    id: 'egg_storm_midshipman',
+    speakerId: 'midshipman',
+    lines: [
+      '我父亲说，大西洋不过是个大池塘。',
+      '他从没出过海。他现在还在客厅里，量我的航程。',
+    ],
+  },
+  {
+    id: 'egg_long_voyage',
+    speakerId: 'chaplain',
+    lines: [
+      '我为顺风祈祷过，也为逆风祈祷过。',
+      '老实说，后者更灵。人一害怕，就记得祈祷了。',
+    ],
+  },
+  {
+    id: 'egg_stars_diego',
+    speakerId: 'diego',
+    lines: [
+      '你数星星，我数船。',
+      '反正我们都在等同一个天亮。',
+    ],
+  },
+  {
+    id: 'egg_veteran',
+    speakerId: 'corsair',
+    lines: [
+      '我年轻时也抢过船。现在我只抢时间。',
+      '……还有酒。酒也算。',
+    ],
+  },
+  {
+    id: 'egg_first_dock',
+    speakerId: 'purser',
+    lines: [
+      '船长，账本我立了新规矩：一笔进，记两笔。',
+      '他们说我多此一举。等哪天两边的数自己撞上了，多此一举的就是他们。',
     ],
   },
 ]

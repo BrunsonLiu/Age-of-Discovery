@@ -21,6 +21,7 @@ import { adjustOutcome, clampOutcomeToFleet } from '../src/utils/outcomeAdjust'
 import { buildTerrainSymbols } from '../src/utils/terrainDecor'
 import { latToWorldZ, mercNorm, MAP_WORLD_SIZE, MERCATOR_LAT_LIMIT } from '../src/utils/mapProjection'
 import { birdPose, flagYaw, smokePose, SMOKE_PERIOD } from '../src/utils/portLife'
+import { DIALOGUE_RULES, pickDialogue, unreachableScripts, type DialogueContext } from '../src/utils/dialogueTriggers'
 import { durabilityColor, loadColor, DANGER_COLOR, WARN_COLOR, SAFE_COLOR } from '../src/utils/shipVitals'
 import {
   STANCES, forecastSegment, stanceLedgers, segmentCountFor, segmentIndexFor, nextSegmentBoundary,
@@ -44,7 +45,7 @@ import { getStatusColor } from '../src/utils/resourceColor'
 import { FX_ASSETS, BG_ASSETS } from '../src/data/envAssets'
 import { portImage } from '../src/data/portImages'
 import {
-  DIALOGUE_SCRIPTS, OPENING_SCRIPT_ID,
+  DIALOGUE_SCRIPTS, OPENING_SCRIPT_ID, SPEAKERS,
   advanceDialogueIndex, getScript, getSpeaker,
 } from '../src/utils/dialogue'
 import { useDialogueStore } from '../src/store/useDialogueStore'
@@ -1050,7 +1051,15 @@ console.log('== 28. UI 装饰资产（F1-F6）==')
 console.log('== 30. 剧情对白系统（戴夫式角色致辞）==')
 {
   // 数据完整性
-  assert(DIALOGUE_SCRIPTS.length === 1, '剧本表当前 1 段（开局致辞）')
+  /*
+   * 剧本数量：1 段开场 + 13 段彩蛋。
+   *
+   * 这条断言的价值不是"数字要对"，而是**防止内容被悄悄删掉**：
+   * 曾经这里写的是 1（全游戏只有开场三句），而 14 张立绘早就躺在素材里
+   * 没进过一句台词。数量掉回去时必须有人解释。
+   */
+  assert(DIALOGUE_SCRIPTS.length === 14,
+    `剧本表 14 段（1 段开场 + 13 段彩蛋），实得 ${DIALOGUE_SCRIPTS.length}`)
   const script = getScript(OPENING_SCRIPT_ID)
   assert(!!script, '开局致辞剧本存在')
   assert(script!.lines.length === 3, '开局致辞三句台词')
@@ -4116,6 +4125,77 @@ console.log('== 57. 3D 点击判定：手指抖动不该让航向设不上 ==')
     assert(Math.max(...ys.map(Math.abs)) < 0.45, '旗的摆幅必须小于 0.45 rad（再大就像抽筋）')
     assert(Math.max(...ys) - Math.min(...ys) > 0.2, '旗必须真的在动（幅度不能塌成常数）')
   }
+}
+
+/*
+ * 彩蛋对白：触发规则。
+ *
+ * 【为什么这些必须逐条测边界】彩蛋的判断全是阈值（水 24/25、耐久 39/40、
+ * 分数 79/80）。差一格的条件在手动试玩里永远不会被发现——要么一直不弹，
+ * 要么一直弹。而且 pickDialogue 有一个"看起来对、用起来错"的陷阱：
+ * 规则表顺序决定优先级，改一行顺序就可能让"没水了"被"停在港口"抢先。
+ */
+{
+  const base: DialogueContext = {
+    day: 5, gold: 500, fame: 0, morale: 70, water: 80,
+    durability: 100, currentPortId: null, portHasShipyard: false,
+    discoveredCount: 2, weatherKind: 'clear', seen: ['opening_pilot'],
+  }
+  const withSeen = (c: Partial<DialogueContext>, seen: string[] = ['opening_pilot']) =>
+    ({ ...base, ...c, seen })
+
+  // ① 一切正常 → 不该弹任何东西（否则玩家一开局就被打断）
+  assert(pickDialogue(base) === null, '状态健康时不该弹彩蛋')
+
+  // ② 阈值边界：水 24 弹、25 不弹
+  assert(pickDialogue(withSeen({ water: 24 })) === 'egg_low_water', '淡水 24 必须弹"按滴数"那段')
+  assert(pickDialogue(withSeen({ water: 25 })) === null, '淡水 25 不该弹（边界必须是严格小于）')
+
+  // ③ 优先级：同时缺水 + 缺士气 + 船破 → 先说缺水（会死人）
+  assert(pickDialogue(withSeen({ water: 10, morale: 10, durability: 10 })) === 'egg_low_water',
+    '多条同时成立时，缺水必须优先（规则表顺序即优先级）')
+
+  // ④ 看过的跳过，不会重复播
+  assert(pickDialogue(withSeen({ water: 10 }, ['opening_pilot', 'egg_low_water'])) === null,
+    '同一段彩蛋不能重播（dialogueSeen 里有就必须跳过）')
+
+  // ⑤ 额度：开场之后第 1 天不给弹，第 2 天才给
+  assert(pickDialogue(withSeen({ day: 1, water: 10 })) === null, '第 1 天不给弹彩蛋（额度未到）')
+  assert(pickDialogue(withSeen({ day: 2, water: 10 })) === 'egg_low_water', '第 2 天开始可以弹第一段')
+  // 看过 4 段之后，下一次要等到 day >= 2 + 2×3 = 8
+  const four = ['opening_pilot', 'egg_low_water', 'egg_damaged', 'egg_low_morale']
+  assert(pickDialogue(withSeen({ day: 7, durability: 10 }, four)) === null,
+    '已看 4 段时第 7 天额度还不够（应为 day≥8）')
+  assert(pickDialogue(withSeen({ day: 8, durability: 10 }, four)) === null,
+    '第 8 天额度到位，但唯一成立的 egg_damaged 已看过 → 宁可什么都不弹，也不要重播')
+  // 顺延：额度到位、前面几条不成立，就沿规则表往下找
+  assert(pickDialogue(withSeen({ day: 8, discoveredCount: 8 }, four)) === 'egg_many_ports',
+    '额度到位后应沿规则表顺延到"发现 6 港"那段')
+
+  // ⑥ 修船计划只在"停在能修的港口"时成立
+  assert(pickDialogue(withSeen({ durability: 60, currentPortId: 3, portHasShipyard: false })) !== 'egg_shipyard',
+    '港口不能修船时不该提"船坞就在那儿"')
+  assert(pickDialogue(withSeen({ durability: 60, currentPortId: 3, portHasShipyard: true })) === 'egg_shipyard',
+    '停在能修船的港口且耐久 60 时必须提船坞')
+
+  // ⑦ 写得再漂亮，只要没进规则表就等于不存在
+  assert(unreachableScripts().length === 0,
+    `所有剧本都必须能被触发（漏掉：${unreachableScripts().join(',')}）`)
+
+  // ⑧ 规则表里的 id 必须真的在剧本表里（否则 pickDialogue 会静默跳过）
+  const scriptIds = new Set(DIALOGUE_SCRIPTS.map(x => x.id))
+  const ghost = DIALOGUE_RULES.filter(r => !scriptIds.has(r.id)).map(r => r.id)
+  assert(ghost.length === 0, `规则表里有不存在的剧本 id：${ghost.join(',')}`)
+
+  // ⑨ 每个说话人都必须登记过，否则对话框里没有立绘也没有名字
+  const missingSpeaker = DIALOGUE_SCRIPTS.filter(x => !SPEAKERS[x.speakerId]).map(x => x.id)
+  assert(missingSpeaker.length === 0, `有剧本的说话人没登记：${missingSpeaker.join(',')}`)
+
+  // ⑩ 14 张立绘必须都进过 SPEAKERS（"素材没用上"这条要能被测出来）
+  assert(Object.keys(SPEAKERS).length >= 14,
+    `说话人登记数应覆盖 14 个角色（实得 ${Object.keys(SPEAKERS).length}）`)
+  const noPortrait = Object.values(SPEAKERS).filter(sp => !sp.portrait).map(sp => sp.id)
+  assert(noPortrait.length === 0, `说话人缺立绘：${noPortrait.join(',')}`)
 }
 
 console.log(`\n最终结果：${passed} 通过 / ${failed} 失败`)
