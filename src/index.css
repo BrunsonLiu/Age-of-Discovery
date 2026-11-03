@@ -713,13 +713,21 @@ body {
   50% { filter: brightness(1.55); }
 }
 
-/* ========== 2.5D 立体海图（实验视图） ========== */
+/* ========== 2.5D 立体海图（实验视图） ==========
+ *
+ * 【标签字体为什么必须写 'Noto Serif SC' 而不是 `serif`】通用族 serif 在
+ * Windows 上是 Times New Roman（无中文字形），中文会掉到系统默认的宋体/SimSun
+ * —— 12~15px 下笔画粘连，是"廉价感"最常见的来源。
+ * 本机装了 Noto Serif SC，所以实测一直是对的（CDP: familyName = Noto Serif SC），
+ * 但那是**系统字体**（isCustomFont: false）；没装字体的机器就会掉到宋体。
+ * 写全族名后，没装的机器会用我们自托管的 411KB 子集。
+ */
 /* 港口名：跟随 3D 投影的 DOM 标签 */
 .map3d-port-label {
   position: absolute;
   transform: translate(-50%, -100%);
   color: #f2e2b4;
-  font: 12px/1.2 serif;
+  font: 12px/1.2 'Noto Serif SC', serif;
   white-space: nowrap;
   pointer-events: none;
   text-shadow: 0 1px 3px #000, 0 0 9px #000, 0 0 2px #000;
@@ -765,7 +773,7 @@ body {
      提亮到 .86 并加深描边后复测见注释下方数值——海域名是"读地图"的基础信息，
      不能只当装饰。 */
   color: rgba(206, 232, 240, 0.86);
-  font: italic 13px/1.2 serif;
+  font: italic 13px/1.2 'Noto Serif SC', serif;
   letter-spacing: 4px;
   text-shadow: 0 1px 2px rgba(0, 14, 20, 0.95), 0 0 6px rgba(0, 14, 20, 0.85);
 }
@@ -788,7 +796,7 @@ body {
    * 0.35px 是实测值：14px 时对比度差 0.4~0.7，加 0.35px 后过 4.5。
    */
   -webkit-text-stroke: 0.35px rgba(38, 23, 7, 0.55);
-  font: 15px/1.2 serif;
+  font: 15px/1.2 'Noto Serif SC', serif;
   letter-spacing: 4px;
   text-shadow:
     0 0 4px rgba(246, 234, 202, 0.9),
