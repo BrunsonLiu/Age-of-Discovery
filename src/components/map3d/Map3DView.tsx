@@ -27,6 +27,8 @@ import {
 } from './models'
 import { buildMap3DLayers } from './mapLayers3d'
 import { buildMap3DBorders } from './mapBorders3d'
+import { buildMap3DCoastline } from './mapCoastline3d'
+import { buildMap3DGraticule } from './mapGraticule3d'
 import { fetchBordersGeojson } from '@/utils/mapGeoJson'
 import { decidePixelRatio } from '@/utils/adaptiveResolution'
 import { isTapGesture } from '@/utils/tapGesture'
@@ -127,6 +129,17 @@ const GRAIN_TILES = 22
 const GRAIN_BUMP = 4
 
 /**
+ * 经纬网画在哪个高度（世界坐标 y）。
+ *
+ * 两个候选都拍了同机位对照（0.008 = 盖在羊皮纸上 / 海平面 = 只在水面）：
+ * 实测在羊皮纸上几乎没有区别 —— 0x5b4425 @ 0.22 落在奶油色底子上只有
+ * 约 4 级亮度差，肉眼看不出格子（这正是"背景层"该有的强度）。
+ * 既然两种在陆地上都看不见，就取海平面版：少一层与国界线、地形符号、
+ * 港口叠加的线，也不额外在海图上盖一层全屏 overdraw。
+ */
+const GRATICULE_Y = -PLATE_THICKNESS + 0.002
+
+/**
  * 陆地贴图向羊皮纸色混合的比例（0 = 原彩色喷绘，1 = 纯羊皮纸）。
  *
  * 值是 A/B 出来的：0 / 0.45 / 0.65 / 0.85 各拍一张比较。
@@ -144,6 +157,21 @@ const BIRDS_PER_PORT = 2
 const SUN_COLOR_DAY = new THREE.Color(0xfff1dc)
 /** 夜里的水面偏冷：**乘数**（三通道接近 1），不是插值目标色 */
 const NIGHT_SEA_TINT_BASE = new THREE.Color(1, 1, 1)
+
+/**
+ * 夜里把"墨线"往冷的方向掰：红压 34%、绿压 15%、蓝几乎不动。
+ *
+ * 目的是让深褐墨线在灰蓝的夜色里仍然读作"墨"，而不是暖色的霓虹边。
+ * 白天的 nightK=0，系数正好是 1，不改变任何白天表现。
+ * 就地改色彩对象，不新建 Color —— 这是每帧要跑两次的路径，
+ * 每帧 new 两个 THREE.Color 属于给 GC 找活干。
+ */
+function coolLine(c: THREE.Color, nightK: number): void {
+  if (nightK <= 0) return
+  c.r *= 1 - 0.34 * nightK
+  c.g *= 1 - 0.15 * nightK
+  c.b *= 1 + 0.04 * nightK
+}
 const SUN_COLOR_NIGHT = new THREE.Color(0x8fa8d8)
 
 export default function Map3DView() {
@@ -641,6 +669,38 @@ export default function Map3DView() {
       wallMesh.castShadow = true; wallMesh.receiveShadow = true
       scene.add(lidMesh, wallMesh)
       disposables.push(land.lid, land.wall, lidMat, wallMat)
+
+      /*
+       * ---- 海岸墨线 + 经纬网 ----
+       *
+       * 【这两条是"从渲染图变回海图"的关键】
+       * 陆地调成羊皮纸色之后，缺的最后一层是**线**：2D 的陆地是
+       * 「奶油色填充 + #3d2810 深褐描边」，海岸是硬的；3D 之前只有贴图渐变，
+       * 海岸是软的（4 倍放大看不到一根线），小岛更是一坨没轮廓的土黄。
+       * 经纬网则是海图的"身份证"：它声明这是一张用来量位置的图。
+       *
+       * 海岸线直接复用 land.geojson 的环，不再加载 coastline.geojson
+       * （两者的坐标 99.5% 重复，2D 那边已经删过一次）。
+       * 分大陆/小岛两条线是照抄 2D 的 landStyleFor 判据：
+       * 60% 的陆地是十几公里的碎块，远景只有 2~3 像素，
+       * 给它们上 1.5px 深褐描边会让整片海域浮一层褐色杂点。
+       */
+      const coast = buildMap3DCoastline(geojson as unknown as Parameters<typeof buildMap3DCoastline>[0])
+      for (const l of coast.lines) scene.add(l)
+      for (const m of coast.materials) m.resolution.set(width, height)
+
+      const graticule = buildMap3DGraticule(GRATICULE_Y)
+      scene.add(graticule.lines)
+      graticule.material.resolution.set(width, height)
+
+      /*
+       * 这两组线是**不受光材质**（LineMaterial 不吃光照），所以它们不会跟着
+       * 昼夜与天气变化 —— 和侧壁、外圈是同一个坑：夜里整张图暗下去，
+       * 只有它们还亮着，海面上会浮出一张发光的网、海岸像镶了银边。
+       * 记下基色，每帧在日相段里乘同一个倍率。
+       */
+      const coastBase = coast.materials.map(m => m.color.clone())
+      const gratBase = graticule.material.color.clone()
 
       /*
        * ---- 云影 ----
@@ -1277,6 +1337,8 @@ export default function Map3DView() {
         routeMat.resolution.set(w, h)
         for (const m of layers.lineMaterials) m.resolution.set(w, h)
         borders?.material.resolution.set(w, h)
+        for (const m of coast.materials) m.resolution.set(w, h)
+        graticule.material.resolution.set(w, h)
       }
       window.addEventListener('resize', onResize)
 
@@ -1638,7 +1700,46 @@ export default function Map3DView() {
           )
           // 侧壁是不受光材质，吃不到上面任何一项，必须自己跟一次——
           // 否则夜里整张海图都暗了，只有海岸那圈还是白天的亮度。
-          wallMat.color.setScalar((0.55 + 0.45 * weatherDim) * (0.62 + 0.38 * lit))
+          /*
+           * 侧壁：先按天气 × 日相压亮度，再和墨线一起往冷的方向掰。
+           *
+           * 【为什么不再用 setScalar】setScalar 是**灰度乘数**，只会让侧壁变暗、
+           * 不会让它变冷。夜里陆地吃冷蓝主光已经偏灰蓝，而侧壁仍然是一圈暖砂岩
+           * —— 放大看是"灰蓝的岛镶着橙边"，和墨线是同一个问题。
+           * 拆成三通道就是为了让它跟陆地同色温。
+           */
+          {
+            const k = (0.55 + 0.45 * weatherDim) * (0.62 + 0.38 * lit)
+            const nk = 1 - lit
+            wallMat.color.setRGB(
+              k * (1 - 0.34 * nk),
+              k * (1 - 0.15 * nk),
+              k * (1 + 0.04 * nk),
+            )
+          }
+
+          /*
+           * 海图的线同理（不受光材质）：海岸墨线与经纬网跟着一起暗。
+           * 用的倍率与侧壁完全相同 —— 它们在同一张图上，若各走一条曲线，
+           * 夜里会出现"海岸变暗了但网格还是白天的亮度"这种错位。
+           */
+          const lineMul = (0.55 + 0.45 * weatherDim) * (0.62 + 0.38 * lit)
+          /*
+           * 除了压暗，还要**偏冷**。
+           *
+           * 夜里陆地吃的是冷蓝主光，会偏灰蓝；而墨线是不受光材质，
+           * 只压亮度不改色温 —— 结果是"灰蓝的岛上镶着一条暖橙的边"，
+           * 读起来像发光的管子，比白天更显眼。
+           * 用三通道接近 1 的乘数往冷的方向掰（和夜间海面同一套做法），
+           * 不要 lerp 到一个亮的冷色（那等于把深褐整体提亮）。
+           */
+          const nightK = 1 - lit
+          for (let i = 0; i < coast.materials.length; i++) {
+            coast.materials[i].color.copy(coastBase[i]).multiplyScalar(lineMul)
+            coolLine(coast.materials[i].color, nightK)
+          }
+          graticule.material.color.copy(gratBase).multiplyScalar(lineMul)
+          coolLine(graticule.material.color, nightK)
 
           /*
            * 外圈与淡出带同理：它们也是不受光材质，**不跟就会在夜里亮成一块**。

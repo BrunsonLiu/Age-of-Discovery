@@ -19,7 +19,12 @@ import {
 } from '../src/utils/eventSummary'
 import { adjustOutcome, clampOutcomeToFleet } from '../src/utils/outcomeAdjust'
 import { buildTerrainSymbols } from '../src/utils/terrainDecor'
-import { latToWorldZ, mercNorm, MAP_WORLD_SIZE, MERCATOR_LAT_LIMIT } from '../src/utils/mapProjection'
+import { latToWorldZ, lonToWorldX, mercNorm, MAP_WORLD_SIZE, MERCATOR_LAT_LIMIT } from '../src/utils/mapProjection'
+import {
+  coastSegments, graticuleSegments,
+  GRATICULE_MERIDIANS, GRATICULE_PARALLELS, GRATICULE_STEP_DEG,
+} from '../src/utils/chartLines'
+import { readFileSync } from 'node:fs'
 import { birdPose, flagYaw, smokePose, SMOKE_PERIOD } from '../src/utils/portLife'
 import { DIALOGUE_RULES, pickDialogue, unreachableScripts, type DialogueContext } from '../src/utils/dialogueTriggers'
 import { npcLegAt, npcPose } from '../src/utils/npcShips'
@@ -4329,6 +4334,156 @@ console.log('== 57. 3D 点击判定：手指抖动不该让航向设不上 ==')
     const atStart = npcPose(geom, { posNm: 0, sign: -1 })
     assert(atStart.bearing !== 0 || geom.totalNm === 0,
       '反程到起点时朝向不能退化成正北')
+  }
+}
+
+/*
+ * 2.5D 海图的线：经纬网 + 海岸墨线（utils/chartLines，纯计算）。
+ *
+ * 【为什么这些必须测位置而不是测"有没有返回数组"】
+ * 线画错位置是最不显眼的失败：数组照样有、draw call 照样发，
+ * 只是线落在海图外面或者东西向反了。所以要断言"经线 0° 落在世界中心 x=0"、
+ * "赤道落在 z=0"、"纬线 z 恒定 / 经线 x 恒定"这些**几何事实**，
+ * 而不是断言长度大于 0。
+ */
+{
+  const W = MAP_WORLD_SIZE
+
+  // ① 经纬网的数量：25 条经线（含 ±180）+ 11 条纬线
+  assert(GRATICULE_MERIDIANS === 25, `应有 25 条经线（实得 ${GRATICULE_MERIDIANS}）`)
+  assert(GRATICULE_PARALLELS === 11, `应有 11 条纬线（实得 ${GRATICULE_PARALLELS}）`)
+
+  const Y = -0.083
+  const seg = graticuleSegments(Y)
+  assert(seg.length % 6 === 0, '线段数组必须是 6 个浮点一段（两个端点）')
+  const segs = seg.length / 6
+  // 经线 1 段 + 纬线 72 段
+  assert(segs === GRATICULE_MERIDIANS + GRATICULE_PARALLELS * 72,
+    `线段数应为 ${GRATICULE_MERIDIANS + GRATICULE_PARALLELS * 72}（实得 ${segs}）`)
+
+  /*
+   * ② 全部点必须是有限值，且 y 等于传入高度（画错层会导致线被海面吃掉）。
+   * 聚合成两条，不逐点断言：4900 多个浮点逐条断言会把上面 3000 多条单测的
+   * 计数冲掉（实测总数从 3391 涨到 9957），"通过 / 失败"这个数字就没意义了。
+   */
+  let nan = 0, wrongY = 0
+  for (let i = 0; i < seg.length; i += 3) {
+    if (!Number.isFinite(seg[i]) || !Number.isFinite(seg[i + 1]) || !Number.isFinite(seg[i + 2])) nan++
+    if (Math.abs(seg[i + 1] - Y) > 1e-12) wrongY++
+  }
+  assert(nan === 0, `经纬网坐标不能有 NaN/Infinity（异常 ${nan} 个点）`)
+  assert(wrongY === 0, `经纬网所有点的 y 必须等于 ${Y}（异常 ${wrongY} 个）`)
+
+  // ③ 经线：x 恒定、z 从南沿到北沿（跨度必须正好是图高，不是半个图）
+  {
+    const meridianSegs = GRATICULE_MERIDIANS
+    let minZ = Infinity, maxZ = -Infinity, tilt = 0
+    for (let k = 0; k < meridianSegs; k++) {
+      const o = k * 6
+      // 聚合成一条：25 条逐条断言会把日志刷成 25 行，失败时反而看不出重点
+      if (Math.abs(seg[o] - seg[o + 3]) > 1e-12) tilt++
+      minZ = Math.min(minZ, seg[o + 2], seg[o + 5])
+      maxZ = Math.max(maxZ, seg[o + 2], seg[o + 5])
+    }
+    assert(tilt === 0, `经线必须竖直（x 相同），有 ${tilt} 条是斜的`)
+    // 墨卡托南北沿正好是 ±half（陆地板块被夹在同一范围）
+    assert(Math.abs(maxZ - W / 2) < 1e-6 && Math.abs(minZ + W / 2) < 1e-6,
+      `经线应铺满整个海图高度 ±${W / 2}（实得 ${minZ.toFixed(2)}~${maxZ.toFixed(2)}）`)
+    /*
+     * 尤其要钉住"0° 经线在正中间"。
+     * 如果 lonToWorldX 漏了 +180 的偏移（写成 lon/360*W），所有线会整体西移半个图，
+     * 而"线铺满高度""数量对"这些断言全都照样通过 —— 只有这一条抓得到。
+     */
+    const zeroIdx = (0 + 180) / GRATICULE_STEP_DEG
+    assert(Math.abs(seg[zeroIdx * 6] - W / 2) < 1e-9,
+      `0° 经线必须落在世界 x=${W / 2}（实得 ${seg[zeroIdx * 6]}）`)
+  }
+
+  // ④ 纬线：z 恒定、赤道在 z=0、南北对称
+  {
+    const start = GRATICULE_MERIDIANS * 6
+    const zs = new Set<number>()
+    let flat = 0
+    for (let k = 0; k < GRATICULE_PARALLELS * 72; k++) {
+      const o = start + k * 6
+      if (Math.abs(seg[o + 2] - seg[o + 5]) > 1e-12) flat++
+      zs.add(Math.round(seg[o + 2] * 1e6) / 1e6)
+    }
+    assert(flat === 0, `纬线必须水平（z 相同），有 ${flat} 段是斜的`)
+    assert(zs.size === GRATICULE_PARALLELS,
+      `纬线应只有 ${GRATICULE_PARALLELS} 个不同的 z（实得 ${zs.size}）`)
+    assert([...zs].some(z => Math.abs(z) < 1e-6),
+      `赤道（纬度 0）必须落在 z=0，实得 z 集合 ${[...zs].map(v => v.toFixed(2)).join(',')}`)
+    // 南北对称：z 的集合关于 0 对称（墨卡托对纬度是对称的）
+    for (const z of zs) {
+      assert([...zs].some(o => Math.abs(o + z) < 1e-6),
+        `纬线必须南北对称（缺 ${(-z).toFixed(2)}）`)
+    }
+  }
+
+  // ⑤ 海岸线：环要闭合成线，洞/湖也要描，小岛分到细线组
+  {
+    // 用一个合成要素：外环 4 点闭合 + 内环（洞）4 点闭合
+    const square: number[][] = [[0, 0], [1, 0], [1, 1], [0, 1], [0, 0]]
+    const hole: number[][] = [[0.2, 0.2], [0.4, 0.2], [0.4, 0.4], [0.2, 0.4], [0.2, 0.2]]
+    const geo = {
+      features: [
+        { geometry: { type: 'Polygon', coordinates: [square, hole] } },
+        // 一块 0.01 度见方的小岛 → 必须进 minor
+        { geometry: { type: 'Polygon', coordinates: [[[10, 10], [10.1, 10], [10.1, 10.1], [10, 10.1], [10, 10]]] } },
+      ],
+    }
+    const out = coastSegments(geo as unknown as Parameters<typeof coastSegments>[0], 0.006)
+    assert(out.rings === 3, `应统计到 3 个环（外环+洞+小岛），实得 ${out.rings}`)
+    // 5 点闭合的环 = 4 段；外环 + 洞 = 8 段 → major 有 8*6 个浮点
+    assert(out.major.length === 8 * 6, `大陆组应有 8 段（实得 ${out.major.length / 6}）`)
+    assert(out.minor.length === 4 * 6, `小岛组应有 4 段（实得 ${out.minor.length / 6}）`)
+    /*
+     * 洞（湖泊）必须单独描一圈。
+     * 【不能只断言"线段总数对"】总数对得上也可能全是外环多算了几段——
+     * 这里直接按投影后的坐标找洞的那条边 (0.2,0.2)→(0.4,0.2)。
+     */
+    const hx0 = lonToWorldX(0.2), hz0 = latToWorldZ(0.2)
+    const hx1 = lonToWorldX(0.4), hz1 = latToWorldZ(0.2)
+    let holeHit = false
+    for (let i = 0; i < out.major.length; i += 6) {
+      if (Math.abs(out.major[i] - hx0) < 1e-9 && Math.abs(out.major[i + 2] - hz0) < 1e-9
+        && Math.abs(out.major[i + 3] - hx1) < 1e-9 && Math.abs(out.major[i + 5] - hz1) < 1e-9) {
+        holeHit = true
+        break
+      }
+    }
+    assert(holeHit, '洞（湖泊）的边必须被描出来（否则内陆湖没有轮廓）')
+    /*
+     * 所有点必须共面于传入高度（合成要素只有 12 个点，但仍然聚合成一条断言：
+     * 逐点断言会把日志刷成几百行，真失败时反而看不清是哪条挂了）。
+     */
+    let yBad = 0
+    for (let i = 1; i < out.major.length; i += 3) {
+      if (Math.abs(out.major[i] - 0.006) > 1e-12) yBad++
+    }
+    assert(yBad === 0, `海岸线所有点的 y 必须等于传入高度（异常 ${yBad} 个）`)
+    // 零长段必须被丢掉（否则 LineSegmentsGeometry 的方向归一化会除以 0）
+    assert(out.major.every(Number.isFinite), '海岸线坐标不能有 NaN')
+  }
+
+  // ⑥ 同一份 land.geojson：线段数必须与顶点数对得上（漏环/漏洞会明显偏少）
+  {
+    // 测试从项目根目录跑（npm test 的 cwd），直接按相对路径读
+    const raw = readFileSync('public/data/land.geojson', 'utf8')
+    const land = JSON.parse(raw)
+    const out = coastSegments(land, 0.006)
+    const segs = (out.major.length + out.minor.length) / 6
+    /*
+     * 实测基线：1422 环 / 60669 顶点。闭合环 n 点 → n-1 段，
+     * 再减去零长段（重复坐标）。这里给 3% 容差，而不是写死 59xxx：
+     * 上游精简精度时会小幅变化，写死会让一条数据更新就把测试打红。
+     */
+    assert(segs > 58000, `海岸线段数应 > 58000（实得 ${segs}，环 ${out.rings}）`)
+    assert(out.rings === 1422, `环数应为 1422（实得 ${out.rings}）`)
+    // 大块陆地必须占多数线段：如果分档判据反了，major 会只剩几个碎岛
+    assert(out.major.length > out.minor.length,
+      `大陆组线段（${out.major.length / 6}）应多于小岛组（${out.minor.length / 6}）`)
   }
 }
 
