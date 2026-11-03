@@ -41,7 +41,7 @@ export default function AchievementPanel() {
             { label: '历史目击', value: stats.historySeen },
           ].map(item => (
             <div key={item.label} className="inlay rounded px-2 py-1.5 border border-gold-700/20">
-              <div className="text-gold-400 text-[10px] font-serif">{item.label}</div>
+              <div className="text-gold-400 text-[11px] font-serif">{item.label}</div>
               <div className="text-gold-200 text-[15px] font-serif tabular-nums">{item.value}</div>
             </div>
           ))}
@@ -51,14 +51,36 @@ export default function AchievementPanel() {
           {achievements.map(a => {
             const isUnlocked = earned.includes(a.id)
             return (
+              /*
+               * 【已解锁 / 未解锁不能只靠"深浅"】
+               * 原来未解锁是 `inlay--flat + opacity-60`：opacity 把**边框和背景**
+               * 一起压透明，露出面板底色 —— 结果是"更暗的一块"，而不是"没点亮"。
+               * 两块并排看都是深褐，玩家得逐条读描述才知道哪些拿到了。
+               *
+               * 现在用三个信号叠：
+               *   · 左缘一道金竖条（两端渐隐）—— 已获得才"盖了章"；
+               *   · 背景暖一档（gold-700/30 vs 挖空的槽）；
+               *   · 右侧 Trophy 带光晕。
+               * 未解锁那边保持凹槽 + 锁，一个亮元素都不留。
+               */
               <div
                 key={a.id}
-                className={`rounded p-2 border transition-colors ${
+                className={`relative rounded p-2 pl-2.5 border overflow-hidden transition-colors ${
                   isUnlocked
-                    ? 'bg-gold-700/20 border-gold-500/40'
-                    : 'inlay--flat border-gold-700/15 opacity-60'
+                    ? 'bg-gold-700/30 border-gold-400/55'
+                    : 'inlay--flat border-gold-700/15'
                 }`}
               >
+                {isUnlocked && (
+                  <span
+                    aria-hidden="true"
+                    className="absolute left-0 top-0 bottom-0 w-[3px]"
+                    style={{
+                      background:
+                        'linear-gradient(180deg, rgba(240,216,138,0) 0%, rgba(240,216,138,0.95) 26%, rgba(240,216,138,0.95) 74%, rgba(240,216,138,0) 100%)',
+                    }}
+                  />
+                )}
                 <div className="flex items-center gap-1.5">
                   {/* 图标是 lucide 组件（原先存 emoji，靠 grayscale 压掉彩色）；
                       单色描边图标用颜色区分解锁状态，比滤镜更可控 */}
@@ -72,7 +94,11 @@ export default function AchievementPanel() {
                     {a.title}
                   </span>
                   {isUnlocked ? (
-                    <Trophy size={11} className="ml-auto text-gold-400" />
+                    <Trophy
+                      size={11}
+                      className="ml-auto text-gold-300"
+                      style={{ filter: 'drop-shadow(0 0 4px rgba(229,195,92,0.55))' }}
+                    />
                   ) : (
                     <Lock size={11} className="ml-auto text-gold-500" />
                   )}

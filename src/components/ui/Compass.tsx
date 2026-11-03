@@ -164,13 +164,26 @@ export default function Compass({ windBearing = null, size = 'w-24 h-24' }: Comp
       </svg>
 
       {/* 风向标：罗盘角上的小徽标，箭头指向风吹去的方位 */}
+      {/*
+        风向标是罗盘**底座上的小旋钮**，不是盖在盘面上的补丁。
+        原来 36px 的深蓝圆压在 96px 的铜金盘上：占掉四分之一盘面、冷蓝撞暖金，
+        而且它盖住的正好是"S"方位字。32px 的铜牌版仍然太大——风向本来就
+        在左上角的天气徽章里写着（"晴朗 12 节"），这里只是补一个方位。
+        缩到 24px、推到圆环外沿（-bottom-2 -right-2），只留左上三分之一压边。
+      */}
       {windBearing != null && Number.isFinite(windBearing) && (
         <div
-          className="absolute -bottom-1 -right-1 w-9 h-9 rounded-full bg-ocean-900/85 border border-gold-700/30 flex items-center justify-center shadow-lg"
+          className="absolute -bottom-2 -right-2 w-6 h-6 rounded-full flex items-center justify-center"
           title={`风向 ${Math.round(windBearing)}°`}
           aria-label={`风向 ${Math.round(windBearing)} 度`}
+          style={{
+            background: 'linear-gradient(180deg, #6b4a28 0%, #3a2714 55%, #241708 100%)',
+            border: '1px solid rgba(190,152,78,0.85)',
+            boxShadow:
+              'inset 0 1px 0 rgba(255,238,186,0.32), inset 0 -1px 0 rgba(0,0,0,0.5), 0 2px 6px rgba(0,0,0,0.62)',
+          }}
         >
-          <svg viewBox="0 0 40 40" className="w-7 h-7">
+          <svg viewBox="0 0 40 40" className="w-5 h-5">
             <g style={{ transform: `rotate(${windBearing}deg)`, transformOrigin: '20px 20px' }}>
               <polygon points="20,5 25,26 20,22 15,26" fill="#9fc5e8" opacity="0.95" />
               <line x1="20" y1="22" x2="20" y2="33" stroke="#9fc5e8" strokeWidth="1.4" opacity="0.6" />

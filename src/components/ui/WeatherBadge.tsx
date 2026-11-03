@@ -35,9 +35,17 @@ export default function WeatherBadge() {
 
   return (
     <div data-testid="weather-badge" className="pointer-events-auto select-none">
+      {/*
+        【为什么从深蓝改成铜牌】
+        原来是 bg-ocean-800/75 —— 一块半透明的深海蓝。图上其他地方没有这个色：
+        罗盘是铜金 + 米黄盘面、侧栏是铜木铭牌、底栏是木梁、面板是深褐。
+        这块蓝在左上角读作"另一个 App 的控件"，而且它和上面的罗盘、下面的
+        风向标三件东西凑在一起时，材质语言断在中间。
+        换成 .plate-btn（面板按钮/铭牌同一套：深棕渐变 + 金边 + 顶棱受光）。
+      */}
       <button
         onClick={() => setOpen(o => !o)}
-        className="flex items-center gap-2 px-3 py-2 rounded-md bg-ocean-800/75 border border-gold-700/30 hover:border-gold-600/50 transition-colors shadow-lg"
+        className="plate-btn flex items-center gap-2 px-3 py-2 rounded-md transition-colors"
         title={`${info.label}：${info.hint}（点击看预报）`}
         aria-label={`天候：${info.label}，点击展开预报`}
         aria-expanded={open}
@@ -57,7 +65,14 @@ export default function WeatherBadge() {
       </button>
 
       {open && (
-        <div className="mt-1 w-64 rounded-md bg-ocean-800/92 border border-gold-700/30 shadow-xl p-2.5 space-y-2">
+        <div
+          className="mt-1 w-64 rounded-md p-2.5 space-y-2"
+          style={{
+            background: 'linear-gradient(180deg, #2f2214 0%, #241a0e 100%)',
+            border: '1px solid rgba(160,126,60,0.6)',
+            boxShadow: 'inset 0 1px 0 rgba(255,238,186,0.16), 0 8px 22px rgba(0,0,0,0.65)',
+          }}
+        >
           <p className="text-gold-400 font-serif text-[11px] leading-relaxed">{info.hint}</p>
           <div className="border-t border-gold-700/20 pt-1.5">
             <p className="text-gold-400 font-serif text-[11px] mb-1.5 tracking-wide">未来三天</p>
