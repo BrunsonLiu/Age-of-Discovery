@@ -96,7 +96,21 @@ export default function PortDetail() {
       <ParchmentCard title={port.nameCn} onClose={() => setActivePanel(null)}>
         {/* 港口场景插图（C 组）：到港第一眼——按区域/建筑风格选图 */}
         {portImg && (
-          <div className="relative -mx-1 mb-2 h-24 overflow-hidden rounded border border-gold-700/30">
+          /*
+           * 【立绘要"装裱"】
+           * 原来只是一张 96px 高的 img，圆角 + border-gold-700/30。
+           * 立绘本身是写实油画，周围全是手绘羊皮纸与铜件 —— 没有画框时，
+           * 它读作"贴上去的一张图"，而不是"挂在舱壁上的画"。
+           * 画框 = 外 1px 金线 + 内 3px 暗色卡纸 + 内侧暗角（inset 18px 阴影）。
+           * 内侧暗角同时压住四个角，画面边缘才不会和面板底色抢。
+           */
+          <div
+            className="relative -mx-1 mb-2 h-24 overflow-hidden rounded-sm"
+            style={{
+              boxShadow:
+                'inset 0 0 0 1px rgba(206,172,108,0.62), inset 0 0 0 3px rgba(18,12,5,0.9), inset 0 0 18px rgba(0,0,0,0.5), 0 2px 7px rgba(0,0,0,0.55)',
+            }}
+          >
             <img
               src={portImg}
               alt=""

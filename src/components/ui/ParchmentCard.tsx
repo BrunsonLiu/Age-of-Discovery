@@ -31,8 +31,28 @@ export default function ParchmentCard({ title, subtitle, children, className = '
         background: `
           linear-gradient(135deg, rgba(40, 30, 18, 0.985) 0%, rgba(52, 38, 22, 0.985) 50%, rgba(40, 30, 18, 0.985) 100%)
         `,
-        border: '2px solid rgba(201,169,110,0.6)',
-        boxShadow: '0 8px 32px rgba(0,0,0,0.7), inset 0 1px 0 rgba(244,228,193,0.15)',
+        /*
+         * 【为什么边框要改成"分层"】
+         * 原来是一条 2px 的 rgba(201,169,110,0.6) 实线 —— 均匀、半透明、没有厚度。
+         * 放大看就是一根画上去的金线，面板因此读作"一片深褐色玻璃"，
+         * 而紧挨着它的侧栏铭牌（.side-plate）是三段渐变 + 顶棱受光 + 底棱背光，
+         * 两者放在一起，最大的一块反而是最薄的。
+         *
+         * 铜框的读法靠"两暗一明"：
+         *   外侧 1px 近黑   → 把面板从地图上切下来（没有它，面板边界和深色海面糊在一起）
+         *   内侧 1px 亮金   → 框的内棱受光，厚度感就来自这一条
+         *   底缘 2px 暗     → 背光的框厚
+         * 外面再垫一层 3px、14% 的金色晕，模拟铜件反到桌面上的光。
+         */
+        border: '1px solid rgba(206,172,108,0.88)',
+        boxShadow: [
+          '0 0 0 1px rgba(12,8,3,0.92)',
+          '0 0 0 3px rgba(201,169,110,0.13)',
+          'inset 0 0 0 1px rgba(255,238,186,0.26)',
+          'inset 0 1px 0 rgba(255,246,214,0.30)',
+          'inset 0 -2px 0 rgba(0,0,0,0.58)',
+          '0 12px 34px rgba(0,0,0,0.76)',
+        ].join(', '),
       }}
     >
       {/* 真羊皮纸纹理（F1）：低透明度叠在深褐底上增加纸的颗粒感 */}
@@ -46,13 +66,14 @@ export default function ParchmentCard({ title, subtitle, children, className = '
         }}
       />
 
-      <div className="absolute top-0 left-0 w-4 h-4 border-t-2 border-l-2 border-gold-500/50 rounded-tl-lg" />
-      <div className="absolute top-0 right-0 w-4 h-4 border-t-2 border-r-2 border-gold-500/50 rounded-tr-lg" />
-      <div className="absolute bottom-0 left-0 w-4 h-4 border-b-2 border-l-2 border-gold-500/50 rounded-bl-lg" />
-      <div className="absolute bottom-0 right-0 w-4 h-4 border-b-2 border-r-2 border-gold-500/50 rounded-br-lg" />
+      {/* 四角包铜：外框 1px 金线之外再压一段 2px 的角线，角上的铜件比边线厚一档 */}
+      <div className="absolute top-0 left-0 w-4 h-4 border-t-2 border-l-2 border-gold-300/75 rounded-tl-lg" />
+      <div className="absolute top-0 right-0 w-4 h-4 border-t-2 border-r-2 border-gold-300/75 rounded-tr-lg" />
+      <div className="absolute bottom-0 left-0 w-4 h-4 border-b-2 border-l-2 border-gold-300/75 rounded-bl-lg" />
+      <div className="absolute bottom-0 right-0 w-4 h-4 border-b-2 border-r-2 border-gold-300/75 rounded-br-lg" />
 
       <div className="relative p-4">
-        <div className="flex items-center justify-between mb-3 pb-2 border-b border-gold-700/30">
+        <div className="flex items-center justify-between mb-2">
           {title && (
             <h3 className="font-pirate text-lg text-gold-300 tracking-wide flex items-center gap-2">
               {title}
@@ -69,6 +90,21 @@ export default function ParchmentCard({ title, subtitle, children, className = '
             </button>
           )}
         </div>
+        {/*
+         * 【标题下的分隔线要两端渐隐】
+         * 原来是 `border-b border-gold-700/30` —— 一条等宽等浓的实线，
+         * 从左边一直画到右边，末端是一个硬切口。放大看像表格的单元格边框，
+         * 而不是版画上的装饰线。铜版画里的分隔线中间浓、两头收进纸里。
+         * 两端渐隐之后，标题和内容之间才有"层次"而不是"分格"。
+         */}
+        <div
+          aria-hidden="true"
+          className="h-px mb-3"
+          style={{
+            background:
+              'linear-gradient(90deg, rgba(201,169,110,0) 0%, rgba(201,169,110,0.42) 22%, rgba(201,169,110,0.42) 78%, rgba(201,169,110,0) 100%)',
+          }}
+        />
         {/* 内容区高度：
             桌面端被放在 top-12/bottom-12 的容器里，60vh 刚好；
             移动端面板是底部抽屉（最高 82dvh），要给到 68dvh 才填得下，

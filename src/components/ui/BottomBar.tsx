@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Anchor, Navigation, Coins, RotateCcw, Pause, FastForward, Sailboat, Shield, Package } from 'lucide-react'
+import { Anchor, Navigation, Coins, RotateCcw, Pause, FastForward, Sailboat, Shield, Package, Skull } from 'lucide-react'
 import { useGameStore } from '@/store/useGameStore'
 import { useMapStore } from '@/store/useMapStore'
 import { ports } from '@/data/ports'
@@ -317,50 +317,69 @@ export default function BottomBar() {
         ml-auto 把它推到右端，与第一行末尾的资源区对齐。
         单行时（xl 以上）它本来就是最后一项，再加 ml-auto 无副作用。
       */}
-      <div className="flex items-center gap-0.5 shrink-0 order-3 md:order-4 ml-auto">
+      {/*
+        开关组要读作"一块嵌进木梁的开关板"。
+        原来这 5 个图标是裸的 p-1.5 按钮 + 两根 w-px 的分隔线，
+        分隔线在 #2e2212 的木纹上（bg-gold-700/30）几乎不存在，
+        于是底栏右端看起来是"五个散落的小图标"，而不是一组仪表。
+        给整组套一个凹陷槽：木头上挖下去、里面嵌着铜开关。
+      */}
+      <div
+        className="flex items-center gap-0.5 shrink-0 order-3 md:order-4 ml-auto rounded-md px-1 py-0.5"
+        style={{
+          background: 'rgba(0,0,0,0.26)',
+          boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.65), inset 0 -1px 0 rgba(255,238,186,0.055)',
+        }}
+      >
           <button
             onClick={toggleWindOverlay}
             className={`p-1.5 rounded press transition-all ${
-              showWindOverlay ? 'bg-gold-700/40 text-gold-200' : 'text-gold-500 hover:text-gold-300'
+              showWindOverlay ? 'bg-gold-700/40 text-gold-200' : 'text-gold-400 hover:text-gold-200'
             }`}
             title="风向"
             aria-label="风向"
             aria-pressed={showWindOverlay}
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M9.59 4.59A2 2 0 1 1 11 8H2m10.59 11.41A2 2 0 1 0 14 16H2m15.73-8.27A2.5 2.5 0 1 1 19.5 12H2"/></svg>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M9.59 4.59A2 2 0 1 1 11 8H2m10.59 11.41A2 2 0 1 0 14 16H2m15.73-8.27A2.5 2.5 0 1 1 19.5 12H2"/></svg>
           </button>
           <button
             onClick={toggleCurrentOverlay}
             className={`p-1.5 rounded press transition-all ${
-              showCurrentOverlay ? 'bg-gold-700/40 text-gold-200' : 'text-gold-500 hover:text-gold-300'
+              showCurrentOverlay ? 'bg-gold-700/40 text-gold-200' : 'text-gold-400 hover:text-gold-200'
             }`}
             title="洋流"
             aria-label="洋流"
             aria-pressed={showCurrentOverlay}
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M2 12c1.5-2 3.5-2 5 0s3.5 2 5 0 3.5-2 5 0 3.5 2 5 0M2 18c1.5-2 3.5-2 5 0s3.5 2 5 0 3.5-2 5 0 3.5 2 5 0M2 6c1.5-2 3.5-2 5 0s3.5 2 5 0 3.5-2 5 0 3.5 2 5 0"/></svg>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M2 12c1.5-2 3.5-2 5 0s3.5 2 5 0 3.5-2 5 0 3.5 2 5 0M2 18c1.5-2 3.5-2 5 0s3.5 2 5 0 3.5-2 5 0 3.5 2 5 0M2 6c1.5-2 3.5-2 5 0s3.5 2 5 0 3.5-2 5 0 3.5 2 5 0"/></svg>
           </button>
           <button
             onClick={togglePirateZones}
             className={`p-1.5 rounded press transition-all ${
-              showPirateZones ? 'bg-danger-700/40 text-danger-200' : 'text-gold-500 hover:text-gold-300'
+              showPirateZones ? 'bg-danger-700/40 text-danger-200' : 'text-gold-400 hover:text-gold-200'
             }`}
             title="海盗区域"
             aria-label="海盗区域"
             aria-pressed={showPirateZones}
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 8v4m0 4h.01"/></svg>
+            {/*
+              【海盗区域不能用"圆圈感叹号"】
+              原来那个图标是 circle + "!", 在 15px 下和"信息 / 警告"完全同形，
+              玩家看到底栏一排开关，认不出哪一个是海盗区。
+              换成骷髅：形状辨识度高（两个眼窝 + 下颌），语义直接。
+            */}
+            <Skull size={15} aria-hidden="true" />
           </button>
-          <div className="hidden md:block w-px h-3 bg-gold-700/30" />
+          <div className="hidden md:block w-px h-4 bg-gold-600/45" />
           <SoundToggle />
-          <div className="hidden md:block w-px h-3 bg-gold-700/30" />
+          <div className="hidden md:block w-px h-4 bg-gold-600/45" />
           <button
             onClick={resetGame}
-            className="p-1.5 rounded text-gold-500 hover:text-gold-300 hover:bg-gold-700/30 press transition-all"
+            className="p-1.5 rounded text-gold-400 hover:text-gold-200 hover:bg-gold-700/30 press transition-all"
             title="重新开始"
             aria-label="重新开始"
           >
-            <RotateCcw size={14} aria-hidden="true" />
+            <RotateCcw size={15} aria-hidden="true" />
           </button>
       </div>
 

@@ -41,28 +41,34 @@ function BuyRow({ portId, pg, fleet, usedCapacity, totalCapacity, onBuy }: {
 
   return (
     <div className="inlay--flat rounded p-2" data-testid="trade-buy-row" data-good-id={pg.goodId}>
-      <div className="flex items-center justify-between mb-1">
-        <span className="text-gold-200 text-[13px] font-serif">{good.nameCn}</span>
+      <div className="flex items-center justify-between mb-1.5">
+        <span className="text-gold-200 text-[14px] font-serif">{good.nameCn}</span>
         <span
-          className={`flex items-center gap-0.5 text-[13px] font-serif ${TONE_CLASS[tone]}`}
+          className={`flex items-center gap-1 text-[15px] font-serif ${TONE_CLASS[tone]}`}
           data-price={buyPrice}
           data-tone={tone}
           title={TONE_HINT[tone]}
         >
-          {tone === 'cheap' && <TrendingDown size={10} />}
-          {tone === 'expensive' && <TrendingUp size={10} />}
-          <Coins size={10} /> {buyPrice}
+          {tone === 'cheap' && <TrendingDown size={12} />}
+          {tone === 'expensive' && <TrendingUp size={12} />}
+          <Coins size={12} /> {buyPrice}
         </span>
       </div>
       <div className="flex items-center justify-between">
         <span className="text-gold-400 text-[13px]">库存: {stock}</span>
         <div className="flex gap-1">
+          {/*
+           * 三个数量按钮必须等宽：ActionButton 是 px-4 + 自适应宽度，
+           * "+1" 比 "+10" 窄 8px，三个并排时右边缘参差，整排读起来是"没对齐的三个东西"。
+           * 固定 44px（触摸最小尺寸）+ !px-0 把内边距让给宽度。
+           */}
           {[1, 5, 10].map(qty => (
             <ActionButton
               key={qty}
               onClick={() => onBuy(pg.goodId, qty)}
               disabled={fleet.gold < buyPrice * qty || usedCapacity + qty > totalCapacity || stock < qty}
               variant="secondary"
+              className="w-11 !px-0 justify-center"
             >
               +{qty}
             </ActionButton>
@@ -92,12 +98,12 @@ function SellRow({ portId, item, onSell }: {
 
   return (
     <div className="inlay--flat rounded p-2" data-testid="trade-sell-row" data-good-id={item.goodId}>
-      <div className="flex items-center justify-between mb-1">
-        <span className="text-gold-200 text-[13px] font-serif">
+      <div className="flex items-center justify-between mb-1.5">
+        <span className="text-gold-200 text-[14px] font-serif">
           {good.nameCn}{!tradedHere && <span className="text-gold-400 text-[13px]">（本港不收，折价）</span>}
         </span>
-        <span className="flex items-center gap-0.5 text-safe-400 text-[13px] font-serif" data-price={sellPrice}>
-          <Coins size={10} /> {sellPrice}
+        <span className="flex items-center gap-1 text-safe-400 text-[15px] font-serif" data-price={sellPrice}>
+          <Coins size={12} /> {sellPrice}
         </span>
       </div>
       <div className="flex items-center justify-between">
@@ -109,6 +115,7 @@ function SellRow({ portId, item, onSell }: {
               onClick={() => onSell(item.goodId, qty)}
               disabled={item.quantity < qty}
               variant="secondary"
+              className="w-11 !px-0 justify-center"
             >
               -{qty}
             </ActionButton>
@@ -207,19 +214,29 @@ export default function TradePanel() {
             </div>
           )}
 
+          {/*
+           * 【买卖页签：凸/凹，不是深/浅】
+           * 原来选中态是 bg-gold-700/40，未选中是 .inlay--flat —— 两者混合到面板底色后
+           * 只差几个色阶，放大截图看不出哪一个被按下了（选错标签的代价是买成卖）。
+           * 色差在深棕底上是弱信号，凸凹才是强信号：
+           *   选中 = 铜牌（.plate-btn，与次级按钮同一材质）+ 亮字
+           *   未选中 = 挖空的槽（.inlay--flat）+ 暗字
+           */}
           <div className="flex gap-1">
             <button
               onClick={() => setTab('buy')}
-              className={`flex-1 py-1.5 text-[13px] font-serif rounded transition-colors ${
-                tab === 'buy' ? 'bg-gold-700/40 text-gold-200' : 'inlay--flat text-gold-500 hover:text-gold-300'
+              aria-pressed={tab === 'buy'}
+              className={`flex-1 py-1.5 text-[13px] font-serif rounded transition-all duration-150 ${
+                tab === 'buy' ? 'plate-btn text-gold-200' : 'inlay--flat text-gold-500 hover:text-gold-300'
               }`}
             >
               购买
             </button>
             <button
               onClick={() => setTab('sell')}
-              className={`flex-1 py-1.5 text-[13px] font-serif rounded transition-colors ${
-                tab === 'sell' ? 'bg-gold-700/40 text-gold-200' : 'inlay--flat text-gold-500 hover:text-gold-300'
+              aria-pressed={tab === 'sell'}
+              className={`flex-1 py-1.5 text-[13px] font-serif rounded transition-all duration-150 ${
+                tab === 'sell' ? 'plate-btn text-gold-200' : 'inlay--flat text-gold-500 hover:text-gold-300'
               }`}
             >
               出售
