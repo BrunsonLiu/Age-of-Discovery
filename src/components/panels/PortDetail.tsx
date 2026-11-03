@@ -169,7 +169,13 @@ export default function PortDetail() {
                       if (svc === 'trade') setActivePanel('trade')
                       if (svc === 'shipyard') setActivePanel('shipyard')
                     }}
-                    className="flex items-center gap-1.5 inlay hover:inlay border border-gold-700/20 rounded px-2 py-1.5 text-[13px] text-gold-300 font-serif transition-colors"
+                    /*
+                     * 铜牌材质（.plate-btn），不是凹陷槽（.inlay）。
+                     * 这五个是**动作**（修理/补给/招募/贸易/造船厂），按下去要有
+                     * "被按下"的回执；凹陷槽读作"这里是个输入框/展示位"。
+                     * 原来用 inlay + 1px 金边，在深棕面板上是一块扁平色块。
+                     */
+                    className="flex items-center gap-1.5 plate-btn rounded px-2 py-1.5 text-[13px] text-gold-300 font-serif transition-colors hover:text-gold-200"
                   >
                     {serviceIcons[svc]}
                     {serviceNames[svc]}

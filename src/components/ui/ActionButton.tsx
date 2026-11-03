@@ -25,12 +25,15 @@ const variantStyles = {
     hover:shadow-[0_0_12px_rgba(184,67,46,0.4)]
     active:from-danger-500 active:to-danger-700
   `,
+  /*
+   * 次级按钮＝铜牌（材质见 index.css 的 .plate-btn）。
+   * 原来是「透明底 + 1px 金边」的 ghost button，压在深棕面板上没有任何材质，
+   * 港口/贸易/船坞三个面板加起来 40 多个，读起来就是一排扁平色块。
+   */
   secondary: `
-    bg-transparent border border-gold-600/50
+    plate-btn
     text-gold-400
-    hover:bg-gold-700/20 hover:border-gold-500/70
-    hover:shadow-[0_0_8px_rgba(201,169,110,0.2)]
-    active:bg-gold-700/30
+    hover:text-gold-300
   `,
 }
 
