@@ -1094,9 +1094,33 @@ console.log('== 29. 环境资产：海面/港口/天气层/结局背景 ==')
   assert(portImage(6).endsWith('port_seville.webp'), '塞维利亚用专属图')
   assert(portImage(7).endsWith('port_seville.webp'), '里斯本（伊比利亚）共用塞维利亚图')
   assert(portImage(8).endsWith('port_northern_europe.webp'), '伦敦（北欧）用北欧图')
-  assert(portImage(1).endsWith('port_caribbean.webp'), '哈瓦那用加勒比图')
+  // 第四批：8 个港口有了专属立绘（此前加勒比 7 港共用一张）
+  assert(portImage(1).endsWith('port_havana.webp'), '哈瓦那用专属图')
+  assert(portImage(2).endsWith('port_port_royal.webp'), '皇家港用专属图')
+  assert(portImage(3).endsWith('port_nassau.webp'), '拿骚用专属图')
+  assert(portImage(10).endsWith('port_cape_town.webp'), '开普敦用专属图')
+  assert(portImage(11).endsWith('port_goa.webp'), '果阿用专属图')
+  assert(portImage(13).endsWith('port_cartagena.webp'), '卡塔赫纳用专属图')
+  assert(portImage(14).endsWith('port_veracruz.webp'), '韦拉克鲁斯用专属图')
+  assert(portImage(18).endsWith('port_macau.webp'), '澳门用专属图')
+  // 没做专属图的港口仍退回区域图（不能让它们变成空图）
+  assert(portImage(4).endsWith('port_caribbean.webp'), '托尔图加仍用加勒比区域图')
   assert(portImage(9).endsWith('port_west_africa.webp'), '埃尔米纳用西非图')
   assert(portImage(12).endsWith('port_southeast_asia.webp'), '马六甲用东南亚图')
+  /*
+   * 【专属图不得互相撞车】这是这一批素材的意义所在：
+   * 之前 7 个港口共用一张画，跑一圈只看过 5 张图。
+   * 判据用**去重后的张数**，不是逐个 if——后者漏掉一个新港口也不会报错。
+   */
+  {
+    const ids = ports.map(p => p.id)
+    const covers = ids.map(id => portImage(id)!)
+    const distinct = new Set(covers).size
+    // 改造前是 5 张（加勒比 7 港共用一张）。专属 8 张进来后是 13 张。
+    // 断言写"至少 13"而不是"等于 20"：剩下的 12 港本来就该共用区域图，
+    // 要求 20 张等于要求这 12 港也各有专属图——那是还没做的内容，不是 bug。
+    assert(distinct >= 13, `20 个港口用 ${distinct} 张不同的图（改造前只有 5 张）`)
+  }
   // G 组天气层：四张 1024² 带透明通道（雨/雾/飞沫/云）—— alpha 是硬需求，丢了会出黑框
   for (const [key, url] of Object.entries(FX_ASSETS)) {
     const file = url.split('/').pop()!
