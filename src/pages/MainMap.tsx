@@ -155,6 +155,19 @@ export default function MainMap() {
   useEffect(() => {
     if (gamePhase !== 'playing' || tutorialActive) return
     if (useDialogueStore.getState().scriptId) return
+    /**
+     * 玩家正在看面板 / 帮助时**不弹**。
+     *
+     * 【为什么加这一条】对白层是 `fixed inset-0` + z-index 75 的全屏遮罩，
+     * 它一出现就会把面板、侧栏、底栏的点击全部吃掉。而这个 effect 的依赖里
+     * 有 gold / morale / water / durability / currentPortId —— 玩家在港口面板里
+     * 点「休整」改变士气，effect 立刻重跑、条件成立、遮罩升起，
+     * 于是面板看起来"点了没反应"（其实是被遮住了）。
+     *
+     * 面板开着说明玩家正在做事，这时候不该被打断。关掉面板后 effect 会重跑，
+     * 该弹的自然还会弹，只是挪到了玩家手空的时候。
+     */
+    if (activePanel || showHelp) return
     const id = pickDialogue({
       day: fleet.day,
       gold: fleet.gold,
@@ -187,6 +200,8 @@ export default function MainMap() {
     flagshipDurability, portHasShipyard, discoveredPorts.length, weather.kind,
     fleet.isSailing, crewRoster.length, completedTasks.length, fleet.food,
     flagshipMaxCrew,
+    // 面板/帮助一关，effect 重跑，把刚才让掉的彩蛋补上
+    activePanel, showHelp,
   ])
 
   const windBearing = weather.windDir || prevailingWindBearing(mapCenter[0])

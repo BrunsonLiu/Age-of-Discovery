@@ -704,6 +704,25 @@ export default function Map3DView() {
         vertexColors: true,
         side: THREE.DoubleSide,
       })
+
+      /*
+       * 【试过、量过、撤掉的：岩层纹理（B4 tile_rock_face）】
+       *
+       * 侧壁原来没有 UV，这次在 landGeometry 里补了（见那边的 pushTri），
+       * 然后真的把 1024² 岩层图贴上、亮度补偿到 1.75 做了 A/B。
+       *
+       * 结果：**看不出来**。
+       *   · 默认视角（俯视）整块区域逐像素 avg 差异 2.27（1~2 个色阶，不可见）；
+       *   · 把相机压到接近水平、放大到侧壁占屏，侧壁在屏幕上只有 6~15px 高，
+       *     而 v 方向重复 2 次 → 每层 3~7px，读不出层理，只是一条褐色带。
+       *
+       * 根因不是纹理质量，是 `PLATE_THICKNESS = 0.085`：1 单位≈2000km，
+       * 这块"崖壁"在战略尺度上本来就只有几十公里高，没有足够像素承载层理。
+       * 贴图还要多付 175KB 与一次采样，所以撤掉。
+       *
+       * UV 保留在几何里：以后若把板块加厚（或做"近岸悬崖"局部加厚），
+       * 这张图就能直接用，不必再改几何。
+       */
       const lidMesh = new THREE.Mesh(land.lid, lidMat)
       lidMesh.castShadow = true; lidMesh.receiveShadow = true
       const wallMesh = new THREE.Mesh(land.wall, wallMat)

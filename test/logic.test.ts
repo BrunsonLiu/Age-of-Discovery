@@ -26,7 +26,7 @@ import {
 } from '../src/utils/chartLines'
 import { readFileSync } from 'node:fs'
 import { birdPose, flagYaw, smokePose } from '../src/utils/portLife'
-import { DIALOGUE_RULES, pickDialogue, unreachableScripts, type DialogueContext } from '../src/utils/dialogueTriggers'
+import { DIALOGUE_RULES, dialogueBudget, pickDialogue, unreachableScripts, type DialogueContext } from '../src/utils/dialogueTriggers'
 import { traitEffect } from '../src/utils/outcomeAdjust'
 import { groupJournal, journalHeadline } from '../src/utils/captainLog'
 import { rollSeaOmen, OMEN_CHANCE, OMEN_COOLDOWN_DAYS } from '../src/utils/seaOmen'
@@ -4333,17 +4333,30 @@ console.log('== 57. 3D 点击判定：手指抖动不该让航向设不上 ==')
   assert(pickDialogue(withSeen({ water: 10 }, ['opening_pilot', 'egg_low_water'])) === null,
     '同一段彩蛋不能重播（dialogueSeen 里有就必须跳过）')
 
-  // ⑤ 额度：开场之后第 1 天不给弹，第 2 天才给
+  // ⑤ 额度：开场之后头两天不给弹，第 3 天才给
   assert(pickDialogue(withSeen({ day: 1, water: 10 })) === null, '第 1 天不给弹彩蛋（额度未到）')
-  assert(pickDialogue(withSeen({ day: 2, water: 10 })) === 'egg_low_water', '第 2 天开始可以弹第一段')
-  // 看过 4 段之后，下一次要等到 day >= 2 + 2×3 = 8
+  assert(pickDialogue(withSeen({ day: 2, water: 10 })) === null, '第 2 天仍不给弹（彩蛋不是每日提示）')
+  assert(pickDialogue(withSeen({ day: 3, water: 10 })) === 'egg_low_water', '第 3 天开始可以弹第一段')
+  /*
+   * 间隔守卫：旧额度是 2+2×，第二天就弹第二段、之后每两天一段。
+   * 配合事件卡和海上异闻，玩家一天被打断两三次（用户反馈"弹窗太多"）。
+   * 这条断言钉死"两段之间至少隔 4 天"，防止以后有人顺手把它调回去。
+   */
+  assert(dialogueBudget(3) - dialogueBudget(2) >= 4,
+    `彩蛋间隔至少 4 天（第 ${dialogueBudget(2)} 天 → 第 ${dialogueBudget(3)} 天）`)
+  // 看过 4 段之后，下一次要等到 day >= 3 + 4×3 = 15
   const four = ['opening_pilot', 'egg_low_water', 'egg_damaged', 'egg_low_morale']
-  assert(pickDialogue(withSeen({ day: 7, durability: 10 }, four)) === null,
-    '已看 4 段时第 7 天额度还不够（应为 day≥8）')
-  assert(pickDialogue(withSeen({ day: 8, durability: 10 }, four)) === null,
-    '第 8 天额度到位，但唯一成立的 egg_damaged 已看过 → 宁可什么都不弹，也不要重播')
+  assert(pickDialogue(withSeen({ day: 14, durability: 10 }, four)) === null,
+    '已看 4 段时第 14 天额度还不够（应为 day≥15）')
+  /*
+   * 第 15 天额度到位、船也确实破（durability 10），但"船破"那段已经看过 ——
+   * 此时必须沿规则表顺延到下一段成立的（第 12 天之后那条），而不是重播。
+   * （改额度时这条从"什么都不弹"变成"顺延"，因为 day 15 已经越过 egg_long_voyage 的门槛。）
+   */
+  assert(pickDialogue(withSeen({ day: 15, durability: 10 }, four)) === 'egg_long_voyage',
+    '额度到位但船破那段已看过 → 顺延到"第 12 天之后"那段，绝不重播')
   // 顺延：额度到位、前面几条不成立，就沿规则表往下找
-  assert(pickDialogue(withSeen({ day: 8, discoveredCount: 8 }, four)) === 'egg_many_ports',
+  assert(pickDialogue(withSeen({ day: 15, discoveredCount: 8 }, four)) === 'egg_many_ports',
     '额度到位后应沿规则表顺延到"发现 6 港"那段')
 
   // ⑥ 修船计划只在"停在能修的港口"时成立

@@ -28,6 +28,13 @@ import { lonToWorldX, latToWorldZ, mercNorm } from '@/utils/mapProjection'
 /** 板块厚度：陆地顶面 y=0，海平面 y=-PLATE_THICKNESS */
 export const PLATE_THICKNESS = 0.085
 
+/**
+ * 侧壁 UV 密度（世界单位 → 纹理重复次数）。见 pushTri 里的推导。
+ * 只影响岩层纹理的观感，不影响几何。
+ */
+export const WALL_UV_U = 4
+export const WALL_UV_V = 2
+
 /** 一环 = 若干 [lon, lat]；一个多边形 = 外环 + 若干洞 */
 type Ring = number[][]
 type Poly = Ring[]
@@ -131,7 +138,7 @@ export function buildLandGeometry(geojson: GeoJsonLike): LandGeometry {
   }
 
   const lidPos: number[] = [], lidUv: number[] = []
-  const wallPos: number[] = []
+  const wallPos: number[] = [], wallUv: number[] = []
   const wallCol: number[] = []
 
   /*
@@ -211,13 +218,32 @@ export function buildLandGeometry(geojson: GeoJsonLike): LandGeometry {
    */
   const thicknessFor = (diagDeg: number) => PLATE_THICKNESS * Math.min(1, Math.max(0.12, diagDeg / 8))
 
-  const pushTri = (dst: number[], uvDst: number[] | null, raw: number[], thick: number, colDst: number[] | null = null) => {
+  const pushTri = (dst: number[], uvDst: number[] | null, raw: number[], thick: number, colDst: number[] | null = null, wallUv: number[] | null = null) => {
     const nV = raw.length / 3
     for (let t = 0; t + 2 < nV; t += 3) {
       for (let k = t; k <= t + 2; k++) {
         const lon = raw[k * 3], lat = raw[k * 3 + 1], dz = raw[k * 3 + 2]
-        dst.push(lonToWorldX(lon), (dz - 1) * thick, latToWorldZ(lat))
+        const wx = lonToWorldX(lon)
+        const wz = latToWorldZ(lat)
+        dst.push(wx, (dz - 1) * thick, wz)
         if (uvDst) uvDst.push((lon + 180) / 360, mercNorm(lat))
+        /*
+         * 侧壁 UV（给岩层纹理用）。
+         *
+         * 侧壁原来只有顶点色、没有 UV，所以那圈海岸一直是一块"配好色的素板"。
+         * 岩层纹理要能贴上去，就得有坐标：
+         *   u —— 用世界坐标的**对角投影** (x + z)。直接用 x 会有两种退化：
+         *        南北走向的岸线 u 不变（纹理被拉成竖条），东西走向的 u 变化极快；
+         *        对角投影让任何朝向都有变化，最差情况只有 √2 倍的密度差。
+         *        相邻两块陆地（加那利群岛那种碎岛）也因此落在同一套坐标里，不会各自从头开始。
+         *   v —— 直接用 dz（0 水线 → 1 顶棱）。岩层是**水平沉积**，
+         *        竖向重复 2 次就能读成"几道层理"；用世界高度会让厚板块与薄岛屿
+         *        的纹理密度差 8 倍（见上面 thicknessFor 的注释）。
+         *
+         * 这两个常数是"世界单位 → 纹理重复次数"：世界总宽 20 单位，
+         * 4 表示每 0.25 单位重复一次，近景（dist≈3）大约一屏 6~8 个循环。
+         */
+        if (wallUv) wallUv.push((wx + wz) * WALL_UV_U, dz * WALL_UV_V)
         // dz 本身就是明暗参数：1 = 顶棱（贴 y=0），0 = 水线（y=-thick）
         if (colDst) {
           const sh = wallShade(dz)
@@ -251,13 +277,13 @@ export function buildLandGeometry(geojson: GeoJsonLike): LandGeometry {
         raw.push(pos[i * 3], pos[i * 3 + 1], pos[i * 3 + 2])
       }
       if (isLid) pushTri(lidPos, lidUv, raw, thick)
-      else pushTri(wallPos, null, raw, thick, wallCol)
+      else pushTri(wallPos, null, raw, thick, wallCol, wallUv)
     }
     geo.dispose()
   }
 
   const lid = makeGeometry(lidPos, lidUv)
-  const wall = makeGeometry(wallPos, null, wallCol)
+  const wall = makeGeometry(wallPos, wallUv, wallCol)
 
   // 自动定向：测地表法线，朝下就整体翻转绕向（见文件头说明）
   const n = lid.attributes.normal.array as Float32Array

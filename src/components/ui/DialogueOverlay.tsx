@@ -165,11 +165,19 @@ export default function DialogueOverlay() {
                 />
               ))}
             </div>
-            {!typing && (
-              <span className="text-[#8a6c2a] text-xs dlg-caret">
-                {isTouch ? '点一下继续 ▸' : 'Enter 继续 ▸'}
-              </span>
-            )}
+            {/*
+              打字中也要给提示。
+              【为什么改】原来只在 `!typing` 时显示「点一下继续」，而打字中
+              **什么都不显示** —— 玩家在这时点一下，作用只是"把整句显示出来"，
+              屏幕上除了字突然变全，没有任何"我收到了"的回应，于是又点一下。
+              用户反馈的"点了没反应"，很大一部分就是这两秒钟。
+              现在打字中明确写「轻点：立即显示」，点击的含义一眼可见。
+            */}
+            <span className={`text-[#8a6c2a] text-xs ${typing ? 'opacity-70' : 'dlg-caret'}`}>
+              {typing
+                ? (isTouch ? '轻点：立刻显示整句' : '空格 / Enter：立刻显示整句')
+                : (isTouch ? '点一下继续 ▸' : 'Enter 继续 ▸')}
+            </span>
           </div>
         </div>
         {isTouch ? (

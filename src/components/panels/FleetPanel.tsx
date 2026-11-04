@@ -16,7 +16,6 @@ import { calculateSailingDays, effectiveFleetSpeed } from '@/utils/navigation'
 import { LOW_MORALE, dailyRates, daysToDestination, formatSupplyDays, supplyDaysRemaining, supplyLevel } from '@/utils/voyage'
 import ParchmentCard from '@/components/ui/ParchmentCard'
 import ResourceBar from '@/components/ui/ResourceBar'
-import ActionButton from '@/components/ui/ActionButton'
 import Badge from '@/components/ui/Badge'
 import Ship3DView from '@/components/three/Ship3DView'
 
@@ -99,6 +98,15 @@ export default function FleetPanel() {
     const toPort = ports.find(p => p.id === route.toPortId)
     if (toPort) setCenter([toPort.latitude, toPort.longitude])
     setSelectedRouteId(null)
+    /*
+     * 出航后合上面板。
+     *
+     * 点了「再点一次，扬帆出航」之后，玩家要看的是船从港口出发 ——
+     * 而面板正好盖住那片海（320px 宽的右侧/左侧板）。实测：
+     * 出航后 isSailing=true 但 activePanel 仍是 'fleet'，
+     * 玩家第一眼看到的是一张没变化的面板，要自己想起来去关掉它。
+     */
+    setActivePanel(null)
   }
 
   return (
@@ -351,13 +359,41 @@ export default function FleetPanel() {
                       return (
                         <button
                           key={route.id}
-                          onClick={() => setSelectedRouteId(route.id)}
-                          className={`w-full text-left rounded p-1.5 text-[13px] transition-all ${
+                          /*
+                           * 两次点击：第一次选中、第二次出航。
+                           *
+                           * 【为什么不是"点一下就出航"】出航是不可逆的高代价动作
+                           * （粮食、耐久、可能全损），误触一次代价太大。
+                           * 【为什么不是"只选中、再去下面找确认按钮"】那正是原设计，
+                           * 用户反馈"点了没反应"—— 选中只改了背景色一档，
+                           * 而变化最该发生的地方（确认按钮）在列表下方、可能还要滚动。
+                           * 现在选中后这一条自己变成"再点一次出航"，下一步就在指尖下面。
+                           */
+                          onClick={() => {
+                            if (isSelected) handleConfirmRoute()
+                            else setSelectedRouteId(route.id)
+                          }}
+                          className={`relative w-full text-left rounded p-1.5 pl-2.5 text-[13px] transition-all ${
                             isSelected
-                              ? 'bg-gold-700/30 border border-gold-500/50'
+                              ? 'bg-gold-700/40 border border-gold-500/70'
                               : 'inlay--flat border border-transparent hover:border-gold-700/30'
                           }`}
                         >
+                          {/*
+                            选中标记用**左侧竖金条**而不是只靠背景深浅：
+                            深褐底上 `bg-gold-700/30` 与凹槽只差几个色阶，实测看着一样。
+                            竖条在列表里是线性信号，扫一眼就知道选的是哪条。
+                          */}
+                          {isSelected && (
+                            <span
+                              aria-hidden="true"
+                              className="absolute left-0 top-0 bottom-0 w-[2px] rounded-l"
+                              style={{
+                                background:
+                                  'linear-gradient(180deg, rgba(229,195,92,0) 0%, rgba(229,195,92,0.95) 25%, rgba(229,195,92,0.95) 75%, rgba(229,195,92,0) 100%)',
+                              }}
+                            />
+                          )}
                           <div className="flex items-center justify-between">
                             <span className="text-gold-200 font-serif flex items-center gap-1">
                               <Map size={11} /> {toPort?.nameCn}
@@ -374,17 +410,22 @@ export default function FleetPanel() {
                             <span>约{days}天</span>
                             <span className="flex items-center gap-0.5"><Skull size={9} /> Lv.{route.dangerLevel}</span>
                           </div>
+                          {isSelected && (
+                            <div className="mt-1 flex items-center justify-end gap-1 text-[12px] font-serif text-gold-200">
+                              再点一次，扬帆出航
+                              <ChevronRight size={12} aria-hidden="true" />
+                            </div>
+                          )}
                         </button>
                       )
                     })}
                   </ScrollFade>
-                  {selectedRouteId && (
-                    <div className="mt-2">
-                      <ActionButton onClick={handleConfirmRoute} icon={<ChevronRight size={14} />}>
-                        确认出航
-                      </ActionButton>
-                    </div>
-                  )}
+                  {/*
+                    原来这里有一个「确认出航」按钮，只在选中航线后出现。
+                    现在选中项自己就是确认入口（再点一次），这个按钮只会让
+                    同一个动作出现两遍 —— 而"屏幕上多一个不用点的按钮"
+                    正是这轮要清理的东西。已删除。
+                  */}
                 </>
               )}
             </div>

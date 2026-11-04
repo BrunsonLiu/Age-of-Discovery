@@ -110,9 +110,19 @@ export const DIALOGUE_RULES: Rule[] = [
   { id: 'egg_first_dock', why: '第 3 天之后、停靠在港', when: (c) => c.currentPortId !== null && c.day >= 3 },
 ]
 
-/** 当前允许弹第几段（含开场致辞那一段的额度） */
+/**
+ * 当前允许弹第几段（含开场致辞那一段的额度）。
+ *
+ * 【为什么从 2+2× 放宽到 3+4×】
+ * 这些是**彩蛋**（"船坞就在那儿""大西洋不过是个大池塘"），不是任务提示。
+ * 旧额度第二天就弹第二段，之后每两天一段 —— 配合事件卡和海上异闻，
+ * 玩家一天里会被打断两三次。用户的原话是"弹窗有时候更多，尤其是探索玩法"。
+ *
+ * 现在第 3 天、第 7 天、第 11 天…… 每四天一次。集齐十几段彩蛋要一整个存档，
+ * 而"很久没听到大副说话、忽然冒出来一句"本来就是彩蛋该有的密度。
+ */
 export function dialogueBudget(seenCount: number): number {
-  return 2 + 2 * Math.max(0, seenCount - 1)
+  return 3 + 4 * Math.max(0, seenCount - 1)
 }
 
 /**
