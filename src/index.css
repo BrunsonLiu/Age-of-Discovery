@@ -1107,3 +1107,60 @@ body {
     animation: omenGlow 8s ease-in-out forwards;
   }
 }
+
+/* ==========================================================================
+ * 海面漂流物（SeaDebris）
+ *
+ * 一个 16px 的深色剪影放在深蓝海面上，静止时几乎看不见 —— 所以要有一圈
+ * 呼吸的光。动的是"光"不是物件：物件自己晃会像活物，而木桶不会游。
+ *
+ * 用 radial-gradient 而不是 box-shadow：Leaflet 的 marker 在 transform 层里，
+ * 大半径 box-shadow 在缩放时会被栅格化模糊。
+ * ========================================================================== */
+.debris-icon {
+  background: transparent !important;
+  border: none !important;
+}
+.debris-ring {
+  position: absolute;
+  inset: 2px;
+  border-radius: 9999px;
+  background: radial-gradient(circle, rgba(240,223,180,0.42) 0%, rgba(240,223,180,0.16) 46%, rgba(240,223,180,0) 72%);
+  animation: debrisPulse 2.6s ease-in-out infinite;
+}
+.debris-glyph {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+/* 水线涟漪：让物件"坐在水面上"而不是"贴在图上" */
+.debris-wake {
+  position: absolute;
+  left: 50%;
+  top: 62%;
+  width: 20px;
+  height: 5px;
+  transform: translateX(-50%);
+  border-radius: 9999px;
+  background: radial-gradient(ellipse at center, rgba(226,238,246,0.34) 0%, rgba(226,238,246,0) 70%);
+  pointer-events: none;
+}
+.debris-glyph svg {
+  width: 19px;
+  height: 19px;
+  filter: drop-shadow(0 1px 2px rgba(0,0,0,0.85));
+}
+@keyframes debrisPulse {
+  0%, 100% { opacity: 0.55; transform: scale(0.94); }
+  50%      { opacity: 1;    transform: scale(1.06); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .debris-ring { animation: none; opacity: 0.8; }
+}
+/* 悬停时给一点回应：能点的地方要让光标说话 */
+.debris-icon:hover .debris-glyph svg { transform: scale(1.15); }
+.debris-icon { cursor: pointer; }

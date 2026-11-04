@@ -32,6 +32,8 @@ import {
   WEATHER_INFO, advanceWeather, createInitialWeather, isNotableWeather,
   weatherChangeMessage, weatherFavorFactor,
 } from '@/utils/weather'
+import { advanceDebris } from '@/utils/seaDebris'
+import { debrisGain, DEBRIS_INFO, type DebrisSpot } from '@/data/debris'
 import { newlyReached } from '@/data/voyageMilestones'
 
 const createStartingShip = (): Ship => ({
@@ -254,6 +256,15 @@ interface GameStore extends GameState {
   seaOmen: { kind: string; text: string; day: number } | null
   /** 上一次异闻发生在第几天（冷却用） */
   lastOmenDay: number
+  /**
+   * 海面漂流物：地图上可以主动去点的东西。
+   *
+   * 放 store 而不是组件本地：它是日结算的产物（每天可能生成、过期），
+   * 而且点击结算要改粮/水/金币 —— 与异闻同理，两处各写一套迟早不一致。
+   */
+  debrisSpots: DebrisSpot[]
+  /** 打捞一个漂流物：结算小收益并从海面移除 */
+  collectDebris: (id: string) => void
   addNotification: (notification: Omit<GameStore['notifications'][0], 'timestamp'>) => void
   removeNotification: (id: string) => void
   setWaypoint: (waypoint: Waypoint | null) => void
@@ -636,7 +647,7 @@ export function advanceRivals(rivals: Rival[], day: number): { rivals: Rival[]; 
 
 type StoreNotification = GameStore['notifications'][number]
 /** 状态补丁：GameState 的局部 + 仅存在于 store 层的字段 */
-type StatePatch = Partial<GameState> & Partial<Pick<GameStore, 'notifications' | 'seenHistoricalEvents' | 'lastEventDay' | 'simSpeed' | 'shipPosition' | 'seaOmen' | 'lastOmenDay'>>
+type StatePatch = Partial<GameState> & Partial<Pick<GameStore, 'notifications' | 'seenHistoricalEvents' | 'lastEventDay' | 'simSpeed' | 'shipPosition' | 'seaOmen' | 'lastOmenDay' | 'debrisSpots'>>
 
 /**
  * 成就检查 + 兑现（横幅 + 通知 + 入账）。
@@ -745,6 +756,7 @@ export const useGameStore = create<GameStore>()(
       lastEventDay: 0,
       seaOmen: null,
       lastOmenDay: -99,
+      debrisSpots: [],
 
       setWaypoint: (waypoint) => set({ waypoint }),
       setSimSpeed: (speed) => set({ simSpeed: speed }),
@@ -1231,6 +1243,8 @@ export const useGameStore = create<GameStore>()(
         // 海上异闻（纯氛围）：这一天有没有"看见点什么"
         let newSeaOmen: GameStore['seaOmen'] = state.seaOmen ?? null
         let newLastOmenDay = state.lastOmenDay ?? -99
+        // 海面漂流物：每天可能漂来一个、旧的自然漂走（见 utils/seaDebris）
+        let newDebris = state.debrisSpots ?? []
 
         /**
          * 参观模式：**只看，不受苦**。
@@ -1398,6 +1412,20 @@ export const useGameStore = create<GameStore>()(
           }
         }
 
+        /*
+         * 海面漂流物：只在**航行中**更新。
+         *
+         * 停泊时不生成（码头边漂着木桶不合理，而且那时玩家在看面板），
+         * 但已有的仍会按天数过期 —— 否则回港一趟再出海，会发现早上看见的
+         * 那几个木桶还在原地，那是"世界停转了"的错觉。
+         */
+        newDebris = advanceDebris(
+          newDebris,
+          newDay,
+          newFleet.isSailing ? state.shipPosition : null,
+          { sailing: newFleet.isSailing },
+        )
+
         // 竞争船长推进：世界在玩家背后继续转动
         let newRivals = state.rivals
         let newRivalNews = state.rivalNews
@@ -1530,6 +1558,7 @@ export const useGameStore = create<GameStore>()(
           weather: newWeather,
           seaOmen: newSeaOmen,
           lastOmenDay: newLastOmenDay,
+          debrisSpots: newDebris,
         }))
       },
 
@@ -2088,6 +2117,41 @@ export const useGameStore = create<GameStore>()(
       }),
 
       setActivePanel: (panel) => set({ activePanel: panel }),
+
+      /**
+       * 打捞漂流物。
+       *
+       * 【为什么用 id 而不是"最近的一个"】玩家点的是**看见的那个**。
+       * 若按"离船最近"结算，点在两个漂流物之间时会捞到另一个 —— 看起来像 bug。
+       */
+      collectDebris: (id) => set((state) => {
+        const spot = state.debrisSpots.find(d => d.id === id)
+        if (!spot) return state
+        const gain = debrisGain(spot.kind)
+        const info = DEBRIS_INFO[spot.kind]
+        useFxStore.getState().fx(
+          { kind: 'float', tone: gain.gold > 0 ? 'gold' : 'safe', text: info.label, sub: gain.text },
+          'port',
+        )
+        useFxStore.getState().cue('splash')
+        return withAchievements(state, {
+          debrisSpots: state.debrisSpots.filter(d => d.id !== id),
+          fleet: {
+            ...state.fleet,
+            gold: state.fleet.gold + gain.gold,
+            food: Math.min(100, state.fleet.food + gain.food),
+            water: Math.min(100, state.fleet.water + gain.water),
+            fame: state.fleet.fame + gain.fame,
+          },
+          notifications: [...state.notifications, {
+            id: `debris-${id}-${Date.now()}`,
+            type: 'discovery' as const,
+            title: `打捞 · ${info.label}`,
+            message: `${info.hint}（${gain.text}）`,
+            timestamp: Date.now(),
+          }],
+        })
+      }),
       addNotification: (notification) => set((state) => ({ notifications: [...state.notifications, { ...notification, timestamp: Date.now() }] })),
       removeNotification: (id) => set((state) => ({ notifications: state.notifications.filter(n => n.id !== id) })),
       nextTutorialStep: () => set((state) => ({ tutorialStep: state.tutorialStep + 1 })),

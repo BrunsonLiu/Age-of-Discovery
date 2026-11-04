@@ -31,6 +31,8 @@ import { traitEffect } from '../src/utils/outcomeAdjust'
 import { groupJournal, journalHeadline } from '../src/utils/captainLog'
 import { rollSeaOmen, OMEN_CHANCE, OMEN_COOLDOWN_DAYS } from '../src/utils/seaOmen'
 import { voyageMilestones, nextMilestone, newlyReached, suggestPortFor } from '../src/data/voyageMilestones'
+import { advanceDebris, spawnDebris } from '../src/utils/seaDebris'
+import { debrisGain, DEBRIS_MAX, DEBRIS_TTL_DAYS, DEBRIS_SPAWN_CHANCE, type DebrisSpot } from '../src/data/debris'
 import { npcLegAt, npcPose } from '../src/utils/npcShips'
 import { getRouteGeometry } from '../src/utils/routePath'
 import { durabilityColor, loadColor, DANGER_COLOR, WARN_COLOR, SAFE_COLOR } from '../src/utils/shipVitals'
@@ -5515,6 +5517,71 @@ console.log('\n== 航路里程碑 ==')
     // 已经去过的港要从候选里剔除
     const skip = suggestPortFor(m, [6, 5], [37.39, -5.98])
     assert(skip === null || skip.id !== 5, '已经到过的港口不会再被推荐')
+  }
+}
+/*
+ * 海面漂流物（SeaDebris）：地图上唯一"主动去点"的东西。
+ *
+ * 这套逻辑最容易出的错是**只增不减**（木桶越积越多，最后海面像垃圾场），
+ * 以及停泊时还在生成（码头边漂着木桶不合理）。三条都要单独钉住。
+ */
+console.log('\n== 海面漂流物 ==')
+{
+  const spot = (day: number): DebrisSpot => ({ id: `d${day}`, kind: 'barrel', lat: 30, lng: -10, bornDay: day })
+
+  // ① 过期：超过 TTL 就消失（不是"永远留着"）
+  const old = [spot(1), spot(4)]
+  const after = advanceDebris(old, 5, [30, -10], { sailing: true, rand: () => 0.99 })
+  assert(after.length === 1 && after[0].bornDay === 4,
+    `第 1 天的漂流物在第 5 天已漂走（剩 ${after.length} 个，TTL ${DEBRIS_TTL_DAYS} 天）`)
+
+  // ② 上限：到量就不再生成（rand=0 保证"一定会生成"）
+  const full = [spot(4), spot(4), spot(4)]
+  const capped = advanceDebris(full, 5, [30, -10], { sailing: true, rand: () => 0 })
+  assert(capped.length <= DEBRIS_MAX, `同时在海上不超过 ${DEBRIS_MAX} 个（实得 ${capped.length}）`)
+
+  // ③ 停泊时不生成（但已有的仍会过期）
+  const docked = advanceDebris([], 5, [30, -10], { sailing: false, rand: () => 0 })
+  assert(docked.length === 0, '停泊时不会在码头边漂来木桶')
+
+  // ④ 概率克制：rand 落在阈值之上就什么都不生成
+  const noSpawn = advanceDebris([], 5, [30, -10], { sailing: true, rand: () => 0.99 })
+  assert(noSpawn.length === 0, `概率 ${DEBRIS_SPAWN_CHANCE} 之下不会每次都生成`)
+
+  // ⑤ 生成的位置是有效坐标，且 id 不重复
+  const one = spawnDebris([36, -6], 7, () => 0)
+  assert(one !== null && Number.isFinite(one.lat) && Number.isFinite(one.lng),
+    `生成的漂流物坐标有效（${one?.lat.toFixed(2)}, ${one?.lng.toFixed(2)}）`)
+  const a = spawnDebris([36, -6], 7, () => 0)
+  const b2 = spawnDebris([36, -6], 7, () => (0.5))
+  assert(!!a && !!b2 && a.id !== b2.id, '不同方位生成的漂流物 id 不同（否则 React key 会撞）')
+
+  // ⑥ 四种漂流物的收益都是"小而真"的：不能改变航向，但值得伸手
+  for (const k of ['barrel', 'crate', 'coins', 'bottle'] as const) {
+    const gain = debrisGain(k)
+    // 瓶中信给的是声望不是物资，所以四类统一按"点数"合计（声望 1 点折 1）
+    const worth = gain.gold + gain.food + gain.water + gain.fame
+    assert(worth >= 3 && worth <= 60, `${k} 的收益克制（合计 ${worth}）`)
+    assert(gain.text.length > 0 && gain.text.length <= 24, `${k} 的反馈文案 ≤24 字（${gain.text}）`)
+  }
+
+  // ⑦ 真实打捞：东西从海面消失、资源到账
+  {
+    const s0 = useGameStore.getState()
+    useGameStore.setState({
+      fleet: { ...s0.fleet, gold: 500, food: 20, water: 20 },
+      debrisSpots: [{ id: 'test-coins', kind: 'coins', lat: 30, lng: -10, bornDay: s0.fleet.day }],
+      notifications: [],
+    })
+    useGameStore.getState().collectDebris('test-coins')
+    const st = useGameStore.getState()
+    assert(st.debrisSpots.length === 0, '打捞后漂流物从海面消失')
+    assert(st.fleet.gold === 560, `零钱袋打捞到账（500 → ${st.fleet.gold}）`)
+    assert(st.notifications.some(n => n.title.includes('打捞')), '打捞会留在日志里')
+    // 重复点同一个 id 不该二次结算
+    const gold = st.fleet.gold
+    useGameStore.getState().collectDebris('test-coins')
+    assert(useGameStore.getState().fleet.gold === gold, '同一个漂流物不会被结算两次')
   }
 }
 console.log(`\n最终结果：${passed} 通过 / ${failed} 失败`)

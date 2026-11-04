@@ -7,6 +7,7 @@ import { useIsMobile } from '@/hooks/useIsMobile'
 import { ports } from '@/data/ports'
 import { PortMarker } from './PortMarker'
 import TerrainDecor from './TerrainDecor'
+import SeaDebris from './SeaDebris'
 import MiniMap from './MiniMap'
 import { buildMajorLand, featureArea } from '@/utils/terrainDecor'
 import { RouteLine } from './RouteLine'
@@ -491,6 +492,8 @@ export default function MapView() {
               <OceanLabels />
               <RouteLine />
               <PortMarker />
+              {/* 海面漂流物：可点的木桶/货箱/零钱/瓶中信（见 data/debris） */}
+              <SeaDebris />
               {/* NPC 商船放在玩家船之前：同屏时玩家船压在它们上面 */}
               <NpcShips2D />
               <ShipAnimation />
