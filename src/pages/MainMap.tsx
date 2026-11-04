@@ -15,6 +15,7 @@ import RivalPanel from '@/components/panels/RivalPanel'
 import VoyagePlanModal from '@/components/map/VoyagePlanModal'
 import SegmentDecision from '@/components/map/SegmentDecision'
 import WeatherFx from '@/components/map/WeatherFx'
+import SeaOmen from '@/components/map/SeaOmen'
 import EventCard from '@/components/events/EventCard'
 import BottomBar from '@/components/ui/BottomBar'
 import BrokerTip from '@/components/map/BrokerTip'
@@ -258,6 +259,8 @@ export default function MainMap() {
         <MapView />
         <SailingController />
         <WeatherFx />
+        {/* 海上异闻：只画剪影与一行字，不接收任何点击（pointer-events-none） */}
+        <SeaOmen />
       </div>
 
       {/*

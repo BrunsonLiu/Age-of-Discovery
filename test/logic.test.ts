@@ -29,6 +29,7 @@ import { birdPose, flagYaw, smokePose } from '../src/utils/portLife'
 import { DIALOGUE_RULES, pickDialogue, unreachableScripts, type DialogueContext } from '../src/utils/dialogueTriggers'
 import { traitEffect } from '../src/utils/outcomeAdjust'
 import { groupJournal, journalHeadline } from '../src/utils/captainLog'
+import { rollSeaOmen, OMEN_CHANCE, OMEN_COOLDOWN_DAYS } from '../src/utils/seaOmen'
 import { npcLegAt, npcPose } from '../src/utils/npcShips'
 import { getRouteGeometry } from '../src/utils/routePath'
 import { durabilityColor, loadColor, DANGER_COLOR, WARN_COLOR, SAFE_COLOR } from '../src/utils/shipVitals'
@@ -5332,5 +5333,72 @@ console.log('\n== 第二批船员：7 条 perk 逐条对账 ==')
   }
 }
 
+console.log('\n== 海上异闻：氛围层必须是"偶尔、简短、不打断" ==')
+{
+  /*
+   * 这一层的设计约束只有三条，全部可以断言：
+   *   ① 稀——绝大多数日子什么都不该发生（否则变成噪音）
+   *   ② 短——一行字，不带数字（它不是数据面板）
+   *   ③ 不打断——不产生任何状态变更，除了它自己那一条
+   * 概率型的东西必须**钉死随机源**，跑几百次数比例是抽样不是断言。
+   */
+  const ctx = (over: Partial<Parameters<typeof rollSeaOmen>[0]> = {}) => ({
+    day: 40, lastOmenDay: 0, weatherKind: 'clear', dangerLevel: 2, rand: () => 0.5, ...over,
+  })
+
+  // ① 冷却：4 天之内不再出
+  assert(rollSeaOmen(ctx({ day: 3, lastOmenDay: 0, rand: () => 0 })) === null,
+    `冷却 ${OMEN_COOLDOWN_DAYS} 天内不再出现（第 3 天判定为空）`)
+  assert(rollSeaOmen(ctx({ day: 4, lastOmenDay: 0, rand: () => 0 })) !== null,
+    '刚好满冷却天数就可以出现')
+
+  // ② 概率：掷值 0 必出、0.99 必不出
+  assert(rollSeaOmen(ctx({ rand: () => 0 })) !== null, '掷值 0 一定出现')
+  assert(rollSeaOmen(ctx({ rand: () => 0.99 })) === null, '掷值 0.99 一定不出现')
+
+  /*
+   * ③ 天候确实在改概率 —— 用同一个掷值 0.15 卡在两条线之间：
+   *    晴 clear 0.16×0.55 = 0.088  → 0.15 不中
+   *    暴 storm 0.16×1.60 = 0.256 → 0.15 中
+   * 这正是「注入一个固定值就能测出偏好」该有的写法，
+   * 而不是两种天气各跑 500 次比较频率。
+   */
+  const at = () => 0.15
+  assert(rollSeaOmen(ctx({ weatherKind: 'clear', rand: at })) === null,
+    '晴天同一个掷值不出异闻')
+  assert(rollSeaOmen(ctx({ weatherKind: 'storm', rand: at })) !== null,
+    '暴风雨天同一个掷值就出（天候确实在改概率）')
+
+  // ④ 危险航段更容易出：危险度 1 与 5 在同一掷值下应当分岔
+  const dangerEdge = 0.17
+  assert(rollSeaOmen(ctx({ weatherKind: 'cloudy', dangerLevel: 1, rand: () => dangerEdge })) === null,
+    '平静航段不容易遇见（危险度 1）')
+  const rough = rollSeaOmen(ctx({ weatherKind: 'cloudy', dangerLevel: 5, rand: () => dangerEdge }))
+  assert(rough !== null, '危险航段更容易遇见（危险度 5）')
+
+  // ⑤ 文案：一行、≤18 字、不带阿拉伯数字（它不是数据面板）
+  const kinds = new Set<string>()
+  for (let i = 0; i < 400; i++) {
+    // 用可复现的伪随机遍历各种组合，覆盖全部 kind 与文案
+    const r = rollSeaOmen(ctx({
+      day: 40 + i * 5,
+      lastOmenDay: 0,
+      weatherKind: ['clear', 'cloudy', 'rain', 'storm', 'fog'][i % 5],
+      dangerLevel: 1 + (i % 5),
+      rand: (() => { let k = 0; return () => ((i * 9301 + (k++) * 49297) % 233280) / 233280 })(),
+    }))
+    if (!r) continue
+    kinds.add(r.kind)
+    assert(r.text.length <= 18, `异闻文案 ≤18 字（实得 ${r.text.length}：「${r.text}」）`)
+    assert(!/[0-9]/.test(r.text), `异闻文案不带阿拉伯数字（「${r.text}」）`)
+  }
+  assert(kinds.size >= 5, `覆盖到多种异闻（实得 ${[...kinds].join('/')}）`)
+
+  // ⑥ 它不该改任何数值：只返回 kind/text/day 三个字段
+  const one = rollSeaOmen(ctx({ rand: () => 0 }))!
+  assert(Object.keys(one).sort().join(',') === 'day,kind,text',
+    `异闻只返回 kind/text/day（实得 ${Object.keys(one).join(',')}）`)
+  assert(OMEN_CHANCE > 0 && OMEN_CHANCE < 0.3, `基准概率克制（${OMEN_CHANCE}，一天一遇会变噪音）`)
+}
 console.log(`\n最终结果：${passed} 通过 / ${failed} 失败`)
 if (failed > 0) process.exit(1)

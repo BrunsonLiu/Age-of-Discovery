@@ -14,6 +14,7 @@ import { getRouteGeometry } from '@/utils/routePath'
 import { getRandomEvents, consumeEventFlags } from '@/utils/eventEngine'
 import { STANCES, segmentCountFor, nextSegmentBoundary, hazardLabel, dailyFoodUse, dailyWaterUse, dailyWearRate, settleWear } from '@/utils/segment'
 import { repairCost, taskGold, supplyCost, supplyAmounts, INTERPRETER_FACTION_MUL } from '@/utils/crewPerks'
+import { rollSeaOmen } from '@/utils/seaOmen'
 import { canAfford, hasCargoSpace } from '@/utils/trade'
 import { historicalTimeline } from '@/data/historicalTimeline'
 import { GAME_BALANCE } from '@/data/gameConfig'
@@ -243,6 +244,15 @@ interface GameStore extends GameState {
   simSpeed: number
   shipPosition: [number, number] | null
   lastEventDay: number
+  /**
+   * 最近一次海上异闻（纯氛围：一个剪影 + 一行字，不改任何数值、不弹窗）。
+   *
+   * 为什么放在 store 而不是组件本地状态：它是**日结算**的产物（每天判定一次），
+   * 放在组件里就得自己复刻一套冷却与概率，两处迟早不一致。
+   */
+  seaOmen: { kind: string; text: string; day: number } | null
+  /** 上一次异闻发生在第几天（冷却用） */
+  lastOmenDay: number
   addNotification: (notification: Omit<GameStore['notifications'][0], 'timestamp'>) => void
   removeNotification: (id: string) => void
   setWaypoint: (waypoint: Waypoint | null) => void
@@ -625,7 +635,7 @@ export function advanceRivals(rivals: Rival[], day: number): { rivals: Rival[]; 
 
 type StoreNotification = GameStore['notifications'][number]
 /** 状态补丁：GameState 的局部 + 仅存在于 store 层的字段 */
-type StatePatch = Partial<GameState> & Partial<Pick<GameStore, 'notifications' | 'seenHistoricalEvents' | 'lastEventDay' | 'simSpeed' | 'shipPosition'>>
+type StatePatch = Partial<GameState> & Partial<Pick<GameStore, 'notifications' | 'seenHistoricalEvents' | 'lastEventDay' | 'simSpeed' | 'shipPosition' | 'seaOmen' | 'lastOmenDay'>>
 
 /**
  * 成就检查 + 兑现（横幅 + 通知 + 入账）。
@@ -690,6 +700,8 @@ export const useGameStore = create<GameStore>()(
       simSpeed: 3,
       shipPosition: null,
       lastEventDay: 0,
+      seaOmen: null,
+      lastOmenDay: -99,
 
       setWaypoint: (waypoint) => set({ waypoint }),
       setSimSpeed: (speed) => set({ simSpeed: speed }),
@@ -1173,6 +1185,9 @@ export const useGameStore = create<GameStore>()(
         let newSimSpeed = state.simSpeed
         let newStats = { ...state.stats }
         let newEventFlags = state.eventFlags
+        // 海上异闻（纯氛围）：这一天有没有"看见点什么"
+        let newSeaOmen: GameStore['seaOmen'] = state.seaOmen ?? null
+        let newLastOmenDay = state.lastOmenDay ?? -99
 
         /**
          * 参观模式：**只看，不受苦**。
@@ -1318,6 +1333,26 @@ export const useGameStore = create<GameStore>()(
               newEventFlags = consumeEventFlags(triggeredEvent, state.eventFlags)
             }
           }
+          /*
+           * 海上异闻：纯氛围，不改任何数值、不弹窗、不需要选择。
+           *
+           * 触发条件挂在**日结算**上而不是事件系统里：事件卡是"必须停下来做选择"的打断，
+           * 而这一层恰恰是它的反面——玩家可以完全不理，海面自己说一句话。
+           * 有事件的那天不再出异闻（`!triggeredEvent`），免得两件事挤在同一屏抢注意力。
+           */
+          if (!triggeredEvent) {
+            const omen = rollSeaOmen({
+              day: newDay,
+              lastOmenDay: newLastOmenDay,
+              weatherKind: newWeather.kind,
+              dangerLevel: state.currentRoute?.dangerLevel ?? 1,
+              isVisitor,
+            })
+            if (omen) {
+              newSeaOmen = omen
+              newLastOmenDay = omen.day
+            }
+          }
         }
 
         // 竞争船长推进：世界在玩家背后继续转动
@@ -1450,6 +1485,8 @@ export const useGameStore = create<GameStore>()(
           officers: newOfficers,
           crewRoster: newCrewRoster,
           weather: newWeather,
+          seaOmen: newSeaOmen,
+          lastOmenDay: newLastOmenDay,
         }))
       },
 

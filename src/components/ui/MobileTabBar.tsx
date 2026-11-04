@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { HelpCircle } from 'lucide-react'
 import type { PanelType } from '@/types'
+import { useWideViewport } from '@/hooks/useIsMobile'
 
 interface MobileTabBarProps {
   /** 面板入口按钮（顺序即排列顺序） */
@@ -56,39 +57,63 @@ export default function MobileTabBar({
 
   const left = buttons.slice(0, 5)
   const right = buttons.slice(5)
+  /*
+   * 横屏（宽 ≥ 640）排成一行。
+   *
+   * 竖屏两行是因为九个入口一行排不下（约需 470px，实际只有 390px）。
+   * 但横屏宽 844px 时一行绰绰有余，而横屏最缺的是**高度**：
+   * 两行 84px 占掉 390px 里的 21%，一行只要 44px。
+   */
+  const singleRow = useWideViewport()
+  const all = [...buttons, { type: 'help' as const, icon: <HelpCircle size={18} />, label: '帮助' }]
 
   return (
     <div
       data-testid="mobile-tab-bar"
+      data-rows={singleRow ? '1' : '2'}
       className="bg-ocean-900/95 backdrop-blur-sm border-t border-gold-700/30 px-1 pt-1"
       // 定位交给外层容器（与底栏叠在一起），这里只管自己的样式。
       style={{ paddingBottom: 'max(4px, env(safe-area-inset-bottom))' }}
     >
-      <div className="grid grid-cols-5 gap-0.5">
-        {left.map(b => renderButton(
-          b.type,
-          b.icon,
-          b.label,
-          activePanel === b.type,
-          () => onToggle(b.type),
-        ))}
-      </div>
-      <div className="grid grid-cols-4 gap-0.5 mt-0.5">
-        {right.map(b => renderButton(
-          b.type,
-          b.icon,
-          b.label,
-          activePanel === b.type,
-          () => onToggle(b.type),
-        ))}
-        {renderButton(
-          'help',
-          <HelpCircle size={18} />,
-          '帮助',
-          showHelp,
-          onToggleHelp,
-        )}
-      </div>
+      {singleRow ? (
+        <div className="grid grid-cols-9 gap-0.5">
+          {all.map(b => renderButton(
+            b.type,
+            b.icon,
+            b.label,
+            b.type === 'help' ? showHelp : activePanel === b.type,
+            () => (b.type === 'help' ? onToggleHelp() : onToggle(b.type)),
+          ))}
+        </div>
+      ) : (
+        <>
+          <div className="grid grid-cols-5 gap-0.5">
+            {left.map(b => renderButton(
+              b.type,
+              b.icon,
+              b.label,
+              activePanel === b.type,
+              () => onToggle(b.type),
+            ))}
+          </div>
+          <div className="grid grid-cols-4 gap-0.5 mt-0.5">
+            {right.map(b => renderButton(
+              b.type,
+              b.icon,
+              b.label,
+              activePanel === b.type,
+              () => onToggle(b.type),
+            ))}
+            {renderButton(
+              'help',
+              <HelpCircle size={18} />,
+              '帮助',
+              showHelp,
+              onToggleHelp,
+            )}
+          </div>
+        </>
+      )}
     </div>
   )
 }

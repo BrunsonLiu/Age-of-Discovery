@@ -1045,3 +1045,65 @@ body {
     0 0 14px rgba(212, 175, 55, 0.5),
     0 2px 7px rgba(0, 0, 0, 0.5);
 }
+
+/* ==========================================================================
+ * 海上异闻（SeaOmen）
+ *
+ * 一次出现 8 秒，与组件的 SHOW_MS 对齐：
+ * 前 1.5 秒慢慢浮上来（太快会像弹窗），中间保持，最后 2 秒淡掉。
+ * 全程 transform + opacity，不碰布局，也不接任何指针事件。
+ *
+ * 没有做"循环抖动"之类的持续动画：那是"装饰性的动"，
+ * 玩家看两分钟就会习惯化，然后它只剩下耗电。
+ * ========================================================================== */
+@keyframes omenRise {
+  0%   { opacity: 0; transform: translateY(22px) scale(0.97); }
+  18%  { opacity: 0.95; transform: translateY(0) scale(1); }
+  78%  { opacity: 0.95; }
+  100% { opacity: 0; }
+}
+@keyframes omenDrift {
+  0%   { opacity: 0; transform: translateX(-14px); }
+  18%  { opacity: 0.92; }
+  60%  { opacity: 0.92; transform: translateX(10px); }
+  100% { opacity: 0; transform: translateX(18px); }
+}
+@keyframes omenDriftSlow {
+  0%   { opacity: 0; transform: translateX(16px); }
+  20%  { opacity: 0.9; }
+  70%  { opacity: 0.9; transform: translateX(-6px); }
+  100% { opacity: 0; transform: translateX(-14px); }
+}
+@keyframes omenFall {
+  0%   { opacity: 0; transform: translate(28px, -24px); }
+  16%  { opacity: 1; }
+  55%  { opacity: 0.9; transform: translate(-6px, 26px); }
+  100% { opacity: 0; transform: translate(-14px, 40px); }
+}
+@keyframes omenGlow {
+  0%   { opacity: 0; }
+  20%  { opacity: 0.85; }
+  50%  { opacity: 0.55; }
+  75%  { opacity: 0.8; }
+  100% { opacity: 0; }
+}
+@keyframes omenCaption {
+  0%, 12% { opacity: 0; }
+  26%     { opacity: 1; }
+  76%     { opacity: 1; }
+  100%    { opacity: 0; }
+}
+
+.omen-rise       { animation: omenRise 8s ease-out forwards; }
+.omen-drift      { animation: omenDrift 8s ease-in-out forwards; }
+.omen-drift-slow { animation: omenDriftSlow 8s ease-in-out forwards; }
+.omen-fall       { animation: omenFall 8s ease-in forwards; }
+.omen-glow       { animation: omenGlow 8s ease-in-out forwards; }
+.omen-caption    { animation: omenCaption 8s ease-in-out forwards; }
+
+/* 关掉动效的人只保留淡入淡出，不移动 */
+@media (prefers-reduced-motion: reduce) {
+  .omen-rise, .omen-drift, .omen-drift-slow, .omen-fall {
+    animation: omenGlow 8s ease-in-out forwards;
+  }
+}

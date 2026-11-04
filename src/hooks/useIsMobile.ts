@@ -10,6 +10,18 @@ import { useEffect, useState } from 'react'
 export const MOBILE_BREAKPOINT = 768
 
 /**
+ * 视口矮于这个高度就按移动端处理。
+ *
+ * 520 是"桌面窗口不可能这么矮、手机横屏一定比这矮"的分界：
+ * 手机横屏典型 390~430，平板横屏 744~834（不会误判成移动端），
+ * 笔记本最小窗口高度通常也在 600 以上。
+ */
+export const SHORT_VIEWPORT = 520
+
+/** 宽度达到这个值，底部标签栏可以排成一行（九个入口 × ~72px） */
+export const TAB_SINGLE_ROW_WIDTH = 640
+
+/**
  * 当前是不是移动端布局。
  *
  * 【为什么要单独一个 hook，而不是全靠 Tailwind 的 md: 断点】
@@ -21,18 +33,63 @@ export const MOBILE_BREAKPOINT = 768
  * 两者混用会出乱子：比如用 CSS 把侧栏移到屏幕外，Panel 容器还留在原地，
  * 抽屉就永远盖不住地图。所以结构级的切换一律走这个 hook。
  */
+export function isCompactViewport(width: number, height: number): boolean {
+  return width < MOBILE_BREAKPOINT || height < SHORT_VIEWPORT
+}
+
 export function useIsMobile(): boolean {
   const [isMobile, setIsMobile] = useState(() => {
     if (typeof window === 'undefined') return false
-    return window.innerWidth < MOBILE_BREAKPOINT
+    return isCompactViewport(window.innerWidth, window.innerHeight)
   })
 
   useEffect(() => {
-    const mq = window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT - 1}px)`)
-    const onChange = () => setIsMobile(mq.matches)
+    /*
+     * 两个条件都要听：窄，**或者矮**。
+     *
+     * 【为什么必须加"矮"】手机横屏是 844×390：宽度过了 768 的断点，
+     * 于是整个应用切回桌面布局——左右两列侧栏（各 92px）+ 桌面底栏
+     * 全塞进 390px 高的屏幕里。实测截图：掮客卡压住左侧面板列表、
+     * 小地图被右侧按钮盖住、剩下的地图不到 200px 高。
+     * 桌面显示器不会矮到 520px，所以这条不会误伤。
+     */
+    const mqWide = window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT - 1}px)`)
+    const mqShort = window.matchMedia(`(max-height: ${SHORT_VIEWPORT - 1}px)`)
+    const onChange = () => setIsMobile(mqWide.matches || mqShort.matches)
     // 挂载时同步一次：SSR/首帧与 matchMedia 可能不一致
     onChange()
-    // Safari 14 以下只有 addListener
+    const pairs = [mqWide, mqShort]
+    const canAdd = typeof mqWide.addEventListener === 'function'
+    for (const mq of pairs) {
+      if (canAdd) mq.addEventListener('change', onChange)
+      else mq.addListener(onChange)
+    }
+    return () => {
+      for (const mq of pairs) {
+        if (canAdd) mq.removeEventListener('change', onChange)
+        else mq.removeListener(onChange)
+      }
+    }
+  }, [])
+
+  return isMobile
+}
+
+/**
+ * 视口是不是"宽而矮"（手机横屏）。
+ *
+ * 用途：底部标签栏在竖屏要排两行（九个入口一行排不下），
+ * 横屏 844px 宽时一行就够——而横屏最缺的恰恰是高度。
+ */
+export function useWideViewport(): boolean {
+  const [wide, setWide] = useState(() => {
+    if (typeof window === 'undefined') return false
+    return window.innerWidth >= TAB_SINGLE_ROW_WIDTH
+  })
+  useEffect(() => {
+    const mq = window.matchMedia(`(min-width: ${TAB_SINGLE_ROW_WIDTH}px)`)
+    const onChange = () => setWide(mq.matches)
+    onChange()
     if (typeof mq.addEventListener === 'function') {
       mq.addEventListener('change', onChange)
       return () => mq.removeEventListener('change', onChange)
@@ -40,8 +97,7 @@ export function useIsMobile(): boolean {
     mq.addListener(onChange)
     return () => mq.removeListener(onChange)
   }, [])
-
-  return isMobile
+  return wide
 }
 
 /**
