@@ -52,7 +52,7 @@ export default function FleetPanel() {
   const captainTitle = currentTitle(notoriety)
 
   /* ---- 补给余量折算（与底栏 ResourceCluster、store 结算同源）---- */
-  const rates = dailyRates(fleet, stance, crewRoster.some(m => m.id === 'cook'))
+  const rates = dailyRates(fleet, stance)
   const voyageNeedDays = currentRoute
     ? daysToDestination({
         routeDistanceNm: currentRoute.distance,

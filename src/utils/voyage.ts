@@ -39,12 +39,10 @@ export interface DailyRates {
  * 注意调用方必须传**当前正在生效的方针**：航行中由 STANCES[stance].supplyMul
  * 决定（抢行 ×1.5、按部就班 ×1.0、谨慎 ×1.0），港内不乘方针倍率。
  *
- * @param hasCook 名船员里有胖厨子班（食物 ×0.8）
  */
 export function dailyRates(
   fleet: Fleet,
   stance: StanceId,
-  hasCook: boolean,
 ): DailyRates {
   const consumption = calculateDailyConsumption(fleet)
   const inPort = !fleet.isSailing
@@ -58,9 +56,8 @@ export function dailyRates(
   }
 
   const supplyMul = STANCES[stance].supplyMul
-  const cookRelief = hasCook ? 0.8 : 1
   return {
-    foodPerDay: dailyFoodUse(consumption.food, supplyMul, cookRelief),
+    foodPerDay: dailyFoodUse(consumption.food, supplyMul),
     waterPerDay: dailyWaterUse(consumption.water, supplyMul),
     inPort: false,
   }

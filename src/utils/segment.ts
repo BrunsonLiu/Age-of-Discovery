@@ -198,10 +198,15 @@ export function hazardLabel(dangerLevel: number, weather: WeatherKind): string {
  *
  * @param baseFood  crew×0.1 的基准消耗
  * @param supplyMul 方针补给倍率
- * @param cookRelief 厨子减益（0.8 = 有胖厨子班；无则 1）
+ *
+ * 【不再有「厨子减益」参数】厨子的「粮食 -20%」已经拆掉，理由见 utils/crewPerks：
+ * 起始船队 15 人只有 2 份/天，打八折 1.6 取整还是 2 —— 一份都不省，
+ * 卡片上却印着 -20%。改成"每天固定减 1 份"又会把抢行的相对耗粮从 1.5 倍推到 2 倍，
+ * 推翻"长航段抢行又省又快"的账本。**任何让个位数基数变小的减免都会扭曲倍率经济**，
+ * 所以这条链整体移除，厨子的收益挪到补给（食物多给一半）。
  */
-export function dailyFoodUse(baseFood: number, supplyMul: number, cookRelief = 1): number {
-  return Math.ceil(baseFood * supplyMul * cookRelief)
+export function dailyFoodUse(baseFood: number, supplyMul: number): number {
+  return Math.ceil(baseFood * supplyMul)
 }
 
 /** 每日淡水消耗（无厨子减益） */
@@ -284,8 +289,6 @@ export interface ForecastInput {
   dailyFood: number
   /** 基准每日淡水消耗（crew×0.15，未含方针倍率） */
   dailyWater: number
-  /** 厨子减益（0.8 = 有胖厨子班；无则 1） */
-  cookRelief?: number
   /** 基准每日事件触发概率 */
   dailyEventRate: number
   /** 方针 */
@@ -321,10 +324,9 @@ export interface SegmentForecast {
  */
 export function forecastSegment(input: ForecastInput): SegmentForecast {
   const { segmentDistanceNm, nmPerDay, dailyFood, dailyWater, dailyEventRate, stance } = input
-  const cookRelief = input.cookRelief ?? 1
   const effectiveNmPerDay = Math.max(0.001, nmPerDay * stance.speedMul)
   const days = Math.max(1, Math.ceil(segmentDistanceNm / effectiveNmPerDay))
-  const perDayFood = dailyFoodUse(dailyFood, stance.supplyMul, cookRelief)
+  const perDayFood = dailyFoodUse(dailyFood, stance.supplyMul)
   const perDayWater = dailyWaterUse(dailyWater, stance.supplyMul)
   // 磨损：与结算层同一个累进函数，所以「预测 2 点」就是「实际扣 2 点」
   const wear = settleWear(input.durabilityCarry ?? 0, dailyWearRate(stance), days).points
@@ -348,8 +350,6 @@ export interface LedgerInput {
   dailyFood: number
   /** 基准每日淡水消耗 */
   dailyWater: number
-  /** 厨子减益（0.8 = 有胖厨子班；无则 1） */
-  cookRelief?: number
   /** 基准每日遇事概率（含天候，不含方针倍率） */
   dailyEventProb: number
   /** 当前磨损累进余数（0 ≤ x < 1） */
@@ -394,7 +394,6 @@ export function stanceLedgers(input: LedgerInput): StanceLedger[] {
     nmPerDay: input.baseNmPerDay,
     dailyFood: input.dailyFood,
     dailyWater: input.dailyWater,
-    cookRelief: input.cookRelief,
     dailyEventRate: input.dailyEventProb,
     stance: STANCES.steady,
     durabilityCarry: carry,
@@ -407,7 +406,6 @@ export function stanceLedgers(input: LedgerInput): StanceLedger[] {
       nmPerDay: input.baseNmPerDay,
       dailyFood: input.dailyFood,
       dailyWater: input.dailyWater,
-      cookRelief: input.cookRelief,
       dailyEventRate: input.dailyEventProb,
       stance,
       durabilityCarry: carry,

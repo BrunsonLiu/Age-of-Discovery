@@ -8,7 +8,7 @@ import { OFFICERS } from '@/data/officers'
 import { CREW_CHARS } from '@/data/crewChars'
 import { officerPortrait, crewPortrait } from '@/data/portraits'
 import { portImage } from '@/data/portImages'
-import { repairCost, taskGold, supplyCost } from '@/utils/crewPerks'
+import { repairCost, taskGold, supplyCost, supplyAmounts } from '@/utils/crewPerks'
 import { FACTIONS, portFaction, factionAttitude } from '@/data/factions'
 import Badge from '@/components/ui/Badge'
 import { UI_ASSETS } from '@/data/uiAssets'
@@ -70,6 +70,8 @@ export default function PortDetail() {
   const hasMerchant = crewRoster.some(m => m.id === 'merchant')
   // 航海士谈得下补给价：按钮上写的数字，就是点下去实际扣的数字
   const supplyCostNow = supplyCost(GAME_BALANCE.SUPPLY_TOTAL_COST, crewRoster.some(m => m.id === 'navigator'))
+  // 到手多少也要同一个函数：厨子多给一半粮，面板上写的份量就是实际增加的份量
+  const supplyGot = supplyAmounts(GAME_BALANCE.SUPPLY_AMOUNT, { hasCook: crewRoster.some(m => m.id === 'cook') })
 
   const handleRepair = (shipId: number) => {
     const ship = fleet.ships.find(s => s.id === shipId)
@@ -237,7 +239,7 @@ export default function PortDetail() {
                 <Package size={12} /> 补给物资
               </h4>
               <div className="flex items-center justify-between text-[13px]">
-                <span className="text-gold-400 font-serif">食物+{GAME_BALANCE.SUPPLY_AMOUNT} 淡水+{GAME_BALANCE.SUPPLY_AMOUNT}</span>
+                <span className="text-gold-400 font-serif">食物+{supplyGot.food} 淡水+{supplyGot.water}</span>
                 <ActionButton onClick={handleSupply} disabled={fleet.gold < supplyCostNow} variant="secondary">
                   <Coins size={10} /> {supplyCostNow}
                 </ActionButton>

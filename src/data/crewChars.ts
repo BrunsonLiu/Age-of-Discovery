@@ -88,7 +88,7 @@ export const CREW_CHARS: CrewCharDef[] = [
     title: '厨子',
     icon: Soup,
     hireCost: 180,
-    perk: '航行中食物消耗 -20%（坏血病来得更晚）',
+    perk: '靠港补给时食物多补一半（20 → 30 份，价钱不变）',
     origin: '拿骚酒馆的招牌厨子，据说能用咸肉和豆子做出让人不想家的一餐。',
     quote: '“胃满了，叛乱就少一半。”',
   },

@@ -37,7 +37,7 @@ import {
   dailyFoodUse, dailyWaterUse, dailyWearRate, settleWear, describeStanceTradeoff,
 } from '../src/utils/segment'
 import { generateRouteIntel, settleOfficerWages, advanceRivals, selectBuyPrice, selectSellPrice, selectPriceTone, OFFER_PRICE_RATIO, dynamicSellPrice, selectBestDeal, selectCargoSale, selectDealTalentBonus, selectReturnLeg, tickCrewLoyalty } from '../src/store/useGameStore'
-import { repairCost, taskGold, supplyCost, CARPENTER_COST_MUL, MERCHANT_REWARD_MUL, INTERPRETER_FACTION_MUL, PATHFINDER_DISCOVERY_MUL } from '../src/utils/crewPerks'
+import { repairCost, taskGold, supplyCost, supplyAmounts, CARPENTER_COST_MUL, MERCHANT_REWARD_MUL, INTERPRETER_FACTION_MUL, PATHFINDER_DISCOVERY_MUL } from '../src/utils/crewPerks'
 import { FACTIONS, factionAttitude, portFaction } from '../src/data/factions'
 import { CREW_CHARS, CREW_CHAR_MAP } from '../src/data/crewChars'
 import { TITLES, currentTitle, dominantAxis } from '../src/data/titles'
@@ -267,7 +267,9 @@ console.log('== 8b. 每日消耗口径（预测层与结算层必须一致） ==
 // 而 store 用 ceil(base×mul) 每天扣一次——两者差最多 1 份粮，
 // 于是"面板预测 32 份、实际扣 33 份"。现在共用同一套取整函数。
 assert(dailyFoodUse(10, 1) === 10 && dailyFoodUse(10, 1.5) === 15, '食物：基准 10、按部就班 10、抢行 15')
-assert(dailyFoodUse(10, 1.5, 0.8) === 12, '食物：抢行×厨子减益 0.8 → 12（ceil(10×1.5×0.8)）')
+// 厨子的「粮食 -20%」已拆掉（见 utils/crewPerks 的说明）：
+// 起始船队 2 份/天，打八折 1.6 取整还是 2，一份都不省。收益改为「补给时食物多给一半」。
+assert(dailyFoodUse(2, 1) === 2, '起始船队 15 人：粮 2 份/天（这就是比例减免失效的量级）')
 assert(dailyWaterUse(15, 1) === 15 && dailyWaterUse(15, 0.6) === 9, '淡水：基准 15、谨慎 9')
 
 console.log('== 8b-2. 磨损累进余数（倍率必须真正生效） ==')
@@ -494,7 +496,7 @@ console.log('== 15. 名船员 ==')
 assert(CREW_CHARS.length === 15, `名船员共 15 位（8 + 第二批 7，实际 ${CREW_CHARS.length}）`)
 assert(new Set(CREW_CHARS.map(c => c.id)).size === 15, '船员 id 不重复')
 assert(CREW_CHARS.every(c => c.hireCost > 0 && c.perk.length > 5 && c.origin.length > 10 && c.quote.length > 5), '每人都有招募费/特长/来历/口头禅')
-assert(CREW_CHAR_MAP.get('cook')?.perk.includes('20'), '厨子特长：食物消耗 -20%')
+assert(CREW_CHAR_MAP.get('cook')?.perk.includes('30'), '厨子特长：补给食物 20 → 30（旧的比例减免已拆）')
 assert(CREW_CHAR_MAP.get('scholar')?.perk.includes('20'), '学者特长：发现事件 +20%')
 // 个人事件必须绑定 requiresCrew
 const crewEvents = events.filter(e => e.type === 'crew')
@@ -2214,10 +2216,11 @@ console.log('== 45. 常驻资源条：界面天数必须等于实际扣的天数
   const rCareful = dailyRates(sailingFleet, 'careful', false)
   assert(rCareful.foodPerDay === 3 && rCareful.waterPerDay === 5,
     '谨慎补给率 ×1.0——航速慢导致总消耗反而更高，这正是「稳」的代价')
-  const rCook = dailyRates(sailingFleet, 'rush', true)
-  assert(rCook.foodPerDay === 4,
-    `胖厨子班 ×0.8：抢行粮 ceil(3×1.5×0.8)=4（实际 ${rCook.foodPerDay}）`)
-  assert(rCook.waterPerDay === 8, '厨子班只影响食物，不影响淡水')
+  // 厨子的收益不在每日消耗上（那条已经拆掉），所以这里必须与无厨子时完全相同
+  const rCook = dailyRates(sailingFleet, 'rush')
+  assert(rCook.foodPerDay === rRush.foodPerDay,
+    `厨子不再改变每日耗粮（仍是 ${rCook.foodPerDay} 份/天；他的收益在补给时多给一半）`)
+  assert(rCook.waterPerDay === 8, '厨子不碰淡水')
 
   // --- 2) 港内：海上消耗的 1/4 ---
   const rPort = dailyRates(portFleet, 'steady', false)
@@ -5110,6 +5113,32 @@ console.log('\n== 第二批船员：7 条 perk 逐条对账 ==')
       `航海士在船时补给实际扣 ${1000 - after.gold} 金，与按钮一致`)
     assert(after.food === GAME_BALANCE.SUPPLY_AMOUNT && after.water === GAME_BALANCE.SUPPLY_AMOUNT,
       '半价不影响份量（粮水各 20）')
+  }
+
+  // —— 厨子：补给时食物多给一半（旧的「粮食 -20%」已拆，见 utils/crewPerks） ——
+  {
+    // 比例减免拆掉的依据：起始船队 2 份/天，×0.8 取整仍是 2
+    assert(Math.ceil(2 * 0.8) === 2, '15 人船队 2 份/天：打八折取整还是 2（这就是它失效的原因）')
+    assert(supplyAmounts(20, { hasCook: false }).food === 20, '无厨子时补给粮 20')
+    assert(supplyAmounts(20, { hasCook: true }).food === 30, '厨子补给粮 20 → 30')
+    assert(supplyAmounts(20, { hasCook: true }).water === 20, '厨子不给水（他只管粮）')
+
+    // 走一遍真实结算：面板上写的份量，就是实际增加的份量
+    const s0 = useGameStore.getState()
+    useGameStore.setState({
+      fleet: { ...s0.fleet, currentPortId: 20, gold: 1000, food: 0, water: 0 },
+      crewRoster: [
+        { id: 'cook', loyalty: 60, hiredDay: 1 },
+        { id: 'navigator', loyalty: 60, hiredDay: 1 },
+      ] as never,
+    })
+    useGameStore.getState().supplyFleet()
+    const after = useGameStore.getState().fleet
+    assert(after.food === 30 && after.water === 20,
+      `厨子在船时补给实际到手 粮 ${after.food} 水 ${after.water}，与面板一致`)
+    // 两条 perk 叠在同一件商品上，各管各的：厨子管份量、航海士管价钱
+    assert(1000 - after.gold === supplyCost(GAME_BALANCE.SUPPLY_TOTAL_COST, true),
+      `两条补给 perk 互不干扰：扣 ${1000 - after.gold} 金（半价）但粮 30 份`)
   }
 
   // —— 船匠：修理费六折（面板与结算共用 repairCost） ——

@@ -196,8 +196,7 @@ export default function SegmentDecision() {
   const ledgers = useMemo(() => {
     if (!pending) return []
     const consumption = calculateDailyConsumption(fleet)
-    const cookRelief = crewRoster.some(m => m.id === 'cook') ? 0.8 : 1
-    const weatherMul = WEATHER_INFO[weather.kind].sailMul * weatherFavorFactor(weather.kind)
+      const weatherMul = WEATHER_INFO[weather.kind].sailMul * weatherFavorFactor(weather.kind)
     const baseNmPerDay = dailyDistanceNm(fleet, officers, currentRoute?.windFavor ?? 1, 1, weatherMul)
     const dailyEventProb = 0.25 * WEATHER_INFO[weather.kind].eventBias
     return stanceLedgers({
@@ -205,7 +204,6 @@ export default function SegmentDecision() {
       baseNmPerDay,
       dailyFood: consumption.food,
       dailyWater: consumption.water,
-      cookRelief,
       dailyEventProb,
       durabilityCarry: fleet.durabilityCarry,
     })

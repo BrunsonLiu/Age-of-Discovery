@@ -139,7 +139,6 @@ export default function VoyagePlanModal() {
   const wind = windLabel(route.windFavor)
 
   // 全程方针总账：三种方针各走完整条航线的账
-  const cookRelief = crewRoster.some(m => m.id === 'cook') ? 0.8 : 1
   const weatherMul = WEATHER_INFO[weather.kind].sailMul * weatherFavorFactor(weather.kind)
   const baseNmPerDay = dailyDistanceNm(fleet, officers, route.windFavor, 1, weatherMul)
   // 遇事概率：全局闸门 0.25 × 天候偏置（不含方针倍率，那是方针自己加的）
@@ -149,7 +148,6 @@ export default function VoyagePlanModal() {
     baseNmPerDay,
     dailyFood: consumption.food,
     dailyWater: consumption.water,
-    cookRelief,
     dailyEventProb,
     durabilityCarry: fleet.durabilityCarry,
   })

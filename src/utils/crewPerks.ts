@@ -67,6 +67,34 @@ export function supplyCost(baseCost: number, hasNavigator: boolean): number {
   return Math.round(baseCost * (hasNavigator ? NAVIGATOR_SUPPLY_COST_MUL : 1))
 }
 
+/** 厨子：靠港补给的食物多给一半（他认识贩子，也看得出哪一桶咸肉还没坏） */
+export const COOK_SUPPLY_FOOD_MUL = 1.5
+
+/**
+ * 一次补给到手多少粮、多少水。
+ *
+ * 【厨子的特长为什么从「食物消耗 -20%」改成这个】
+ * 试过按比例减消耗，做不到：
+ * 起始船队 15 人，粮 `ceil(15×0.1)=2` 份/天，打八折 = 1.6，**取整还是 2**。
+ * 面板上印着"省粮 20%"，实际一份都没省。
+ * 换成"每天固定减 1 份"更糟：它把基数从 2 压到 1，
+ * **抢行的相对耗粮从 1.5 倍变成 2 倍** —— 长航段上"抢行又省又快"这条设计结论直接被推翻
+ * （实测 1200 海里段的账本从"省粮水"翻转成"费粮水"）。
+ *
+ * 结论：**任何让个位数基数变小的减免，都会扭曲以倍率表达的方针经济。**
+ * 所以厨子的收益挪到一个离散动作上：补给时多拿粮。
+ * 20 → 30 份是看得见的一次性差额，不参与任何每日速率的计算。
+ */
+export function supplyAmounts(
+  baseAmount: number,
+  opts: { hasCook: boolean },
+): { food: number; water: number } {
+  return {
+    food: Math.round(baseAmount * (opts.hasCook ? COOK_SUPPLY_FOOD_MUL : 1)),
+    water: baseAmount,
+  }
+}
+
 /** 翻译官：事件里的派系好感 +50% */
 export const INTERPRETER_FACTION_MUL = 1.5
 

@@ -13,7 +13,7 @@ import { calculateDailyConsumption, dangerLevelFromDistance, computeWindFavor, e
 import { getRouteGeometry } from '@/utils/routePath'
 import { getRandomEvents, consumeEventFlags } from '@/utils/eventEngine'
 import { STANCES, segmentCountFor, nextSegmentBoundary, hazardLabel, dailyFoodUse, dailyWaterUse, dailyWearRate, settleWear } from '@/utils/segment'
-import { repairCost, taskGold, supplyCost, INTERPRETER_FACTION_MUL } from '@/utils/crewPerks'
+import { repairCost, taskGold, supplyCost, supplyAmounts, INTERPRETER_FACTION_MUL } from '@/utils/crewPerks'
 import { canAfford, hasCargoSpace } from '@/utils/trade'
 import { historicalTimeline } from '@/data/historicalTimeline'
 import { GAME_BALANCE } from '@/data/gameConfig'
@@ -1256,15 +1256,13 @@ export const useGameStore = create<GameStore>()(
           const profile = STANCES[state.stance]
           const supplyMul = profile.supplyMul
           const consumption = calculateDailyConsumption(fleet)
-          // 第二条线：胖厨子班让咸肉与豆子经得起更久
-          const cookRelief = state.crewRoster.some(m => m.id === 'cook') ? 0.8 : 1
           // 取整口径与 segment.forecastSegment 完全一致（dailyFoodUse / dailyWaterUse），
           // 这样"抉择面板预测 32 份粮"与"实际扣 32 份"是同一个数。
           //
           // 参观模式不吃不喝：粮水保持原样，士气也不会因为断粮而崩。
           const newFood = isVisitor
             ? fleet.food
-            : Math.max(0, fleet.food - dailyFoodUse(consumption.food, supplyMul, cookRelief))
+            : Math.max(0, fleet.food - dailyFoodUse(consumption.food, supplyMul))
           const newWater = isVisitor
             ? fleet.water
             : Math.max(0, fleet.water - dailyWaterUse(consumption.water, supplyMul))
@@ -1559,7 +1557,9 @@ export const useGameStore = create<GameStore>()(
         if (!port || !port.services.includes('supply')) return state
         const totalCost = supplyCost(GAME_BALANCE.SUPPLY_TOTAL_COST, state.crewRoster.some(m => m.id === 'navigator'))
         if (state.fleet.gold < totalCost) return state
-        return { fleet: { ...state.fleet, gold: state.fleet.gold - totalCost, food: state.fleet.food + GAME_BALANCE.SUPPLY_AMOUNT, water: state.fleet.water + GAME_BALANCE.SUPPLY_AMOUNT } }
+        // 到手多少：与港口面板上写的数字同一个函数（厨子多给一半粮）
+        const got = supplyAmounts(GAME_BALANCE.SUPPLY_AMOUNT, { hasCook: state.crewRoster.some(m => m.id === 'cook') })
+        return { fleet: { ...state.fleet, gold: state.fleet.gold - totalCost, food: state.fleet.food + got.food, water: state.fleet.water + got.water } }
       }),
 
       recruitCrew: (shipId, count) => set((state) => {

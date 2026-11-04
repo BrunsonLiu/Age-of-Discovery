@@ -231,8 +231,7 @@ export default function ResourceCluster() {
   const addNotification = useGameStore((s) => s.addNotification)
   const setSelectedPortId = useMapStore((s) => s.setSelectedPortId)
 
-  const hasCook = crewRoster.some((m) => m.id === 'cook')
-  const rates = dailyRates(fleet, stance, hasCook)
+  const rates = dailyRates(fleet, stance)
   const sailing = fleet.isSailing
 
   const needDays = currentRoute
@@ -273,12 +272,11 @@ export default function ResourceCluster() {
 
   const stanceName = STANCES[stance].name
   const supplyNote = sailing ? `（${stanceName} ×${STANCES[stance].supplyMul}）` : '（港内自给）'
-  const cookNote = hasCook ? '，胖厨子班 ×0.8' : ''
 
   const foodTip = [
     `食物 ${fleet.food} 份`,
     rates.foodPerDay > 0
-      ? `每天吃 ${rates.foodPerDay} 份${supplyNote}${cookNote} → 还能撑 ${formatSupplyDays(foodDays)} 天`
+      ? `每天吃 ${rates.foodPerDay} 份${supplyNote} → 还能撑 ${formatSupplyDays(foodDays)} 天`
       : '船上没有船员，不消耗食物',
     needDays > 0
       ? foodLevel === 'critical' && foodDays < needDays
