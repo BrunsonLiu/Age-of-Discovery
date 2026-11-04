@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
-import { Coins, X, Anchor, PackageOpen } from 'lucide-react'
+import { Coins, X, Anchor, PackageOpen, ChevronDown, ChevronUp } from 'lucide-react'
 import { useGameStore, selectBestDeal, selectCargoSale, selectDealTalentBonus, selectReturnLeg } from '@/store/useGameStore'
+import { useIsMobile } from '@/hooks/useIsMobile'
 
 /**
  * 港口左下角的一张小卡，负责**把一笔生意从头做到尾**。
@@ -46,6 +47,19 @@ export default function BrokerTip({ placement = 'float' }: { placement?: 'float'
   const sellGood = useGameStore(s => s.sellGood)
 
   const [dismissed, setDismissed] = useState<string | null>(null)
+  /*
+   * 手机上默认折叠成一行。
+   *
+   * 【为什么】实测 390×844：底部固定容器高 383px（占屏 45%），其中这张卡占 210px。
+   * 卡里真正需要"立刻决定"的只有两件事：这一单赚多少、按哪个按钮。
+   * 航线天数、天赋多赚多少、价格箭头这些都是"想细看时再看"的信息。
+   * 折叠后一行约 44px，地图立刻多出 166px —— 而主操作仍然一键可达，
+   * 短闭环没有被破坏（展开只是为了让想看的人看细节）。
+   * 桌面端不折叠：那里横向空间充足，卡片浮动在左下角不挡地图。
+   */
+  const isMobile = useIsMobile()
+  const [open, setOpen] = useState(false)
+  const compact = isMobile && placement === 'stack' && !open
 
   const lastPortId = useGameStore(s => s.lastPortId)
 
@@ -101,21 +115,133 @@ export default function BrokerTip({ placement = 'float' }: { placement?: 'float'
   const btnClass =
     'press flex items-center gap-1.5 rounded border border-gold-500/70 bg-gold-600/30 px-3 py-2 font-serif text-[13px] text-gold-100 hover:bg-gold-600/45'
 
+  /*
+   * 主操作与一行摘要。
+   *
+   * 抽出来是为了让折叠态和展开态**调同一个闭包**——
+   * 如果折叠态自己再写一遍"买进并起航"，两处迟早分叉：
+   * 一边点下去真的买了货、另一边只设了航向，而界面上长得一模一样。
+   */
+  const action = mode === 'sell'
+    ? {
+      label: '全部出手',
+      icon: <PackageOpen size={14} aria-hidden="true" />,
+      run: () => {
+        const pid = portId!
+        for (const it of sale!.items) sellGood(pid, it.goodId, it.qty)
+      },
+    }
+    : mode === 'return'
+      ? {
+        label: '起航返程',
+        icon: <Anchor size={14} aria-hidden="true" />,
+        run: () => sailToWaypoint({
+          latitude: back!.toLat,
+          longitude: back!.toLng,
+          portId: back!.toPortId,
+          name: back!.toPortName,
+        }),
+      }
+      : {
+        label: '买进并起航',
+        icon: <Anchor size={14} aria-hidden="true" />,
+        run: () => {
+          // 先按推荐数量买入（真实扣钱、真实占舱），再设航向。
+          // 分两步是为了让"扣了多少钱"在底栏上看得见——
+          // 一键把两件事都做掉，玩家会不知道钱怎么少的。
+          buyGood(portId!, deal!.goodId, deal!.qty)
+          sailToWaypoint({
+            latitude: deal!.toLat,
+            longitude: deal!.toLng,
+            portId: deal!.toPortId,
+            name: deal!.toPortName,
+          })
+        },
+      }
+
+  /*
+   * 一行摘要拆成「可以截断的部分」和「绝不能截断的部分」。
+   *
+   * 第一版把整句塞进一个 truncate 里，实测 390px 宽时显示成
+   * 「丝绸 85→174 · 1 天…」——**把 +445 金切掉了**。
+   * 一张推荐卡的摘要里，被截掉的恰好是玩家唯一想看的那个数。
+   * 现在货物名与航程可以缩，金额单独作为不收缩的一段。
+   */
+  const summaryMain = mode === 'sell'
+    ? `${sale!.items[0].goodName} × ${sale!.qty}`
+    : mode === 'buy'
+      ? deal!.goodName
+      : `回 ${back!.toPortName}`
+  const summaryValue = mode === 'sell'
+    ? `+${sale!.total} 金`
+    : mode === 'buy'
+      ? `+${deal!.totalProfit} 金`
+      : `${back!.days} 天`
+
+  if (compact) {
+    return (
+      <div className={`${wrapper} pointer-events-auto`}>
+        <div className="mx-auto rounded-lg overflow-hidden" style={cardStyle} data-broker-compact="1">
+          <div className="flex items-center gap-2 pl-3 pr-1 py-1.5">
+            <span className="min-w-0 flex-1 flex items-baseline gap-1.5">
+              <span className="font-serif text-[13px] text-gold-200 truncate">{summaryMain}</span>
+              <span className={`shrink-0 font-mono text-[13px] tabular-nums ${mode === 'return' ? 'text-gold-400' : 'text-safe-300'}`}>
+                {summaryValue}
+              </span>
+            </span>
+            <button type="button" onClick={action.run} className={`${btnClass} shrink-0`}>
+              {action.icon}
+              {action.label}
+            </button>
+            <button
+              type="button"
+              aria-label="展开这一单的细节"
+              onClick={() => setOpen(true)}
+              className="press p-1.5 text-gold-500 hover:text-gold-300 shrink-0"
+            >
+              <ChevronDown size={15} aria-hidden="true" />
+            </button>
+            <button
+              type="button"
+              aria-label="不必了"
+              onClick={() => setDismissed(key)}
+              className="press p-1.5 text-gold-600 hover:text-gold-300 shrink-0"
+            >
+              <X size={15} aria-hidden="true" />
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className={`${wrapper} pointer-events-auto`}>
-      <div className="mx-auto rounded-lg overflow-hidden" style={cardStyle}>
+      <div className="mx-auto rounded-lg overflow-hidden" style={cardStyle} data-broker-compact="0">
         <div className="flex items-center justify-between pl-3 pr-1.5 pt-1.5">
           <span className="font-serif text-[13px] tracking-wide text-gold-400">
             {mode === 'sell' ? '货已到港' : mode === 'buy' ? '掮客递来一单' : '这里没有适合你的货'}
           </span>
-          <button
-            type="button"
-            aria-label="不必了"
-            onClick={() => setDismissed(key)}
-            className="press p-1.5 text-gold-600 hover:text-gold-300"
-          >
-            <X size={15} aria-hidden="true" />
-          </button>
+          <span className="flex items-center">
+            {isMobile && (
+              <button
+                type="button"
+                aria-label="收起这一单"
+                onClick={() => setOpen(false)}
+                className="press p-1.5 text-gold-500 hover:text-gold-300"
+              >
+                <ChevronUp size={15} aria-hidden="true" />
+              </button>
+            )}
+            <button
+              type="button"
+              aria-label="不必了"
+              onClick={() => setDismissed(key)}
+              className="press p-1.5 text-gold-600 hover:text-gold-300"
+            >
+              <X size={15} aria-hidden="true" />
+            </button>
+          </span>
         </div>
 
         <div className="px-3 pb-2.5">
