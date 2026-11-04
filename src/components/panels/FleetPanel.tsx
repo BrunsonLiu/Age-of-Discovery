@@ -12,7 +12,9 @@ import { crewPortrait } from '@/data/portraits'
 import { FACTIONS, factionAttitude } from '@/data/factions'
 import { currentTitle } from '@/data/titles'
 import { shipSprite } from '@/data/shipSprites'
-import { calculateSailingDays, effectiveFleetSpeed } from '@/utils/navigation'
+import { dailyDistanceNm, daysForDistance, effectiveFleetSpeed } from '@/utils/navigation'
+import { STANCES } from '@/utils/segment'
+import { WEATHER_INFO, weatherFavorFactor } from '@/utils/weather'
 import { LOW_MORALE, dailyRates, daysToDestination, formatSupplyDays, supplyDaysRemaining, supplyLevel } from '@/utils/voyage'
 import ParchmentCard from '@/components/ui/ParchmentCard'
 import ResourceBar from '@/components/ui/ResourceBar'
@@ -354,7 +356,21 @@ export default function FleetPanel() {
                   <ScrollFade className="space-y-1.5 max-h-32 overflow-y-auto scroll-parchment">
                     {availableRoutes.map(route => {
                       const toPort = ports.find(p => p.id === route.toPortId)
-                      const days = calculateSailingDays(route, fleet)
+                      /*
+                       * 天数与"实际怎么走"用同一口径。
+                       *
+                       * 【原来这里是 calculateSailingDays(route, fleet)】
+                       * 它内部只传了 route.windFavor —— **不含天候、不含方针**。
+                       * 于是面板写"约 2 天"，而实际推进（store / SailingController）
+                       * 用的是 `风向 × 方针航速 × 天候`：抢行天晴时实际只要 1 天多，
+                       * 暴风雨谨慎时可能 4 天。玩家按面板备了 2 天的水，出海就断。
+                       *
+                       * 现在四项全给：风向、方针、天候。列表上的数字就是
+                       * "此刻按当前方针出发要几天"。
+                       */
+                      const weatherMul = WEATHER_INFO[weather.kind].sailMul * weatherFavorFactor(weather.kind)
+                      const nmPerDay = dailyDistanceNm(fleet, officers, route.windFavor, STANCES[stance].speedMul, weatherMul)
+                      const days = daysForDistance(route.distance, nmPerDay)
                       const isSelected = selectedRouteId === route.id
                       return (
                         <button

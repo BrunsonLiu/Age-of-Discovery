@@ -24,7 +24,7 @@ import {
   coastSegments, graticuleSegments,
   GRATICULE_MERIDIANS, GRATICULE_PARALLELS, GRATICULE_STEP_DEG,
 } from '../src/utils/chartLines'
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 import { birdPose, flagYaw, smokePose } from '../src/utils/portLife'
 import { DIALOGUE_RULES, dialogueBudget, pickDialogue, unreachableScripts, type DialogueContext } from '../src/utils/dialogueTriggers'
 import { traitEffect } from '../src/utils/outcomeAdjust'
@@ -5583,6 +5583,104 @@ console.log('\n== 海面漂流物 ==')
     useGameStore.getState().collectDebris('test-coins')
     assert(useGameStore.getState().fleet.gold === gold, '同一个漂流物不会被结算两次')
   }
+}
+/*
+ * 航行中「加餐」：海上唯一的士气操作。
+ *
+ * 士气在海上每天固定 -5，而所有管理都在港口（休整/盛宴）——
+ * 长途航线会被士气表绑死。这条给了一个"每天一次"的小决定。
+ * 三个约束必须同时成立：只在航行中、每天一次、粮水够。
+ */
+console.log('\n== 航行中加餐 ==')
+{
+  const set = (patch: Record<string, unknown>) => {
+    const s = useGameStore.getState()
+    useGameStore.setState({
+      fleet: { ...s.fleet, isSailing: true, day: 10, food: 30, water: 30, morale: 50, ...patch },
+      messDay: -1,
+      notifications: [],
+    })
+    const t = useGameStore.getState()
+    useGameStore.setState({ fleet: { ...t.fleet, ...patch } })
+  }
+
+  // ① 正常加餐：粮 -2、水 -1、士气 +10
+  set({})
+  useGameStore.getState().holdMess()
+  let st = useGameStore.getState()
+  assert(st.fleet.food === 28 && st.fleet.water === 29,
+    `加餐消耗粮 2 水 1（粮 30→${st.fleet.food}，水 30→${st.fleet.water}）`)
+  assert(st.fleet.morale === 60, `士气 50 → ${st.fleet.morale}（+10）`)
+  assert(st.notifications.some(n => n.title.includes('小灶')), '加餐会留一句日志')
+
+  // ② 同一天不能第二次（否则就是"粮→士气"的搬运工）
+  useGameStore.getState().holdMess()
+  st = useGameStore.getState()
+  assert(st.fleet.food === 28 && st.fleet.morale === 60,
+    `同一天第二次无效（粮仍 ${st.fleet.food}、士气仍 ${st.fleet.morale}）`)
+
+  // ③ 换一天可以再来
+  const s3 = useGameStore.getState()
+  useGameStore.setState({ fleet: { ...s3.fleet, day: 11 } })
+  useGameStore.getState().holdMess()
+  assert(useGameStore.getState().fleet.food === 26, '第二天可以再开一次小灶（粮 28→26）')
+
+  // ④ 停泊时无效：港口有休整（粮 5→士气 10）与盛宴，加餐更便宜会让那两条作废
+  set({ isSailing: false, food: 30 })
+  useGameStore.getState().holdMess()
+  assert(useGameStore.getState().fleet.food === 30, '停泊时不能加餐（那是港口的事）')
+
+  // ⑤ 粮不够时无效
+  set({ food: 1 })
+  useGameStore.getState().holdMess()
+  assert(useGameStore.getState().fleet.food === 1, '粮不足 2 时加餐无效')
+
+  // ⑥ 士气不超上限
+  set({ morale: GAME_BALANCE.MORALE_MAX - 3 })
+  useGameStore.getState().holdMess()
+  assert(useGameStore.getState().fleet.morale === GAME_BALANCE.MORALE_MAX,
+    `士气封顶在 ${GAME_BALANCE.MORALE_MAX}（实得 ${useGameStore.getState().fleet.morale}）`)
+}
+
+/*
+ * 天数口径守卫：面板上的"约 N 天"必须与真正推进用的公式同源。
+ *
+ * 背景：舰队面板原来用 `calculateSailingDays(route, fleet)`，函数内部只传了
+ * route.windFavor —— **不含天候、不含方针**。于是面板写"约 2 天"，
+ * 抢行时实际 1 天多、暴风雨谨慎时 4 天，玩家按面板备水会死在半路。
+ *
+ * 这类问题靠"看代码"很难发现（公式分散在 6 个文件里），所以直接钉一条
+ * 源码级断言：业务代码里不许再出现那个只含风向的简化函数。
+ */
+console.log('\n== 天数口径守卫 ==')
+{
+  const walk = (dir: string, out: string[] = []): string[] => {
+    for (const e of readdirSync(dir, { withFileTypes: true })) {
+      const p = join(dir, e.name)
+      if (e.isDirectory()) walk(p, out)
+      else if (/\.(ts|tsx)$/.test(e.name)) out.push(p)
+    }
+    return out
+  }
+  /*
+   * 判据只看 **import 语句**，不看全文：注释里提到这个函数名是正常的
+   * （FleetPanel 的注释在解释为什么把它换掉了）。第一版按全文匹配，
+   * 于是被两条注释误报，反而把真正的问题淹没在噪音里。
+   */
+  const offenders = walk(join(process.cwd(), 'src', 'components'))
+    .filter(f => /^\s*import\b[^\n]*calculateSailingDays/m.test(readFileSync(f, 'utf8')))
+  assert(offenders.length === 0,
+    `组件里不许用只含风向的 calculateSailingDays${offenders.length ? '（' + offenders.map(f => f.split(/[\\/]/).pop()).join(',') + '）' : ''}`)
+
+  // 同一组输入下，四种口径必须给出同一个日航程
+  const f = { ...useGameStore.getState().fleet, isSailing: true }
+  const a = dailyDistanceNm(f, [], 1.1, 1.7, 0.9)
+  const b = dailyDistanceNm(f, [], 1.1, 1.7, 0.9)
+  assert(a === b, `同参数下日航程可复现（${Math.round(a)} 海里/天）`)
+  assert(dailyDistanceNm(f, [], 1, 1.7, 1) > dailyDistanceNm(f, [], 1, 1, 1),
+    '方针倍率确实进了日航程（抢行快于按部就班）')
+  assert(dailyDistanceNm(f, [], 1, 1, 0.6) < dailyDistanceNm(f, [], 1, 1, 1),
+    '天候倍率确实进了日航程（暴风雨慢于晴天）')
 }
 console.log(`\n最终结果：${passed} 通过 / ${failed} 失败`)
 if (failed > 0) process.exit(1)

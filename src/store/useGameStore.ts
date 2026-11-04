@@ -263,6 +263,8 @@ interface GameStore extends GameState {
    * 而且点击结算要改粮/水/金币 —— 与异闻同理，两处各写一套迟早不一致。
    */
   debrisSpots: DebrisSpot[]
+  /** 上一次航行中加餐发生在第几天（每天一次的上限用） */
+  messDay: number
   /** 打捞一个漂流物：结算小收益并从海面移除 */
   collectDebris: (id: string) => void
   addNotification: (notification: Omit<GameStore['notifications'][0], 'timestamp'>) => void
@@ -346,6 +348,13 @@ interface GameStore extends GameState {
   restAtPort: () => void
   /** 甲板盛宴：花金币与食物大幅回士气、小幅涨声望 */
   holdFeast: () => void
+  /**
+   * 航行中加餐：食物 2 + 淡水 1 换士气 +10，**每天最多一次**。
+   *
+   * 与港口休整/盛宴的分工：那两个是"进港后一次性补满"，这个是"海上续命"。
+   * 没有它的话，士气的所有管理都只能回港做 —— 长途航线会被士气表绑死。
+   */
+  holdMess: () => void
   /** 第三条线：操舵挑战结算——沿当前航线真实推进一段航程，并按评级结算士气/耐久/声望 */
   finishHelmRun: (result: HelmRunResult) => void
   /**
@@ -647,7 +656,7 @@ export function advanceRivals(rivals: Rival[], day: number): { rivals: Rival[]; 
 
 type StoreNotification = GameStore['notifications'][number]
 /** 状态补丁：GameState 的局部 + 仅存在于 store 层的字段 */
-type StatePatch = Partial<GameState> & Partial<Pick<GameStore, 'notifications' | 'seenHistoricalEvents' | 'lastEventDay' | 'simSpeed' | 'shipPosition' | 'seaOmen' | 'lastOmenDay' | 'debrisSpots'>>
+type StatePatch = Partial<GameState> & Partial<Pick<GameStore, 'notifications' | 'seenHistoricalEvents' | 'lastEventDay' | 'simSpeed' | 'shipPosition' | 'seaOmen' | 'lastOmenDay' | 'debrisSpots' | 'messDay'>>
 
 /**
  * 成就检查 + 兑现（横幅 + 通知 + 入账）。
@@ -757,6 +766,7 @@ export const useGameStore = create<GameStore>()(
       seaOmen: null,
       lastOmenDay: -99,
       debrisSpots: [],
+      messDay: -1,
 
       setWaypoint: (waypoint) => set({ waypoint }),
       setSimSpeed: (speed) => set({ simSpeed: speed }),
@@ -1991,6 +2001,44 @@ export const useGameStore = create<GameStore>()(
           }],
         })
       }),
+
+      holdMess: () => set((state) => {
+        /*
+         * 只在**航行中**可用。
+         *
+         * 停泊时这个按钮不该存在：港口里有休整（+10 士气，粮水各 5）与盛宴，
+         * 再给一个更便宜的加餐，等于把港口那两条作废（2 粮换 10 士气 vs 5 粮换 10 士气）。
+         */
+        if (!state.fleet.isSailing) return state
+        // 每天一次：同一天重复点不会叠加（否则就是"粮→士气"的搬运工）
+        if ((state.messDay ?? -1) === state.fleet.day) return state
+        if (state.fleet.food < GAME_BALANCE.MESS_FOOD) return state
+        if (state.fleet.water < GAME_BALANCE.MESS_WATER) return state
+        const before = state.fleet.morale
+        const morale = Math.min(GAME_BALANCE.MORALE_MAX, before + GAME_BALANCE.MESS_MORALE)
+        useFxStore.getState().fx(
+          { kind: 'float', tone: 'safe', text: `士气 +${morale - before}`, sub: '今晚有热的' },
+          'port',
+        )
+        useFxStore.getState().cue('click')
+        return withAchievements(state, {
+          fleet: {
+            ...state.fleet,
+            food: state.fleet.food - GAME_BALANCE.MESS_FOOD,
+            water: state.fleet.water - GAME_BALANCE.MESS_WATER,
+            morale,
+          },
+          messDay: state.fleet.day,
+          notifications: [...state.notifications, {
+            id: `mess-${Date.now()}`,
+            type: 'history' as const,
+            title: '🍲 今天开小灶',
+            message: `厨子把腌肉切进豆子里，多放了一勺油。士气 ${before} → ${morale}——在海上，这比金币管用。`,
+            timestamp: Date.now(),
+          }],
+        })
+      }),
+
 
       holdFeast: () => set((state) => {
         if (!state.fleet.currentPortId || state.fleet.isSailing) return state

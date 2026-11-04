@@ -1,6 +1,7 @@
 import { useGameStore } from '@/store/useGameStore'
 import { STANCES } from '@/utils/segment'
-import { Anchor, Gauge } from 'lucide-react'
+import { Anchor, Gauge, Soup } from 'lucide-react'
+import { GAME_BALANCE } from '@/data/gameConfig'
 
 /**
  * 航行中的两个「随时可做的动作」：改方针、亲手掌舵。
@@ -29,10 +30,18 @@ export default function VoyageControls({ placement = 'float' }: { placement?: 'f
   const pendingHelm = useGameStore(s => s.pendingHelm)
   const openStancePicker = useGameStore(s => s.openStancePicker)
   const requestHelm = useGameStore(s => s.requestHelm)
+  const holdMess = useGameStore(s => s.holdMess)
+  const messDay = useGameStore(s => s.messDay)
+  const fleetFood = useGameStore(s => s.fleet.food)
+  const fleetWater = useGameStore(s => s.fleet.water)
+  const fleetDay = useGameStore(s => s.fleet.day)
 
   if (!isSailing || gamePhase !== 'playing' || pendingSegment || pendingHelm) return null
 
   const profile = STANCES[stance]
+  /** 今天已经加过餐了（按"天"判，不是按"这段航程"） */
+  const messUsed = (messDay ?? -1) === fleetDay
+  const canMess = fleetFood >= GAME_BALANCE.MESS_FOOD && fleetWater >= GAME_BALANCE.MESS_WATER
 
   return (
     <div className={placement === 'stack' ? 'px-2 pb-1.5' : 'absolute left-3 bottom-16 z-20'}>
@@ -63,6 +72,31 @@ export default function VoyageControls({ placement = 'float' }: { placement?: 'f
         >
           <Anchor size={12} aria-hidden="true" />
           亲手掌舵
+        </button>
+        {/*
+          加餐：航行中唯一的士气操作。
+          原来士气在海上只能被动掉（每天 -5），要补只能回港 ——
+          长途航线被士气表绑死。这里花 2 粮 1 水换 10 点，每天一次。
+          用过之后按钮变灰并写「今日已加餐」，而不是消失：消失会让人以为功能没了。
+        */}
+        <span className="h-3.5 w-px bg-gold-700/40" aria-hidden="true" />
+        <button
+          type="button"
+          onClick={holdMess}
+          disabled={messUsed || !canMess}
+          title={messUsed
+            ? '今天已经开过小灶了——明天再说'
+            : canMess
+              ? `加餐：粮 ${GAME_BALANCE.MESS_FOOD} + 水 ${GAME_BALANCE.MESS_WATER} → 士气 +${GAME_BALANCE.MESS_MORALE}（每天一次）`
+              : `粮或水不够了（需要粮 ${GAME_BALANCE.MESS_FOOD}、水 ${GAME_BALANCE.MESS_WATER}）`}
+          className={`press flex items-center gap-1 rounded px-1.5 py-1 font-serif text-[11px] ${
+            messUsed || !canMess
+              ? 'text-gold-500/60 cursor-not-allowed'
+              : 'text-gold-200 hover:bg-gold-700/25'
+          }`}
+        >
+          <Soup size={12} aria-hidden="true" />
+          {messUsed ? '今日已加餐' : '加餐'}
         </button>
       </div>
     </div>
