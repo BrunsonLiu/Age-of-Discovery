@@ -7,7 +7,7 @@ import { checkAchievements, achievements } from '../src/data/achievements'
 import { GAME_BALANCE } from '../src/data/gameConfig'
 import { RIVALS } from '../src/data/rivals'
 import { OFFICERS } from '../src/data/officers'
-import { effectiveFleetSpeed, calculateSailingDays, dailyDistanceNm, routeProgressOf } from '../src/utils/navigation'
+import { effectiveFleetSpeed, calculateSailingDays, dailyDistanceNm, daysForDistance, haversineNm, routeProgressOf } from '../src/utils/navigation'
 import { WEATHER_INFO, weatherCell, weatherDuration, weatherFavorFactor } from '../src/utils/weather'
 import type { WeatherState } from '../src/types'
 import {
@@ -4818,6 +4818,62 @@ console.log('\n== 委托覆盖：每个港口都要有单可接 ==')
   // 单条需货量不超过初始货舱（40 舱），否则第一次到港根本接不下
   const tooBig = tasks.filter(t => (t.requiredGoods ?? []).some(r => r.quantity > 10))
   assert(tooBig.length === 0, `单条委托需货量 ≤10，初始货舱装得下${tooBig.length ? '：' + tooBig.map(t => t.title).join('、') : ''}`)}
+
+/*
+ * 全航线收益：不允许出现「压倒性的异常值」。
+ *
+ * 【为什么需要这条】
+ * 价格表是手写的 100 多行常量，任何一行改错都可能造出一个套利点，而**别的测试全都发现不了**
+ * ——它们只验证「卖价 < 同港买价」，管不到跨港。
+ * 实测过一次：加的斯丝绸 price 175 / modifier 1.4，配上塞维利亚（105 / 0.85）只隔 1 天，
+ * 稳态 952 金/天，比第二名（桑给巴尔→开普敦 716）高 33%，而航程 1 天、零风险。
+ * 玩家四天能从 500 金滚到 8000+。已压到 150 / 1.3（616 金/天）。
+ *
+ * 【口径】稳态，不是首趟
+ * 产地库存每天只回补 STOCK_RECOVER_PER_DAY 件。1 天的短途下次回来只补了 8 件，
+ * 按「满舱 40」算等于假设港口囤着无限的货——那会把短途系统性高估（4760 vs 952）。
+ *
+ * 【判据为什么是「最大 / 第二」而不是绝对值】
+ * 绝对值会随以后调平衡整体上浮下移，写死就会变成一条需要反复改的测试。
+ * 「有没有一个解压过所有其他解」是结构性的，和数值大小无关。
+ */
+console.log('\n== 航线收益：不能有压倒性的异常值 ==')
+{
+  // 价格吃 fame 与市场库存，前面的用例会买卖很多次，先归零再算
+  const st0 = useGameStore.getState()
+  useGameStore.setState({ fleet: { ...st0.fleet, fame: 0, gold: 500 }, marketStock: {} })
+  const st = useGameStore.getState()
+  const cap = st.fleet.ships.reduce((s, x) => s + x.capacity, 0)
+  const nmPerDay = dailyDistanceNm(st.fleet, [], 1)
+  const recover = GAME_BALANCE.STOCK_RECOVER_PER_DAY
+
+  const perDay: number[] = []
+  const bestFrom = new Map<number, number>()
+  for (const a of ports) {
+    for (const b of ports) {
+      if (a.id === b.id) continue
+      const days = daysForDistance(haversineNm(a.latitude, a.longitude, b.latitude, b.longitude), nmPerDay)
+      for (const g of goods) {
+        const buy = selectBuyPrice(st, a.id, g.id)
+        if (buy == null) continue
+        const sell = selectSellPrice(st, b.id, g.id)
+        if (sell == null || sell <= buy) continue
+        const pg = portGoods.find(p => p.portId === a.id && p.goodId === g.id)!
+        const qty = Math.max(1, Math.min(pg.stock, cap, recover * days))
+        const v = Math.round(((sell - buy) * qty) / Math.max(1, days))
+        perDay.push(v)
+        bestFrom.set(a.id, Math.max(bestFrom.get(a.id) ?? 0, v))
+      }
+    }
+  }
+  perDay.sort((x, y) => y - x)
+  const ratio = perDay[1] > 0 ? perDay[0] / perDay[1] : Infinity
+  assert(ratio < 1.25, `最高金/天不压过第二名 1.25 倍（实测 ${perDay[0]} vs ${perDay[1]}，比值 ${ratio.toFixed(2)}）`)
+
+  // 每个港口出发都要有一条像样的路，否则玩家到了那儿不知道该往哪开
+  const dead = ports.filter(p => (bestFrom.get(p.id) ?? 0) < 40).map(p => `${p.nameCn}(${bestFrom.get(p.id) ?? 0})`)
+  assert(dead.length === 0, `没有「从这里出发无利可图」的死港${dead.length ? '：' + dead.join('、') : ''}`)
+}
 
 console.log(`\n最终结果：${passed} 通过 / ${failed} 失败`)
 if (failed > 0) process.exit(1)

@@ -178,7 +178,22 @@ export const portGoods: PortGood[] = [
   { portId: 20, goodId: 3, price: 62, stock: 35, priceModifier: 1.4 },
   { portId: 20, goodId: 9, price: 275, stock: 25, priceModifier: 1.55 },
   { portId: 20, goodId: 1, price: 16, stock: 60, priceModifier: 1.3 },
-  { portId: 20, goodId: 10, price: 175, stock: 30, priceModifier: 1.4 },
+  /*
+   * 【丝绸 175/1.4 → 150/1.3：拆掉全图唯一的异常值】
+   * 全航线收益矩阵（.workbuddy/route-matrix.ts）实测，这一条原本是
+   * 「塞维利亚→加的斯 丝绸」稳态 952 金/天，比第二名（桑给巴尔→开普敦
+   * 香料 716）高 33%，而航程只有 1 天、没有任何风险。
+   * 玩家在 500 金开局下，四天能靠它滚到 8000+，而一趟正经远洋 30 天才赚一万。
+   *
+   * 为什么不是"加的斯不该高价收丝绸"：它作为**市场**确实该收（玩家从亚洲
+   * 运丝绸回来就卖在这儿），问题在于它离塞维利亚只有 1 天，而塞维利亚
+   * 自己也产丝绸（price 105 / modifier 0.85）。两个条件同时成立就成了套利点。
+   * 压到 150/1.3 后稳态约 620 金/天，落到桑给巴尔、澳门、果阿之后，
+   * 不再是"唯一最优解"，但仍是一条正常可做的短线。
+   *
+   * 改前 952 / 改后待测。要回滚就还原成 175 / 1.4。
+   */
+  { portId: 20, goodId: 10, price: 150, stock: 30, priceModifier: 1.3 },
   /*
    * 【加的斯的出口：军械】
    * 原来这一港五种货的 modifier **全部 > 1**（1.7 / 1.4 / 1.55 / 1.3 / 1.4）
