@@ -1472,7 +1472,7 @@ export const events: GameEvent[] = [
         text: '当众辟谣：摊开罗盘与海图',
         outcomes: [
           { probability: 0.6, goldChange: 0, foodChange: 0, waterChange: 0, moraleChange: 5, durabilityChange: 0, crewChange: 0, crewEvent: { member: 'chaplain', loyaltyChange: 20 }, description: '你摊开海图讲了两个钟头。散场时，那个哭过的学徒抬头看了你一眼——那一眼比任何祷告都管用。' },
-          { probability: 0.4, goldChange: 0, foodChange: 0, waterChange: 0, moraleChange: 2, durabilityChange: 0, crewChange: 0, crewEvent: { member: 'chaplain', loyaltyChange: 10 }, description: '辟谣了一半。另一半谣言在厨房里活了下来——海上的事，向来辟不干净。' },
+          { probability: 0.4, goldChange: 0, foodChange: 0, waterChange: 0, moraleChange: 2, durabilityChange: 0, crewChange: 0, crewEvent: { member: 'chaplain', loyaltyChange: -8 }, description: '辟谣了一半。神甫把念珠收进袖子——你把人心的恐惧当谣言辟，他听见了。' },
         ],
       },
       {
@@ -1617,6 +1617,234 @@ export const events: GameEvent[] = [
         outcomes: [
           { probability: 0.6, goldChange: 0, foodChange: 0, waterChange: 0, moraleChange: 5, durabilityChange: 0, crewChange: 0, fameChange: 12, notoriety: { mercy: 1 }, factionChange: { scholars: 18 }, description: '公会为你单开了一场"发现讲座"。副本海图的背面，有老学者赠你的四个字：知海者寿。' },
           { probability: 0.4, goldChange: 0, foodChange: 0, waterChange: 0, moraleChange: 0, durabilityChange: 0, crewChange: 0, fameChange: 8, notoriety: { mercy: 1 }, factionChange: { scholars: 12 }, description: '副本抄到一半，墨水被一阵穿堂风打翻——有些学问，本来就带点残缺。' },
+        ],
+      },
+    ],
+  },
+
+  /* ==========================================================================
+   * 第二批 7 位名船员的个人事件
+   *
+   * 老 8 位每人一桩（235–242），新接的 7 位此前一桩都没有 —— 而帮助面板上
+   * 写着"每人都有一桩个人事件等着你"。这 7 条把这个承诺补齐。
+   *
+   * 写法沿用既有范式：3 个选项 × 1~2 个结局，每个结局都带 crewEvent 指向本人；
+   * 至少一个选项要"对他好但有代价"，至少一个要"对他不好但划算"，
+   * 否则选择就退化成"选最好看的那个"。
+   * ====================================================================== */
+  {
+    id: 247,
+    type: 'crew',
+    sceneKey: 'doldrums',
+    title: '巴托洛梅乌的云',
+    description: '他指着东南方的云墙：今晚有风，绕一天。年轻水手笑他老糊涂，罗盘和海鸟站在他那边。',
+    triggerCondition: { requiresCrew: ['navigator'], minDay: 16, probability: 0.12 },
+    choices: [
+      {
+        text: '听他的，绕行一天',
+        outcomes: [
+          { probability: 0.75, goldChange: 0, foodChange: -3, waterChange: -3, moraleChange: 2, durabilityChange: 0, crewChange: 0, crewEvent: { member: 'navigator', loyaltyChange: 25 }, description: '云墙在半夜塌下来，你们只吃到边角。他一句话没说，把湿透的海图摊在灯下重画。' },
+          { probability: 0.25, goldChange: 0, foodChange: -3, waterChange: -3, moraleChange: 0, durabilityChange: -6, crewChange: 0, crewEvent: { member: 'navigator', loyaltyChange: 18 }, description: '风比预想的偏了三十里，还是扫到一点。他站在雨里看了半夜，说这云他记住了。' },
+        ],
+      },
+      {
+        text: '照原航线直穿过去',
+        outcomes: [
+          { probability: 0.5, goldChange: 0, foodChange: 0, waterChange: 0, moraleChange: -6, durabilityChange: -20, crewChange: 0, crewEvent: { member: 'navigator', loyaltyChange: 12 }, description: '桅杆断了一截，两个人被浪卷进海里又捞上来。他掌了一夜舵，一句话没说。' },
+          { probability: 0.5, goldChange: 0, foodChange: 0, waterChange: 0, moraleChange: 0, durabilityChange: -8, crewChange: 0, crewEvent: { member: 'navigator', loyaltyChange: -15 }, description: '风暴没来，但全船都在传"老家伙胆子小"。他从此只说一半的话。' },
+        ],
+      },
+      {
+        text: '折中：收半帆慢行',
+        outcomes: [
+          { probability: 0.6, goldChange: 0, foodChange: 0, waterChange: 0, moraleChange: 3, durabilityChange: -4, crewChange: 0, crewEvent: { member: 'navigator', loyaltyChange: 15 }, description: '半帆熬过去，船擦掉一层漆。他说这是这几年来最聪明的一条命令。' },
+          { probability: 0.4, goldChange: 0, foodChange: 0, waterChange: 0, moraleChange: -3, durabilityChange: -12, crewChange: 0, crewEvent: { member: 'navigator', loyaltyChange: 5 }, description: '慢行让浪追上了你们。他认了，但仍然坚持该绕那一天。' },
+        ],
+      },
+    ],
+  },
+  {
+    id: 248,
+    type: 'crew',
+    sceneKey: 'disease',
+    title: '莱昂的药箱',
+    description: '三个人烧起来。药箱里只剩七剂金鸡纳：够三个人撑十四天，也够全船二十人撑三天。',
+    triggerCondition: { requiresCrew: ['medic'], minDay: 16, probability: 0.12 },
+    choices: [
+      {
+        text: '七剂全给这三个人',
+        outcomes: [
+          { probability: 0.6, goldChange: 0, foodChange: 0, waterChange: 0, moraleChange: 3, durabilityChange: 0, crewChange: 0, crewEvent: { member: 'medic', loyaltyChange: 25 }, description: '三个人退了烧。第七天药箱空了，但没人再热起来——他赌对了。' },
+          { probability: 0.4, goldChange: 0, foodChange: 0, waterChange: 0, moraleChange: -5, durabilityChange: 0, crewChange: -1, crewEvent: { member: 'medic', loyaltyChange: 10 }, description: '一个没熬过第四夜。莱昂守了他一整夜，然后把自己那份酒倒了。' },
+        ],
+      },
+      {
+        text: '分给所有发热的人',
+        outcomes: [
+          { probability: 0.5, goldChange: 0, foodChange: 0, waterChange: 0, moraleChange: 4, durabilityChange: 0, crewChange: 0, crewEvent: { member: 'medic', loyaltyChange: 18 }, description: '每人只分到半剂，居然都熬过来了。他把这记在本子上，标了个问号。' },
+          { probability: 0.5, goldChange: 0, foodChange: 0, waterChange: 0, moraleChange: -8, durabilityChange: 0, crewChange: -2, crewEvent: { member: 'medic', loyaltyChange: -5 }, description: '半剂对谁都太少。死了两个，药箱空着，他从此不再接受"平均"这个词。' },
+        ],
+      },
+      {
+        text: '留给最年轻的那个',
+        outcomes: [
+          { probability: 0.7, goldChange: 0, foodChange: 0, waterChange: 0, moraleChange: -6, durabilityChange: 0, crewChange: 0, notoriety: { cruel: 1 }, crewEvent: { member: 'medic', loyaltyChange: 15 }, description: '最小的那个活下来了，另外两个在第六天咽气。他照做，但再没主动跟你说过话。' },
+          { probability: 0.3, goldChange: 0, foodChange: 0, waterChange: 0, moraleChange: -3, durabilityChange: 0, crewChange: 0, crewEvent: { member: 'medic', loyaltyChange: 8 }, description: '那两个最后熬了过来——他们知道自己排在后面。' },
+        ],
+      },
+    ],
+  },
+  {
+    id: 249,
+    type: 'crew',
+    sceneKey: 'cape',
+    title: '马蒂亚斯的那根肋',
+    description: '他敲了三下第七根船肋："现在补，停一天。不补，好望角替我们补。"',
+    triggerCondition: { requiresCrew: ['carpenter'], minDay: 18, probability: 0.12 },
+    choices: [
+      {
+        text: '停船一天，整根换掉',
+        outcomes: [
+          { probability: 0.8, goldChange: -80, foodChange: 0, waterChange: 0, moraleChange: 0, durabilityChange: 0, crewChange: 0, crewEvent: { member: 'carpenter', loyaltyChange: 22 }, description: '换下来那根已经霉了半边。他把它立在港口，说这是这条船的旧肋骨。' },
+          { probability: 0.2, goldChange: -80, foodChange: 0, waterChange: 0, moraleChange: 0, durabilityChange: 0, crewChange: 0, crewEvent: { member: 'carpenter', loyaltyChange: 12 }, description: '补完才发现裂的是第八根。他骂了一句荷兰话，又拆了一次。' },
+        ],
+      },
+      {
+        text: '塞上木楔，先走',
+        outcomes: [
+          { probability: 0.5, goldChange: 0, foodChange: 0, waterChange: 0, moraleChange: 0, durabilityChange: -22, crewChange: 0, crewEvent: { member: 'carpenter', loyaltyChange: 12 }, description: '木楔在巨浪里弹飞了，海水从缝里灌进来——他带两个人吊在船外堵了四个时辰。' },
+          { probability: 0.5, goldChange: 0, foodChange: 0, waterChange: 0, moraleChange: 0, durabilityChange: 0, crewChange: 0, crewEvent: { member: 'carpenter', loyaltyChange: -12 }, description: '一路平安。他还是坚持那根该换——只是不再提了。' },
+        ],
+      },
+      {
+        text: '拆掉备用桅杆补它',
+        outcomes: [
+          { probability: 0.6, goldChange: 0, foodChange: 0, waterChange: 0, moraleChange: 0, durabilityChange: -4, crewChange: 0, crewEvent: { member: 'carpenter', loyaltyChange: 18 }, description: '备用桅杆拆了，船肋多撑了半年。他说这笔账得记在船主头上。' },
+          { probability: 0.4, goldChange: -30, foodChange: 0, waterChange: 0, moraleChange: 0, durabilityChange: -14, crewChange: 0, crewEvent: { member: 'carpenter', loyaltyChange: 8 }, description: '材质不对，钉进去就裂。他嘟囔："省下的钱，浪会来收。"' },
+        ],
+      },
+    ],
+  },
+  {
+    id: 250,
+    type: 'crew',
+    sceneKey: 'market',
+    title: '伊斯梅尔的两句',
+    description: '市集上两个商人用土话争价。伊斯梅尔低声说："他们吵的是你——一个要加三成，一个嫌太黑。"',
+    triggerCondition: { requiresCrew: ['interpreter'], minDay: 18, probability: 0.10 },
+    choices: [
+      {
+        text: '让他替你还价',
+        outcomes: [
+          { probability: 0.6, goldChange: 120, foodChange: 0, waterChange: 0, moraleChange: 0, durabilityChange: 0, crewChange: 0, crewEvent: { member: 'interpreter', loyaltyChange: 20 }, description: '他只说了两句，价钱砍掉三成。走出市集他才说：那三成是给中间人的。' },
+          { probability: 0.4, goldChange: -60, foodChange: 0, waterChange: 0, moraleChange: -3, durabilityChange: 0, crewChange: 0, crewEvent: { member: 'interpreter', loyaltyChange: 5 }, description: '他把人得罪了，货也没拿到。他说这地方的人记仇比记账久。' },
+        ],
+      },
+      {
+        text: '按第一个报价买',
+        outcomes: [
+          { probability: 0.5, goldChange: -80, foodChange: 0, waterChange: 0, moraleChange: 0, durabilityChange: 0, crewChange: 0, crewEvent: { member: 'interpreter', loyaltyChange: -10 }, description: '你多付了三成。伊斯梅尔站在旁边没吭声——他知道说了也没用。' },
+          { probability: 0.5, goldChange: -80, foodChange: 0, waterChange: 0, moraleChange: 0, durabilityChange: 0, crewChange: 0, crewEvent: { member: 'interpreter', loyaltyChange: 5 }, description: '他事后补了一句：那两个其实是一个人。你多付的钱进了同一个口袋。' },
+        ],
+      },
+      {
+        text: '让他把原话翻给你听',
+        outcomes: [
+          { probability: 0.7, goldChange: 0, foodChange: 0, waterChange: 0, moraleChange: 3, durabilityChange: 0, crewChange: 0, crewEvent: { member: 'interpreter', loyaltyChange: 25 }, description: '两句原话翻完，才发现他们在演戏：一个抬价，一个等着你谢他。' },
+          { probability: 0.3, goldChange: 0, foodChange: 0, waterChange: 0, moraleChange: 0, durabilityChange: 0, crewChange: 0, crewEvent: { member: 'interpreter', loyaltyChange: 10 }, description: '翻译到一半他停了："后面的话，你听了会想走。"' },
+        ],
+      },
+    ],
+  },
+  {
+    id: 251,
+    type: 'crew',
+    sceneKey: 'reef',
+    title: '塔内的涌浪',
+    description: '海面平得像镜子，塔内却要抛锚：涌浪的方向不对，三十里外有礁。',
+    triggerCondition: { requiresCrew: ['guide'], minDay: 18, probability: 0.12 },
+    choices: [
+      {
+        text: '抛锚等天亮',
+        outcomes: [
+          { probability: 0.7, goldChange: 0, foodChange: -6, waterChange: -6, moraleChange: 0, durabilityChange: 0, crewChange: 0, crewEvent: { member: 'guide', loyaltyChange: 20 }, description: '天亮时看见那片白浪——礁石像牙齿。他坐在船头说：水早就说了。' },
+          { probability: 0.3, goldChange: 0, foodChange: -6, waterChange: -6, moraleChange: -2, durabilityChange: 0, crewChange: 0, crewEvent: { member: 'guide', loyaltyChange: 10 }, description: '一夜无事，只是耽误了时辰。他没解释，也没人问。' },
+        ],
+      },
+      {
+        text: '照原航线继续走',
+        outcomes: [
+          { probability: 0.55, goldChange: 0, foodChange: 0, waterChange: 0, moraleChange: 0, durabilityChange: -24, crewChange: 0, crewEvent: { member: 'guide', loyaltyChange: 12 }, description: '船底擦过珊瑚，像指甲划过骨头。他跳下水去看，回来只说了两个字："补吧。"' },
+          { probability: 0.45, goldChange: 0, foodChange: 0, waterChange: 0, moraleChange: 0, durabilityChange: 0, crewChange: 0, crewEvent: { member: 'guide', loyaltyChange: -18 }, description: '一路通畅。他还是那句话：今天运气好，明天不一定。' },
+        ],
+      },
+      {
+        text: '放小艇探路',
+        outcomes: [
+          { probability: 0.7, goldChange: -30, foodChange: -4, waterChange: 0, moraleChange: 0, durabilityChange: 0, crewChange: 0, crewEvent: { member: 'guide', loyaltyChange: 15 }, description: '小艇划出去两里，摸到了暗礁的边。绕过去省下的不是钱，是一条船。' },
+          { probability: 0.3, goldChange: -30, foodChange: 0, waterChange: 0, moraleChange: -3, durabilityChange: 0, crewChange: 0, crewEvent: { member: 'guide', loyaltyChange: 5 }, description: '小艇被涌浪掀翻，两个人爬回来。他一句道歉都没有，只把绳结重打了一遍。' },
+        ],
+      },
+    ],
+  },
+  {
+    id: 252,
+    type: 'crew',
+    sceneKey: 'market',
+    title: '多娜的舱位',
+    description: '她开出条件：租下你一半舱位三个月，先付六百金——但这三个月航线得听她的。',
+    triggerCondition: { requiresCrew: ['merchant'], minDay: 20, probability: 0.10 },
+    choices: [
+      {
+        text: '接受，按她的航线走',
+        outcomes: [
+          { probability: 0.6, goldChange: 600, foodChange: 0, waterChange: 0, moraleChange: 0, durabilityChange: 0, crewChange: 0, factionChange: { guild: 6 }, crewEvent: { member: 'merchant', loyaltyChange: 20 }, description: '三个月跑的都是她熟的水道，风平浪静。她临走留下一张名单：这些港口别去。' },
+          { probability: 0.4, goldChange: 600, foodChange: 0, waterChange: 0, moraleChange: -6, durabilityChange: 0, crewChange: 0, crewEvent: { member: 'merchant', loyaltyChange: 10 }, description: '航线绕得离谱，水手怨声载道。钱到手了，人心散了一角。' },
+        ],
+      },
+      {
+        text: '只租三成舱位',
+        outcomes: [
+          { probability: 0.7, goldChange: 300, foodChange: 0, waterChange: 0, moraleChange: 0, durabilityChange: 0, crewChange: 0, crewEvent: { member: 'merchant', loyaltyChange: 12 }, description: '她接受了三成，也接受了你的航线。她说："做生意先看人，不看舱。"' },
+          { probability: 0.3, goldChange: 300, foodChange: 0, waterChange: 0, moraleChange: 0, durabilityChange: 0, crewChange: 0, crewEvent: { member: 'merchant', loyaltyChange: 5 }, description: '她只租了一半时间就走了。你后来才知道，她同时谈了三家。' },
+        ],
+      },
+      {
+        text: '拒绝：船听我的',
+        outcomes: [
+          { probability: 0.5, goldChange: 0, foodChange: 0, waterChange: 0, moraleChange: 3, durabilityChange: 0, crewChange: 0, crewEvent: { member: 'merchant', loyaltyChange: -10 }, description: '她走了，没再说什么。当晚有人在你舱门外嘟囔：六百金啊，够换半条船。' },
+          { probability: 0.5, goldChange: 0, foodChange: 0, waterChange: 0, moraleChange: 3, durabilityChange: 0, crewChange: 0, crewEvent: { member: 'merchant', loyaltyChange: 10 }, description: '她收回契约时说了一句：钱可以等，船长不能等。' },
+        ],
+      },
+    ],
+  },
+  {
+    id: 253,
+    type: 'crew',
+    sceneKey: 'meteor',
+    title: '赫罗尼莫的南纬',
+    description: '他摊开四十年前的草图：南纬四十度外还有块陆地没画进海图。往南三天，全程逆风。',
+    triggerCondition: { requiresCrew: ['pathfinder'], minDay: 20, probability: 0.10 },
+    choices: [
+      {
+        text: '往南，给他三天',
+        outcomes: [
+          { probability: 0.45, goldChange: 150, foodChange: -10, waterChange: -10, moraleChange: 5, durabilityChange: 0, crewChange: 0, fameChange: 8, crewEvent: { member: 'pathfinder', loyaltyChange: 25 }, description: '第三天清晨，瞭望台喊了一声。那片海岸线从此有了名字——他坚持用你的船名。' },
+          { probability: 0.55, goldChange: 0, foodChange: -10, waterChange: -10, moraleChange: -4, durabilityChange: 0, crewChange: 0, crewEvent: { member: 'pathfinder', loyaltyChange: -12 }, description: '三天逆风，什么都没看见。他把草图折好，说这不算失败，只是还没到。' },
+        ],
+      },
+      {
+        text: '折返，这趟不值得',
+        outcomes: [
+          { probability: 0.5, goldChange: 0, foodChange: 0, waterChange: 0, moraleChange: 0, durabilityChange: 0, crewChange: 0, crewEvent: { member: 'pathfinder', loyaltyChange: -20 }, description: '他一整晚没下甲板。第二天把草图塞进箱子，从此不再提南方。' },
+          { probability: 0.5, goldChange: 0, foodChange: 0, waterChange: 0, moraleChange: 3, durabilityChange: 0, crewChange: 0, crewEvent: { member: 'pathfinder', loyaltyChange: 5 }, description: '他没争辩，只说："海图上的空白不是没有东西，是没人去画。"' },
+        ],
+      },
+      {
+        text: '只准他用望远镜看一夜',
+        outcomes: [
+          { probability: 0.6, goldChange: 0, foodChange: 0, waterChange: 0, moraleChange: 0, durabilityChange: 0, crewChange: 0, crewEvent: { member: 'pathfinder', loyaltyChange: 15 }, description: '他在桅顶站了一夜，记下三颗星的位置。第二天他说：往南，一定会撞上陆地。' },
+          { probability: 0.4, goldChange: 0, foodChange: 0, waterChange: 0, moraleChange: -3, durabilityChange: 0, crewChange: 0, crewEvent: { member: 'pathfinder', loyaltyChange: 8 }, description: '一整夜的雾。他下来时脸色发白，说那三颗星"不应该在那里"。' },
         ],
       },
     ],

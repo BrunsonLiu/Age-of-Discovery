@@ -164,7 +164,7 @@ function assert(cond: boolean, msg: string) {
 }
 
 console.log('== 1. 事件数据结构 ==')
-assert(events.length === 56, `事件总数 56（实际 ${events.length}）`)
+assert(events.length === 63, `事件总数 63（实际 ${events.length}）`)
 const ids = events.map(e => e.id)
 assert(new Set(ids).size === ids.length, '事件 id 无重复')
 const sceneSet = new Set(SCENE_KEYS)
@@ -500,7 +500,7 @@ assert(CREW_CHAR_MAP.get('cook')?.perk.includes('30'), '厨子特长：补给食
 assert(CREW_CHAR_MAP.get('scholar')?.perk.includes('20'), '学者特长：发现事件 +20%')
 // 个人事件必须绑定 requiresCrew
 const crewEvents = events.filter(e => e.type === 'crew')
-assert(crewEvents.length === 8, `个人事件共 8 个（实际 ${crewEvents.length}）`)
+assert(crewEvents.length === 15, `个人事件共 15 个（实际 ${crewEvents.length}）`)
 assert(crewEvents.every(e => (e.triggerCondition.requiresCrew ?? []).length === 1), '每个个人事件绑定一名船员')
 const charIds = new Set(CREW_CHARS.map(c => c.id))
 assert(crewEvents.every(e => charIds.has(e.triggerCondition.requiresCrew![0])), 'requiresCrew 引用的都是真实船员')
@@ -510,6 +510,57 @@ assert(checkEventTrigger({ ...evTomDebt, triggerCondition: { ...evTomDebt.trigge
 // 每个个人事件的所有结局都必须 crewEvent 指向本人
 const ev235Outcomes = evTomDebt.choices.flatMap(c => c.outcomes)
 assert(ev235Outcomes.every(o => o.crewEvent?.member === 'boatswain'), '老汤姆事件的所有结局都结算到本人')
+
+/*
+ * 【全员覆盖】每位名船员都必须有一桩个人事件。
+ *
+ * 这条是被现实教出来的：第二批 7 位船员接进玩法后，帮助面板上仍写着
+ * "每人都有一桩个人事件等着你"，而他们一个都没有——玩家会等到一个不存在的东西。
+ * 判据用**差集**（谁没有），不是数条数：15 条全挤在同一个人身上也能凑够数量。
+ */
+{
+  const withEvent = new Set(crewEvents.map(e => e.triggerCondition.requiresCrew![0]))
+  const missing = CREW_CHARS.filter(c => !withEvent.has(c.id))
+  assert(missing.length === 0,
+    `每位船员都有个人事件${missing.length ? '（缺：' + missing.map(c => c.name).join('、') + '）' : ''}`)
+
+  // 结局必须结算到事件本人，不能把 A 的事记在 B 的忠诚上
+  const wrongMember = crewEvents.filter(e => {
+    const self = e.triggerCondition.requiresCrew![0]
+    return e.choices.flatMap(c => c.outcomes).some(o => o.crewEvent?.member !== self)
+  })
+  assert(wrongMember.length === 0,
+    `个人事件的结局都结算到本人${wrongMember.length ? '（错：' + wrongMember.map(e => e.id).join(',') + '）' : ''}`)
+
+  // 每个个人事件都必须"有好有坏"：至少一个结局加忠诚、至少一个减。
+  // 全是加分的选项等于没有选择——玩家只会挑选项文字最好看的那个。
+  const oneSided = crewEvents.filter(e => {
+    const ls = e.choices.flatMap(c => c.outcomes).map(o => o.crewEvent?.loyaltyChange ?? 0)
+    return !ls.some(x => x > 0) || !ls.some(x => x < 0)
+  })
+  assert(oneSided.length === 0,
+    `个人事件都有正反两面${oneSided.length ? '（只有单边：' + oneSided.map(e => e.id).join(',') + '）' : ''}`)
+
+  /*
+   * 触发条件真的认人：把概率钉到 1，该在船的人触发、不在船的人不触发。
+   *
+   * 这一条防的是**拼错 id**：requiresCrew 写的是 'naviagtor' 这种，
+   * 上面的差集会报"缺人"，但如果同时把两个事件写成同一个人，差集也发现不了。
+   * 逐个事件走一遍真实判定，才算验完。
+   */
+  const neverFires: number[] = []
+  const firesWithoutCrew: number[] = []
+  for (const e of crewEvents) {
+    const who = e.triggerCondition.requiresCrew![0]
+    const forced = { ...e, triggerCondition: { ...e.triggerCondition, probability: 1 } }
+    if (!checkEventTrigger(forced, { ...baseState, crewRoster: [{ id: who, loyalty: 60, hiredDay: 1 }] })) {
+      neverFires.push(e.id)
+    }
+    if (checkEventTrigger(forced, baseState)) firesWithoutCrew.push(e.id)
+  }
+  assert(neverFires.length === 0, `每个个人事件在其船员在船时都能触发${neverFires.length ? '（不触发：' + neverFires.join(',') + '）' : ''}`)
+  assert(firesWithoutCrew.length === 0, `没有那人在船时不触发${firesWithoutCrew.length ? '（误触发：' + firesWithoutCrew.join(',') + '）' : ''}`)
+}
 
 console.log('== 16. 海上人称谓 ==')
 assert(TITLES.length === 5, `称号共 5 个（实际 ${TITLES.length}）`)
