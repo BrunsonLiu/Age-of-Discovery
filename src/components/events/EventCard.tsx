@@ -22,6 +22,8 @@ export default function EventCard() {
   const fleet = useGameStore(s => s.fleet)
   const stance = useGameStore(s => s.stance)
   const officers = useGameStore(s => s.officers)
+  // 船员特长（水手长等）也参与结算：perk 文本写了就必须生效
+  const crewRoster = useGameStore(s => s.crewRoster)
   const applyEventOutcome = useGameStore(s => s.applyEventOutcome)
   const addEventLog = useGameStore(s => s.addEventLog)
   const clearCurrentEvent = useGameStore(s => s.clearCurrentEvent)
@@ -82,6 +84,8 @@ export default function EventCard() {
       stanceMagnitudeMul: STANCES[stance].eventMagnitudeMul,
       trait: fleet.trait,
       hasQuartermaster: officers.includes('quartermaster'),
+      crewIds: crewRoster.map(m => m.id),
+      eventType: currentEvent?.type,
     }
     return currentEvent.choices.map(c => summarizeChoice(c, ctx, fleet, GAME_BALANCE.MORALE_MAX))
   }, [currentEvent, stance, fleet, officers])
@@ -113,6 +117,8 @@ export default function EventCard() {
       stanceMagnitudeMul: STANCES[stance].eventMagnitudeMul,
       trait: fleet.trait,
       hasQuartermaster: officers.includes('quartermaster'),
+      crewIds: crewRoster.map(m => m.id),
+      eventType: currentEvent?.type,
     }
     const adjusted = adjustOutcome(raw, adjustCtx)
 

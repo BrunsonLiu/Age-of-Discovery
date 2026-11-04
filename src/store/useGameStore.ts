@@ -140,7 +140,17 @@ function tickCrewLoyalty(
       died.push(m.id)
       continue
     }
-    if (loyalty <= GAME_BALANCE.CREW_LOYALTY_RISK && Math.random() < GAME_BALANCE.CREW_DESERT_CHANCE) {
+    /*
+     * 随船神甫：「船员离船概率下降」。
+     *
+     * 他的 perk 是两半——士气衰减 -2/天（在上面 advanceDay 那段，和船医叠加）
+     * 和这一条。两半都在，才叫"这条 perk 生效了"。
+     * 取 0.65 而不是 0.5：忠诚见底（≤ RISK）的人本来就该走，
+     * 神甫能做的是劝住一部分，不是把离船变成不可能。
+     */
+    const desertChance = GAME_BALANCE.CREW_DESERT_CHANCE
+      * (roster.some(r => r.id === 'chaplain') ? 0.65 : 1)
+    if (loyalty <= GAME_BALANCE.CREW_LOYALTY_RISK && Math.random() < desertChance) {
       left.push(m.id)
       continue
     }
@@ -934,7 +944,13 @@ export const useGameStore = create<GameStore>()(
 
       buyRouteIntel: () => set((state) => {
         const pending = state.pendingVoyage
-        if (!pending || state.fleet.gold < GAME_BALANCE.INTEL_COST) return state
+        /*
+         * 随船学者：「航线情报半价」。perk 的另一半（发现类事件 +20%）
+         * 在 utils/eventEngine 里——两半都在，才叫"这条 perk 生效了"。
+         */
+        const hasScholar = state.crewRoster.some(m => m.id === 'scholar')
+        const intelCost = hasScholar ? Math.round(GAME_BALANCE.INTEL_COST / 2) : GAME_BALANCE.INTEL_COST
+        if (!pending || state.fleet.gold < intelCost) return state
         const { route } = pending
         const key = `${route.fromPortId}-${route.toPortId}`
         const existing = state.routeIntel[key]
@@ -942,7 +958,7 @@ export const useGameStore = create<GameStore>()(
         if (existing && state.fleet.day - existing.boughtDay < GAME_BALANCE.INTEL_VALID_DAYS) return state
         const intel = generateRouteIntel(route, state.fleet.day)
         return {
-          fleet: { ...state.fleet, gold: state.fleet.gold - GAME_BALANCE.INTEL_COST },
+          fleet: { ...state.fleet, gold: state.fleet.gold - intelCost },
           routeIntel: { ...state.routeIntel, [key]: intel },
           notifications: [...state.notifications, {
             id: `intel-${key}-${Date.now()}`,
@@ -1714,7 +1730,13 @@ export const useGameStore = create<GameStore>()(
         const isMilestone = newlyDiscovered.length === 5 || newlyDiscovered.length === 10 || newlyDiscovered.length === 15 || newlyDiscovered.length === 20
 
         // 到港发现的声望奖励
-        const fameGain = 5
+        //
+        // 【见习航海士：发现新港口声望 +50%】perk 原文是
+        // 「发现新港口的声望 +50%（贵族的身份让发现更受瞩目）」。
+        // 三处（首次发现 / 里程碑 / 普通到港）共用这一个常量，所以一条判断全部覆盖。
+        // 用 round 而不是 floor：5×1.5=7.5 → 8，降级成 7 就把"多一半"变成了"多四成"。
+        const hasMidshipman = state.crewRoster.some(m => m.id === 'midshipman')
+        const fameGain = hasMidshipman ? Math.round(5 * 1.5) : 5
 
         // 行情速报：告诉玩家此港高价收购什么，让"去哪儿卖"可以规划
         const tipKey = `${portId}`

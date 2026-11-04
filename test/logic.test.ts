@@ -140,7 +140,7 @@ import {
 import { calculateBearing } from '../src/utils/navigation'
 import { readFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
-import type { EventOutcome, Fleet, MiniGameId, Route } from '../src/types'
+import type { EventOutcome, Fleet, GameEvent, MiniGameId, Route } from '../src/types'
 import {
   greatCircleNm, greatCirclePoint, buildRouteGeometry, positionAtNm, traveledNmAt,
 } from '../src/utils/routePath'
@@ -4908,6 +4908,112 @@ console.log('\n== 航线收益：不能有压倒性的异常值 ==')
   // 每个港口出发都要有一条像样的路，否则玩家到了那儿不知道该往哪开
   const dead = ports.filter(p => (bestFrom.get(p.id) ?? 0) < 40).map(p => `${p.nameCn}(${bestFrom.get(p.id) ?? 0})`)
   assert(dead.length === 0, `没有「从这里出发无利可图」的死港${dead.length ? '：' + dead.join('、') : ''}`)
+}
+
+/*
+ * 船员特长：perk 文本写了，就必须真的改变结算。
+ *
+ * 【为什么单开一节】`crewChars.ts` 里 8 个船员每条都有 perk 文案，面板上也印着。
+ * 实测当时**只有 cook（食物 -20%）和 purser（买价 -2%）真的生效**，
+ * 其余 6 条是纯文本承诺 —— 玩家花 200~400 金雇一个"船员流失减半"的水手长，
+ * 得到的只是一个说法。这类"写了没接"是本项目最忌讳的一种缺陷：
+ * 界面在承诺一件不会发生的事。
+ *
+ * 每条都做**双向**断言：加成生效 + 反向不生效。
+ * 只测"有水手长时 -2"的话，写成"船员损失永远减半"也能通过。
+ */
+console.log('\n== 船员特长：perk 写了就必须真的改变结算 ==')
+{
+  const mk = (o: Partial<EventOutcome>): EventOutcome => ({
+    probability: 1, goldChange: 0, foodChange: 0, waterChange: 0,
+    moraleChange: 0, durabilityChange: 0, crewChange: 0, description: '',
+    ...o,
+  } as EventOutcome)
+  const base = { stanceMagnitudeMul: 1, trait: null, hasQuartermaster: false }
+
+  // —— 水手长：船员流失减半 ——
+  const hurt = mk({ crewChange: -4 })
+  const noBosun = adjustOutcome(hurt, { ...base, crewIds: [] })
+  const withBosun = adjustOutcome(hurt, { ...base, crewIds: ['boatswain'] })
+  assert(noBosun.crewChange === -4, `没有水手长时船员损失不变（实得 ${noBosun.crewChange}）`)
+  assert(withBosun.crewChange === -2, `水手长把船员损失减半（-4 → ${withBosun.crewChange}）`)
+  const rescue = mk({ crewChange: 2 })
+  assert(adjustOutcome(rescue, { ...base, crewIds: ['boatswain'] }).crewChange === 2,
+    '水手长不该削减"救人"（减半只对损失生效）')
+
+  // —— 炮手：击退海盗的缴获 +50%，且只对海盗、只对正收益 ——
+  const loot = mk({ goldChange: 200 })
+  const g = (t?: string) => adjustOutcome(loot, { ...base, crewIds: ['gunner'], eventType: t }).goldChange
+  assert(g('pirate') === 300, `海盗战胜的缴获 +50%（200 → ${g('pirate')}）`)
+  assert(g('storm') === 200, `非海盗事件不享受缴获加成（实得 ${g('storm')}）`)
+  assert(g() === 200, '没有事件类型时不加成')
+  const loss = mk({ goldChange: -200 })
+  assert(adjustOutcome(loss, { ...base, crewIds: ['gunner'], eventType: 'pirate' }).goldChange === -200,
+    '打输赔钱不翻倍——否则 perk 变成 debuff')
+
+  // —— 两个特长互不干扰：同时雇了，各管各的字段 ——
+  const both = adjustOutcome(mk({ crewChange: -4, goldChange: 200 }), {
+    ...base, crewIds: ['boatswain', 'gunner'], eventType: 'pirate',
+  })
+  assert(both.crewChange === -2 && both.goldChange === 300,
+    `两个特长同时生效且不串味（船员 ${both.crewChange} / 金币 ${both.goldChange}）`)
+
+  // —— 黑旗向导：走私收益 +20%，且只对走私 ——
+  const smug = mk({ goldChange: 100 })
+  const corsairGold = (t?: string) =>
+    adjustOutcome(smug, { ...base, crewIds: ['corsair'], eventType: t }).goldChange
+  assert(corsairGold('smuggle') === 120, `走私收益 +20%（100 → ${corsairGold('smuggle')}）`)
+  assert(corsairGold('pirate') === 100, `非走私事件不享受走私加成（实得 ${corsairGold('pirate')}）`)
+
+  /*
+   * —— 黑旗向导的另一半：海盗遭遇率 -15% ——
+   * checkEventTrigger 末尾是 `Math.random() < probability`，所以要钉住随机数来比较。
+   * 取 0.18：0.2 的原概率触发，0.2×0.85=0.17 不触发，正好落在两者之间。
+   * 这是本轮唯一需要 mock 随机数的断言——不用它就只能跑一千次统计，
+   * 那既慢又不稳。
+   */
+  {
+    const pirateEv = { id: -1, type: 'pirate', triggerCondition: { probability: 0.2 }, choices: [] } as unknown as GameEvent
+    const st0 = useGameStore.getState()
+    const noGuide = { ...st0, crewRoster: [] } as typeof st0
+    const withGuide = { ...st0, crewRoster: [{ id: 'corsair' as const, loyalty: 60 }] } as typeof st0
+    const origRand = Math.random
+    try {
+      Math.random = () => 0.18
+      assert(checkEventTrigger(pirateEv, noGuide) === true, '没有黑旗向导时，0.18 仍会撞上海盗')
+      assert(checkEventTrigger(pirateEv, withGuide) === false, '有黑旗向导时，同一掷值不再触发（遭遇率 -15%）')
+    } finally {
+      Math.random = origRand
+    }
+  }
+}
+
+/*
+ * 见习航海士：发现新港口的声望 +50%。
+ *
+ * 【为什么放在整个文件的最后】discoverPort 是个大动作——它同时写
+ * discoveredPorts / factionRep / notifications / achievements。放在中间会污染
+ * 后面所有依赖这些状态的用例。放最后、并且每次都显式重置那三项，副作用就收得住。
+ */
+console.log('\n== 见习航海士：发现新港口声望 +50% ==')
+{
+  const s0 = useGameStore.getState()
+  useGameStore.setState({ fleet: { ...s0.fleet, fame: 0 }, discoveredPorts: [], crewRoster: [] })
+  useGameStore.getState().discoverPort(4)
+  const fameNo = useGameStore.getState().fleet.fame
+
+  const s1 = useGameStore.getState()
+  useGameStore.setState({
+    fleet: { ...s1.fleet, fame: 0 },
+    discoveredPorts: [],
+    // 只需要 id —— discoverPort 里只做 `some(m => m.id === ...)`
+    crewRoster: [{ id: 'midshipman', loyalty: 60 }] as never,
+  })
+  useGameStore.getState().discoverPort(12)
+  const fameYes = useGameStore.getState().fleet.fame
+
+  assert(fameNo === 5, `没有见习航海士时声望 +5（实得 ${fameNo}）`)
+  assert(fameYes === 8, `有见习航海士时 +8（5 × 1.5 四舍五入，实得 ${fameYes}）`)
 }
 
 console.log(`\n最终结果：${passed} 通过 / ${failed} 失败`)

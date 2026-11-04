@@ -1,4 +1,4 @@
-import type { EventOutcome, Fleet } from '@/types'
+import type { CrewCharId, EventOutcome, Fleet } from '@/types'
 import { applyTraitToOutcome, getTrait } from '@/data/traits'
 import { scaleOutcomeMagnitude } from './segment'
 
@@ -24,6 +24,21 @@ export interface OutcomeAdjustContext {
   trait: string | null | undefined
   /** 是否有大副在船（士气打击减半） */
   hasQuartermaster: boolean
+  /**
+   * 在船船员 id —— 只用来结算他们的**特长**。
+   *
+   * 【为什么需要这个字段】`crewChars.ts` 里 8 个船员每条都写了 perk
+   * （"船员流失减半"、"缴获 +50%"…），但实测**只有 cook 和 purser 真的生效**，
+   * 其余 6 条是纯文本承诺。玩家花 200~400 金雇人，买到的是一个说法。
+   * 这里把船员的特长也接进结算流水线，和姿态/特质/大副同一处生效，
+   * 保证"预览的数字 = 结算的数字 = 描述的效果"三者是同一个来源。
+   */
+  crewIds?: readonly CrewCharId[]
+  /**
+   * 事件类型（GameEvent.type）。炮手的「击退海盗时的缴获 +50%」只对 pirate 生效，
+   * 靠这个字段区分；不传时按"不适用"处理，不会误伤其他事件。
+   */
+  eventType?: string
 }
 
 /**
@@ -38,12 +53,47 @@ export function adjustOutcome(raw: EventOutcome, ctx: OutcomeAdjustContext): Eve
   const scaled = scaleOutcomeMagnitude(raw, ctx.stanceMagnitudeMul)
 
   // 2. 特质修正：铁壁减耐久损、魅力增士气、医生减船员损
-  const adjusted = applyTraitToOutcome(scaled, ctx.trait)
+  let adjusted = applyTraitToOutcome(scaled, ctx.trait)
 
   // 3. 大副弹压：一切士气打击减半（哗变、海盗、坏血病都算）
   if (ctx.hasQuartermaster && adjusted.moraleChange < 0) {
-    return { ...adjusted, moraleChange: Math.ceil(adjusted.moraleChange / 2) }
+    adjusted = { ...adjusted, moraleChange: Math.ceil(adjusted.moraleChange / 2) }
   }
+
+  /*
+   * 4. 船员特长。
+   *
+   * 【为什么放在最后】它和大副弹压是同一类"按人次减伤"，放在特质之后，
+   * 才能和"医生减船员损"叠加成 1/4 而不是互相覆盖 —— 两个人都雇了就该叠。
+   *
+   * 目前只接了水手长（船员流失减半）。他的 perk 原文是
+   * 「船员流失减半（战斗/坏血病/绝望离船的 crew 损失打五折）」，
+   * 而 crewChange 恰好是这三类事件共用的那一个字段，所以一条规则覆盖三种来源。
+   * 用 ceil 而不是 floor：-3/2 取 -1 而不是 -2，和上面大副那条口径一致。
+   */
+  const crew = ctx.crewIds ?? []
+  if (crew.includes('boatswain') && adjusted.crewChange < 0) {
+    adjusted = { ...adjusted, crewChange: Math.ceil(adjusted.crewChange / 2) }
+  }
+
+  /*
+   * 炮手：「击退海盗时的缴获 +50%（战胜结局的金币收益）」。
+   * 只对 pirate 事件、且只放大**正**的金币变化 —— 打输了赔钱不该赔更多，
+   * 那是把 perk 变成 debuff，是最容易写出来的那种假实现。
+   */
+  if (crew.includes('gunner') && ctx.eventType === 'pirate' && adjusted.goldChange > 0) {
+    adjusted = { ...adjusted, goldChange: Math.round(adjusted.goldChange * 1.5) }
+  }
+
+  /*
+   * 黑旗向导的后半条：「走私交易收益 +20%」。
+   * perk 原文拆成两件事——遭遇率 -15%（在 utils/eventEngine）和走私收益 +20%（这里）。
+   * 同样只放大正收益。
+   */
+  if (crew.includes('corsair') && ctx.eventType === 'smuggle' && adjusted.goldChange > 0) {
+    adjusted = { ...adjusted, goldChange: Math.round(adjusted.goldChange * 1.2) }
+  }
+
   return adjusted
 }
 

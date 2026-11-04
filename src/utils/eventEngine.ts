@@ -85,6 +85,16 @@ export function checkEventTrigger(event: GameEvent, gameState: GameState): boole
   if ((gameState.crewRoster ?? []).some(m => m.id === 'scholar') && event.type === 'discovery') {
     probability *= 1.2
   }
+  /*
+   * 黑旗向导：「海盗遭遇率 -15%」。
+   *
+   * 他的另一半 perk（走私收益 +20%）走的是 smuggle 事件的结算，
+   * 不在这里 —— 这里只管"撞不撞得上"。两半分开实现，但都由 crewRoster 驱动，
+   * 和学者那两条是同一套写法。
+   */
+  if ((gameState.crewRoster ?? []).some(m => m.id === 'corsair') && event.type === 'pirate') {
+    probability *= 0.85
+  }
 
   // 「遇事率」由航段方针统一控制（STANCES[stance].eventRateMul），
   // 施加在**全局触发闸门**上（见 store.advanceDay 的 eventBias）。
