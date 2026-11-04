@@ -153,6 +153,7 @@ import { buildRhumbNetwork, RHUMB_CENTERS } from '../src/utils/rhumbLines'
 import { hasSnow, SNOW_LAT, rankMaxForZoom, PEAK_MIN_ELEV } from '../src/utils/terrainDecor'
 import { chooseLabelSides } from '../src/utils/portLabels'
 import { ports } from '../src/data/ports'
+import { tasks } from '../src/data/tasks'
 
 let passed = 0
 let failed = 0
@@ -4775,6 +4776,48 @@ console.log('== 57. 3D 点击判定：手指抖动不该让航向设不上 ==')
   // 分组不能丢条目
   assert(days.reduce((n, d) => n + d.entries.length, 0) === log.length, '分组不许丢条目')
 }
+
+/*
+ * 委托覆盖度 —— 这一组是「20 个港口必须都有单可接」的不变量。
+ *
+ * 【为什么值得写死】原来的状态是 8 个港口有委托、12 个港口打开任务面板永远空的：
+ * 玩家跑了半个世界，到港没东西可接。补数据容易，**但没有任何东西挡住它再次退回原样**
+ * —— 加港口、删委托、改 id，都不会让任何一条已有测试失败。
+ *
+ * 判据用 ports 全表对差集，而不是数委托条数：19 条委托全挤在塞维利亚也能凑够数量。
+ * 「有售」那一条更关键：委托要的货如果接单港根本不卖，玩家接了也买不到，
+ * 面板上却写着「金 XXX」，属于承诺兑现不了 —— 这是本项目反复踩过的那类坑。
+ */
+console.log('\n== 委托覆盖：每个港口都要有单可接 ==')
+{
+  const taskPortIds = new Set(tasks.map(t => t.portId))
+  const missing = ports.filter(p => !taskPortIds.has(p.id)).map(p => `${p.id}${p.nameCn}`)
+  assert(missing.length === 0, `20 个港口都能接到委托（缺：${missing.join('、') || '无'}）`)
+
+  const tids = tasks.map(t => t.id)
+  assert(new Set(tids).size === tids.length, `委托 id 无重复（${tids.length} 条）`)
+
+  const portIds = new Set(ports.map(p => p.id))
+  const badTarget = tasks.filter(t => t.targetPortId != null && !portIds.has(t.targetPortId))
+  assert(badTarget.length === 0, `目标港都是真实港口${badTarget.length ? '：' + badTarget.map(t => t.title).join('、') : ''}`)
+
+  // 接单港必须真的卖这种货，否则「接了却买不到」
+  const unbuyable: string[] = []
+  for (const t of tasks) {
+    for (const need of t.requiredGoods ?? []) {
+      const sold = portGoods.some(pg => pg.portId === t.portId && pg.goodId === need.goodId)
+      if (!sold) {
+        const p = ports.find(x => x.id === t.portId)?.nameCn ?? t.portId
+        const g = goods.find(x => x.id === need.goodId)?.nameCn ?? need.goodId
+        unbuyable.push(`#${t.id}「${t.title}」要 ${g}，但${p}不卖`)
+      }
+    }
+  }
+  assert(unbuyable.length === 0, `委托要的货都能在接单港买到${unbuyable.length ? '：' + unbuyable.join('；') : ''}`)
+
+  // 单条需货量不超过初始货舱（40 舱），否则第一次到港根本接不下
+  const tooBig = tasks.filter(t => (t.requiredGoods ?? []).some(r => r.quantity > 10))
+  assert(tooBig.length === 0, `单条委托需货量 ≤10，初始货舱装得下${tooBig.length ? '：' + tooBig.map(t => t.title).join('、') : ''}`)}
 
 console.log(`\n最终结果：${passed} 通过 / ${failed} 失败`)
 if (failed > 0) process.exit(1)
