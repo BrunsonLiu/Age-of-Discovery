@@ -27,12 +27,27 @@ const SCALE_SIZE: Record<PortScale, number> = { minor: 21, medium: 26, major: 32
  */
 const HIT = 40
 
+/*
+ * 停泊时，当前港口的徽章要往上让位。
+ *
+ * 【为什么需要】船图标是 90×90、中心对准港口坐标，而锚徽只有 40×40 ——
+ * 实测重叠 **40×40，100%**（船把徽章连那圈「当前港口 +4px 放大 / 金色辉光 /
+ * 脉冲动画」一起盖死，这三样投入全白费）。港口名在船上方侥幸可见，
+ * 但玩家看不出"这几个像素下面是个能点的港口"。
+ *
+ * 【为什么抬徽章而不是挪船】挪船会让"船在港口"这个位置承诺失真，
+ * 而且不同港口的海侧方向不一样，固定往一个方向挪会把船挪到陆地上。
+ * 抬徽章只动 34px、且是**当前港口独有**，其他港口一格没动。
+ * 视觉上也说得通：锚插在码头上，船停在锚的下方。
+ */
+const DOCK_LIFT = 34
+
 /** 徽章的视觉直径（当前港口 +4 放大） */
 function badgeSize(isCurrent: boolean, scale: PortScale): number {
   return isCurrent ? SCALE_SIZE[scale] + 4 : SCALE_SIZE[scale]
 }
 
-function createPortIcon(isCurrent: boolean, scale: PortScale) {
+function createPortIcon(isCurrent: boolean, scale: PortScale, lift = 0) {
   const size = badgeSize(isCurrent, scale)
   // 锚改用金色：徽章是深底，原来那个深褐锚在深底上等于没有。
   const color = isCurrent ? '#f0d88a' : '#d4b884'
@@ -79,13 +94,15 @@ function createPortIcon(isCurrent: boolean, scale: PortScale) {
     html,
     className: 'port-marker-icon',
     iconSize: [HIT, HIT],
-    iconAnchor: [HIT / 2, HIT / 2],
+    // lift 把徽章整体画到坐标点上方：anchor 下移 -> div 上移 -> 徽章上移
+    iconAnchor: [HIT / 2, HIT / 2 + lift],
   })
 }
 
 export function PortMarker() {
   const discoveredPorts = useGameStore((s) => s.discoveredPorts)
   const currentPortId = useGameStore((s) => s.fleet.currentPortId)
+  const isSailing = useGameStore((s) => s.fleet.isSailing)
   const setSelectedPortId = useMapStore((s) => s.setSelectedPortId)
   const setActivePanel = useGameStore((s) => s.setActivePanel)
   const discoverPort = useGameStore((s) => s.discoverPort)
@@ -113,9 +130,9 @@ export function PortMarker() {
    * 相对图标锚点（= 命中框中心）量的：固定 16 会让大港的标签压在徽章上。
    * 留 4px 间隙，读起来是"贴在图钉旁边"而不是"叠在图钉上"。
    */
-  const offsetFor = (side: LabelSide, scale: PortScale, isCurrent: boolean): [number, number] => {
+  const offsetFor = (side: LabelSide, scale: PortScale, isCurrent: boolean, lift = 0): [number, number] => {
     const r = badgeSize(isCurrent, scale) / 2 + 4
-    if (side === 'top') return [0, -r]
+    if (side === 'top') return [0, -r - lift]
     if (side === 'bottom') return [0, r]
     if (side === 'left') return [-r - 4, 0]
     return [r + 4, 0]
@@ -125,6 +142,8 @@ export function PortMarker() {
     <>
       {ports.map((port) => {
         const isCurrent = port.id === currentPortId
+        // 停在这个港时，船会把锚徽整个盖住 -> 徽章上抬让位（见 DOCK_LIFT）
+        const dockLift = isCurrent && !isSailing ? DOCK_LIFT : 0
         const side = sides[port.id] ?? 'top'
         const isDiscovered = discoveredPorts.includes(port.id)
         const showDiscoveredMarker = isCurrent || isDiscovered
@@ -139,7 +158,7 @@ export function PortMarker() {
           <Marker
             key={port.id}
             position={[port.latitude, port.longitude]}
-            icon={createPortIcon(isCurrent, portScaleOf(port))}
+            icon={createPortIcon(isCurrent, portScaleOf(port), dockLift)}
             eventHandlers={{
               click: () => {
                 setSelectedPortId(port.id)
@@ -150,7 +169,7 @@ export function PortMarker() {
           >
             <Tooltip
               direction={side}
-              offset={offsetFor(side, portScaleOf(port), isCurrent)}
+              offset={offsetFor(side, portScaleOf(port), isCurrent, dockLift)}
               className="port-tooltip"
               permanent={namesAlwaysOn || isCurrent}
             >

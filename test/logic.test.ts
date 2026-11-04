@@ -3179,6 +3179,33 @@ console.log('== 46. 地形符号：只撒在陆地内、可复现、按面积取
   // 这个方块在赤道附近，树的比例取决于随机数；至少要保证 kind 只有两种取值
   assert([...kinds].every(k => k === 'peak' || k === 'tree'), `kind 只能是 peak/tree（实得 ${[...kinds]}）`)
 
+  /*
+   * 「撒哈拉长树」回归锁。
+   *
+   * 根因不是撒点算法，是「低于 PEAK_MIN_ELEV 就不出山 → **改成树**」这条规则：
+   * 撒哈拉腹地高程实测 0.10，刚好在 0.12 下面，于是整片沙漠的山全变成了树。
+   * 「不是山就是树」这个二选一，把「不该有符号」的地方填满了。
+   *
+   * 判据用纬度带（ARID_BAND 15°~35°）。双向断言，缺一不可：
+   *   · 平移到 20°N → 一个 tree 都不能有；
+   *   · 原来那块赤道 L 形 → 必须还有 tree。只断言前者的话，把树整个删掉也能过。
+   */
+  const shift = (lat: number) => ({
+    type: 'FeatureCollection' as const,
+    features: square.features.map(f => ({
+      ...f,
+      geometry: {
+        type: 'Polygon' as const,
+        coordinates: [f.geometry.coordinates[0].map(([lng, la]: [number, number]) => [lng, la + lat])],
+      },
+    })),
+  })
+  const arid = buildTerrainSymbols(shift(20), { topBlocks: 1 })
+  assert(arid.length > 0, `干旱带也要撒出符号（实得 ${arid.length}）`)
+  const aridTrees = arid.filter(s => s.kind === 'tree')
+  assert(aridTrees.length === 0, `副热带干旱带（15°~35°）不许有树（实得 ${aridTrees.length} 棵）`)
+  assert(symbols.some(s => s.kind === 'tree'), '赤道附近必须还有树（别把树一刀切光）')
+
   // 只处理面积前 N 块：给一堆小块 + 一个巨块，巨块必须被选中
   const small = Array.from({ length: 30 }, (_, i) => ({
     type: 'Feature' as const,
@@ -3973,6 +4000,14 @@ console.log('== 57. 3D 点击判定：手指抖动不该让航向设不上 ==')
  *   ③ 阈值之上的行为与没有采样器时**完全一致**（不凭空造山、也不额外删山）。
  * ========================================================================== */
 {
+  /*
+   * 【这个方块为什么要挪到南半球】
+   * 它原来跨 lat -10~30，正好穿过「副热带干旱带 15°~35° 不出树」那条新规则。
+   * 那一步会在沙漠里删掉 tree，于是 elevationAt=()=>0（全部改判成 tree）之后
+   * 数量必然变少 —— 本节的命题「高程否决只改种类、不删点」会被另一条**无关规则**带崩。
+   * 挪到 -60~-40（南纬 40°~60°，南北对称地避开干旱带）之后，这里只考察高程否决本身。
+   * 干旱带那条单独测（见第 46 节），两件事分开，判据才互不干扰。
+   */
   const box = {
     type: 'FeatureCollection',
     features: [{
@@ -3980,7 +4015,7 @@ console.log('== 57. 3D 点击判定：手指抖动不该让航向设不上 ==')
       properties: {},
       geometry: {
         type: 'Polygon',
-        coordinates: [[[10, -10], [50, -10], [50, 30], [10, 30], [10, -10]]],
+        coordinates: [[[10, -60], [50, -60], [50, -40], [10, -40], [10, -60]]],
       },
     }],
   }

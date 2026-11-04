@@ -194,6 +194,32 @@ if (seaLum !== null && landLum !== null) {
   check(false, '海陆采样失败，无法判定可辨性')
 }
 
+/*
+ * 停泊时，船不能把港口锚徽整个盖住。
+ *
+ * 船图标 90×90、中心对准港口坐标，而锚徽只有 40×40 —— 实测原本是 **40×40 完全重叠**，
+ * 连「当前港口 +4px 放大 / 金色辉光 / 脉冲」那套高亮一起盖死。
+ * 修法是停泊时把当前港口的徽章上抬 34px（PortMarker 的 DOCK_LIFT）。
+ * 这里量的是**露出来的高度**，不是"看起来还行"：
+ *   改前 0px（全盖）→ 改后约 9px（锚的横杆和圆环都露出来）。
+ * 判据取 ≥6px：再小就只是一条金边，读不出"这是个港口"。
+ */
+const dock = await page.evaluate(() => {
+  const ship = document.querySelector('[data-tut="ship"]')
+  const icon = document.querySelector('.port-marker-icon')
+  if (!ship || !icon) return null
+  const badge = icon.querySelector('div > div')
+  if (!badge) return null
+  const a = ship.getBoundingClientRect(), b = badge.getBoundingClientRect()
+  const overlapY = Math.max(0, Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top))
+  return { exposed: Math.round(b.height - overlapY), badgeH: Math.round(b.height), shipH: Math.round(a.height) }
+})
+if (dock) {
+  check(dock.exposed >= 6, `停泊时锚徽露出 ${dock.exposed}px（徽章 ${dock.badgeH}px / 船 ${dock.shipH}px）`)
+} else {
+  check(false, '找不到船或锚徽，无法判定遮挡')
+}
+
 console.log('\n控制台错误：', errors.length)
 errors.slice(0, 6).forEach(e => console.log('  ', e.slice(0, 160)))
 console.log(`\n结果：${pass} 通过 / ${fail} 失败`)
