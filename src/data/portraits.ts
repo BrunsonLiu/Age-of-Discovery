@@ -34,7 +34,7 @@ import type { CrewCharId, OfficerId } from '@/types'
 
 const BASE = (import.meta.env?.BASE_URL as string | undefined) || '/'
 
-/** 八位名船员 */
+/** 十五位名船员（8 位常驻 + 7 位只在特定港口露面） */
 export const CREW_PORTRAITS: Partial<Record<CrewCharId, string>> = {
   boatswain: `${BASE}assets/portraits/crew_boatswain.png`,
   gunner: `${BASE}assets/portraits/crew_gunner.png`,
@@ -44,6 +44,15 @@ export const CREW_PORTRAITS: Partial<Record<CrewCharId, string>> = {
   cook: `${BASE}assets/portraits/crew_cook.png`,
   midshipman: `${BASE}assets/portraits/crew_midshipman.png`,
   corsair: `${BASE}assets/portraits/crew_blackflag_guide.png`,
+  // 第二批：从 e 系列（带铭牌的成品卡）裁掉底部铭牌得到的无铭牌版。
+  // 铭牌占底部约 21%，详见 .workbuddy/gen-crew-portraits.mjs 的映射表。
+  navigator: `${BASE}assets/portraits/crew_navigator.png`,
+  medic: `${BASE}assets/portraits/crew_medic.png`,
+  carpenter: `${BASE}assets/portraits/crew_carpenter.png`,
+  interpreter: `${BASE}assets/portraits/crew_interpreter.png`,
+  guide: `${BASE}assets/portraits/crew_guide.png`,
+  merchant: `${BASE}assets/portraits/crew_merchant.png`,
+  pathfinder: `${BASE}assets/portraits/crew_pathfinder.png`,
 }
 
 /** 三位军官 */

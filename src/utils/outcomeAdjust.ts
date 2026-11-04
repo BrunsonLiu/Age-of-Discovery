@@ -1,6 +1,7 @@
 import type { CrewCharId, EventOutcome, Fleet } from '@/types'
 import { applyTraitToOutcome, getTrait } from '@/data/traits'
 import { scaleOutcomeMagnitude } from './segment'
+import { PATHFINDER_DISCOVERY_MUL } from './crewPerks'
 
 /**
  * 事件结果的最终调整。
@@ -92,6 +93,24 @@ export function adjustOutcome(raw: EventOutcome, ctx: OutcomeAdjustContext): Eve
    */
   if (crew.includes('corsair') && ctx.eventType === 'smuggle' && adjusted.goldChange > 0) {
     adjusted = { ...adjusted, goldChange: Math.round(adjusted.goldChange * 1.2) }
+  }
+
+  /*
+   * 探险家：「探索类事件的金币与声望收益 +30%」。
+   *
+   * 赫罗尼莫学士改的是**从发现里换到多少东西**，不是遇到多少发现
+   * （后者是随船学者 scholar 的活，走 eventEngine 的触发率，两件事不重叠）。
+   * 金币与声望分开判正负：探索事件也可能是"挖出一座空坟"赔了钱，
+   * 那种结局不该被放大。
+   */
+  if (crew.includes('pathfinder') && ctx.eventType === 'discovery') {
+    if (adjusted.goldChange > 0) {
+      adjusted = { ...adjusted, goldChange: Math.round(adjusted.goldChange * PATHFINDER_DISCOVERY_MUL) }
+    }
+    const fame = adjusted.fameChange ?? 0
+    if (fame > 0) {
+      adjusted = { ...adjusted, fameChange: Math.round(fame * PATHFINDER_DISCOVERY_MUL) }
+    }
   }
 
   return adjusted

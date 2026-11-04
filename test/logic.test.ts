@@ -36,7 +36,8 @@ import {
   STANCES, forecastSegment, stanceLedgers, segmentCountFor, segmentIndexFor, nextSegmentBoundary,
   dailyFoodUse, dailyWaterUse, dailyWearRate, settleWear, describeStanceTradeoff,
 } from '../src/utils/segment'
-import { generateRouteIntel, settleOfficerWages, advanceRivals, selectBuyPrice, selectSellPrice, selectPriceTone, OFFER_PRICE_RATIO, dynamicSellPrice, selectBestDeal, selectCargoSale, selectDealTalentBonus, selectReturnLeg } from '../src/store/useGameStore'
+import { generateRouteIntel, settleOfficerWages, advanceRivals, selectBuyPrice, selectSellPrice, selectPriceTone, OFFER_PRICE_RATIO, dynamicSellPrice, selectBestDeal, selectCargoSale, selectDealTalentBonus, selectReturnLeg, tickCrewLoyalty } from '../src/store/useGameStore'
+import { repairCost, taskGold, supplyCost, CARPENTER_COST_MUL, MERCHANT_REWARD_MUL, INTERPRETER_FACTION_MUL, PATHFINDER_DISCOVERY_MUL } from '../src/utils/crewPerks'
 import { FACTIONS, factionAttitude, portFaction } from '../src/data/factions'
 import { CREW_CHARS, CREW_CHAR_MAP } from '../src/data/crewChars'
 import { TITLES, currentTitle, dominantAxis } from '../src/data/titles'
@@ -490,8 +491,8 @@ const betrayOutcome = crownEvent.choices[2].outcomes[0]
 assert((betrayOutcome.factionChange?.crown ?? 0) > 0 && (betrayOutcome.factionChange?.brethren ?? 0) < 0, '告密宴会：王室+、兄弟会-')
 
 console.log('== 15. 名船员 ==')
-assert(CREW_CHARS.length === 8, `名船员共 8 位（实际 ${CREW_CHARS.length}）`)
-assert(new Set(CREW_CHARS.map(c => c.id)).size === 8, '船员 id 不重复')
+assert(CREW_CHARS.length === 15, `名船员共 15 位（8 + 第二批 7，实际 ${CREW_CHARS.length}）`)
+assert(new Set(CREW_CHARS.map(c => c.id)).size === 15, '船员 id 不重复')
 assert(CREW_CHARS.every(c => c.hireCost > 0 && c.perk.length > 5 && c.origin.length > 10 && c.quote.length > 5), '每人都有招募费/特长/来历/口头禅')
 assert(CREW_CHAR_MAP.get('cook')?.perk.includes('20'), '厨子特长：食物消耗 -20%')
 assert(CREW_CHAR_MAP.get('scholar')?.perk.includes('20'), '学者特长：发现事件 +20%')
@@ -5041,6 +5042,167 @@ console.log('\n== 天生探险家：只在真的多带来一次遭遇时才打�
   assert(markExplorerBonus(ev, noTrait, 0.23) === false, '没有天赋时永远不打标')
   const storm = { ...ev, type: 'storm' } as unknown as GameEvent
   assert(markExplorerBonus(storm, withTrait, 0.23) === false, '非发现类事件不受探险家影响')
+}
+
+/*
+ * ============================================================================
+ * 第二批船员：7 张闲置立绘接进玩法
+ *
+ * 这批的每一条 perk 都先想清楚"落在哪一行代码"再写文案 —— 因为上一轮盘点时
+ * 抓到过 6 条**空承诺**（面板上印着效果、代码里根本没有实现）。
+ * 所以这里的断言不是"表里有没有这一条"，而是“数字有没有真的变”。
+ * 每条都双向：生效时必须变，不该生效时必须一点都不变。
+ * ========================================================================== */
+console.log('\n== 第二批船员：7 条 perk 逐条对账 ==')
+{
+  const mk = (o: Partial<EventOutcome>): EventOutcome => ({
+    probability: 1, goldChange: 0, foodChange: 0, waterChange: 0,
+    moraleChange: 0, durabilityChange: 0, crewChange: 0, description: '',
+    ...o,
+  } as EventOutcome)
+  const base = { stanceMagnitudeMul: 1, trait: null, hasQuartermaster: false }
+
+  // —— 表结构：15 位、id 唯一、每人有立绘、带 portId 的都是真实港口 ——
+  const NEW_IDS = ['navigator', 'medic', 'carpenter', 'interpreter', 'guide', 'merchant', 'pathfinder'] as const
+  for (const id of NEW_IDS) {
+    assert(CREW_CHAR_MAP.has(id), `第二批船员 ${id} 已登记`)
+    assert(!!crewPortrait(id), `${id} 有立绘（缺映射时面板会渲染成空框）`)
+  }
+  // portId 指向真实港口：写错一个数字，那个角色就永远不会在任何港口出现
+  const portIdSet = new Set(ports.map(p => p.id))
+  const badPort = CREW_CHARS.filter(c => c.portId !== undefined && !portIdSet.has(c.portId))
+  assert(badPort.length === 0, `portId 都是真实港口${badPort.length ? '：' + badPort.map(c => c.name).join('、') : ''}`)
+  // 第一批必须仍然"哪个港都招得到"（这是既有体验，不能被 portId 改动波及）
+  assert(CREW_CHARS.filter(c => c.portId === undefined).length === 8, '第一批 8 位仍无 portId（任何港口可招）')
+  // 第二批不能有两个人在同一个港口——那样一个港会同时冒两张卡，而其他港少一个
+  const newPorts = CREW_CHARS.filter(c => c.portId !== undefined).map(c => c.portId)
+  assert(new Set(newPorts).size === newPorts.length, '第二批每人各占一个港口')
+
+  // 招募入口也必须守 portId：数据是唯一规则，不能只靠面板过滤
+  {
+    const s0 = useGameStore.getState()
+    useGameStore.setState({
+      fleet: { ...s0.fleet, currentPortId: 11, isSailing: false, gold: 5000 },
+      crewRoster: [],
+    })
+    useGameStore.getState().recruitCrewMember('merchant') // 商人在塞维利亚(6)
+    assert(useGameStore.getState().crewRoster.length === 0,
+      '在果阿招不到塞维利亚的商人（portId 由 store 把关，不只靠面板）')
+    useGameStore.getState().recruitCrewMember('navigator') // 航海士在果阿(11)
+    assert(useGameStore.getState().crewRoster.some(m => m.id === 'navigator'),
+      '在果阿招得到航海士')
+  }
+
+  // —— 航海士：靠港补给半价（面板按钮与结算共用 supplyCost） ——
+  assert(supplyCost(GAME_BALANCE.SUPPLY_TOTAL_COST, false) === 60, '无航海士时补给 60 金')
+  assert(supplyCost(GAME_BALANCE.SUPPLY_TOTAL_COST, true) === 30,
+    `航海士把补给价砍到 ${supplyCost(GAME_BALANCE.SUPPLY_TOTAL_COST, true)} 金`)
+  {
+    // 走一遍真实结算：面板上写多少，实际就扣多少
+    const s0 = useGameStore.getState()
+    useGameStore.setState({
+      fleet: { ...s0.fleet, currentPortId: 20, gold: 1000, food: 0, water: 0 },
+      crewRoster: [{ id: 'navigator', loyalty: 60, hiredDay: 1 }],
+    })
+    useGameStore.getState().supplyFleet()
+    const after = useGameStore.getState().fleet
+    assert(1000 - after.gold === supplyCost(GAME_BALANCE.SUPPLY_TOTAL_COST, true),
+      `航海士在船时补给实际扣 ${1000 - after.gold} 金，与按钮一致`)
+    assert(after.food === GAME_BALANCE.SUPPLY_AMOUNT && after.water === GAME_BALANCE.SUPPLY_AMOUNT,
+      '半价不影响份量（粮水各 20）')
+  }
+
+  // —— 船匠：修理费六折（面板与结算共用 repairCost） ——
+  assert(repairCost(20, false) === 100, `无船匠时修 20 点耐久收 ${repairCost(20, false)} 金`)
+  assert(repairCost(20, true) === 100 * CARPENTER_COST_MUL, `船匠打六折（${repairCost(20, true)} 金）`)
+  // 边界：1 点耐久不能被折成 0 金（向上取整）
+  assert(repairCost(1, true) >= 1, `最小一笔修理也不能免费（实得 ${repairCost(1, true)} 金）`)
+
+  // —— 商人：委托赏金 +25% ——
+  assert(taskGold(480, false) === 480 && taskGold(480, true) === 480 * MERCHANT_REWARD_MUL,
+    `商人把 480 金的委托谈到 ${taskGold(480, true)} 金`)
+  {
+    // 走一遍真实结算：卡片上写多少，到账就得是多少
+    const s0 = useGameStore.getState()
+    const task = { ...s0.activeTasks[0], id: 99001, reward: { gold: 400, fame: 0 }, portId: 6, targetPortId: undefined, requiredGoods: undefined }
+    useGameStore.setState({
+      fleet: { ...s0.fleet, currentPortId: 6, gold: 1000 },
+      activeTasks: [task as never],
+      crewRoster: [{ id: 'merchant', loyalty: 60, hiredDay: 1 }],
+    })
+    useGameStore.getState().completeTask(99001)
+    const gained = useGameStore.getState().fleet.gold - 1000
+    assert(gained === taskGold(400, true), `商人交付委托到账 ${gained} 金，与卡片一致`)
+  }
+
+  // —— 翻译官：派系好感 +50%，但惩罚不放大 ——
+  {
+    const run = (factionChange: Record<string, number>, crew: string[]) => {
+      const s0 = useGameStore.getState()
+      useGameStore.setState({
+        fleet: { ...s0.fleet, currentPortId: 6 },
+        crewRoster: crew.map(id => ({ id, loyalty: 60, hiredDay: 1 })) as never,
+        factionRep: { crown: 0, brethren: 0, guild: 0, scholars: 0 } as never,
+      })
+      useGameStore.getState().applyEventOutcome(mk({ factionChange: factionChange as never }))
+      return useGameStore.getState().factionRep.crown
+    }
+    assert(run({ crown: 6 }, []) === 6, '没有翻译官时派系好感就是 6')
+    assert(run({ crown: 6 }, ['interpreter']) === 6 * INTERPRETER_FACTION_MUL,
+      `翻译官把好感放大到 ${run({ crown: 6 }, ['interpreter'])}`)
+    // 关键：负的不许放大 —— 放大了这条 perk 就成了 debuff
+    assert(run({ crown: -6 }, []) === -6 && run({ crown: -6 }, ['interpreter']) === -6,
+      '翻译官不放大惩罚（走私被记的账还是 -6）')
+  }
+
+  // —— 向导：高危航段不再掉忠诚，但低士气照扣 ——
+  {
+    const st = useGameStore.getState()
+    const fleet = { ...st.fleet, morale: 100, food: 50, water: 50 }
+    const roster = (id: string) => [{ id, loyalty: 60, hiredDay: 1 }] as never
+    const noGuide = tickCrewLoyalty({ ...st, crewRoster: roster('cook') }, fleet, 2, 5, () => 0.99)
+    assert(noGuide.roster[0].loyalty === 59, `危险航段无向导：忠诚 60 → ${noGuide.roster[0].loyalty}`)
+    const withGuide = tickCrewLoyalty({ ...st, crewRoster: roster('guide') }, fleet, 2, 5, () => 0.99)
+    assert(withGuide.roster[0].loyalty === 60, `有向导时危险航段不掉忠诚（实得 ${withGuide.roster[0].loyalty}）`)
+    // 反例：士气崩了照样扣 3，他不是免死金牌
+    const sad = { ...fleet, morale: 30 }
+    const guideSad = tickCrewLoyalty({ ...st, crewRoster: roster('guide') }, sad, 2, 5, () => 0.99)
+    assert(guideSad.roster[0].loyalty === 57, `有向导时低士气仍扣 3（实得 ${guideSad.roster[0].loyalty}）`)
+  }
+
+  // —— 航医：缺粮断水时病死概率减半（钉死掷值卡在两条线之间） ——
+  {
+    const st = useGameStore.getState()
+    const starved = { ...st.fleet, food: 0, water: 10, morale: 100 }
+    const roster = (id: string) => [{ id, loyalty: 60, hiredDay: 1 }] as never
+    // 0.07 介于 0.06（有航医）与 0.12（无航医）之间
+    const dead = tickCrewLoyalty({ ...st, crewRoster: roster('cook') }, starved, 2, 1, () => 0.07)
+    assert(dead.died.length === 1, `无航医时 0.07 的掷值会死一个人（实得 ${dead.died.length}）`)
+    const alive = tickCrewLoyalty({ ...st, crewRoster: roster('medic') }, starved, 2, 1, () => 0.07)
+    assert(alive.died.length === 0, `有航医时同一个掷值活下来（实得 ${alive.died.length}）`)
+    // 反例：掷值低于减半后的概率，航医也救不回来 —— 他只减半，不是免死
+    const stillDead = tickCrewLoyalty({ ...st, crewRoster: roster('medic') }, starved, 2, 1, () => 0.05)
+    assert(stillDead.died.length === 1, `0.05 的掷值下航医也救不回来（实得 ${stillDead.died.length}）`)
+  }
+
+  // —— 探险家：探索类事件的金币与声望 +30% ——
+  {
+    const loot = mk({ goldChange: 200, fameChange: 5 })
+    const noPath = adjustOutcome(loot, { ...base, crewIds: [], eventType: 'discovery' })
+    const withPath = adjustOutcome(loot, { ...base, crewIds: ['pathfinder'], eventType: 'discovery' })
+    assert(noPath.goldChange === 200 && noPath.fameChange === 5, '没有探险家时金币/声望不变')
+    assert(withPath.goldChange === Math.round(200 * PATHFINDER_DISCOVERY_MUL),
+      `探险家把探索金币放大到 ${withPath.goldChange}`)
+    assert(withPath.fameChange === Math.round(5 * PATHFINDER_DISCOVERY_MUL),
+      `探险家把探索声望放大到 ${withPath.fameChange}`)
+    // 非探索事件不吃这一条
+    const stormOutcome = adjustOutcome(loot, { ...base, crewIds: ['pathfinder'], eventType: 'storm' })
+    assert(stormOutcome.goldChange === 200, '风暴事件的金币不受探险家影响')
+    // 赔钱的探索也不许放大
+    const loss = mk({ goldChange: -100 })
+    assert(adjustOutcome(loss, { ...base, crewIds: ['pathfinder'], eventType: 'discovery' }).goldChange === -100,
+      '探索赔钱时不放大亏损（perk 不能变 debuff）')
+  }
 }
 
 console.log(`\n最终结果：${passed} 通过 / ${failed} 失败`)

@@ -1,5 +1,6 @@
 import { Scroll, Map, Coins, Compass, Package, CheckCircle2 } from 'lucide-react'
 import { useGameStore } from '@/store/useGameStore'
+import { taskGold } from '@/utils/crewPerks'
 import { tasks } from '@/data/tasks'
 import { goods } from '@/data/goods'
 import { ports } from '@/data/ports'
@@ -20,6 +21,9 @@ export default function TaskPanel() {
   const completeTask = useGameStore(s => s.completeTask)
   const setActivePanel = useGameStore(s => s.setActivePanel)
   const gameMode = useGameStore(s => s.gameMode)
+  // 商人在船时赏金 +25%：卡片上的数字必须就是到账的数字
+  const crewRoster = useGameStore(s => s.crewRoster)
+  const hasMerchant = crewRoster.some(m => m.id === 'merchant')
 
   const nameOf = (id: number) => goods.find(g => g.id === id)?.nameCn ?? ''
   const cargoOf = (goodId: number) => fleet.cargo.find(c => c.goodId === goodId)?.quantity ?? 0
@@ -92,7 +96,7 @@ export default function TaskPanel() {
                       )}
                       <div className="flex items-center justify-between">
                         <span className="text-gold-400 text-[13px] flex items-center gap-0.5">
-                          <Coins size={10} /> {task.reward.gold}
+                          <Coins size={10} /> {taskGold(task.reward.gold, hasMerchant)}
                           {task.reward.fame && <span className="ml-1">+{task.reward.fame}声望</span>}
                         </span>
                         {done ? (
@@ -105,7 +109,7 @@ export default function TaskPanel() {
                                 'task',
                               )
                               useFx.getState().fx(
-                                { kind: 'float', tone: 'gold', text: `+${task.reward.gold}`, sub: task.reward.fame ? `声望 +${task.reward.fame}` : undefined },
+                                { kind: 'float', tone: 'gold', text: `+${taskGold(task.reward.gold, hasMerchant)}`, sub: task.reward.fame ? `声望 +${task.reward.fame}` : undefined },
                               )
                             }}
                             className="text-safe-400 hover:text-safe-300 text-[13px] font-serif transition-colors"
@@ -144,7 +148,7 @@ export default function TaskPanel() {
                     <p className="text-gold-500 text-[13px] font-serif mb-1.5">{task.description}</p>
                     <div className="flex items-center justify-between">
                       <span className="text-gold-400 text-[13px] flex items-center gap-0.5">
-                        <Coins size={10} /> {task.reward.gold}
+                        <Coins size={10} /> {taskGold(task.reward.gold, hasMerchant)}
                         {task.reward.fame && <span className="ml-1">+{task.reward.fame}声望</span>}
                       </span>
                       {/*

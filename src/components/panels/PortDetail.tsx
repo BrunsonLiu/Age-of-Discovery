@@ -8,6 +8,7 @@ import { OFFICERS } from '@/data/officers'
 import { CREW_CHARS } from '@/data/crewChars'
 import { officerPortrait, crewPortrait } from '@/data/portraits'
 import { portImage } from '@/data/portImages'
+import { repairCost, taskGold, supplyCost } from '@/utils/crewPerks'
 import { FACTIONS, portFaction, factionAttitude } from '@/data/factions'
 import Badge from '@/components/ui/Badge'
 import { UI_ASSETS } from '@/data/uiAssets'
@@ -63,16 +64,23 @@ export default function PortDetail() {
     return true
   })
 
+  // 修理费与 store 结算共用同一个函数（utils/crewPerks.repairCost）：
+  // 按钮上写的数字，就是点下去实际扣的数字
+  const hasCarpenter = crewRoster.some(m => m.id === 'carpenter')
+  const hasMerchant = crewRoster.some(m => m.id === 'merchant')
+  // 航海士谈得下补给价：按钮上写的数字，就是点下去实际扣的数字
+  const supplyCostNow = supplyCost(GAME_BALANCE.SUPPLY_TOTAL_COST, crewRoster.some(m => m.id === 'navigator'))
+
   const handleRepair = (shipId: number) => {
     const ship = fleet.ships.find(s => s.id === shipId)
     if (!ship) return
-    const cost = (ship.maxDurability - ship.durability) * GAME_BALANCE.REPAIR_COST_PER_DURABILITY
+    const cost = repairCost(ship.maxDurability - ship.durability, hasCarpenter)
     if (fleet.gold < cost) return
     repairShip(shipId)
   }
 
   const handleSupply = () => {
-    if (fleet.gold < GAME_BALANCE.SUPPLY_TOTAL_COST) return
+    if (fleet.gold < supplyCostNow) return
     supplyFleet()
   }
 
@@ -206,7 +214,7 @@ export default function PortDetail() {
               </h4>
               {fleet.ships.map(ship => {
                 const damage = ship.maxDurability - ship.durability
-                const cost = damage * GAME_BALANCE.REPAIR_COST_PER_DURABILITY
+                const cost = repairCost(damage, hasCarpenter)
                 return (
                   <div key={ship.id} className="flex items-center justify-between text-[13px] mb-1">
                     <span className="text-gold-300 font-serif">{ship.name} ({ship.durability}/{ship.maxDurability})</span>
@@ -230,8 +238,8 @@ export default function PortDetail() {
               </h4>
               <div className="flex items-center justify-between text-[13px]">
                 <span className="text-gold-400 font-serif">食物+{GAME_BALANCE.SUPPLY_AMOUNT} 淡水+{GAME_BALANCE.SUPPLY_AMOUNT}</span>
-                <ActionButton onClick={handleSupply} disabled={fleet.gold < GAME_BALANCE.SUPPLY_TOTAL_COST} variant="secondary">
-                  <Coins size={10} /> {GAME_BALANCE.SUPPLY_TOTAL_COST}
+                <ActionButton onClick={handleSupply} disabled={fleet.gold < supplyCostNow} variant="secondary">
+                  <Coins size={10} /> {supplyCostNow}
                 </ActionButton>
               </div>
             </div>
@@ -346,7 +354,12 @@ export default function PortDetail() {
                 这些人有名字、有过去、有脾气。低士气会磨掉他们的忠诚——忠诚归零，人就会走。
               </p>
               <div className="space-y-1.5">
-                {CREW_CHARS.map(c => {
+                {/*
+                  第一批 8 位没有 portId —— 行会介绍所里挂着的名字，哪个港都问得到。
+                  第二批 7 位有 portId —— 具体的人只在自己的港口出现。
+                  全挂在 15 张卡片的长列表里，等于把"探索"换成"滚动"。
+                */}
+                {CREW_CHARS.filter(c => c.portId === undefined || c.portId === fleet.currentPortId).map(c => {
                   const hired = crewRoster.some(m => m.id === c.id)
                   const portrait = crewPortrait(c.id)
                   return (
@@ -405,7 +418,7 @@ export default function PortDetail() {
                     </button>
                   </div>
                   <div className="flex items-center justify-between text-gold-500 text-[13px] mt-0.5">
-                    <span>奖励: <Coins size={10} className="inline" /> {task.reward.gold}{task.reward.fame ? ` +${task.reward.fame}声望` : ''}</span>
+                    <span>奖励: <Coins size={10} className="inline" /> {taskGold(task.reward.gold, hasMerchant)}{task.reward.fame ? ` +${task.reward.fame}声望` : ''}</span>
                     {task.targetPortId && (
                       <span className="flex items-center gap-0.5">
                         <Map size={9} /> {ports.find(p => p.id === task.targetPortId)?.nameCn}

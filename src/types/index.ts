@@ -149,6 +149,10 @@ export type FactionId = 'crown' | 'guild' | 'scholars' | 'brethren'
 export type CrewCharId =
   | 'boatswain' | 'gunner' | 'purser' | 'chaplain'
   | 'scholar' | 'cook' | 'midshipman' | 'corsair'
+  // 第二批：美术在 e01–e14 里按 14 个岗位做齐了立绘，玩法只实现了前 8 个。
+  // 这 7 个是那批立绘里此前从没接入过的岗位（E8 炮术军官与已有炮手重复，不重加）。
+  | 'navigator' | 'medic' | 'carpenter' | 'interpreter'
+  | 'guide' | 'merchant' | 'pathfinder'
 
 /** 已招募的名船员 */
 export interface CrewMember {

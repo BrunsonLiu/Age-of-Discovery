@@ -13,6 +13,7 @@ import { calculateDailyConsumption, dangerLevelFromDistance, computeWindFavor, e
 import { getRouteGeometry } from '@/utils/routePath'
 import { getRandomEvents, consumeEventFlags } from '@/utils/eventEngine'
 import { STANCES, segmentCountFor, nextSegmentBoundary, hazardLabel, dailyFoodUse, dailyWaterUse, dailyWearRate, settleWear } from '@/utils/segment'
+import { repairCost, taskGold, supplyCost, INTERPRETER_FACTION_MUL } from '@/utils/crewPerks'
 import { canAfford, hasCargoSpace } from '@/utils/trade'
 import { historicalTimeline } from '@/data/historicalTimeline'
 import { GAME_BALANCE } from '@/data/gameConfig'
@@ -117,26 +118,50 @@ function priceOpts(state: GameState) {
  * 名船员每日忠诚结算：低士气与高危航段磨掉忠诚，
  * 忠诚跌破风险线时按概率离船（带走特长）——"人"是会走的。
  */
-function tickCrewLoyalty(
+/**
+ * 每日名船员结算：忠诚、离船、病死。
+ *
+ * 导出并带 `rand` 参数，是为了能测「航医把病死概率减半」这类**概率型**改动。
+ * 不注入随机源就只能在测试里跑几百次 advanceDay 数比例 —— 那是抽样，
+ * 不是断言：它测得出"大概少了"，测不出"从 0.12 变成 0.06"。
+ * 钉死一个 0.07 的掷值，正好卡在两条线之间：无航医必死、有航医必活。
+ */
+export function tickCrewLoyalty(
   state: GameState,
   fleet: Fleet,
   day: number,
   routeDanger: number,
+  rand: () => number = Math.random,
 ): { roster: CrewMember[]; left: CrewCharId[]; died: CrewCharId[] } {
   const roster = state.crewRoster
   if (roster.length === 0) return { roster, left: [], died: [] }
   const lowMorale = fleet.morale < 45
+  // 这两位的特点都是"某个坏结果不再那么坏"，所以在这里一次算好，循环里直接用
+  const hasGuide = roster.some(r => r.id === 'guide')
+  const hasMedic = roster.some(r => r.id === 'medic')
+  const deathChance = GAME_BALANCE.CREW_DEATH_CHANCE * (hasMedic ? 0.5 : 1)
   const next: CrewMember[] = []
   const left: CrewCharId[] = []
   const died: CrewCharId[] = []
   for (const m of roster) {
     let loyalty = m.loyalty
     if (lowMorale) loyalty -= GAME_BALANCE.CREW_LOYALTY_DECAY_LOW_MORALE
-    if (routeDanger >= 4) loyalty -= GAME_BALANCE.CREW_LOYALTY_DECAY_DANGER
+    /*
+     * 向导认路：「高危航段不再掉忠诚」。
+     *
+     * 危险度 ≥4 本来是每天 -1 忠诚（CREW_LOYALTY_DECAY_DANGER）。塔内在船上时，
+     * 那几段最险的水道是他熟的——玩家仍然要承担风浪与损耗，但那不再是"人心的损耗"。
+     * 注意只免这一项：士气低落（<45）的 -3 照扣，否则他会变成一张免死金牌。
+     */
+    if (routeDanger >= 4 && !hasGuide) loyalty -= GAME_BALANCE.CREW_LOYALTY_DECAY_DANGER
     // 水手长看人看得紧：衰减减半
     if (roster.some(r => r.id === 'boatswain')) loyalty = m.loyalty - (m.loyalty - loyalty) / 2
-    // 坏血病风险：缺粮断水的日子可能带走一个人
-    if ((fleet.food === 0 || fleet.water === 0) && Math.random() < GAME_BALANCE.CREW_DEATH_CHANCE) {
+    /*
+     * 坏血病风险：缺粮断水的日子可能带走一个人。
+     * 航医在船时概率减半——他治不好坏血病（那需要新鲜果蔬），但能让更多人熬到下一个港口。
+     * 只减概率不减到 0：断粮断水仍然是要死人的，航医不是保险。
+     */
+    if ((fleet.food === 0 || fleet.water === 0) && rand() < deathChance) {
       died.push(m.id)
       continue
     }
@@ -150,7 +175,7 @@ function tickCrewLoyalty(
      */
     const desertChance = GAME_BALANCE.CREW_DESERT_CHANCE
       * (roster.some(r => r.id === 'chaplain') ? 0.65 : 1)
-    if (loyalty <= GAME_BALANCE.CREW_LOYALTY_RISK && Math.random() < desertChance) {
+    if (loyalty <= GAME_BALANCE.CREW_LOYALTY_RISK && rand() < desertChance) {
       left.push(m.id)
       continue
     }
@@ -992,6 +1017,14 @@ export const useGameStore = create<GameStore>()(
         if (!state.fleet.currentPortId || state.fleet.isSailing) return state
         const def = CREW_CHAR_MAP.get(id)
         if (!def || state.fleet.gold < def.hireCost) return state
+        /*
+         * 有 portId 的人只在那个港口招得到。
+         *
+         * 面板已经按港口筛过一遍了，这里再挡一次是让**数据成为唯一规则**：
+         * 以后无论是剧情、存档回放还是别的入口调这个 action，
+         * 都不可能出现"在果阿雇到塞维利亚的丝绸商"。
+         */
+        if (def.portId !== undefined && def.portId !== state.fleet.currentPortId) return state
         const member: CrewMember = {
           id,
           loyalty: GAME_BALANCE.CREW_LOYALTY_START,
@@ -1515,7 +1548,7 @@ export const useGameStore = create<GameStore>()(
         if (!port || !port.services.includes('repair')) return state
         const ship = state.fleet.ships.find(s => s.id === shipId)
         if (!ship || ship.durability >= ship.maxDurability) return state
-        const cost = (ship.maxDurability - ship.durability) * GAME_BALANCE.REPAIR_COST_PER_DURABILITY
+        const cost = repairCost(ship.maxDurability - ship.durability, state.crewRoster.some(m => m.id === 'carpenter'))
         if (state.fleet.gold < cost) return state
         return { fleet: { ...state.fleet, gold: state.fleet.gold - cost, ships: state.fleet.ships.map(s => s.id === shipId ? { ...s, durability: s.maxDurability } : s) } }
       }),
@@ -1524,7 +1557,7 @@ export const useGameStore = create<GameStore>()(
         if (!state.fleet.currentPortId) return state
         const port = ports.find(p => p.id === state.fleet.currentPortId)
         if (!port || !port.services.includes('supply')) return state
-        const totalCost = GAME_BALANCE.SUPPLY_TOTAL_COST
+        const totalCost = supplyCost(GAME_BALANCE.SUPPLY_TOTAL_COST, state.crewRoster.some(m => m.id === 'navigator'))
         if (state.fleet.gold < totalCost) return state
         return { fleet: { ...state.fleet, gold: state.fleet.gold - totalCost, food: state.fleet.food + GAME_BALANCE.SUPPLY_AMOUNT, water: state.fleet.water + GAME_BALANCE.SUPPLY_AMOUNT } }
       }),
@@ -1604,8 +1637,10 @@ export const useGameStore = create<GameStore>()(
           for (const req of task.requiredGoods) { newCargo = updateCargo(newCargo, req.goodId, -req.quantity) }
         }
         const fameGain = task.reward.fame ?? 0
+        // 商人谈下来的那部分赏金：卡片上写的数字就是这里结算的数字
+        const goldGain = taskGold(task.reward.gold, state.crewRoster.some(m => m.id === 'merchant'))
         return withAchievements(state, {
-          fleet: syncUsedCapacity({ ...state.fleet, gold: state.fleet.gold + task.reward.gold, fame: state.fleet.fame + fameGain }),
+          fleet: syncUsedCapacity({ ...state.fleet, gold: state.fleet.gold + goldGain, fame: state.fleet.fame + fameGain }),
           completedTasks: [...state.completedTasks, taskId],
           activeTasks: state.activeTasks.filter(t => t.id !== taskId),
         })
@@ -1642,9 +1677,21 @@ export const useGameStore = create<GameStore>()(
         // 派系声望结算（第二条线）：走私掉王室、献宝赢王室……
         const newFactionRep = { ...state.factionRep }
         if (quartered.factionChange) {
+          /*
+           * 翻译官：「事件里的派系好感 +50%」。
+           *
+           * 只放大**正的**变化。负的变化（走私被王室记账）不动——把惩罚也放大，
+           * 这条 perk 就变成了 debuff，那是"看起来在加成、其实在扣分"的假实现。
+           * 同一课在炮手（缴获 +50%）那儿已经吃过一次了。
+           */
+          const hasInterpreter = state.crewRoster.some(m => m.id === 'interpreter')
           for (const [fid, delta] of Object.entries(quartered.factionChange)) {
             const key = fid as FactionId
-            newFactionRep[key] = Math.max(-100, Math.min(100, newFactionRep[key] + (delta ?? 0)))
+            const raw = delta ?? 0
+            const gain = raw > 0 && hasInterpreter
+              ? Math.round(raw * INTERPRETER_FACTION_MUL)
+              : raw
+            newFactionRep[key] = Math.max(-100, Math.min(100, newFactionRep[key] + gain))
           }
         }
         // 身份取向结算（第二条线）：残酷/仁慈/贪婪/鲁猛/守秘
