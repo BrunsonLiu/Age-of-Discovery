@@ -128,7 +128,6 @@ export default function SegmentDecision() {
   const officers = useGameStore((s) => s.officers)
   const weather = useGameStore((s) => s.weather)
   const currentRoute = useGameStore((s) => s.currentRoute)
-  const crewRoster = useGameStore((s) => s.crewRoster)
   const fx = useFx((s) => s.fx)
 
   const [picked, setPicked] = useState<StanceId | null>(null)
@@ -207,7 +206,7 @@ export default function SegmentDecision() {
       dailyEventProb,
       durabilityCarry: fleet.durabilityCarry,
     })
-  }, [pending, fleet, officers, weather, currentRoute, crewRoster])
+  }, [pending, fleet, officers, weather, currentRoute])
 
   if (gamePhase !== 'segment' || !pending) return null
 

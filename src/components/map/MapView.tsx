@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, Component, useMemo, lazy, Suspense } 
 import { MapContainer, GeoJSON, useMap } from 'react-leaflet'
 import { useMapStore } from '@/store/useMapStore'
 import { useGameStore } from '@/store/useGameStore'
+import { setMapHandle } from '@/utils/mapHandle'
 import { useIsMobile } from '@/hooks/useIsMobile'
 import { ports } from '@/data/ports'
 import { PortMarker } from './PortMarker'
@@ -93,6 +94,19 @@ const Map3DView = lazy(() => import('@/components/map3d/Map3DView'))
  * Leaflet 在视图重建时会换掉 svg 节点，defs 跟着丢；每次缩放结束补一次，
  * 幂等（已有 #landPaper 就跳过）。
  */
+/**
+ * 把地图实例登记到共享句柄（只有海上异闻会读它）。
+ * 只登记、只读，不在这里改任何地图状态。
+ */
+function MapHandleBridge() {
+  const map = useMap()
+  useEffect(() => {
+    setMapHandle(map)
+    return () => setMapHandle(null)
+  }, [map])
+  return null
+}
+
 function LandPaperPattern() {
   const map = useMap()
   useEffect(() => {
@@ -468,6 +482,7 @@ export default function MapView() {
                   所以压到陆地上的那半截会被自动盖住，只留海面部分 */}
               <RhumbLines />
               <LandPaperPattern />
+              <MapHandleBridge />
               <MapController />
               <MapOverlays />
               {/* 右上角小地图：全世界轮廓 + 当前视野框，点击跳转 */}

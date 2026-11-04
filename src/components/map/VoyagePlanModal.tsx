@@ -99,7 +99,6 @@ export default function VoyagePlanModal() {
   const buyRouteIntel = useGameStore(s => s.buyRouteIntel)
   const weather = useGameStore(s => s.weather)
   const shipPos = useGameStore(s => s.shipPosition)
-  const crewRoster = useGameStore(s => s.crewRoster)
 
   // 键盘通道：Enter 升起旗帜，Esc 再想想（见 hooks/useKeyboardControls）
   // 注意：钩子必须在提前 return 之前注册，避免 pendingVoyage 变化时钩子顺序变化

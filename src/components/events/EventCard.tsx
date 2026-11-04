@@ -88,7 +88,7 @@ export default function EventCard() {
       eventType: currentEvent?.type,
     }
     return currentEvent.choices.map(c => summarizeChoice(c, ctx, fleet, GAME_BALANCE.MORALE_MAX))
-  }, [currentEvent, stance, fleet, officers])
+  }, [currentEvent, stance, fleet, officers, crewRoster])
 
   if (!currentEvent) return null
 

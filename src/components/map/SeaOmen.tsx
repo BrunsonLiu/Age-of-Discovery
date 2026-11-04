@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useGameStore } from '@/store/useGameStore'
+import { mapHandle } from '@/utils/mapHandle'
+import { isOnLand } from '@/utils/landCheck'
 
 /**
  * 海上异闻：海面上升起的一个剪影 + 一行字，几秒后自己消失。
@@ -18,14 +20,14 @@ import { useGameStore } from '@/store/useGameStore'
  */
 const SHOW_MS = 8000
 
-/** 每种异闻摆在哪、怎么动（位置写死，避免每次出现都"跳一下"） */
-const LAYOUT: Record<string, { box: string; cls: string }> = {
-  kraken: { box: 'left-[6%] bottom-[14%] w-[34%] max-w-[380px]', cls: 'omen-rise' },
-  whale: { box: 'left-[10%] bottom-[26%] w-[30%] max-w-[340px]', cls: 'omen-drift' },
-  ghost: { box: 'right-[8%] top-[24%] w-[26%] max-w-[300px]', cls: 'omen-drift-slow' },
-  siren: { box: 'right-[10%] bottom-[20%] w-[22%] max-w-[250px]', cls: 'omen-rise' },
-  meteor: { box: 'right-[16%] top-[8%] w-[26%] max-w-[300px]', cls: 'omen-fall' },
-  lights: { box: 'left-[18%] bottom-[8%] w-[46%] max-w-[520px]', cls: 'omen-glow' },
+/** 每种异闻怎么动（位置在运行时锚定船位，见组件） */
+const LAYOUT: Record<string, { w: string; cls: string }> = {
+  kraken: { w: 'w-[30%] max-w-[340px]', cls: 'omen-rise' },
+  whale: { w: 'w-[26%] max-w-[300px]', cls: 'omen-drift' },
+  ghost: { w: 'w-[22%] max-w-[260px]', cls: 'omen-drift-slow' },
+  siren: { w: 'w-[18%] max-w-[210px]', cls: 'omen-rise' },
+  meteor: { w: 'w-[24%] max-w-[280px]', cls: 'omen-fall' },
+  lights: { w: 'w-[42%] max-w-[480px]', cls: 'omen-glow' },
 }
 
 function Silhouette({ kind }: { kind: string }) {
@@ -34,13 +36,27 @@ function Silhouette({ kind }: { kind: string }) {
   const soft = 'rgba(26,18,7,0.55)'
   switch (kind) {
     case 'kraken':
-      // 三条触手破水，最高的那条弯着
+      /*
+       * 三条触手：由粗到细、末端收成尖，各自弯向不同方向。
+       * 第一版画成了三个实心大三角，在 1440 宽的地图上读成"墨团"而不是触手——
+       * 剪影的可辨识度全靠**轮廓的收窄**，不是靠面积。
+       */
       return (
-        <svg viewBox="0 0 300 160" className="w-full h-auto" aria-hidden="true">
-          <path d="M40 160c4-40 10-70 26-92 8-11 22-9 24 4 3 18-6 34-2 52" fill={ink} opacity="0.9" />
-          <path d="M120 160c2-52 8-96 30-120 10-11 24-4 22 10-3 22-16 40-14 62 1 16 6 32 8 48" fill={ink} opacity="0.95" />
-          <path d="M210 160c-4-30-2-58 10-76 8-12 22-6 20 8-3 20-12 38-10 68" fill={ink} opacity="0.85" />
-          <ellipse cx="150" cy="158" rx="120" ry="10" fill={soft} />
+        <svg viewBox="0 0 300 170" className="w-full h-auto" aria-hidden="true">
+          <path
+            d="M46 170c-2-34 4-62 16-80 6-9 14-8 16 1 3 12-2 26 0 42 2 14 6 26 8 37z"
+            fill={ink} opacity="0.92"
+          />
+          <path
+            d="M124 170c-3-46 0-84 14-108 5-9 14-7 16 2 3 14-2 30-4 46-2 20 2 42 4 60z"
+            fill={ink} opacity="0.96"
+          />
+          <path
+            d="M214 170c3-28 8-50 18-64 6-8 14-4 14 4 0 12-6 24-8 38-2 10-2 16-2 22z"
+            fill={ink} opacity="0.88"
+          />
+          {/* 水面扰动：一道很淡的弧，暗示水下还有东西 */}
+          <ellipse cx="150" cy="166" rx="128" ry="7" fill={soft} />
         </svg>
       )
     case 'whale':
@@ -105,6 +121,51 @@ function Silhouette({ kind }: { kind: string }) {
   }
 }
 
+/**
+ * 剪影该出现在哪：从船位出发，在附近找一个**确实是海面**的点。
+ *
+ * 【为什么不能只做像素偏移】第一版按"船右边 80% 船宽"偏移，
+ * 实测幽灵船直接画在摩洛哥海岸上——地图一平移，"海面上的东西"就落到陆地。
+ * 一艘船压在陆地上比不出现更破坏可信度。
+ *
+ * 做法：取船位经纬度，按 8 个方向 × 3 个距离试探，用 `isOnLand` 挑第一个海面点，
+ * 再用 Leaflet 的 `latLngToContainerPoint` 换成像素。
+ * 拿不到地图实例（还没挂载/3D 视图）时退回原来的像素偏移——总比不显示好。
+ */
+function omenAnchor(): { left: string; top: string } {
+  const fallback = { left: '40%', top: '45%' }
+  if (typeof document === 'undefined') return fallback
+  const ship = document.querySelector('[data-tut="ship"]')
+  const r = ship?.getBoundingClientRect()
+  const pxFallback = r
+    ? {
+      left: `${Math.round(Math.min(Math.max(r.left + r.width * 0.7, 8), window.innerWidth * 0.7))}px`,
+      top: `${Math.round(Math.min(Math.max(r.top + r.height * 0.55, window.innerHeight * 0.15), window.innerHeight * 0.62))}px`,
+    }
+    : fallback
+
+  const map = mapHandle()
+  const pos = useGameStore.getState().shipPosition
+  if (!map || !pos) return pxFallback
+  const [lat, lng] = pos
+  // 由近到远、八个方向；先找近的，找不到再往外
+  for (const deg of [1.6, 3.2, 5]) {
+    for (const a of [0, 45, 90, 135, 180, 225, 270, 315]) {
+      const rad = (a * Math.PI) / 180
+      const dLat = Math.cos(rad) * deg
+      const dLng = Math.sin(rad) * deg
+      const la = lat + dLat
+      const ln = lng + dLng
+      if (la > 84 || la < -84 || ln < -180 || ln > 180) continue
+      if (isOnLand(la, ln)) continue
+      const pt = map.latLngToContainerPoint([la, ln])
+      if (pt.x < 40 || pt.y < 40 || pt.x > map.getSize().x - 40 || pt.y > map.getSize().y - 40) continue
+      return { left: `${Math.round(pt.x)}px`, top: `${Math.round(pt.y)}px` }
+    }
+  }
+  return pxFallback
+}
+
 export default function SeaOmen() {
   const omen = useGameStore(s => s.seaOmen)
   const panel = useGameStore(s => s.activePanel)
@@ -125,6 +186,17 @@ export default function SeaOmen() {
 
   const layout = LAYOUT[shown.kind] ?? LAYOUT.lights
 
+  /*
+   * 锚定在船位旁边，而不是屏幕的固定角落。
+   *
+   * 【为什么】第一版用固定百分比（左下 14%），实测幽灵船直接画在了伊比利亚半岛上——
+   * 地图一平移，"海面上的东西"就落到陆地上了。一艘船压在陆地上，
+   * 比完全不出现更破坏可信度。
+   * 船位每帧都在海上（搁浅会被判失败），以它为锚点，剪影永远漂在船附近的水面。
+   * 拿不到船元素时退回 45% 屏幕处——总比画在岸上好。
+   */
+  const anchor = omenAnchor()
+
   return (
     <div
       data-sea-omen={shown.kind}
@@ -132,12 +204,22 @@ export default function SeaOmen() {
       style={{ zIndex: 460 }}
       aria-hidden="true"
     >
-      <div className={`absolute ${layout.box} ${layout.cls}`}>
+      <div className={`absolute ${layout.w} ${layout.cls}`} style={{ left: anchor.left, top: anchor.top }}>
         <Silhouette kind={shown.kind} />
       </div>
-      {/* 一行字压在剪影下方：这是整段体验唯一的"文本"，不再弹任何东西 */}
-      <div className={`absolute left-1/2 -translate-x-1/2 bottom-[6%] omen-caption`}>
-        <span className="font-serif text-[13px] tracking-wide" style={{ color: 'rgba(240,226,196,0.86)', textShadow: '0 1px 3px rgba(0,0,0,0.9)' }}>
+      {/* 一行字压在剪影下方：这是整段体验唯一的"文本"，不再弹任何东西。
+          位置抬到 17%：第一版放 6%，实测正好被底栏盖住，等于没写。 */}
+      <div className="absolute left-1/2 -translate-x-1/2 bottom-[17%] omen-caption">
+        <span
+          className="inline-block font-serif text-[13px] tracking-wide px-3 py-1 rounded"
+          style={{
+            color: 'rgba(244,232,206,0.94)',
+            // 底衬：海面有时是深蓝、有时是浅羊皮纸，单靠字色压不住两种底色
+            background: 'rgba(22,15,7,0.62)',
+            border: '1px solid rgba(201,169,110,0.28)',
+            textShadow: '0 1px 2px rgba(0,0,0,0.85)',
+          }}
+        >
           {shown.text}
         </span>
       </div>

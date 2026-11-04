@@ -223,7 +223,6 @@ function ResourceChip({
 export default function ResourceCluster() {
   const fleet = useGameStore((s) => s.fleet)
   const stance = useGameStore((s) => s.stance)
-  const crewRoster = useGameStore((s) => s.crewRoster)
   const officers = useGameStore((s) => s.officers)
   const currentRoute = useGameStore((s) => s.currentRoute)
   const routeProgress = useGameStore((s) => s.routeProgress)
