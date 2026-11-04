@@ -5,6 +5,7 @@ import { tasks } from '@/data/tasks'
 import { goods } from '@/data/goods'
 import { ports } from '@/data/ports'
 import ParchmentCard from '@/components/ui/ParchmentCard'
+import VoyageNextCard from '@/components/panels/VoyageNextCard'
 import ActionButton from '@/components/ui/ActionButton'
 import ScrollFade from '@/components/ui/ScrollFade'
 import { useFxStore as useFx } from '@/store/useFxStore'
@@ -53,6 +54,8 @@ export default function TaskPanel() {
   return (
     <div className="w-full md:w-80 animate-slide-in-left">
       <ParchmentCard title="冒险笔记" onClose={() => setActivePanel(null)}>
+        {/* 航路卡放最上面：它回答"我该往哪走"，比"有哪些委托"更该先看到 */}
+        <VoyageNextCard />
         <p className="text-gold-500 text-[13px] font-serif italic mb-2">
           {gameMode === 'visitor'
             ? '参观模式：这些都是听说过的事，不接也没关系——船照开，世界照走'

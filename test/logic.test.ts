@@ -30,6 +30,7 @@ import { DIALOGUE_RULES, dialogueBudget, pickDialogue, unreachableScripts, type 
 import { traitEffect } from '../src/utils/outcomeAdjust'
 import { groupJournal, journalHeadline } from '../src/utils/captainLog'
 import { rollSeaOmen, OMEN_CHANCE, OMEN_COOLDOWN_DAYS } from '../src/utils/seaOmen'
+import { voyageMilestones, nextMilestone, newlyReached, suggestPortFor } from '../src/data/voyageMilestones'
 import { npcLegAt, npcPose } from '../src/utils/npcShips'
 import { getRouteGeometry } from '../src/utils/routePath'
 import { durabilityColor, loadColor, DANGER_COLOR, WARN_COLOR, SAFE_COLOR } from '../src/utils/shipVitals'
@@ -5149,11 +5150,20 @@ console.log('\n== 见习航海士：发现新港口声望 +50% ==')
     // 只需要 id —— discoverPort 里只做 `some(m => m.id === ...)`
     crewRoster: [{ id: 'midshipman', loyalty: 60 }] as never,
   })
-  useGameStore.getState().discoverPort(12)
+  // 必须用**同一个港口**：两次用不同港会触发不同的航路里程碑，差值就不再只是见习航海士那 3 点
+  useGameStore.getState().discoverPort(4)
   const fameYes = useGameStore.getState().fleet.fame
 
-  assert(fameNo === 5, `没有见习航海士时声望 +5（实得 ${fameNo}）`)
-  assert(fameYes === 8, `有见习航海士时 +8（5 × 1.5 四舍五入，实得 ${fameYes}）`)
+  /*
+   * 【为什么改成比差值而不是绝对值】
+   * 到港声望现在不是唯一来源：航路里程碑也会给声望（托尔图加/马六甲都算里程碑目标）。
+   * 断言绝对值 5 / 8 会在任何一次经济改动后误报，而这条断言真正要守的是
+   * "见习航海士让到港声望多一半" —— 那是差值。
+   * 同时保留一条"至少 +5"的兜底：万一有人把到港声望整个删了，差值仍是 0，也能抓到。
+   */
+  const bonus = fameYes - fameNo
+  assert(fameNo >= 5, `没有见习航海士时到港声望至少 +5（实得 ${fameNo}，含里程碑奖励）`)
+  assert(bonus === 3, `见习航海士让到港声望从 5 变 8（差值 ${bonus}，总 ${fameNo} → ${fameYes}）`)
 }
 
 /*
@@ -5436,6 +5446,76 @@ console.log('\n== 海上异闻：氛围层必须是"偶尔、简短、不打断"
   assert(Object.keys(one).sort().join(',') === 'day,kind,text',
     `异闻只返回 kind/text/day（实得 ${Object.keys(one).join(',')}）`)
   assert(OMEN_CHANCE > 0 && OMEN_CHANCE < 0.3, `基准概率克制（${OMEN_CHANCE}，一天一遇会变噪音）`)
+}
+/*
+ * 航路里程碑：把"往哪走"变成可读目标。
+ *
+ * 这套东西最容易出的两个错：
+ *   ① `atPorts` 里写了一个不存在的港口 id → 里程碑永远达不成，但界面上还在提示玩家去
+ *   ② 一次到港同时跨两级时只结算一级（从塞维利亚直航哈瓦那会同时越过"新大陆"）
+ */
+console.log('\n== 航路里程碑 ==')
+{
+  // ① 每个目标港口 id 都必须真实存在（拼错 = 永远达不成）
+  const portIds = new Set(ports.map(p => p.id))
+  const bad = voyageMilestones.filter(m => m.atPorts.some(id => !portIds.has(id)))
+  assert(bad.length === 0,
+    `里程碑的目标港口都真实存在${bad.length ? '（不存在：' + bad.map(m => m.id).join(',') + '）' : ''}`)
+
+  // ② 顺序推进：什么都没发现时指向第一段
+  assert(nextMilestone([])?.id === 'beyond_pillars', '开局指向"出了海格力斯之柱"')
+  // 到过埃尔米纳 → 第一段完成，指向新大陆
+  assert(nextMilestone([6, 9])?.id === 'new_world', '到过埃尔米纳后指向"看见新大陆"')
+  // 加勒比任一港即可（不必是哈瓦那）
+  assert(nextMilestone([6, 9, 4])?.id === 'cape_of_storms', '到过托尔图加也算"看见新大陆"')
+
+  // ③ 全走完 → null（界面据此显示结束语，而不是留一张空卡）
+  const all = voyageMilestones.flatMap(m => m.atPorts)
+  assert(nextMilestone(all) === null, '全部达成后不再有下一段')
+
+  // ④ 一次跨两级也只算一次"新达成"，但两段都要结算
+  const jumped = newlyReached([6], [6, 1])
+  assert(jumped.length === 1 && jumped[0].id === 'new_world',
+    `直航哈瓦那只结算"看见新大陆"这一段（实得 ${jumped.map(m => m.id).join(',')}）`)
+  const two = newlyReached([], [10])
+  assert(two.map(m => m.id).sort().join(',') === 'beyond_pillars,cape_of_storms',
+    `一下到开普敦会同时达成两段（实得 ${two.map(m => m.id).join(',')}）`)
+
+  // ⑤ 真实到港结算：金币与声望都要到账，且不能重复发
+  {
+    const s0 = useGameStore.getState()
+    useGameStore.setState({
+      fleet: { ...s0.fleet, gold: 1000, fame: 0 },
+      discoveredPorts: [6],
+      crewRoster: [],
+      notifications: [],
+    })
+    const before = useGameStore.getState().fleet.gold
+    useGameStore.getState().discoverPort(1) // 哈瓦那 → 看见新大陆
+    const st1 = useGameStore.getState()
+    const reward = voyageMilestones.find(m => m.id === 'new_world')!.reward
+    assert(st1.fleet.gold === before + reward.gold,
+      `到哈瓦那结算里程碑金币 +${reward.gold}（实得 ${st1.fleet.gold - before}）`)
+    assert(st1.fleet.fame >= reward.fame,
+      `同时结算声望 +${reward.fame}（实得 ${st1.fleet.fame}）`)
+    assert(st1.notifications.some(n => n.title.includes('航路')), '里程碑会留下一条通知')
+    // 再"发现"一次同一港：discoverPort 直接返回，不重复发钱
+    const goldAfter = useGameStore.getState().fleet.gold
+    useGameStore.getState().discoverPort(1)
+    assert(useGameStore.getState().fleet.gold === goldAfter, '同一港口不会重复结算里程碑')
+  }
+
+  // ⑥ 建议目的港：给最近的一个（还没去过的）
+  {
+    const m = voyageMilestones.find(x => x.id === 'new_world')!
+    // 从塞维利亚出发，加勒比七港里最近的是圣胡安（约 3200 海里）
+    const near = suggestPortFor(m, [6], [37.39, -5.98])
+    assert(near !== null && near.distanceNm > 1000,
+      `从塞维利亚出发会给出一个加勒比目的港（${near?.nameCn} ${near?.distanceNm} 海里）`)
+    // 已经去过的港要从候选里剔除
+    const skip = suggestPortFor(m, [6, 5], [37.39, -5.98])
+    assert(skip === null || skip.id !== 5, '已经到过的港口不会再被推荐')
+  }
 }
 console.log(`\n最终结果：${passed} 通过 / ${failed} 失败`)
 if (failed > 0) process.exit(1)

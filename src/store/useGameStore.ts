@@ -32,6 +32,7 @@ import {
   WEATHER_INFO, advanceWeather, createInitialWeather, isNotableWeather,
   weatherChangeMessage, weatherFavorFactor,
 } from '@/utils/weather'
+import { newlyReached } from '@/data/voyageMilestones'
 
 const createStartingShip = (): Ship => ({
   id: 1,
@@ -666,10 +667,52 @@ function grantAchievements(state: GameState & { notifications?: StoreNotificatio
   }
 }
 
+/**
+ * 航路里程碑：到港后检查"是不是第一次踏上某个地理节点"。
+ *
+ * 【为什么挂在 withAchievements 里】
+ * discoverPort 有**三个** return 分支（首次发现 / 每 5 港 / 普通到港），
+ * 若各写一遍，任何一处漏掉就表现为"某条航路永远不结算"，而且极难发现。
+ * 这个函数只看 `discoveredPorts` 的**前后差集**，所以不管补丁从哪个分支来都能算对。
+ */
+function grantVoyageMilestones(
+  state: GameState & { notifications?: StoreNotification[] },
+  patch: StatePatch,
+): StatePatch | null {
+  const after = (patch.discoveredPorts as number[] | undefined) ?? state.discoveredPorts
+  const reached = newlyReached(state.discoveredPorts, after)
+  if (reached.length === 0) return null
+  const gold = reached.reduce((s, m) => s + m.reward.gold, 0)
+  const fame = reached.reduce((s, m) => s + m.reward.fame, 0)
+  const baseFleet = (patch.fleet as typeof state.fleet | undefined) ?? state.fleet
+  reached.forEach(m => {
+    useFxStore.getState().fx(
+      { kind: 'banner', tone: 'gold', text: `⚓ ${m.title}`, sub: `+${m.reward.gold} 金 · +${m.reward.fame} 声望` },
+      'milestone',
+    )
+    useFxStore.getState().cue('milestone')
+  })
+  return {
+    fleet: { ...baseFleet, gold: baseFleet.gold + gold, fame: baseFleet.fame + fame },
+    notifications: [
+      ...((patch.notifications as StoreNotification[] | undefined) ?? state.notifications ?? []),
+      ...reached.map(m => ({
+        id: `voyage-${m.id}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        type: 'achievement' as const,
+        title: `⚓ 航路 · ${m.title}`,
+        message: `${m.why}（+${m.reward.gold} 金，+${m.reward.fame} 声望）`,
+        timestamp: Date.now(),
+      })),
+    ],
+  }
+}
+
 /** 检查并返回成就增量（供 set 回调合并） */
 function withAchievements(state: GameState & { notifications?: StoreNotification[] }, patch: StatePatch): StatePatch {
   const grant = grantAchievements({ ...state, ...patch })
-  return grant ? { ...patch, ...grant } : patch
+  const merged = grant ? { ...patch, ...grant } : patch
+  const voyage = grantVoyageMilestones(state, merged)
+  return voyage ? { ...merged, ...voyage } : merged
 }
 
 /** 检查并返回本局达成的胜利结局描述（null 表示未达成） */
