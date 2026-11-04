@@ -2,7 +2,18 @@ import type { GameEvent, GameState, EventOutcome, FactionId, NotorietyAxis } fro
 import { ports } from '@/data/ports'
 import { biasProbabilities } from '@/utils/miniGame'
 
-export function checkEventTrigger(event: GameEvent, gameState: GameState): boolean {
+export function checkEventTrigger(
+  event: GameEvent,
+  gameState: GameState,
+  /**
+   * 随机数源。默认 Math.random；传固定值可以**复现同一次掷值**。
+   *
+   * 【为什么需要这个参数】"天生探险家"把发现类事件概率 ×1.3，但玩家看不到
+   * 它起过作用。要判断"这一场遭遇是不是天赋给的"，只能拿**同一个掷值**
+   * 分别跑"有天赋"和"没天赋"两遍 —— 随机数一旦重新取，就没有对照了。
+   */
+  rand: () => number = Math.random,
+): boolean {
   const { triggerCondition } = event
   const { fleet, currentRoute } = gameState
 
@@ -100,7 +111,7 @@ export function checkEventTrigger(event: GameEvent, gameState: GameState): boole
   // 施加在**全局触发闸门**上（见 store.advanceDay 的 eventBias）。
   // 这里不再叠第二层——两个旋钮都改同一件事，玩家会算不清账。
 
-  return Math.random() < probability
+  return rand() < probability
 }
 
 /**
@@ -142,11 +153,37 @@ export function getRandomEvents(
 
   const shuffled = [...events].sort(() => Math.random() - 0.5)
   for (const event of shuffled) {
-    if (checkEventTrigger(event, gameState)) {
-      return event
+    /*
+     * 【这一次掷值必须留住】为了判断"这场遭遇是不是天赋给的"，
+     * 命中之后要拿**同一个数**再跑一遍"没有探险家"的判定。
+     * 重取随机数就没有对照了——那样得到的是"另一个平行世界的掷骰"，
+     * 得出的"额外遭遇"标记会是随机噪声。
+     */
+    let roll = 0
+    const recorded = () => { roll = Math.random(); return roll }
+    if (checkEventTrigger(event, gameState, recorded)) {
+      const viaExplorer = markExplorerBonus(event, gameState, roll)
+      return viaExplorer ? { ...event, viaExplorer: true } : event
     }
   }
   return null
+}
+
+/**
+ * 这一场遭遇是不是「天生探险家」多带来的？
+ *
+ * 只有当：① 玩家带 explorer；② 事件是发现类；③ 同一次掷值下没有天赋就不会触发
+ * —— 三条同时成立才算。缺了第 ③ 条，每个发现事件都会被标成"天赋给的"，
+ * 那是把"角色设定"讲成了"每次都生效"，比不标更糟。
+ */
+export function markExplorerBonus(event: GameEvent, gameState: GameState, roll: number): boolean {
+  if (gameState.fleet.trait !== 'explorer') return false
+  if (event.type !== 'discovery') return false
+  const withoutTrait: GameState = {
+    ...gameState,
+    fleet: { ...gameState.fleet, trait: null },
+  }
+  return !checkEventTrigger(event, withoutTrait, () => roll)
 }
 
 /**

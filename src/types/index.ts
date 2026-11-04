@@ -167,6 +167,13 @@ export interface GameEvent {
   type: 'storm' | 'pirate' | 'disease' | 'accident' | 'discovery' | 'historical'
     | 'kraken' | 'ghost' | 'festival' | 'smuggle' | 'siren' | 'volcano' | 'fog' | 'treasure'
     | 'faction' | 'crew' | 'reckoning'
+  /**
+   * 运行时标记：这场遭遇是「天生探险家」多带来的。
+   *
+   * 由 getRandomEvents 写入（用同一个掷值再跑一遍"没有天赋"的判定来确认），
+   * 不会出现在事件数据里。用途只有一个：让开局那一次点击在局内被看见一次。
+   */
+  viaExplorer?: boolean
   /** 场景插图键（见 components/events/EventScene.tsx 注册表） */
   sceneKey?: string
   title: string

@@ -1,6 +1,6 @@
 /* 逻辑冒烟测试：验证事件链、特质、价格、成就、航速、情报、军官、竞争船长真实生效 */
 import { events } from '../src/data/events'
-import { checkEventTrigger, consumeEventFlags, selectOutcome } from '../src/utils/eventEngine'
+import { checkEventTrigger, consumeEventFlags, selectOutcome, markExplorerBonus } from '../src/utils/eventEngine'
 import { SCENE_KEYS } from '../src/components/events/EventScene'
 import { applyTraitToOutcome, priceMultiplier, traits } from '../src/data/traits'
 import { checkAchievements, achievements } from '../src/data/achievements'
@@ -5014,6 +5014,33 @@ console.log('\n== 见习航海士：发现新港口声望 +50% ==')
 
   assert(fameNo === 5, `没有见习航海士时声望 +5（实得 ${fameNo}）`)
   assert(fameYes === 8, `有见习航海士时 +8（5 × 1.5 四舍五入，实得 ${fameYes}）`)
+}
+
+/*
+ * 「天生探险家」的痕迹：只在"没有天赋就不会撞上"时，才说这句话是真的。
+ *
+ * 【为什么必须用反事实】它的效果是"发现类事件概率 ×1.3"，没有一个可以直接显示的
+ * 差值。如果只是"玩家有 explorer 且这场是 discovery 就打标签"，那么每一场发现
+ * 都会被标成"天赋给的"——那是把角色设定讲成了每次都生效，比不标更糟。
+ * 所以判定要拿**同一个掷值**再跑一遍没有天赋的版本，只有结论翻转才算。
+ */
+console.log('\n== 天生探险家：只在真的多带来一次遭遇时才打标 ==')
+{
+  const st0 = useGameStore.getState()
+  const ev = { id: -2, type: 'discovery', triggerCondition: { probability: 0.2 }, choices: [] } as unknown as GameEvent
+  const noTrait = { ...st0, fleet: { ...st0.fleet, trait: null }, crewRoster: [] } as typeof st0
+  const withTrait = { ...st0, fleet: { ...st0.fleet, trait: 'explorer' }, crewRoster: [] } as typeof st0
+
+  // 0.23 落在两条线之间：0.2（无天赋）不触发，0.2×1.3=0.26（有天赋）触发
+  assert(checkEventTrigger(ev, noTrait, () => 0.23) === false, '0.23 在没有天赋时不触发')
+  assert(checkEventTrigger(ev, withTrait, () => 0.23) === true, '同一个 0.23 在有天赋时触发')
+
+  assert(markExplorerBonus(ev, withTrait, 0.23) === true, '结论翻转 → 标为"天赋带来的遭遇"')
+  // 0.15 两条线都会触发 → 不是天赋的功劳，不能打标
+  assert(markExplorerBonus(ev, withTrait, 0.15) === false, '两条线都会触发时不许打标（那是夸大）')
+  assert(markExplorerBonus(ev, noTrait, 0.23) === false, '没有天赋时永远不打标')
+  const storm = { ...ev, type: 'storm' } as unknown as GameEvent
+  assert(markExplorerBonus(storm, withTrait, 0.23) === false, '非发现类事件不受探险家影响')
 }
 
 console.log(`\n最终结果：${passed} 通过 / ${failed} 失败`)

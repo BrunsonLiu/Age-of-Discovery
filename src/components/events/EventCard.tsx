@@ -264,6 +264,28 @@ export default function EventCard() {
               >
                 {renderEventIcon(currentEvent.type, 20)}
               </div>
+              {/*
+                「天生探险家」留下的痕迹。
+
+                【为什么需要】五个天赋里，其余四个（商界血脉/铁壁/魅力/医生）都会在
+                结算屏上留一行"这一次它少损了什么"；只有探险家改的是**事件触发概率**，
+                没有一个"这一刻"可以挂文案 —— 玩家开局花了一次点击选它，
+                此后整局都看不到它起过作用，心理上等于没选。
+                现在用同一个掷值反事实判定（getRandomEvents 的 markExplorerBonus），
+                只在"没有天赋就不会撞上"时才显示，所以这句话永远是真的。
+              */}
+              {currentEvent.viaExplorer && (
+                <span
+                  className="mb-2 inline-flex items-center gap-1 rounded-full px-2 py-[3px] font-serif text-[11px] tracking-wide"
+                  style={{
+                    color: '#f0d88a',
+                    background: 'rgba(61,44,16,0.72)',
+                    border: '1px solid rgba(180,144,72,0.55)',
+                  }}
+                >
+                  天生探险家 · 这场遭遇只有你会撞上
+                </span>
+              )}
               {bannerFailed ? (
                 <h2 className="pirate-title text-2xl text-center">{currentEvent.title}</h2>
               ) : (
