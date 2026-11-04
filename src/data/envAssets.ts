@@ -27,19 +27,19 @@
 const BASE = (import.meta.env?.BASE_URL as string | undefined) || '/'
 
 export const FX_ASSETS = {
-  rain: `${BASE}assets/fx/fx_rain.png`,
-  fog: `${BASE}assets/fx/fx_fog.png`,
-  spray: `${BASE}assets/fx/fx_spray.png`,
-  clouds: `${BASE}assets/fx/weather_clouds.png`,
-  bowWave: `${BASE}assets/fx/fx_bow_wave.png`,
-  cannonFlash: `${BASE}assets/fx/fx_cannon_flash.png`,
-  waterSpout: `${BASE}assets/fx/fx_water_spout.png`,
-  hullBurst: `${BASE}assets/fx/fx_hull_burst.png`,
-  smokePuff: `${BASE}assets/fx/fx_smoke_puff.png`,
+  rain: `${BASE}assets/fx/fx_rain.webp`,
+  fog: `${BASE}assets/fx/fx_fog.webp`,
+  spray: `${BASE}assets/fx/fx_spray.webp`,
+  clouds: `${BASE}assets/fx/weather_clouds.webp`,
+  bowWave: `${BASE}assets/fx/fx_bow_wave.webp`,
+  cannonFlash: `${BASE}assets/fx/fx_cannon_flash.webp`,
+  waterSpout: `${BASE}assets/fx/fx_water_spout.webp`,
+  hullBurst: `${BASE}assets/fx/fx_hull_burst.webp`,
+  smokePuff: `${BASE}assets/fx/fx_smoke_puff.webp`,
 } as const
 
 export const BG_ASSETS = {
-  title: `${BASE}assets/bg/bg_title.png`,
-  victory: `${BASE}assets/bg/bg_victory.png`,
-  defeat: `${BASE}assets/bg/bg_defeat.png`,
+  title: `${BASE}assets/bg/bg_title.webp`,
+  victory: `${BASE}assets/bg/bg_victory.webp`,
+  defeat: `${BASE}assets/bg/bg_defeat.webp`,
 } as const

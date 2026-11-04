@@ -29,9 +29,9 @@ const EDGE = process.env.EDGE_PATH ?? 'C:/Program Files (x86)/Microsoft/Edge/App
 const BASE = process.env.GAME_URL ?? 'http://127.0.0.1:5174/Age-of-Discovery/'
 const SHOTS = process.env.SHOTS_DIR ?? '.workbuddy/shots/scenes'
 
-/** 被拦截的素材：storm 场景的 D1 风暴之夜（d01.png）。 */
-const BLOCKED_ASSET = '/assets/scenes/d01.png'
-const BLOCKED_URL_MARK = 'd01.png'
+/** 被拦截的素材：storm 场景的 D1 风暴之夜（d01.webp）。 */
+const BLOCKED_ASSET = '/assets/scenes/d01.webp'
+const BLOCKED_URL_MARK = 'd01.webp'
 
 const browser = await puppeteer.launch({ executablePath: EDGE, headless: true, args: ['--no-sandbox'] })
 const page = await browser.newPage()
@@ -54,7 +54,7 @@ page.on('console', m => {
   errors.push('CONSOLE: ' + text.slice(0, 160))
 })
 
-/** 当前是否拦截 d01.png；测试中途切换 */
+/** 当前是否拦截 d01.webp；测试中途切换 */
 let blocking = true
 await page.setRequestInterception(true)
 page.on('request', req => {
@@ -114,13 +114,13 @@ const check = (ok, msg, extra = '') => {
   else { fail++; console.log('  ✗', msg, extra) }
 }
 
-console.log('① 拦截 d01.png，渲染缺图场景 storm')
+console.log('① 拦截 d01.webp，渲染缺图场景 storm')
 const a = await probe('storm')
 console.log('   ', JSON.stringify(a))
 check(a && !a.hasImg && a.hasSvg, '缺图场景已回退手绘 SVG（不白屏、不显示破图标）',
   a && a.hasImg ? `← 仍渲染了 <img>（src=${a.src}）` : '← 场景容器未找到')
 
-console.log('② 同一实例切到有图场景 chart（d11.png 未被拦截）')
+console.log('② 同一实例切到有图场景 chart（d11.webp 未被拦截）')
 const b = await probe('chart')
 console.log('   ', JSON.stringify(b))
 check(!!b && b.hasImg && !b.hasSvg && (b.naturalW ?? 0) > 0,

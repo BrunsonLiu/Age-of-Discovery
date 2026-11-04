@@ -272,23 +272,25 @@ export default function MapView() {
       // 同样不再加载 coastline.geojson：它的坐标 99.5% 与 land 重复，
       // 海岸线改由 land 多边形自己描边（见 landStyle 注释）。
       // 地图数据因此从 4MB 降到 1.9MB，「绘制航海图...」的等待从 37 秒降到个位数。
-      const results = await Promise.allSettled([
-        fetchLandGeojsonForRender(),
-        fetchBordersGeojson(),
-      ])
-
-      const [land, borders] = results
-      setGeoData({
-        land: land.status === 'fulfilled' ? land.value : null,
-        borders: borders.status === 'fulfilled' ? borders.value : null,
-      })
-
-      if (land.status === 'rejected') {
+      // 国界（626KB）不再和陆地一起等。
+      //
+      // 两者原来挂在同一个 Promise.allSettled 上，意思是**国界没到，地图就是空白**——
+      // 而国界只是一层细线装饰，陆地多边形才是这张图的骨架。
+      // 现在陆地一到就画，国界随后淡入：首屏少等 626KB（约占加载数据的 20%）。
+      const land = await fetchLandGeojsonForRender().catch(() => null)
+      setGeoData({ land, borders: null })
+      if (!land) {
         setLoadError(true)
+        setLoading(false)
+        return
       }
+      setLoading(false)
+
+      fetchBordersGeojson()
+        .then(borders => setGeoData(prev => ({ ...prev, borders: borders ?? null })))
+        .catch(() => { /* 国界线加载失败就不显示，不影响地图 */ })
     } catch {
       setLoadError(true)
-    } finally {
       setLoading(false)
     }
   }, [])

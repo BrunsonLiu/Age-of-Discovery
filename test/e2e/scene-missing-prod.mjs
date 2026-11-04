@@ -25,9 +25,9 @@ const BASE = process.env.GAME_URL ?? 'http://127.0.0.1:5181/Age-of-Discovery/'
 const SHOTS = process.env.SHOTS_DIR ?? '.workbuddy/shots/scenes'
 const DIST = process.env.DIST_DIR ?? 'dist'
 
-/** 临时移走的产物：D15 顺风而行（d15.png）。必须是真实存在的素材，
+/** 临时移走的产物：D15 顺风而行（d15.webp）。必须是真实存在的素材，
  *  否则测到的是「文件本来就不存在」，而非「文件存在但加载失败」。 */
-const VICTIM = 'd15.png'
+const VICTIM = 'd15.webp'
 
 const victimPath = path.resolve(DIST, 'assets', 'scenes', VICTIM)
 const stashPath = victimPath + '.stashed-for-test'
@@ -84,7 +84,7 @@ console.log('缺图探测：', JSON.stringify(imgProbe))
 // 验证已存在的图能正常加载（对照组）
 const imgOK = await page.evaluate(async () => {
   const base = location.pathname.replace(/\/[^/]*$/, '/')
-  const src = `${base}assets/scenes/d01.png`
+  const src = `${base}assets/scenes/d01.webp`
   return await new Promise(resolve => {
     const img = new Image()
     img.onload = () => resolve({ loaded: true, naturalW: img.naturalWidth, naturalH: img.naturalHeight })

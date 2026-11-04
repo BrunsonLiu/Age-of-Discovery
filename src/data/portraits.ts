@@ -36,37 +36,37 @@ const BASE = (import.meta.env?.BASE_URL as string | undefined) || '/'
 
 /** 十五位名船员（8 位常驻 + 7 位只在特定港口露面） */
 export const CREW_PORTRAITS: Partial<Record<CrewCharId, string>> = {
-  boatswain: `${BASE}assets/portraits/crew_boatswain.png`,
-  gunner: `${BASE}assets/portraits/crew_gunner.png`,
-  purser: `${BASE}assets/portraits/crew_purser.png`,
-  chaplain: `${BASE}assets/portraits/crew_chaplain.png`,
-  scholar: `${BASE}assets/portraits/crew_scholar.png`,
-  cook: `${BASE}assets/portraits/crew_cook.png`,
-  midshipman: `${BASE}assets/portraits/crew_midshipman.png`,
-  corsair: `${BASE}assets/portraits/crew_blackflag_guide.png`,
+  boatswain: `${BASE}assets/portraits/crew_boatswain.webp`,
+  gunner: `${BASE}assets/portraits/crew_gunner.webp`,
+  purser: `${BASE}assets/portraits/crew_purser.webp`,
+  chaplain: `${BASE}assets/portraits/crew_chaplain.webp`,
+  scholar: `${BASE}assets/portraits/crew_scholar.webp`,
+  cook: `${BASE}assets/portraits/crew_cook.webp`,
+  midshipman: `${BASE}assets/portraits/crew_midshipman.webp`,
+  corsair: `${BASE}assets/portraits/crew_blackflag_guide.webp`,
   // 第二批：从 e 系列（带铭牌的成品卡）裁掉底部铭牌得到的无铭牌版。
   // 铭牌占底部约 21%，详见 .workbuddy/gen-crew-portraits.mjs 的映射表。
-  navigator: `${BASE}assets/portraits/crew_navigator.png`,
-  medic: `${BASE}assets/portraits/crew_medic.png`,
-  carpenter: `${BASE}assets/portraits/crew_carpenter.png`,
-  interpreter: `${BASE}assets/portraits/crew_interpreter.png`,
-  guide: `${BASE}assets/portraits/crew_guide.png`,
-  merchant: `${BASE}assets/portraits/crew_merchant.png`,
-  pathfinder: `${BASE}assets/portraits/crew_pathfinder.png`,
+  navigator: `${BASE}assets/portraits/crew_navigator.webp`,
+  medic: `${BASE}assets/portraits/crew_medic.webp`,
+  carpenter: `${BASE}assets/portraits/crew_carpenter.webp`,
+  interpreter: `${BASE}assets/portraits/crew_interpreter.webp`,
+  guide: `${BASE}assets/portraits/crew_guide.webp`,
+  merchant: `${BASE}assets/portraits/crew_merchant.webp`,
+  pathfinder: `${BASE}assets/portraits/crew_pathfinder.webp`,
 }
 
 /** 三位军官 */
 export const OFFICER_PORTRAITS: Partial<Record<OfficerId, string>> = {
-  pilot: `${BASE}assets/portraits/officer_pilot.png`,
-  quartermaster: `${BASE}assets/portraits/officer_first_mate.png`,
-  surgeon: `${BASE}assets/portraits/officer_surgeon.png`,
+  pilot: `${BASE}assets/portraits/officer_pilot.webp`,
+  quartermaster: `${BASE}assets/portraits/officer_first_mate.webp`,
+  surgeon: `${BASE}assets/portraits/officer_surgeon.webp`,
 }
 
 /** 三位竞争船长（rival.id 见 data/rivals.ts：blackjack / maria / diego） */
 export const RIVAL_PORTRAITS: Record<string, string> = {
-  blackjack: `${BASE}assets/portraits/rival_black_sail_jack.png`,
-  maria: `${BASE}assets/portraits/rival_silver_maria.png`,
-  diego: `${BASE}assets/portraits/rival_stareyed_diego.png`,
+  blackjack: `${BASE}assets/portraits/rival_black_sail_jack.webp`,
+  maria: `${BASE}assets/portraits/rival_silver_maria.webp`,
+  diego: `${BASE}assets/portraits/rival_stareyed_diego.webp`,
 }
 
 export function crewPortrait(id: CrewCharId): string | undefined {

@@ -21,17 +21,17 @@
 const BASE = (import.meta.env?.BASE_URL as string | undefined) || '/'
 
 export const UI_ASSETS = {
-  parchment: `${BASE}assets/ui/ui_parchment.png`,
-  frameGold: `${BASE}assets/ui/ui_frame_gold.png`,
+  parchment: `${BASE}assets/ui/ui_parchment.webp`,
+  frameGold: `${BASE}assets/ui/ui_frame_gold.webp`,
   /** border-image 专用：九宫格源，中央透明，切片值 140 */
-  frameGoldSlice: `${BASE}assets/ui/ui_frame_gold_slice.png`,
+  frameGoldSlice: `${BASE}assets/ui/ui_frame_gold_slice.webp`,
   /** border-image 切片值（与 ui_frame_gold_slice.png 的角块边长一致） */
   frameGoldSliceSize: 140,
   /** 边框中央的独立装饰件（不参与 border-image，避免盖住内容） */
-  frameCrest: `${BASE}assets/ui/ui_frame_crest.png`,
-  frameShell: `${BASE}assets/ui/ui_frame_shell.png`,
-  compassRose: `${BASE}assets/ui/ui_compass_rose.png`,
-  banner: `${BASE}assets/ui/ui_banner.png`,
-  pennants: `${BASE}assets/ui/ui_pennants.png`,
-  medal: `${BASE}assets/ui/ui_medal.png`,
+  frameCrest: `${BASE}assets/ui/ui_frame_crest.webp`,
+  frameShell: `${BASE}assets/ui/ui_frame_shell.webp`,
+  compassRose: `${BASE}assets/ui/ui_compass_rose.webp`,
+  banner: `${BASE}assets/ui/ui_banner.webp`,
+  pennants: `${BASE}assets/ui/ui_pennants.webp`,
+  medal: `${BASE}assets/ui/ui_medal.webp`,
 } as const

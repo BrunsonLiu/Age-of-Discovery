@@ -163,6 +163,47 @@ function assert(cond: boolean, msg: string) {
   else { failed++; console.error(`  ✗ FAIL: ${msg}`) }
 }
 
+/**
+ * 读图片头的尺寸与 alpha —— PNG 与 WebP 都支持。
+ *
+ * 【为什么需要】素材从 PNG 换成 WebP 后（首屏省 85% 体积），
+ * 原来直接读 PNG 头的断言全部失败，报出 167772160×536870912 这种天文数字
+ * （把 "RIFF" 当成了 IHDR 的宽）。与其把断言退化成"文件存在就算过"，
+ * 不如让它认两种格式——尺寸和透明通道这两件事，格式无关。
+ */
+function imageInfo(buf: Buffer): { format: 'png' | 'webp' | 'unknown'; width: number; height: number; alpha: boolean } {
+  if (buf.length > 33 && buf.readUInt32BE(0) === 0x89504e47) {
+    return { format: 'png', width: buf.readUInt32BE(16), height: buf.readUInt32BE(20), alpha: buf[25] === 6 }
+  }
+  if (buf.length > 30 && buf.toString('ascii', 0, 4) === 'RIFF' && buf.toString('ascii', 8, 12) === 'WEBP') {
+    const fourcc = buf.toString('ascii', 12, 16)
+    // 扩展格式：flags 的 0x10 位 = 有 alpha；画布尺寸是 24 位小端、存的是「减 1」
+    if (fourcc === 'VP8X') {
+      return {
+        format: 'webp',
+        width: 1 + (buf[24] | (buf[25] << 8) | (buf[26] << 16)),
+        height: 1 + (buf[27] | (buf[28] << 8) | (buf[29] << 16)),
+        alpha: (buf[20] & 0x10) !== 0,
+      }
+    }
+    // 无损：隐式带 alpha，14 位宽 + 14 位高
+    if (fourcc === 'VP8L') {
+      const w4 = buf.readUInt32LE(21)
+      return { format: 'webp', width: (w4 & 0x3fff) + 1, height: ((w4 >> 14) & 0x3fff) + 1, alpha: true }
+    }
+    // 有损简单格式：无 alpha，14 位宽高在帧头之后
+    if (fourcc === 'VP8 ') {
+      return {
+        format: 'webp',
+        width: buf.readUInt16LE(26) & 0x3fff,
+        height: buf.readUInt16LE(28) & 0x3fff,
+        alpha: false,
+      }
+    }
+  }
+  return { format: 'unknown', width: 0, height: 0, alpha: false }
+}
+
 console.log('== 1. 事件数据结构 ==')
 assert(events.length === 63, `事件总数 63（实际 ${events.length}）`)
 const ids = events.map(e => e.id)
@@ -908,7 +949,8 @@ console.log('== 26. 天候系统：属性与影响 ==')
 
 console.log('== 27. 肖像与事件场景资产 ==')
 {
-  const CREW_IDS = ['boatswain', 'gunner', 'purser', 'chaplain', 'scholar', 'cook', 'midshipman', 'corsair'] as const
+  const CREW_IDS = ['boatswain', 'gunner', 'purser', 'chaplain', 'scholar', 'cook', 'midshipman', 'corsair',
+    'navigator', 'medic', 'carpenter', 'interpreter', 'guide', 'merchant', 'pathfinder'] as const
   const OFFICER_IDS = ['pilot', 'quartermaster', 'surgeon'] as const
   const RIVAL_IDS = ['blackjack', 'maria', 'diego']
 
@@ -919,35 +961,44 @@ console.log('== 27. 肖像与事件场景资产 ==')
   // 14 个槽位的肖像互不重复（一人一像）
   const allPortraits = [...CREW_IDS, ...OFFICER_IDS].map(id => (id === 'pilot' || id === 'quartermaster' || id === 'surgeon' ? officerPortrait(id as typeof OFFICER_IDS[number]) : crewPortrait(id as typeof CREW_IDS[number])))
     .concat(RIVAL_IDS.map(rivalPortrait))
-  assert(new Set(allPortraits).size === 14, `14 个槽位使用 14 张不同肖像（实际 ${new Set(allPortraits).size} 张）`)
+  assert(new Set(allPortraits).size === 21, `21 个槽位使用 21 张不同肖像（15 船员 + 3 军官 + 3 对手，实际 ${new Set(allPortraits).size} 张）`)
 
   // 文件存在且尺寸合规（单人像 512×640 RGBA，场景 d01-d04 ~1200×675，d05-d10 ~840×315）
   const pubDir = process.cwd()
   // 14 个槽位 → 14 张独立单人像（E1-E14 全集语义文件名；图鉴切片 e01-e14 退为备用，仍在盘上）
   const PORTRAIT_FILES: Array<[string, string | undefined]> = [
-    ['crew_boatswain.png', crewPortrait('boatswain')],
-    ['crew_gunner.png', crewPortrait('gunner')],
-    ['crew_purser.png', crewPortrait('purser')],
-    ['crew_chaplain.png', crewPortrait('chaplain')],
-    ['crew_scholar.png', crewPortrait('scholar')],
-    ['crew_cook.png', crewPortrait('cook')],
-    ['crew_midshipman.png', crewPortrait('midshipman')],
-    ['crew_blackflag_guide.png', crewPortrait('corsair')],
-    ['officer_pilot.png', officerPortrait('pilot')],
-    ['officer_first_mate.png', officerPortrait('quartermaster')],
-    ['officer_surgeon.png', officerPortrait('surgeon')],
-    ['rival_black_sail_jack.png', rivalPortrait('blackjack')],
-    ['rival_silver_maria.png', rivalPortrait('maria')],
-    ['rival_stareyed_diego.png', rivalPortrait('diego')],
+    ['crew_boatswain.webp', crewPortrait('boatswain')],
+    ['crew_gunner.webp', crewPortrait('gunner')],
+    ['crew_purser.webp', crewPortrait('purser')],
+    ['crew_chaplain.webp', crewPortrait('chaplain')],
+    ['crew_scholar.webp', crewPortrait('scholar')],
+    ['crew_cook.webp', crewPortrait('cook')],
+    ['crew_midshipman.webp', crewPortrait('midshipman')],
+    ['crew_blackflag_guide.webp', crewPortrait('corsair')],
+    ['officer_pilot.webp', officerPortrait('pilot')],
+    ['officer_first_mate.webp', officerPortrait('quartermaster')],
+    ['officer_surgeon.webp', officerPortrait('surgeon')],
+    ['rival_black_sail_jack.webp', rivalPortrait('blackjack')],
+    ['rival_silver_maria.webp', rivalPortrait('maria')],
+    ['rival_stareyed_diego.webp', rivalPortrait('diego')],
   ]
   for (const [file, mapped] of PORTRAIT_FILES) {
     assert(!!mapped && mapped.endsWith(file), `槽位映射指向 ${file}`)
     const p = join(pubDir, 'public', 'assets', 'portraits', file)
     assert(existsSync(p), `肖像 ${file} 存在`)
     const buf = readFileSync(p)
-    const w = buf.readUInt32BE(16); const h = buf.readUInt32BE(20)
-    assert(w === 512 && h === 640, `肖像 ${file} 为 512×640（实际 ${w}×${h}）`)
-    assert(buf[24] === 8 && buf[25] === 6, `肖像 ${file} 为 8bit RGBA`)
+    /*
+     * 断言「能解析 + 尺寸对 + 不是占位空文件」。
+     *
+     * 原断言是 `buf[25] === 6`（PNG 的 RGBA 色型）。实测这 14 张**全是 100% 不透明**
+     * （alpha 全 255，画面是油画背景而不是抠图人物），所以那条从来没有真正检查过什么，
+     * 只是在验一个编码细节。换成 WebP 后编码器直接省掉了无用的 alpha 通道，
+     * 反而把"这条断言没意义"这件事暴露了。
+     */
+    const info = imageInfo(buf)
+    assert(info.format !== 'unknown', `肖像 ${file} 是可解析的图片（${info.format}）`)
+    assert(info.width === 512 && info.height === 640, `肖像 ${file} 为 512×640（实际 ${info.width}×${info.height}）`)
+    assert(buf.length > 8000, `肖像 ${file} 有实际内容（${Math.round(buf.length / 1024)}KB，非占位图）`)
   }
   // D1-D14 十四个事件场景全部有真实插图；未生成的（顺风/哗变等）仍回退手绘 SVG
   for (const key of ['storm', 'pirate', 'kraken', 'ghostship', 'volcano', 'fog', 'festival', 'treasure', 'siren', 'smuggle']) {
@@ -977,7 +1028,7 @@ console.log('== 27. 肖像与事件场景资产 ==')
     assert(shouldUseSceneImage(storm, chart), '一次失败不污染别的场景（chart 仍显示真图）')
     assert(shouldUseSceneImage(storm, storm) === false, '失败地址不会因为别的场景成功而复活')
     // 素材补齐后地址改变 → 新地址不在失败名单里 → 真图自动恢复，无需刷新页面
-    const patched = storm.replace(/d01\.png$/, 'd01-v2.png')
+    const patched = storm.replace(/d01\.webp$/, 'd01-v2.webp')
     assert(patched !== storm, '构造一个「补齐后的新地址」')
     assert(shouldUseSceneImage(storm, patched), '素材补齐（地址变化）后真图自动恢复')
     assert(!shouldUseSceneImage(null, undefined), '无素材的场景直接走手绘 SVG')
@@ -986,11 +1037,11 @@ console.log('== 27. 肖像与事件场景资产 ==')
   // D1-D14：全部为 1200×675 高清事件图（D1-D4 来自事件大图包；D5-D10 为主包升级版，取代旧图鉴切片；
   //          D11-D14 为第二批 P1 补充的四个高频场景）
   for (let i = 1; i <= 14; i++) {
-    const p = join(pubDir, 'public', 'assets', 'scenes', `d${String(i).padStart(2, '0')}.png`)
-    assert(existsSync(p), `场景 d${String(i).padStart(2, '0')}.png 存在`)
-    const buf = readFileSync(p)
-    const w = buf.readUInt32BE(16); const h = buf.readUInt32BE(20)
-    assert(w > 1000 && w < 1400 && h > 500 && h < 800, `场景 d${String(i).padStart(2, '0')} 高清尺寸合规（${w}×${h}）`)
+    const name = `d${String(i).padStart(2, '0')}`
+    const p = join(pubDir, 'public', 'assets', 'scenes', `${name}.webp`)
+    assert(existsSync(p), `场景 ${name}.webp 存在`)
+    const info = imageInfo(readFileSync(p))
+    assert(info.width > 1000 && info.width < 1400 && info.height > 500 && info.height < 800, `场景 ${name} 高清尺寸合规（${info.width}×${info.height}）`)
   }
   // 第二批 P2：9 枚徽记（4 派系 + 5 特质），SVG 与 PNG 各一份
   for (const file of [
@@ -1039,67 +1090,63 @@ console.log('== 29. 环境资产：海面/港口/天气层/结局背景 ==')
   for (const port of ports) {
     assert(!!portImage(port.id), `港口 ${port.nameCn}(${port.id}) 有场景图`)
   }
-  assert(portImage(6).endsWith('port_seville.png'), '塞维利亚用专属图')
-  assert(portImage(7).endsWith('port_seville.png'), '里斯本（伊比利亚）共用塞维利亚图')
-  assert(portImage(8).endsWith('port_northern_europe.png'), '伦敦（北欧）用北欧图')
-  assert(portImage(1).endsWith('port_caribbean.png'), '哈瓦那用加勒比图')
-  assert(portImage(9).endsWith('port_west_africa.png'), '埃尔米纳用西非图')
-  assert(portImage(12).endsWith('port_southeast_asia.png'), '马六甲用东南亚图')
-  // G 组天气层：四张 1024² RGBA（雨/雾/飞沫/云）
+  assert(portImage(6).endsWith('port_seville.webp'), '塞维利亚用专属图')
+  assert(portImage(7).endsWith('port_seville.webp'), '里斯本（伊比利亚）共用塞维利亚图')
+  assert(portImage(8).endsWith('port_northern_europe.webp'), '伦敦（北欧）用北欧图')
+  assert(portImage(1).endsWith('port_caribbean.webp'), '哈瓦那用加勒比图')
+  assert(portImage(9).endsWith('port_west_africa.webp'), '埃尔米纳用西非图')
+  assert(portImage(12).endsWith('port_southeast_asia.webp'), '马六甲用东南亚图')
+  // G 组天气层：四张 1024² 带透明通道（雨/雾/飞沫/云）—— alpha 是硬需求，丢了会出黑框
   for (const [key, url] of Object.entries(FX_ASSETS)) {
     const file = url.split('/').pop()!
     const p = join(pubDir, 'public', 'assets', 'fx', file)
     assert(existsSync(p), `天气层 ${file}（${key}）存在`)
-    const buf = readFileSync(p)
-    const w = buf.readUInt32BE(16); const h = buf.readUInt32BE(20)
-    assert(w === 1024 && h === 1024, `天气层 ${file} 为 1024×1024（实际 ${w}×${h}）`)
-    assert(buf[24] === 8 && buf[25] === 6, `天气层 ${file} 为 8bit RGBA`)
+    const info = imageInfo(readFileSync(p))
+    assert(info.width === 1024 && info.height === 1024, `天气层 ${file} 为 1024×1024（实际 ${info.width}×${info.height}）`)
+    assert(info.alpha, `天气层 ${file} 带透明通道（${info.format}；丢了会在海面上盖出黑框）`)
   }
-  // H 组结局背景：三张 1920×1080
+  // H 组结局背景：三张 1920×1080（不透明全幅背景）
   for (const [key, url] of Object.entries(BG_ASSETS)) {
     const file = url.split('/').pop()!
     const p = join(pubDir, 'public', 'assets', 'bg', file)
     assert(existsSync(p), `背景 ${file}（${key}）存在`)
-    const buf = readFileSync(p)
-    const w = buf.readUInt32BE(16); const h = buf.readUInt32BE(20)
-    assert(w === 1920 && h === 1080, `背景 ${file} 为 1920×1080（实际 ${w}×${h}）`)
-    assert(buf[24] === 8 && buf[25] === 2, `背景 ${file} 为 8bit RGB`)
+    const info = imageInfo(readFileSync(p))
+    assert(info.width === 1920 && info.height === 1080, `背景 ${file} 为 1920×1080（实际 ${info.width}×${info.height}）`)
+    assert(info.format !== 'unknown', `背景 ${file} 是可解析的图片（${info.format}）`)
   }
 }
 
 console.log('== 28. UI 装饰资产（F1-F6）==')
 {
   const pubDir = process.cwd()
-  // 文件名 → 期望尺寸；羊皮纸为不透明 RGB，其余五张带 Alpha
+  // 文件名 → 期望尺寸；羊皮纸为不透明，其余五张带 Alpha（叠在面板/地图上，丢了会出黑底）
   const UI_FILES: Array<[string, number, number, boolean]> = [
-    ['ui_parchment.png', 1024, 1024, false],
-    ['ui_frame_gold.png', 512, 512, true],
-    ['ui_compass_rose.png', 512, 512, true],
-    ['ui_banner.png', 488, 152, true],
-    ['ui_pennants.png', 431, 128, true],
-    ['ui_medal.png', 210, 417, true],
+    ['ui_parchment.webp', 1024, 1024, false],
+    ['ui_frame_gold.webp', 512, 512, true],
+    ['ui_compass_rose.webp', 512, 512, true],
+    ['ui_banner.webp', 488, 152, true],
+    ['ui_pennants.webp', 431, 128, true],
+    ['ui_medal.webp', 210, 417, true],
   ]
   for (const [file, w, h, hasAlpha] of UI_FILES) {
     const p = join(pubDir, 'public', 'assets', 'ui', file)
     assert(existsSync(p), `UI 资产 ${file} 存在`)
-    const buf = readFileSync(p)
-    const iw = buf.readUInt32BE(16); const ih = buf.readUInt32BE(20)
-    assert(iw === w && ih === h, `UI 资产 ${file} 尺寸 ${w}×${h}（实际 ${iw}×${ih}）`)
-    assert(buf[24] === 8 && buf[25] === (hasAlpha ? 6 : 2), `UI 资产 ${file} 为 8bit ${hasAlpha ? 'RGBA' : 'RGB'}`)
+    const info = imageInfo(readFileSync(p))
+    assert(info.width === w && info.height === h, `UI 资产 ${file} 尺寸 ${w}×${h}（实际 ${info.width}×${info.height}）`)
+    assert(info.alpha === hasAlpha, `UI 资产 ${file} ${hasAlpha ? '带' : '不带'}透明通道（实际 ${info.alpha}，${info.format}）`)
   }
 
   // 边框衍生件：九宫格切片源 + 单独切出的中央装饰
   // 关键约束：九宫格源的"中央区域"必须全透明，否则 border-image 的 fill/9-slice
   // 会把船徽、贝壳拉长铺进内容区，盖住最后一个选项按钮。
-  const slicePath = join(pubDir, 'public', 'assets', 'ui', 'ui_frame_gold_slice.png')
-  assert(existsSync(slicePath), '边框九宫格源 ui_frame_gold_slice.png 存在')
+  const slicePath = join(pubDir, 'public', 'assets', 'ui', 'ui_frame_gold_slice.webp')
+  assert(existsSync(slicePath), '边框九宫格源 ui_frame_gold_slice.webp 存在')
   {
-    const buf = readFileSync(slicePath)
-    const iw = buf.readUInt32BE(16); const ih = buf.readUInt32BE(20)
-    assert(iw === 512 && ih === 512, `边框九宫格源尺寸 512×512（实际 ${iw}×${ih}）`)
-    assert(buf[24] === 8 && buf[25] === 6, '边框九宫格源为 8bit RGBA')
+    const info = imageInfo(readFileSync(slicePath))
+    assert(info.width === 512 && info.height === 512, `边框九宫格源尺寸 512×512（实际 ${info.width}×${info.height}）`)
+    assert(info.alpha, `边框九宫格源带透明通道（${info.format}；中央必须透明，否则 border-image 会把装饰拉进内容区）`)
   }
-  for (const f of ['ui_frame_crest.png', 'ui_frame_shell.png']) {
+  for (const f of ['ui_frame_crest.webp', 'ui_frame_shell.webp']) {
     assert(existsSync(join(pubDir, 'public', 'assets', 'ui', f)), `边框装饰件 ${f} 存在`)
   }
   // 全部路径型键有值且指向 ui/ 目录（数字型常量如切片值不参与路径校验）

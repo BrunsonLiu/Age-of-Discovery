@@ -23,8 +23,8 @@ const EDGE = process.env.EDGE_PATH ?? 'C:/Program Files (x86)/Microsoft/Edge/App
 const BASE = process.env.GAME_URL ?? 'http://127.0.0.1:5174/Age-of-Discovery/'
 const SHOTS = process.env.SHOTS_DIR ?? '.workbuddy/shots/scenes'
 
-/** 被拦截的素材：第三批 D15 顺风而行（d15.png，真实存在于仓库中）。 */
-const BLOCKED_URL_MARK = 'd15.png'
+/** 被拦截的素材：第三批 D15 顺风而行（d15.webp，真实存在于仓库中）。 */
+const BLOCKED_URL_MARK = 'd15.webp'
 
 const browser = await puppeteer.launch({ executablePath: EDGE, headless: true, args: ['--no-sandbox'] })
 const page = await browser.newPage()
@@ -67,7 +67,7 @@ await sleep(600)
 for (let i = 0; i < 6; i++) { await page.keyboard.press('Enter'); await sleep(350) }
 await sleep(800)
 
-// 渲染第三批场景 fairwind，它的插图 d15.png 被拦截 → 加载失败
+// 渲染第三批场景 fairwind，它的插图 d15.webp 被拦截 → 加载失败
 const res = await page.evaluate(async () => {
   const mod = await import('/Age-of-Discovery/src/data/events.ts')
   const e = mod.events.find(x => x.sceneKey === 'fairwind')

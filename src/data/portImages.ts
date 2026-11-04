@@ -21,9 +21,9 @@ const PORT_BY_ID = new Map(ports.map(p => [p.id, p]))
 
 /** 区域 → 场景图（region 见 data/ports.ts：europe/africa/asia/caribbean） */
 const REGION_IMAGES: Record<string, string> = {
-  caribbean: `${BASE}assets/ports/port_caribbean.png`,
-  africa: `${BASE}assets/ports/port_west_africa.png`,
-  asia: `${BASE}assets/ports/port_southeast_asia.png`,
+  caribbean: `${BASE}assets/ports/port_caribbean.webp`,
+  africa: `${BASE}assets/ports/port_west_africa.webp`,
+  asia: `${BASE}assets/ports/port_southeast_asia.webp`,
 }
 
 /** 欧洲按建筑风格再分：伊比利亚（塞维利亚场景）vs 北欧（北欧场景） */
@@ -34,7 +34,7 @@ const NORTHERN_EUROPE_IDS = new Set([8, 15]) // 伦敦/阿姆斯特丹
 export function portImage(port: number | Pick<Port, 'id' | 'region'>): string | undefined {
   const id = typeof port === 'number' ? port : port.id
   const region = typeof port === 'number' ? (PORT_BY_ID.get(id)?.region ?? '') : port.region
-  if (IBERIA_IDS.has(id)) return `${BASE}assets/ports/port_seville.png`
-  if (NORTHERN_EUROPE_IDS.has(id)) return `${BASE}assets/ports/port_northern_europe.png`
+  if (IBERIA_IDS.has(id)) return `${BASE}assets/ports/port_seville.webp`
+  if (NORTHERN_EUROPE_IDS.has(id)) return `${BASE}assets/ports/port_northern_europe.webp`
   return REGION_IMAGES[region]
 }
