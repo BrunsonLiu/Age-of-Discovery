@@ -1174,3 +1174,29 @@ body {
 /* 悬停时给一点回应：能点的地方要让光标说话 */
 .debris-icon:hover .debris-glyph svg { transform: scale(1.15); }
 .debris-icon { cursor: pointer; }
+
+/*
+ * 2.5D 视图里的漂流物。
+ *
+ * 与 2D 的 Leaflet divIcon 是同一段 HTML，区别只在**谁来定位**：
+ * 2D 由 Leaflet 摆位，3D 由相机投影每帧写 left/top（见 debrisLayer3d.ts）。
+ * left/top 已经减过热区半宽，这里绝不能再 translate(-50%,-50%)。
+ *
+ * z-index 2：canvas 在 mount 里是第一个子元素、没有 z-index；
+ * 海名/港口名标签是 pointer-events:none 的兄弟节点，不会挡点击。
+ */
+.debris3d-icon {
+  position: absolute;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  z-index: 2;
+  display: none;              /* 第一帧投影后才显示（相机背后的点不显示） */
+  pointer-events: auto;
+  appearance: none;
+  -webkit-appearance: none;
+}
+.debris3d-icon:focus-visible {
+  outline: 2px solid #f0dfb4;
+  outline-offset: 2px;
+}

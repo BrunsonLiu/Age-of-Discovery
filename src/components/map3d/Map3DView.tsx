@@ -41,6 +41,7 @@ import {
   createAreaLabels, createPortLabel, measureLabels, placeLabels, remeasureWhenFontsReady,
   type ScreenLabel,
 } from './mapLabels3d'
+import { createDebrisLayer3d } from './debrisLayer3d'
 import type { Waypoint } from '@/types'
 
 /**
@@ -261,8 +262,11 @@ export default function Map3DView() {
       const bordersGeojson = await fetchBordersGeojson()
       if (disposed) return
 
-      const width = mount.clientWidth || 800
-      const height = mount.clientHeight || 600
+      // 这俩是 **let**：窗口 resize 后帧循环里的屏幕投影要用新尺寸
+      // （标签层、漂流物层都靠它）。原来是 const，resize 只改了 renderer
+      // 和几个 Line2 的 resolution，标签位置就一直按旧尺寸算 —— 整体偏移。
+      let width = mount.clientWidth || 800
+      let height = mount.clientHeight || 600
 
       // ---- 渲染器 ----
       renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'low-power' })
@@ -967,6 +971,13 @@ export default function Map3DView() {
       measureLabels(allLabels)
       remeasureWhenFontsReady(allLabels)
 
+      // ---- 海面漂流物（与 2D 同一份 debrisSpots / 同一段图标 HTML）----
+      //
+      // 【为什么 3D 也要有】2D 海面上漂着可点的木桶，切到 2.5D 突然全没了，
+      // 玩家不会想到"这是渲染层的差别"，只会觉得这边少了东西、或者自己点不到。
+      // 投影方式复用标签层：世界坐标 → 屏幕像素 → 绝对定位 DOM。
+      const debrisLayer = createDebrisLayer3d(mount)
+
       // ---- 玩家船 ----
       const ship = makeShipModel(shipKit)
       // 起个名字，供 e2e 找到它（验证停泊时不会把港口模型盖住）
@@ -1445,6 +1456,8 @@ export default function Map3DView() {
       const onResize = () => {
         const w = mount.clientWidth || width
         const h = mount.clientHeight || height
+        width = w
+        height = h
         camera.aspect = w / h
         camera.updateProjectionMatrix()
         renderer!.setSize(w, h)
@@ -2061,6 +2074,8 @@ export default function Map3DView() {
         // 现在有三类标签（港口 20 + 海名 18 + 洲名 10 = 48 个）要互相避让，
         // 逻辑写在帧循环里会越来越臃肿。见 mapLabels3d.ts。
         placeLabels(allLabels, camera, width, height, tmpV)
+        // 漂流物与标签共用同一台相机、同一个临时向量（不另分配）
+        debrisLayer.update(camera, width, height, tmpV)
 
         renderer!.render(scene, camera)
       }
@@ -2079,6 +2094,7 @@ export default function Map3DView() {
         el.removeEventListener('wheel', onWheel)
         for (const po of portObjects) po.label.el.remove()
         for (const l of areaLabels) l.el.remove()
+        debrisLayer.destroy()
         scene.traverse((o) => {
           if (o instanceof THREE.Mesh) o.geometry.dispose()
         })

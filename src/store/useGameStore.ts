@@ -2196,8 +2196,17 @@ export const useGameStore = create<GameStore>()(
           fleet: {
             ...state.fleet,
             gold: state.fleet.gold + gain.gold,
-            food: Math.min(100, state.fleet.food + gain.food),
-            water: Math.min(100, state.fleet.water + gain.water),
+            /*
+             * 【这里原来夹了 Math.min(100, …)，是个孤立的不一致】
+             * 港口补给（`supply` action）本来就不设粮水上限，直接
+             * `food: state.fleet.food + got.food`，粮水可以堆过 100。
+             * 只有打捞这里自己夹了一次 —— 结果粮水满仓时点木桶，
+             * 100+6 又被夹回 100，屏幕上**一个数字都没变**，
+             * 玩家只会觉得"点了没反应"。承诺 +6 就得真给 +6。
+             * 进度条那边本来就有 `Math.min(100, …)` 的显示夹取，不受影响。
+             */
+            food: state.fleet.food + gain.food,
+            water: state.fleet.water + gain.water,
             fame: state.fleet.fame + gain.fame,
           },
           notifications: [...state.notifications, {

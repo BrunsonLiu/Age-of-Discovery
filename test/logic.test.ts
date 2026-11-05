@@ -5598,12 +5598,31 @@ console.log('\n== 海面漂流物 ==')
     useGameStore.getState().collectDebris('test-coins')
     assert(useGameStore.getState().fleet.gold === gold, '同一个漂流物不会被结算两次')
   }
+
+  // ⑧ 满仓打捞木桶：屏幕上必须真的有数字变化
+  //
+  // 【抓到过什么】collectDebris 原来自己夹了 Math.min(100, food+6)，
+  // 而港口补给根本不设上限。粮水 100 时点木桶，两个数都纹丝不动 ——
+  // 玩家看到的就是"点了没反应"。这条断言锁住"承诺 +6 就真给 +6"。
+  {
+    const s0 = useGameStore.getState()
+    useGameStore.setState({
+      fleet: { ...s0.fleet, food: 100, water: 100 },
+      debrisSpots: [{ id: 'test-barrel-full', kind: 'barrel', lat: 30, lng: -10, bornDay: s0.fleet.day }],
+    })
+    useGameStore.getState().collectDebris('test-barrel-full')
+    const st = useGameStore.getState()
+    assert(st.fleet.food === 106 && st.fleet.water === 106,
+      `满仓时木桶仍 +6/+6（实得 ${st.fleet.food}/${st.fleet.water}）`)
+    assert(st.debrisSpots.length === 0, '木桶打捞后从海面消失')
+  }
 }
 /*
- * 航行中「加餐」：海上唯一的士气操作。
+ * 航行中「加餐」：海上唯一的主动士气操作。
  *
- * 士气在海上每天固定 -5，而所有管理都在港口（休整/盛宴）——
- * 长途航线会被士气表绑死。这条给了一个"每天一次"的小决定。
+ * 士气**没有每日衰减**（只有断粮断水那天才掉），是事件驱动的：
+ * 被海盗/风暴打掉之后，原来只能绕回港口休整补回来。
+ * 这条给了一个"在海上也能补"的小决定，对 30 天以上的远洋最有意义。
  * 三个约束必须同时成立：只在航行中、每天一次、粮水够。
  */
 console.log('\n== 航行中加餐 ==')
