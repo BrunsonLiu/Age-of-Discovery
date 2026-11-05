@@ -51,8 +51,14 @@ export default function SeaDebris() {
     const make = (kind: DebrisKind) => L.divIcon({
       className: 'debris-icon',
       html: `<div class="debris-ring"></div><div class="debris-wake"></div><div class="debris-glyph" style="color:#f0dfb4">${glyph(kind)}</div>`,
-      iconSize: [30, 30],
-      iconAnchor: [15, 15],
+      /*
+       * 容器 44×44 —— 图标本身仍然画 19px（视觉上就是个海面上的小物件），
+       * 但**热区**按项目的手指点按下限来。
+       * 30px 的热区在 390 宽的手机上要精确戳中才有效，玩家会点两三次才捞到，
+       * 那正是"点了没反应"的手感来源。多出来的 14px 是透明的，不占视觉。
+       */
+      iconSize: [44, 44],
+      iconAnchor: [22, 22],
     })
     return {
       barrel: make('barrel'), crate: make('crate'),
