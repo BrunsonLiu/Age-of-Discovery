@@ -5406,24 +5406,39 @@ console.log('\n== 海上异闻：氛围层必须是"偶尔、简短、不打断"
   assert(rollSeaOmen(ctx({ rand: () => 0.99 })) === null, '掷值 0.99 一定不出现')
 
   /*
-   * ③ 天候确实在改概率 —— 用同一个掷值 0.15 卡在两条线之间：
-   *    晴 clear 0.16×0.55 = 0.088  → 0.15 不中
-   *    暴 storm 0.16×1.60 = 0.256 → 0.15 中
-   * 这正是「注入一个固定值就能测出偏好」该有的写法，
-   * 而不是两种天气各跑 500 次比较频率。
+   * ③ 天候确实在改概率。
+   *
+   * 【为什么不用"固定掷值卡在两条线之间"】第一版用的是 0.15，正好卡在
+   * 晴 0.16×0.55=0.088 与 暴风 0.16×1.6=0.256 之间。后来把基准概率
+   * 提到 0.22、晴天系数提到 0.75（晴=0.165），0.15 就落进了"晴天也出"的区间，
+   * 断言立刻失败 —— 但它失败的原因是**参数变了**，不是代码坏了。
+   *
+   * 现在改成确定性扫描：把 rand 均匀铺满 [0,1)，触发次数 / 次数 就等于概率本身。
+   * 断言的是**相对关系**（暴风 > 晴天），不是某两个绝对值。
    */
-  const at = () => 0.15
-  assert(rollSeaOmen(ctx({ weatherKind: 'clear', rand: at })) === null,
-    '晴天同一个掷值不出异闻')
-  assert(rollSeaOmen(ctx({ weatherKind: 'storm', rand: at })) !== null,
-    '暴风雨天同一个掷值就出（天候确实在改概率）')
+  const rate = (patch: Partial<Parameters<typeof rollSeaOmen>[0]>) => {
+    const N = 800
+    let hit = 0
+    for (let i = 0; i < N; i++) {
+      if (rollSeaOmen(ctx({ ...patch, rand: () => i / N }))) hit++
+    }
+    return hit / N
+  }
+  const clearRate = rate({ weatherKind: 'clear' })
+  const stormRate = rate({ weatherKind: 'storm' })
+  assert(stormRate > clearRate * 1.5,
+    `暴风雨比晴天更容易出异闻（晴 ${(clearRate * 100).toFixed(1)}% / 暴风 ${(stormRate * 100).toFixed(1)}%）`)
+  /*
+   * 但晴天不能是 0。异闻里有一半是"好天气才看得见"的东西（鲸群、跃鱼、夜光海），
+   * 把它们关在坏天气里，等于说"海上只有出事的时候才有东西看"。
+   */
+  assert(clearRate > 0.02, `晴天也会出异闻（${(clearRate * 100).toFixed(1)}%，不能是 0）`)
 
-  // ④ 危险航段更容易出：危险度 1 与 5 在同一掷值下应当分岔
-  const dangerEdge = 0.17
-  assert(rollSeaOmen(ctx({ weatherKind: 'cloudy', dangerLevel: 1, rand: () => dangerEdge })) === null,
-    '平静航段不容易遇见（危险度 1）')
-  const rough = rollSeaOmen(ctx({ weatherKind: 'cloudy', dangerLevel: 5, rand: () => dangerEdge }))
-  assert(rough !== null, '危险航段更容易遇见（危险度 5）')
+  // ④ 危险航段更容易出：同一套扫描比较危险度 1 与 5
+  const calmRate = rate({ weatherKind: 'cloudy', dangerLevel: 1 })
+  const roughRate = rate({ weatherKind: 'cloudy', dangerLevel: 5 })
+  assert(roughRate > calmRate,
+    `危险航段比平静航段更容易遇见（Lv1 ${(calmRate * 100).toFixed(1)}% / Lv5 ${(roughRate * 100).toFixed(1)}%）`)
 
   // ⑤ 文案：一行、≤18 字、不带阿拉伯数字（它不是数据面板）
   const kinds = new Set<string>()
