@@ -1,12 +1,8 @@
-import { useMemo } from 'react'
 import { Anchor, ChevronRight, MapPin } from 'lucide-react'
-import { useGameStore } from '@/store/useGameStore'
 import { useMapStore } from '@/store/useMapStore'
-import { nextMilestone, suggestPortFor, voyageMilestones } from '@/data/voyageMilestones'
+import { voyageMilestones } from '@/data/voyageMilestones'
 import { ports } from '@/data/ports'
-import { computeWindFavor, dailyDistanceNm } from '@/utils/navigation'
-import { STANCES } from '@/utils/segment'
-import { WEATHER_INFO, weatherFavorFactor } from '@/utils/weather'
+import { useVoyageNext } from '@/hooks/useVoyageNext'
 
 /**
  * 航路卡：回答"我下一步该往哪开"。
@@ -24,32 +20,14 @@ import { WEATHER_INFO, weatherFavorFactor } from '@/utils/weather'
  * 顺手在舰队面板里点两下出发。预览与实际动作分离。
  */
 export default function VoyageNextCard() {
-  const discoveredPorts = useGameStore(s => s.discoveredPorts)
-  const fleet = useGameStore(s => s.fleet)
-  const shipPosition = useGameStore(s => s.shipPosition)
   const setCenter = useMapStore(s => s.setCenter)
-  // 天数估算要用当前方针与天候，所以这两个订阅必须在 early return 之前
-  const stance = useGameStore(s => s.stance)
-  const weather = useGameStore(s => s.weather)
-
-  const here = useMemo<[number, number] | null>(() => {
-    if (fleet.isSailing && shipPosition && Number.isFinite(shipPosition[0]) && Number.isFinite(shipPosition[1])) {
-      return [shipPosition[0], shipPosition[1]]
-    }
-    const p = ports.find(p => p.id === fleet.currentPortId)
-    return p ? [p.latitude, p.longitude] : null
-  }, [fleet.isSailing, fleet.currentPortId, shipPosition])
-
-  const target = useMemo(() => nextMilestone(discoveredPorts), [discoveredPorts])
-  const suggest = useMemo(
-    () => (target ? suggestPortFor(target, discoveredPorts, here) : null),
-    [target, discoveredPorts, here],
-  )
+  // 目标港、海里数、天数都从单一来源取（主屏常驻条用的是同一个 hook）
+  const { target, suggest, days, doneCount } = useVoyageNext()
 
   if (!target) {
     // 全部走完：给一句结束语，而不是留一张空卡
     return (
-      <div className="rounded border border-gold-600/40 bg-gold-700/15 p-2 mb-2">
+      <div data-testid="voyage-next-card" className="rounded border border-gold-600/40 bg-gold-700/15 p-2 mb-2">
         <div className="flex items-center gap-1.5 text-gold-200 font-serif text-[13px]">
           <Anchor size={13} aria-hidden="true" />
           航路走完了
@@ -61,28 +39,9 @@ export default function VoyageNextCard() {
     )
   }
 
-  /*
-   * 天数与航行用同一口径：日航程 = 船速 × 风向 × 方针 × 天候 × 24。
-   *
-   * 【为什么这里也要算全】原来只传了 `dailyDistanceNm(fleet, [], 1)` ——
-   * 不含风向、不含方针、不含天候。卡片上写"约 20 天"，但那条航线顺风时
-   * 可能 14 天到、逆风抢行时可能 26 天。玩家照 20 天备水就会死在半路。
-   *
-   * 风向按"当前位置 → 目标港"的方位算（computeWindFavor 与航线生成同源），
-   * 所以这张卡上的天数和舰队面板里点开那条航线的天数**对得上**。
-   */
-  const weatherMul = WEATHER_INFO[weather.kind].sailMul * weatherFavorFactor(weather.kind)
-  const windFavor = here && suggest
-    ? computeWindFavor(here[0], here[1],
-        ports.find(p => p.id === suggest.id)?.latitude ?? here[0],
-        ports.find(p => p.id === suggest.id)?.longitude ?? here[1])
-    : 1
-  const perDay = dailyDistanceNm(fleet, [], windFavor, STANCES[stance].speedMul, weatherMul)
-  const days = suggest && suggest.distanceNm > 0 ? Math.max(1, Math.ceil(suggest.distanceNm / Math.max(1, perDay))) : null
-  const doneCount = voyageMilestones.filter(m => m.atPorts.some(id => discoveredPorts.includes(id))).length
-
+  // 天数口径（船速×风向×方针×天候×24）见 useVoyageNext，这里只负责展示。
   return (
-    <div className="rounded border border-gold-600/45 bg-gold-700/15 p-2 mb-2">
+    <div data-testid="voyage-next-card" className="rounded border border-gold-600/45 bg-gold-700/15 p-2 mb-2">
       <div className="flex items-center justify-between">
         <span className="flex items-center gap-1.5 text-gold-200 font-serif text-[13px]">
           <Anchor size={13} aria-hidden="true" />

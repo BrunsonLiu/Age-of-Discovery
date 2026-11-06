@@ -9,6 +9,7 @@ import SeaOmen from '@/components/map/SeaOmen'
 import BottomBar from '@/components/ui/BottomBar'
 import BrokerTip from '@/components/map/BrokerTip'
 import VoyageControls from '@/components/map/VoyageControls'
+import VoyageNextHint from '@/components/map/VoyageNextHint'
 import Compass from '@/components/ui/Compass'
 import WeatherBadge from '@/components/ui/WeatherBadge'
 import TimelineBar from '@/components/ui/TimelineBar'
@@ -144,6 +145,8 @@ const Z = {
   /** 岸上视角：盖住地图与罗盘，但让侧栏 / 面板 / 底栏照常可点（见 HarborView 注释） */
   HARBOR: 12,
   SIDE_BUTTONS: 20,
+  /** 常驻「下一站」指引：压过侧栏容器，但让位给打开的面板 */
+  NEXT_HINT: 25,
   PANEL: 30,
   BOTTOM_BAR: 40,
   TIMELINE: 50,
@@ -453,6 +456,23 @@ export default function MainMap() {
         <WeatherBadge />
       </div>
 
+      {/*
+        常驻「下一站」。
+
+        【为什么放在罗盘右边这块空地】实测这一带 x∈[120,460] / y∈[56,100] 是空的：
+        罗盘在 x12~108、天候徽章从 y156 起、两列侧栏按钮垂直居中在 y300+、
+        靠岸邀请条居中在 x560~880、通知在桌面右上。放在这里不新增遮罩、
+        不挤顶栏时间轴，也不需要再动任何一处的定位。
+
+        【为什么移动端走另一套结构】390px 屏没有这块空地，顶部还压着通知通栏。
+        stack 分支并入底部 fixed 容器（见下），按文档流往上叠，不写死 bottom。
+      */}
+      {!isMobile && viewMode !== 'harbor' && (
+        <div className="absolute left-[7.5rem] top-14" style={{ zIndex: Z.NEXT_HINT }}>
+          <VoyageNextHint />
+        </div>
+      )}
+
       {/* 风向氛围层：粒子随风带漂移，让"风"被看见（不拦截点击） */}
       <div className="absolute inset-0 pointer-events-none" style={{ zIndex: Z.WIND }}>
         <WindParticles windBearing={windBearing} windSpeed={windSpeed} />
@@ -675,6 +695,8 @@ export default function MainMap() {
 
       {isMobile ? (
         <div className="fixed bottom-0 left-0 right-0" style={{ zIndex: Z.BOTTOM_BAR }}>
+          {/* 中长期目标排在最上面：眼前一单（掮客卡）在下，航路方向在上 */}
+          {viewMode !== 'harbor' && <VoyageNextHint placement="stack" />}
           {viewMode !== 'harbor' && <VoyageControls placement="stack" />}
           {viewMode !== 'harbor' && <BrokerTip placement="stack" />}
           <BottomBar />

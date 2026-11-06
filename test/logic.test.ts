@@ -6557,5 +6557,54 @@ console.log('\n== 天数口径守卫 ==')
     '「给抢行退路」这条断言不能用 /抢行/ 判（折叠摘要恒含此词，是假绿）')
 }
 
+// ---------------- 主屏常驻「下一站」：第一屏可见 + 单一来源 ----------------
+// 第 28 轮实测：进游戏第一屏 38 条可见文本 / 122 字 / 20 个按钮，没有一个字
+// 回答「我下一步该往哪开」；唯一的航路卡埋在「冒险笔记」面板里。
+// 守卫只匹配语法结构（import、JSX 标签、判据表达式），不写死注释里的措辞。
+{
+  const main = readFileSync(join(process.cwd(), 'src', 'pages', 'MainMap.tsx'), 'utf8')
+  const hint = readFileSync(join(process.cwd(), 'src', 'components', 'map', 'VoyageNextHint.tsx'), 'utf8')
+  const card = readFileSync(join(process.cwd(), 'src', 'components', 'panels', 'VoyageNextCard.tsx'), 'utf8')
+  const hook = readFileSync(join(process.cwd(), 'src', 'hooks', 'useVoyageNext.ts'), 'utf8')
+  const invite = readFileSync(join(process.cwd(), 'src', 'components', 'harbor', 'HarborInvite.tsx'), 'utf8')
+  const audit = readFileSync(join(process.cwd(), 'test', 'e2e', 'next-port-hint.mjs'), 'utf8')
+  const pkg = JSON.parse(readFileSync(join(process.cwd(), 'package.json'), 'utf8')) as {
+    scripts: Record<string, string>
+  }
+
+  assert(/import VoyageNextHint from '@\/components\/map\/VoyageNextHint'/.test(main),
+    '主屏静态引入常驻指引（不许只在面板里渲染）')
+  assert(/<VoyageNextHint\s*\/>/.test(main), '桌面端有常驻挂载点')
+  assert(/<VoyageNextHint placement="stack"\s*\/>/.test(main),
+    '移动端走 stack 结构（并入底栏文档流，不写死 bottom）')
+  assert(/NEXT_HINT:\s*25/.test(main), '层级在侧栏之上、面板之下')
+  assert(/from '@\/hooks\/useVoyageNext'/.test(hint) && /from '@\/hooks\/useVoyageNext'/.test(card),
+    '常驻条与面板卡共用同一个 hook，港名/海里/天数只能有一个值')
+  assert(!/dailyDistanceNm\(/.test(card), '面板卡不许再自己算一遍日航程（会与常驻条分叉）')
+  assert(/dailyDistanceNm\(/.test(hook) && /STANCES\[stance\]\.speedMul/.test(hook),
+    'hook 的天数仍按船速×风向×方针×天候算全')
+  assert(/data-testid="next-port-locate"/.test(hint) && /data-testid="next-port-detail"/.test(hint),
+    '常驻条两个入口都有稳定 DOM 锚点')
+  assert(/data-testid="voyage-next-card"/.test(card), '面板卡有稳定锚点供同源对账')
+  assert(/gamePhase !== 'playing' \|\| activePanel/.test(hint),
+    '开局遮罩期与面板打开时收起，不与面板里的同一张卡并排出现')
+  assert(/setCenter\(\[p\.latitude, p\.longitude\]\)/.test(hint),
+    '「定位」只移动地图，不出航')
+  assert(/placement === 'stack'/.test(hint), '移动端是 JS 条件渲染的另一套结构，不是 CSS 隐藏')
+  assert(/max-w-\[400px\]/.test(hint),
+    '桌面条宽 400px：360px 时港名实测 104>97 被裁（layout-audit 在 1024/1440 都报）')
+  assert(/fixed top-\[6\.5rem\] left-1\/2/.test(invite),
+    '靠岸邀请条下移一行，中屏上不与常驻指引横向叠在一起')
+
+  assert(pkg.scripts['test:e2e:nexthint']?.includes('next-port-hint.mjs'), '常驻指引有独立巡检命令')
+  assert(pkg.scripts['test:e2e:seg2']?.includes('test:e2e:nexthint'), '巡检进了 seg2')
+  assert(pkg.scripts['test:e2e:all']?.includes('test:e2e:nexthint'), 'all 也含常驻指引巡检')
+  assert(!(pkg.scripts['test:e2e:seg5'] ?? '').includes('nexthint'),
+    'seg5 没有误引用（分段之间不许自引用）')
+  assert(/createBrowserContext/.test(audit) && /elementFromPoint/.test(audit),
+    '巡检用独立 context + 真实命中测试（DOM 存在 ≠ 玩家点得到）')
+  assert(/documentElement\.scrollWidth/.test(audit), '移动端巡检量页面级横向溢出')
+}
+
 console.log(`\n最终结果：${passed} 通过 / ${failed} 失败`)
 if (failed > 0) process.exit(1)

@@ -29,6 +29,7 @@ npm run test:e2e:map      # 地图可辨性
 npm run test:e2e:map3d    # 2.5D 立体海图（切换/港口标签/切回 2D/运行时错误）
 npm run test:e2e:trade    # 贸易报价一致性
 npm run test:e2e:supply   # 出航计划补给数字对账
+npm run test:e2e:nexthint # 主屏常驻「下一站」：第一屏可见 / 与面板卡同源 / 只定位不出航
 npm run test:e2e:notify   # 通知横幅不挡玩家操作
 npm run test:e2e:mobile   # 移动端布局（390×844 触屏，dev）
 npm run test:e2e:mobile:prod   # 移动端生产产物冒烟（需先 build + vite preview）
@@ -44,7 +45,7 @@ npm run test:e2e:all      # 以上全部（不含 mobile:prod）
 
 ```bash
 npm run test:e2e:seg1   # 冒烟 / 场景三件套 / 音频 / 地图可辨性
-npm run test:e2e:seg2   # 2.5D 海图 / 贸易报价 / 补给数字对账 / 通知 / 移动端布局
+npm run test:e2e:seg2   # 2.5D 海图 / 贸易报价 / 补给数字对账 / 常驻下一站 / 通知 / 移动端布局
 npm run test:e2e:seg3   # 三档可点性 / 航海日志
 npm run test:e2e:seg4   # 多视口布局 / 岸上 / 小字 / 文案密度
 npm run test:e2e:seg5   # 真实首局 / 参观模式 / 中文字体覆盖
@@ -110,6 +111,7 @@ npm run font:subset     # 文案新增汉字后必须重跑
 | `mobile-prod.mjs` | 同一套移动端断言跑在**生产产物**上；不依赖 dev 钩子，全程走玩家真按得到的路径（点海面出航 → 段末抉择 → 操舵退路） | build + `vite preview` |
 | `layout-audit.mjs` | 多视口 × 8 个面板：元素横向越界、文字被 `overflow:hidden` 裁掉（`scrollWidth > clientWidth`）。**在压缩截图里看不出来的那类毛病**。地图 SVG 图层已排除（它本就比视口大） | dev server |
 | `clickable-audit.mjs` | 所有可见按钮的中心点能否命中自己（`elementFromPoint`）+ 是否完整落在视口内。专治「看得见点不到」——DOM 的 `btn.click()` 会绕开遮挡，详见文件头。**至少跑 1440 与 1024 两档**（`--vw=1024 --vh=768`）：底栏四段在 1024 下折成两行，768–1279 这段宽度只有这一档测得到。**还要跑一档 2.5D**（`--mode=3d`）：3D 是一整块覆盖全屏的 canvas，层叠或 `pointer-events` 出错会把所有栏位按钮盖住，而 DOM 点击照样成功 | dev server |
+| `next-port-hint.mjs` | **主屏常驻「下一站」**（第 28 轮新增）：第 28 轮实测进游戏第一屏 38 条可见文本 / 122 字 / 20 个按钮，「下一站/航路/目标/推荐」一个都没有，唯一的航路卡埋在「冒险笔记」面板里。守三条：① 不点开任何面板、第一屏可见文本里就有「下一站」，两个按钮 `elementFromPoint` 真实命中自己，且不压顶栏/罗盘/天候徽章/靠岸邀请条；② 常驻条与面板卡的港名、海里数、天数**同源**（`useVoyageNext` 单一来源），面板里仍保留完整理由与奖励；③ 真鼠标点「定位」后 `__mapStore.center` 落在目标港坐标，且 `isSailing`/`currentRoute`/`activePanel` 全不变（不出航、不弹面板）。另覆盖：面板打开时收起、关掉再回来、岸上视角收起、3D 全屏 canvas 下仍可点、390×844 只占一行且不压底栏/无横向溢出、真触发到港下降沿量两条 rect 不重叠。37/0；注入 3 种旧写法（只在面板里渲染 / 数字写死分叉 / 移动端退化成桌面两行）3/3 被抓，`.workbuddy/probe-inject-nexthint.py` 自动还原并校验 sha。**接入 seg4 时另抓到一处真缺陷**：360px 宽时港名「下一站：埃尔米纳」104>97 被 `truncate` 裁掉 7px（1024/1440 双视口），条宽改 400px；靠岸邀请条同时从 top-10 下移到 104px，避免中屏横向叠住 | dev server |
 | `visitor-mode.mjs` | **参观模式的三条承诺是不是真的**（模式页上明写着「不会输：断粮沉船都与你无关」）：① 进游戏没有教程（`tutorialStep=-1`、无「下一步」遮罩）、界面 31/31 可点、掮客卡在（不用自己猜下一步）；② 顶栏有常驻「参观」标识，点它真的打开帮助，帮助里写明模式且有「换个玩法」入口；③ **把粮/水/士气推到 0、船体耐久推到 0，再推 10 天**：参观模式仍活着（实测推到第 19 天，耐久被抬回下限 1），**同一套烂摊子船长模式第 2 天就 gameover** —— 对照组用来证明这组条件有区分力，否则可能只是空测。对比度另跑 `contrast-audit.mjs --mode=visitor`（54 段 vs 船长 53 段，多出来的是徽标） | dev server |
 | `font-coverage.mjs` | **中文字体有没有漏掉界面在用的字**。自托管的中文字体是按文案现切的子集（`.workbuddy/make_font_subset.py`），文案一长就会漏字，而漏字**不报错**：浏览器静默回退到另一个衬线体，一句话里两种字形（实测旧子集漏 41 个：啊/梅/鸡/酸/饼/舢/啐…，全在事件正文与对白里）。判据用 CDP `CSS.getPlatformFontsForNode`：把全部界面用字塞进一个节点，**只要有一笔来自 `isCustomFont=false` 的字体就是漏字**；再拿「龘齉爨」当对照组证明判据有区分力（这三个字肯定不在子集里，必须被认出由本机字体补）。同一份覆盖关系另有一条单测守卫（字体 sha1 + cmap 清单），`npm test` 就能抓到文案新增后忘了重切 | dev server |
 | `first-run.mjs` | **真实首局全链路**（其余脚本都用 `setState({tutorialStep:-1})` 跳到地图，这一段从未被测过）：清档打开页面 → 开局 5 屏 → 开场致辞（老领航员 3 句）→ 10 步教程 → 点「贸易」→ 掮客推荐条 → 照推荐买 → 出航 → 到港 → 卖出。断言：① 到能做决定 ≤25 次点击（实测 21）；② **教程结束后第一下点「贸易」必须立刻打开面板**——这一条守的是「点了没反应」：修之前开场致辞排在教程之后，一弹就是 `bg-black/45` 全屏遮罩，连点两次都命中在遮罩上、`activePanel` 一直是 null；③ 推荐条有「多少金 / 多少天」，被推荐的商品有 `data-recommended` 且**排第一行**（排第三行时 +N 按钮在折叠线以下，看得见点不到）；④ 照推荐走净赚 ≥300 金（实测 500 → 945，净赚 445，第 1 天）。注入 6/6 全被抓（`.workbuddy/probe-inject-firstrun.py`） | dev server |
@@ -280,6 +282,13 @@ npm run font:subset     # 文案新增汉字后必须重跑
   `supply-parity.mjs` 报「粮=17（抢行够 15、按部就班要 18）必须报不够」+「没给抢行退路」两条；
   旧写法（把「港内每日 / 起航后按部就班」改回基础消耗「每日耗 3 粮 / 5 水」）→ 5 条红。
   两个注入同时让源码守卫单测红。脚本：`.workbuddy/probe-inject-supply.py`（自动还原并校验 sha）。
+- 旧写法（把主屏两处 `<VoyageNextHint>` 都撤掉，退回「只挂在面板里」）→
+  `next-port-hint.mjs` 报 29 条红；数字写死（9999 海里 / 99 天）→ 同源对账 2 条红；
+  移动端误用桌面两行结构 →「只占一行」「收起细账」2 条红。3/3 被抓，脚本
+  `.workbuddy/probe-inject-nexthint.py`。**这一轮还踩到一个注入陷阱**：
+  把 `{cond && <Comp/>}` 里的组件换成 `{null}` 会生成 `{cond && {null}}` 语法错误，
+  Vite 编译失败、页面空白、store 钩子挂不上，e2e 以「空指针崩溃」退出而不是断言报红 ——
+  那种红不算抓到。注入必须保证**代码仍能编译**；巡检也补了「页面未就绪」的明确失败行。
 - 旧写法（`NotificationToast` 去掉 `pointer-events-none` 与让位）→
   `notification-overlap.mjs` 的「出售按钮依然点得动」失败，命中的是通知卡片本身。
 - 国界线沉到海面以下（`BORDER_Y = -0.5`，完全不可见）→

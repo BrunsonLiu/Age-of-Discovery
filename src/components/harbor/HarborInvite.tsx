@@ -58,6 +58,11 @@ export default function HarborInvite() {
   const port = ports.find(p => p.id === fleet.currentPortId)
   if (!port) return null
 
+  /*
+   * 从 top-10(40px) 下移到 104px：常驻「下一站」占着罗盘右侧 y56~100，
+   * 在 1024~1280 的中屏上本条居中后左边缘约 342~470px，会横向压住它。
+   * 下移一行让两条上下错开；9 秒后本条收起、常驻条仍在原位。
+   */
   const reduced = prefersReducedMotion()
   const style: React.CSSProperties = reduced
     ? { opacity: 1 }
@@ -69,7 +74,7 @@ export default function HarborInvite() {
 
   return (
     <div
-      className="fixed top-10 left-1/2 z-[62] flex items-center gap-3 pl-3 pr-2 py-2 rounded-lg
+      className="fixed top-[6.5rem] left-1/2 z-[62] flex items-center gap-3 pl-3 pr-2 py-2 rounded-lg
         border border-gold-500/55 bg-[#241a10]/95 shadow-[0_8px_28px_rgba(0,0,0,0.7)]"
       style={style}
       data-testid="harbor-invite"
