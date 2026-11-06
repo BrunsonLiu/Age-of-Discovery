@@ -12,6 +12,7 @@ import { repairCost, taskGold, supplyCost, supplyAmounts } from '@/utils/crewPer
 import { FACTIONS, portFaction, factionAttitude } from '@/data/factions'
 import Badge from '@/components/ui/Badge'
 import { UI_ASSETS } from '@/data/uiAssets'
+import { prefersReducedMotion } from '@/utils/motion'
 import ParchmentCard from '@/components/ui/ParchmentCard'
 import ActionButton from '@/components/ui/ActionButton'
 
@@ -211,10 +212,26 @@ export default function PortDetail() {
                 {port.services.map(svc => (
                   <button
                     key={svc}
+                    /*
+                     * 这五个以前是"**长得像动作、按下去什么也没有**"：
+                     * 只有 trade / shipyard 挂了 onClick，修理/补给/招募
+                     * 三块铜牌点了毫无反应 —— 正是玩家最早反馈的那句
+                     * "点了没反应"。它们下面其实各有真按钮（每船修理、
+                     * 补给出价、招募船员/军官），所以正确做法不是删掉，
+                     * 而是让它们**跳到那块真控件**：scrollIntoView 看得见，
+                     * 玩家不会以为面板是坏的。
+                     * 贸易/造船厂不在这张卡里，仍然切面板。
+                     */
                     onClick={() => {
-                      if (svc === 'trade') setActivePanel('trade')
-                      if (svc === 'shipyard') setActivePanel('shipyard')
+                      if (svc === 'trade') { setActivePanel('trade'); return }
+                      if (svc === 'shipyard') { setActivePanel('shipyard'); return }
+                      const anchor = document.querySelector(`[data-service-anchor="${svc}"]`)
+                      anchor?.scrollIntoView({ behavior: prefersReducedMotion() ? 'auto' : 'smooth', block: 'center' })
                     }}
+                    data-service={svc}
+                    aria-label={svc === 'trade' || svc === 'shipyard'
+                      ? `去${serviceNames[svc]}`
+                      : `跳到${serviceNames[svc]}那一栏`}
                     /*
                      * 铜牌材质（.plate-btn），不是凹陷槽（.inlay）。
                      * 这五个是**动作**（修理/补给/招募/贸易/造船厂），按下去要有
@@ -232,7 +249,7 @@ export default function PortDetail() {
           )}
 
           {isAtPort && port.services.includes('repair') && (
-            <div className="border-t border-gold-700/30 pt-2">
+            <div data-service-anchor="repair" className="border-t border-gold-700/30 pt-2">
               <h4 className="text-gold-300 font-serif text-[13px] mb-1.5 flex items-center gap-1">
                 <Shield size={12} /> 修理船只
               </h4>
@@ -256,7 +273,7 @@ export default function PortDetail() {
           )}
 
           {isAtPort && port.services.includes('supply') && (
-            <div className="border-t border-gold-700/30 pt-2">
+            <div data-service-anchor="supply" className="border-t border-gold-700/30 pt-2">
               <h4 className="text-gold-300 font-serif text-[13px] mb-1.5 flex items-center gap-1">
                 <Package size={12} /> 补给物资
               </h4>
@@ -301,7 +318,7 @@ export default function PortDetail() {
           )}
 
           {isAtPort && port.services.includes('recruit') && (
-            <div className="border-t border-gold-700/30 pt-2">
+            <div data-service-anchor="recruit" className="border-t border-gold-700/30 pt-2">
               <h4 className="text-gold-300 font-serif text-[13px] mb-1.5 flex items-center gap-1">
                 <Users size={12} /> 招募船员
               </h4>

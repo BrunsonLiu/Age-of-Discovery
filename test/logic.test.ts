@@ -6668,5 +6668,31 @@ console.log('\n== 天数口径守卫 ==')
   assert(/ports\.some\(p => p\.id === portId\)/.test(art), '取图前先确认港口存在（防脏 id 造出 404 路径）')
 }
 
+/* ==========================================================================
+ * 港口服务按钮（2026-11-07）
+ * 这五块铜牌曾经只有 trade / shipyard 挂 onClick —— 修理/补给/招募点了毫无
+ * 反应，正是玩家最早反馈的「点了没反应」。现在它们跳到对应分区。
+ * 守卫：五块都要有非空行为 + 三个分区锚点必须在 + 造船厂面板要有稳定锚点。
+ * ========================================================================== */
+{
+  const pd = readFileSync(join(process.cwd(), 'src', 'components', 'panels', 'PortDetail.tsx'), 'utf8')
+  const sy = readFileSync(join(process.cwd(), 'src', 'components', 'panels', 'ShipyardPanel.tsx'), 'utf8')
+
+  assert(/data-service=\{svc\}/.test(pd), '服务按钮带 data-service，巡检可稳定定位')
+  assert(/svc === 'trade'[\s\S]{0,40}setActivePanel\('trade'\)/.test(pd), '贸易按钮切到贸易面板')
+  assert(/svc === 'shipyard'[\s\S]{0,60}setActivePanel\('shipyard'\)/.test(pd), '造船厂按钮切到造船厂面板')
+  assert(/scrollIntoView/.test(pd), '其余三个按钮必须真的跳转（不能是空 onClick）')
+  for (const k of ['repair', 'supply', 'recruit']) {
+    assert(new RegExp(`data-service-anchor="${k}"`).test(pd), `${k} 分区有跳转锚点`)
+  }
+  assert(/aria-label=/.test(pd), '服务按钮有 aria-label（图标按钮不能只靠画认）')
+  assert(/data-testid="shipyard-panel"/.test(sy), '造船厂面板有稳定锚点')
+
+  const pkg = JSON.parse(readFileSync(join(process.cwd(), 'package.json'), 'utf8'))
+  assert(pkg.scripts['test:e2e:portsvc']?.includes('port-services.mjs'), '服务按钮有独立巡检命令')
+  assert(pkg.scripts['test:e2e:seg2']?.includes('test:e2e:portsvc'), '服务按钮巡检进了 seg2')
+  assert(pkg.scripts['test:e2e:all']?.includes('test:e2e:portsvc'), 'all 也含服务按钮巡检')
+}
+
 console.log(`\n最终结果：${passed} 通过 / ${failed} 失败`)
 if (failed > 0) process.exit(1)

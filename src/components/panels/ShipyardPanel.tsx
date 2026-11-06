@@ -29,7 +29,7 @@ export default function ShipyardPanel() {
   const usedCapacity = fleet.cargo.reduce((s, c) => s + c.quantity, 0)
 
   return (
-    <div className="w-full md:w-80 animate-slide-in-right">
+    <div className="w-full md:w-80 animate-slide-in-right" data-testid="shipyard-panel">
       <ParchmentCard title="造船厂" onClose={() => setActivePanel(null)}>
         <div className="space-y-3">
           <div className="flex items-center justify-between text-[13px] text-gold-400 font-serif">

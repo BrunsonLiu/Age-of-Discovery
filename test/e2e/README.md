@@ -28,6 +28,7 @@ npm run test:e2e:audio    # 音频实跑
 npm run test:e2e:map      # 地图可辨性
 npm run test:e2e:map3d    # 2.5D 立体海图（切换/港口标签/切回 2D/运行时错误）
 npm run test:e2e:trade    # 贸易报价一致性
+npm run test:e2e:portsvc  # 港口服务五个按钮「点了有反应」：跳分区 / 切面板
 npm run test:e2e:supply   # 出航计划补给数字对账
 npm run test:e2e:nexthint # 主屏常驻「下一站」：第一屏可见 / 与面板卡同源 / 只定位不出航
 npm run test:e2e:receipt  # 到港回执：回来的理由常驻 / 与册子同源 / 翻开即收起
@@ -306,10 +307,30 @@ GAME_URL=http://127.0.0.1:5180/Age-of-Discovery/ npm run test:e2e:live   # 打�
 「买进并起航」按钮，那种判据永远通过。现在用面板自己的 `[data-testid="trade-panel"]`
 并先断言「点之前是关着的」，让判据能区分开/关。
 
+## 港口服务按钮（`port-services.mjs`）
+
+港口卡里那五块铜牌（修理 / 补给 / 招募 / 贸易 / 造船厂）曾经只有后两块挂了
+onClick，前三块**长得像动作、按下去什么也没有**——正是玩家最早反馈的
+「点了没反应」。现在前三个跳到各自分区（`scrollIntoView`），后两个切面板。
+
+这条巡检守三件事：五个按钮都有 `data-service` 与非空 `aria-label`；点完目标分区
+**真的落在面板滚动容器的矩形里**（不是"在视口里"就行）；贸易/造船厂真的换面板。
+
+**两个判据坑（都踩过）**：
+1. 「进了可视区」不能用视口当判据。面板是 `max-h-[60vh]` 的滚动容器，分区停在
+   y661 时视口里"可见"，其实已经在容器下沿（656）之外——第一版就这么漏判了
+   repair/supply，注入空 onClick 只红 4 条。改成拿容器矩形比，注入后红 6 条。
+2. 点之前必须先确认按钮**中心点命中的就是它自己**。新手引导那层
+   `absolute inset-0 bg-black/45` 没有 role，盖住整张面板时点击全部落空，
+   表现是"scrollTop 一动不动、trade 也没切面板"，很像代码写错了。
+   另外上一轮"跳到分区"会把面板滚下去，再点 trade 前要先滚回顶部。
+
 ## 验证测试本身有效
 
 改坏代码后测试必须**失败**。已验证过的注入点：
 
+- 港口服务：把三个「跳分区」分支改回空 onClick → `port-services.mjs` 红 6 条
+  （三个分区各 2 条：不在容器可视区 + 标题处点不到自己），还原后 13/0。
 - 线上冒烟：把构建里的 `dist/assets/noto-serif-sc-subset-*.woff2` 删掉再 `vite preview`，
   `live-smoke.mjs` 报 **5 条红**（假 200、MIME、字节三条 ×2 视口），恢复后回到 35/0。
   故意不改源码，是因为它守的就是「部署产物」——本地源码改坏测不到这一层。
