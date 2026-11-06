@@ -34,7 +34,9 @@ npm run test:e2e:receipt  # 到港回执：回来的理由常驻 / 与册子同�
 npm run test:e2e:notify   # 通知横幅不挡玩家操作
 npm run test:e2e:mobile   # 移动端布局（390×844 触屏，dev）
 npm run test:e2e:mobile:prod   # 移动端生产产物冒烟（需先 build + vite preview）
-npm run test:e2e:all      # 以上全部（不含 mobile:prod）
+npm run test:e2e:live     # 线上冒烟（只走界面、不用 dev 钩子；默认打 GitHub Pages）
+npm run test:e2e:release  # full + live：推送之后跑这一条
+npm run test:e2e:all      # 以上全部（不含 mobile:prod / live）
 ```
 
 ## 全链分段执行
@@ -272,9 +274,45 @@ npm run font:subset     # 文案新增汉字后必须重跑
 > 两种方式选的都必须是**当前真实存在**的素材。拿一个本来就不存在的地址去测，
 > 测到的是「文件不存在」，不是「文件存在但加载失败」——后者才是线上会遇到的故障。
 
+## 线上冒烟（`live-smoke.mjs`）
+
+其余脚本全部依赖 dev 专属钩子（`__gameStore` / `__mapStore`，生产包会被 tree-shake 掉），
+所以「本地全绿、线上白屏」这类问题一直没人守。`live-smoke.mjs` **只用界面**：
+真实鼠标点按钮、只看 DOM，任何 store 都不碰，因此可以直接打 GitHub Pages。
+
+```bash
+npm run test:e2e:live                                        # 打线上
+GAME_URL=http://127.0.0.1:5180/Age-of-Discovery/ npm run test:e2e:live   # 打本地生产产物
+```
+
+守的四个线上专属故障：① base `/Age-of-Discovery/` 拼错导致资源 404（本地看不出来）；
+② MIME / 大小写（Pages 是 Linux，本地是 Windows）；③ 字体没上传或哈希变了 → 中文静默回退；
+④ 阻塞资源位置错导致真 gzip + 真 CDN 下 FCP 变慢。
+
+**两个写这条巡检时踩到的坑，比断言本身更值钱：**
+
+1. **「200 但不是资源」**。`vite preview` 对不存在的 `/assets/xxx.woff2` 会返回
+   **200 + index.html（1761 字节）**——SPA 兜底。浏览器解析失败后静默回退系统字体，
+   页面不报错、控制台无 error，只有中文悄悄换了字型。所以判据不能只看状态码：
+   现在会统计「资源类 URL 拿到 `text/html`」的假 200，并把中文字体单独 `fetch` 下来
+   量 **MIME + 真实字节**（应 `font/woff2` 且 >200KB）。
+2. **两层遮罩不是同一个东西**。开场致辞是 `[role="dialog"]`，新手引导是
+   `div.fixed.inset-0.bg-black/80`，**没有 role 属性**。只查 `role="dialog"`
+   会误判「清完了」；线上实测就是这样：致辞点完了、引导遮罩还盖着，
+   点侧栏「贸易」全被吃掉，表现就是玩家说的「点了没反应」。
+   现在统一走 `clearMasks()`，逐层剥到 `elementFromPoint` 真落在按钮上。
+
+另外「面板打开了吗」不能用 `body.innerText` 包含关键词来判断——主屏本来就有
+「买进并起航」按钮，那种判据永远通过。现在用面板自己的 `[data-testid="trade-panel"]`
+并先断言「点之前是关着的」，让判据能区分开/关。
+
 ## 验证测试本身有效
 
 改坏代码后测试必须**失败**。已验证过的注入点：
+
+- 线上冒烟：把构建里的 `dist/assets/noto-serif-sc-subset-*.woff2` 删掉再 `vite preview`，
+  `live-smoke.mjs` 报 **5 条红**（假 200、MIME、字节三条 ×2 视口），恢复后回到 35/0。
+  故意不改源码，是因为它守的就是「部署产物」——本地源码改坏测不到这一层。
 
 - 旧写法（`EventScene` 用全局布尔值 `imgFailed`）→ `scene-img-failed-reset.mjs` 第②条断言失败，
   chart 场景被误伤退化成 SVG。

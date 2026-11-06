@@ -74,7 +74,7 @@
 <div class="wrap">
   <header>
     <h1>航海图 · 待办清单</h1>
-    <p>依据 29 轮工作日志整理 · 2026-11-06 逐条复核并实做 · 勾选状态只存本机浏览器</p>
+    <p>依据 30 轮工作日志整理 · 2026-11-06 逐条复核并实做 · 勾选状态只存本机浏览器</p>
   </header>
 
   <div class="summary"><b id="count">0 / 0</b><span id="hint">已完成 / 可执行项（已核实的自动勾上；冻结项不计）</span></div>
@@ -115,14 +115,14 @@ const GROUPS = [
 
 const ITEMS = [
   // 发布与提交
-  { g:'release', p:'P0', t:'提交并推送 23 轮累积改动',
-    why:'工作区约 120 项未提交，HEAD 仍是 3e9d126；本环境 git push 被代理 502 拦住，只能在你自己的终端执行。',
-    acc:'git log -1 不再是 3e9d126，且 Actions 里对应 head_sha 的 conclusion=success。',
-    src:'MEMORY §0.5 / 第 23 轮日志' },
+  { g:'release', p:'P0', t:'提交并推送累积改动（80f7227 起共 6 个提交）',
+    why:'已全部推送：远端是 SSH，沙箱里 git push 直接可跑（旧记录「推不了」只对 HTTPS 成立，代理拦 443 但放行 22）。',
+    acc:'git log -1 与远端 main 一致，Actions 对应 head_sha 的 conclusion=success，且线上 index-*.js 里能搜到新功能文案。',
+    src:'MEMORY §0 / 第 30 轮日志' },
   { g:'release', p:'P1', t:'push 之后跑一次线上回归',
-    why:'本地全绿不等于线上：Pages 会 gzip、路径带 /Age-of-Discovery/ 前缀，且产物是全新构建的。',
-    acc:'online-check / verify_online_deploy 无控制台错误、地图能渲染、港口图能加载。',
-    src:'MEMORY §7' },
+    why:'本地全绿不等于线上：Pages 会 gzip、路径带 /Age-of-Discovery/ 前缀，产物是全新构建；而且其余 e2e 都依赖 dev 钩子，生产包会被 tree-shake 掉，线上这一层一直没人守。',
+    acc:'新增 test/e2e/live-smoke.mjs（只用界面、不碰 store）：0 个 4xx、0 个假 200、中文字体 MIME 与字节对得上、开局两层遮罩清得掉、贸易面板真能打开、手机无横向溢出。实测线上 35/0。',
+    src:'test/e2e/live-smoke.mjs / 第 30 轮日志' },
   { g:'release', p:'P2', t:'手动重发 WorkBuddy 发布快照',
     why:'age-of-discovery-24406.app.workbuddy.host 是发布式快照，不会随 GitHub Pages 自动更新。',
     acc:'打开分享链接，能看到本轮改动（如开局 4 屏、参观徽标）。',
@@ -272,8 +272,8 @@ const ITEMS = [
  * frozen  = 复核后认定「不该做」，有实测证据，移进冻结组
  */
 const VERIFIED = {
-  '提交并推送 23 轮累积改动': 'blocked',
-  'push 之后跑一次线上回归': 'blocked',
+  '提交并推送累积改动（80f7227 起共 6 个提交）': 'done',
+  'push 之后跑一次线上回归': 'done',
   '手动重发 WorkBuddy 发布快照': 'blocked',
   '把「全链分三段」写进 e2e README': 'done',
 
@@ -308,6 +308,8 @@ const VERIFIED = {
 
 /** 复核后补上的结论，直接显示在条目说明后面 */
 const NOTES = {
+  '提交并推送累积改动（80f7227 起共 6 个提交）': '第 30 轮实做：远端是 SSH，沙箱里 git push 直接成功（3e9d126..825a113），Actions conclusion=success，线上 index 里搜得到「刚带回」「下一站」。旧结论「推不了」只对 HTTPS 成立——代理拦 github.com:443、放行 22 端口。两处记忆已更正。',
+  'push 之后跑一次线上回归': '第 30 轮实做：新增 live-smoke.mjs（零 store 依赖，只用界面），线上 35/0；注入「删掉构建里的中文字体」后报 5 条红、恢复回 35/0。过程中抓到两个坑：vite preview 对缺失资源返回 200+index.html（假 200，中文静默回退系统字体）、新手引导遮罩没有 role="dialog" 只查 role 会误判清完。',
   '修远洋收益倒挂': '当前 selectBestDeal 按「每海里」排序是首局 11 秒闭环的故意设计，改排序只会让玩家更常选到按天更亏的长线。真修要新增远洋回报机制，属于平衡变更，等你定方向，本轮不擅自动价格。',
   '2D 与 3D 地形判据不一致': '两套判据不同是有实测依据的设计：2D 是纸面符号、只做否决（PEAK_MIN_ELEV 删掉平原上的山），3D 是真地形、用山脊相对高度（平原 0%、阿尔卑斯 88%）。单测 4201/4764 段专门守着这个结论，硬统一会把已验证的效果改坏。按证据冻结。',
   '中文字体 362KB 仍在首屏路径上': '验收本身就写着「没有可证明收益就别动」，历史 4G 实测也证伪了字节归因。按证据冻结，不再列 optimization。',
@@ -410,7 +412,7 @@ document.getElementById('reset').addEventListener('click', () => {
 })
 
 document.getElementById('export').addEventListener('click', () => {
-  const lines = ['# 航海图 · 待办清单', '', '依据 29 轮工作日志整理 · ' + new Date().toLocaleDateString('zh-CN'), '']
+  const lines = ['# 航海图 · 待办清单', '', '依据 30 轮工作日志整理 · ' + new Date().toLocaleDateString('zh-CN'), '']
   GROUPS.forEach(g => {
     const rows = all().filter(x => x.g === g.id)
     if (!rows.length) return
