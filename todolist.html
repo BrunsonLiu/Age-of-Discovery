@@ -195,10 +195,10 @@ const ITEMS = [
     why:'scrollWidth 1548>1440 的真凶是时间轴 day=200 刻线（left 132.67%），不是装饰 SVG；底图实测没有放大（coverScale 0.905~1.03）。',
     acc:'documentElement.scrollWidth === clientWidth（layout-audit 已有页面级判据，注入旧写法会红）。',
     src:'2026-11-06 实测 probe-overflow-culprit.mjs / probe-decor-dpi.mjs' },
-  { g:'visual', p:'P2', t:'按 asset-prompts.txt 生成 1-8 号素材',
-    why:'1-6 是日志线描，7-8 是岸上油画全景（另一套风格锚，别混用）；每条都写了实际显示尺寸。',
-    acc:'透明 PNG、无任何文字/伪字、按标注尺寸输出；接入后跑一次 harbor-view 与日志面板巡检。',
-    src:'.workbuddy/asset-prompts.txt' },
+  { g:'visual', p:'P2', t:'按 ASSET-PROMPTS.md 生成素材（P0 四张全景 → P1 十张缩略图 → P2 线描）',
+    why:'P0 是 4 张岸上全景，拿到后 20 港全有原生全屏背景（现在 17 港在用 96px 缩略图放大 1.85 倍）；P1 是 10 个港口缺专属缩略图；P2 的 11 张线描代码里还没接线，要先写渲染。旧版第 7 节的构图数字（y360~700）是估的，已实测更正为 y425–573。',
+    acc:'透明/不透明按项要求、无任何文字与伪字、按标注尺寸输出；P0 接入后跑 harbor-view（60 条断言）。',
+    src:'ASSET-PROMPTS.md（根目录，2026-11-07 完整版）' },
 
   // 工程与验证
   { g:'eng', p:'P2', t:'中文字体 362KB 仍在首屏路径上',
@@ -293,7 +293,7 @@ const VERIFIED = {
   '2D 与 3D 地形判据不一致': 'frozen',
   '3D 侧壁「沙带」与极远视角经纬网': 'done',
   '装饰层横向溢出（已修）与底图放大（已证伪）': 'done',
-  '按 asset-prompts.txt 生成 1-8 号素材': 'blocked',
+  '按 ASSET-PROMPTS.md 生成素材（P0 四张全景 → P1 十张缩略图 → P2 线描）': 'blocked',
 
   '中文字体 362KB 仍在首屏路径上': 'frozen',
   'mobile-prod.mjs 不在全链里': 'done',
