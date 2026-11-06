@@ -6650,5 +6650,23 @@ console.log('\n== 天数口径守卫 ==')
   assert(/setViewport\(\{ width: 390/.test(audit), '巡检覆盖移动端结构不变')
 }
 
+/* ==========================================================================
+ * 日志页首插图（2026-11-07）
+ * 只给最上面那一页配画 —— 每页都配会变成画册在滚动，反而没有重点。
+ * 守卫三件：取图走单一入口、只有 idx===0 出图、加载失败要藏起来不留空框。
+ * ========================================================================== */
+{
+  const views = readFileSync(join(process.cwd(), 'src', 'components', 'panels', 'LogbookViews.tsx'), 'utf8')
+  const art = readFileSync(join(process.cwd(), 'src', 'data', 'logbookArt.ts'), 'utf8')
+
+  assert(/from '@\/data\/logbookArt'/.test(views), '插图走 logbookArt 单一入口（换素材只改一处）')
+  assert(!/portImage/.test(views), '面板里不再直接引 portImage（否则换 sighting_* 要动渲染代码）')
+  assert(/idx === 0 \? logbookArt\(entry\.portId\)/.test(views), '只有最上面那一页取图')
+  assert(/data-testid="logbook-art"/.test(views), '插图有稳定锚点（巡检与截图都靠它）')
+  assert(/onError=/.test(views), '图挂了要隐藏，不能留个空框（路径错会静默 404）')
+  assert(/onError/.test(art) === false, '取图函数不掺渲染逻辑')
+  assert(/ports\.some\(p => p\.id === portId\)/.test(art), '取图前先确认港口存在（防脏 id 造出 404 路径）')
+}
+
 console.log(`\n最终结果：${passed} 通过 / ${failed} 失败`)
 if (failed > 0) process.exit(1)

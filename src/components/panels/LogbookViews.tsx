@@ -6,6 +6,7 @@ import { ports } from '@/data/ports'
 import { achievements } from '@/data/achievements'
 import { DEBRIS_INFO } from '@/data/debris'
 import { REGION_CN, countEchoes, echoDayFor } from '@/data/logbook'
+import { logbookArt } from '@/data/logbookArt'
 import { clueCenter } from '@/utils/harbor'
 import type { DebrisKind } from '@/data/debris'
 
@@ -70,11 +71,22 @@ export function SightingsView() {
           </div>
 
           <div className="space-y-2">
-            {logbook.map(entry => {
+            {logbook.map((entry, idx) => {
               const isFresh = fresh.has(entry.id)
               // 旧页不改写：那句话当时确实"没人催"。只在下面补一行真实的下文，
               // 天数从应验页读（不是拿今天算），册子才不会自己改口。
               const echoDay = echoDayFor(logbook, entry.targetPortId)
+              /*
+               * 只有最上面那一页配画。
+               *
+               * 理由不是省流量，是"层级"：每页都配图会变成一本画册在滚动，
+               * 反而没有重点；只给最新一页，玩家翻开就知道"这趟从哪儿回来"，
+               * 往下翻是旧账，本来就只需要字。
+               *
+               * 72px 高是量出来的：面板内容宽约 296，296/72≈4.1:1，与港口图的
+               * 3.6:1 只差一点上下裁切；再高就开始抢正文，再矮看不出是哪个城。
+               */
+              const art = idx === 0 ? logbookArt(entry.portId) : undefined
               return (
                 <article
                   key={entry.id}
@@ -87,6 +99,28 @@ export function SightingsView() {
                         : 'border-gold-700/25'
                   }`}
                 >
+                  {art && (
+                    <div
+                      className="relative -mx-2.5 -mt-2 mb-2 h-[72px] overflow-hidden rounded-t-[5px]"
+                      style={{
+                        // 与港口面板同一套"装裱"：外金线 + 内暗卡纸 + 内侧暗角。
+                        // 不装裱的话，这张写实油画贴在羊皮纸上会读成"贴图"，
+                        // 而不是"舱壁上挂着的一幅画"。
+                        boxShadow:
+                          'inset 0 0 0 1px rgba(206,172,108,0.5), inset 0 0 0 3px rgba(18,12,5,0.82), inset 0 0 16px rgba(0,0,0,0.42)',
+                      }}
+                    >
+                      <img
+                        src={art}
+                        alt=""
+                        aria-hidden="true"
+                        data-testid="logbook-art"
+                        className="w-full h-full object-cover"
+                        style={{ objectPosition: 'center 42%' }}
+                        onError={e => { (e.currentTarget.parentElement as HTMLElement).style.display = 'none' }}
+                      />
+                    </div>
+                  )}
                   <div className="flex items-center gap-1.5 flex-wrap">
                     {entry.kind === 'title'
                       ? <Sparkles size={13} className="text-gold-300 shrink-0" aria-hidden="true" />

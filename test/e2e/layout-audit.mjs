@@ -26,6 +26,30 @@ const page = await browser.newPage()
 let fails = 0
 const check = (ok, msg) => { console.log((ok ? '  ✓ ' : '  ✗ ') + msg); if (!ok) fails++ }
 
+/**
+ * 等「布局真的稳定」再量，别用固定 sleep 赌。
+ *
+ * 2026-11-07 实测到的假红：trade 面板进来时是 `animate-slide-in-right`
+ * （从 translateX(100%) 滑入），量到 scrollWidth 1668 > 1440，越界元素正好是
+ * 那个还在滑的面板（x1651~1668）。它不是布局坏了，是**测量抓到了动画中间帧**。
+ * 判据改成：所有运行中的动画结束 + scrollWidth 连续两次一致，才去断言。
+ * 注意这不掩盖真故障——动画结束后真越界，断言照样红。
+ */
+async function waitSettled() {
+  for (let i = 0; i < 40; i++) {
+    const s = await page.evaluate(() => new Promise(resolve => {
+      const running = document.getAnimations().filter(a => a.playState === 'running').length
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve({
+        running,
+        w: document.documentElement.scrollWidth,
+      })))
+    }))
+    await sleep(80)
+    const s2 = await page.evaluate(() => document.documentElement.scrollWidth)
+    if (s.running === 0 && s.w === s2) return
+  }
+}
+
 const clickIn = (ov, bt) => page.evaluate((o, b) => {
   const ovl = [...document.querySelectorAll('div.fixed.inset-0, div[role=dialog]')].find(x => new RegExp(o).test(x.textContent || ''))
   const btn = ovl && [...ovl.querySelectorAll('button')].find(x => new RegExp(b).test(x.textContent || ''))
@@ -103,7 +127,7 @@ for (const w of widths) {
       b.click(); return true
     }, p)
     if (!opened) { console.log(`  面板 ${p}：入口不存在，跳过`); continue }
-    await sleep(800)
+    await waitSettled()
     const s = await scan()
     check(s.offRight.length === 0, `面板 ${p} 无横向越界${s.offRight.length ? '：' + s.offRight.map(o => `${o.tag}@${o.right}`).join(', ') : ''}`)
     check(s.textClip.length === 0, `面板 ${p} 无文字被裁${s.textClip.length ? '：' + s.textClip.map(o => `「${o.text}」${o.sw}>${o.cw}`).join(', ') : ''}`)
