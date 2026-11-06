@@ -276,7 +276,7 @@ export default function EventCard() {
               */}
               {currentEvent.viaExplorer && (
                 <span
-                  className="mb-2 inline-flex items-center gap-1 rounded-full px-2 py-[3px] font-serif text-[11px] tracking-wide"
+                  className="mb-2 inline-flex items-center gap-1 rounded-full px-2 py-[3px] font-serif text-xs tracking-wide"
                   style={{
                     color: '#f0d88a',
                     background: 'rgba(61,44,16,0.72)',
@@ -326,7 +326,7 @@ export default function EventCard() {
 
             {!outcome ? (
               <>
-                <p className="text-gold-200 font-serif text-sm leading-relaxed text-center mb-5">
+                <p data-testid="event-description" className="text-gold-200 font-serif text-sm leading-relaxed text-center mb-5">
                   {currentEvent.description}
                 </p>
                 <div className="space-y-2">

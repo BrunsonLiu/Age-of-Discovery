@@ -40,8 +40,7 @@ await p.evaluate(() => {
   const o = [...document.querySelectorAll('div.fixed.inset-0')].find(x => /选择你的天赋/.test(x.textContent || ''))
   o && [...o.querySelectorAll('button')].filter(x => /商界血脉|铁壁舰长|魅力领袖|天生探险家|随船医生/.test(x.textContent || '')).at(0)?.click()
 }); await sleep(400)
-await clickIn('扬帆起航', '扬帆起航'); await sleep(700)
-await clickIn('第一次出航', '启航'); await sleep(1500)
+await clickIn('选择你的天赋', '启航'); await sleep(1500)
 await p.evaluate(() => [...document.querySelectorAll('button')].find(x => /跳过引导/.test(x.textContent || ''))?.click()); await sleep(500)
 await p.keyboard.press('Escape'); await sleep(350)
 await p.keyboard.press('Escape'); await sleep(800)
@@ -91,8 +90,22 @@ const btns = await p.evaluate(() => {
   return root ? root.querySelectorAll('button').length : 0
 })
 let interrupted = null
+let clicked = 0
 for (let i = 0; i < btns; i++) {
-  await p.evaluate(() => window.__gameStore.setState({ activePanel: 'port' }))
+  /*
+   * 每轮都从干净现场开始：面板开、没有残留对白、彩蛋额度复位。
+   *
+   * 【为什么必须清对白】面板里不只有「关闭」按钮会合上面板 ——「上岸走走」
+   * 切岸上视角也会把 activePanel 置空，此时彩蛋**合法**弹出（关了面板就该弹）。
+   * 旧版只在每轮强行把面板重开，却让那段对白一直挂在屏幕上；下一轮点「修理」
+   * 时面板确实开着、遮罩也确实在，于是被误判成「面板开着被打断」。
+   * 实测轨迹：i=1「上岸走走」→ panel null + scriptId egg_low_water，
+   * i=2「修理」→ panel port + 同一段对白残留。产品行为正确，是脚本前置污染。
+   */
+  await p.evaluate(() => {
+    window.__dialogueStore?.getState?.().skip?.()
+    window.__gameStore.setState({ activePanel: 'port', dialogueSeen: ['opening_pilot'] })
+  })
   await sleep(160)
   const box = await p.evaluate((i) => {
     const plates = [...document.querySelectorAll('div')].filter(d => {
@@ -127,21 +140,30 @@ for (let i = 0; i < btns; i++) {
    */
   const stillOpen = await p.evaluate(() => window.__gameStore.getState().activePanel === 'port')
   if (!stillOpen) continue
+  clicked++
   const s = await scrim()
   if (s) { interrupted = `第 ${i} 个按钮 → ${s}`; break }
 }
+check(clicked >= 5, `面板里确实逐个点过足够多的按钮（实际 ${clicked} / ${btns} 个）`)
 check(interrupted === null,
   `面板内 ${btns} 个按钮逐个点击，全程没有对白遮罩${interrupted ? '（' + interrupted + '）' : ''}`)
 
-// ③ 面板关掉之后彩蛋仍应该能弹（否则就是"修成永久不弹了"）
-//    把额度与状态都推到位，再关面板并等一拍
+// ③ 面板关掉之后彩蛋仍应该能弹（否则就是"修成永久不弹了"）。
+//    循环里的「补给」会加水、「修理」会修耐久，所以这里把状态与额度显式推回
+//    条件成立再关面板，不让上一步点过的按钮影响这条判据。
 await p.evaluate(() => {
-  window.__gameStore.setState({ activePanel: null })
+  const st = window.__gameStore, s = st.getState()
+  window.__dialogueStore?.getState?.().skip?.()
+  st.setState({
+    activePanel: null,
+    dialogueSeen: ['opening_pilot'],
+    fleet: { ...s.fleet, day: 40, water: 20, morale: 40, gold: 6000 },
+  })
 })
 await sleep(1200)
 const afterClose = await scrim()
-check(afterClose !== null || true,
-  `关掉面板后彩蛋可正常触发（当前：${afterClose ? '弹了「' + afterClose + '」' : '没弹，属正常——条件未成立'}）`)
+check(afterClose !== null,
+  `关掉面板后彩蛋能正常弹出（没被修成永久不弹；当前 ${afterClose ? '弹了「' + afterClose + '」' : '没弹'}）`)
 
 console.log(`\n结果：${pass} 通过 / ${fail} 失败`)
 await b.close()

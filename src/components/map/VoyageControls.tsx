@@ -57,7 +57,7 @@ export default function VoyageControls({ placement = 'float' }: { placement?: 'f
           type="button"
           onClick={openStancePicker}
           title={`当前方针：${profile.name}——${profile.hint}`}
-          className="press flex items-center gap-1 rounded px-1.5 py-1 font-serif text-[11px] text-gold-200 hover:bg-gold-700/25"
+          className="press flex items-center gap-1 rounded px-1.5 py-1 font-serif text-xs text-gold-200 hover:bg-gold-700/25"
         >
           <Gauge size={12} aria-hidden="true" />
           <span className="text-gold-400">{profile.icon}</span>
@@ -68,7 +68,7 @@ export default function VoyageControls({ placement = 'float' }: { placement?: 'f
           type="button"
           onClick={requestHelm}
           title="亲手掌舵：评级决定这一段能少走多少海里"
-          className="press flex items-center gap-1 rounded px-1.5 py-1 font-serif text-[11px] text-gold-200 hover:bg-gold-700/25"
+          className="press flex items-center gap-1 rounded px-1.5 py-1 font-serif text-xs text-gold-200 hover:bg-gold-700/25"
         >
           <Anchor size={12} aria-hidden="true" />
           亲手掌舵
@@ -89,7 +89,7 @@ export default function VoyageControls({ placement = 'float' }: { placement?: 'f
             : canMess
               ? `加餐：粮 ${GAME_BALANCE.MESS_FOOD} + 水 ${GAME_BALANCE.MESS_WATER} → 士气 +${GAME_BALANCE.MESS_MORALE}（每天一次）`
               : `粮或水不够了（需要粮 ${GAME_BALANCE.MESS_FOOD}、水 ${GAME_BALANCE.MESS_WATER}）`}
-          className={`press flex items-center gap-1 rounded px-1.5 py-1 font-serif text-[11px] ${
+          className={`press flex items-center gap-1 rounded px-1.5 py-1 font-serif text-xs ${
             messUsed || !canMess
               ? 'text-gold-500/60 cursor-not-allowed'
               : 'text-gold-200 hover:bg-gold-700/25'

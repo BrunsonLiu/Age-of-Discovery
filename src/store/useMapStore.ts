@@ -1,9 +1,20 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 
+/** 玩家所处的空间：海图 = 从船上看世界；岸上 = 靠港后的近景舞台 */
+export type ViewMode = 'chart' | 'harbor'
+
 interface MapState {
   center: [number, number]
   zoom: number
+  /**
+   * 【故意不持久化，理由同 renderMode】
+   * 这是"这一刻人在哪儿"的会话状态，不是资产。写进存档会让玩家清缓存前
+   * 停在岸上、读档后还停在岸上，甚至在没有港口的存档里卡住。
+   * 刷新一律回到海图，成本零、无迁移风险。
+   */
+  viewMode: ViewMode
+  setViewMode: (mode: ViewMode) => void
   showWindOverlay: boolean
   showCurrentOverlay: boolean
   showPirateZones: boolean
@@ -47,6 +58,8 @@ export const useMapStore = create<MapState>()(
       showPirateZones: false,
       selectedPortId: null,
       renderMode: '2d',
+      viewMode: 'chart',
+      setViewMode: (mode) => set({ viewMode: mode }),
       setCenter: (center) => set({ center }),
       setZoom: (zoom) => set({ zoom }),
       toggleWindOverlay: () => set((s) => ({ showWindOverlay: !s.showWindOverlay })),

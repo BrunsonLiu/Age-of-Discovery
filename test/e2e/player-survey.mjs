@@ -56,7 +56,7 @@ await page.evaluate(() => {
 })
 await sleep(500)
 await page.evaluate(() => {
-  const b = [...document.querySelectorAll('button')].find(x => /扬帆起航/.test(x.textContent || ''))
+  const b = [...document.querySelectorAll('button')].find(x => /启航/.test(x.textContent || ''))
   if (b) b.click()
 })
 await sleep(900)

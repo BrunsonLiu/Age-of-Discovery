@@ -246,50 +246,39 @@ export default function IntroScreen() {
               )
             })}
           </div>
-        </>
-      ),
-      button: '扬帆起航！',
-    },
-    {
-      content: (
-        <>
+
           {/*
-            【原来这一屏叫「开船前的最后一眼」，196 字，内容是四行摘要卡
-            （座船 / 天赋 / 目标 / 玩法）+ 两句说明。】
-            但那四行全是玩家**刚刚在前两屏亲手选过**的东西——他上一秒才点了
-            「商界血脉」，下一秒再读一遍「天赋：商界血脉（价格 -5%）」，
-            除了让开局再多一次点击，没有任何信息增益。
-            真正有用的只有两句：第一次怎么出航、航行中要做哪两件事。
-            所以砍掉摘要卡，标题也改成更贴切的「第一次出航」，196 字 → 约 70 字。
+            【船卡从「第一次出航」那屏搬过来】
+            原先最后一屏「第一次出航」有 91 字：船卡 + 两句提示（怎么出航、每段选方针）。
+            但那两句在别处已经讲过一遍，而且讲得更细——
+              · 第 3 屏模式卡：船长"每段航程可选航段方针，还能亲自掌舵抢时间"、
+                访客"操舵可以交给水手，遇事可以袖手旁观"；
+              · 教程第 4 步：「出航计划」距离/危险/风向/补给；
+                第 5 步：三种方针 + 操舵 15 秒 + 交给水手。
+            所以那一屏是**纯重复**，删掉它整个开局少一屏、少一次点击，
+            信息一条没丢。只有船卡是别处没有的（船型决定航速与载重），
+            搬到天赋页底部——玩家选完天赋，抬头就看见自己要开的船。
           */}
-          <h2 className="pirate-title text-3xl text-gold-300 mb-5">第一次出航</h2>
-          <div className="space-y-3.5 font-serif text-gold-200 text-sm leading-relaxed max-w-md text-left">
-            {/*
-              这一行不是被删掉的摘要卡的残渣，而是**玩家第一次见到自己的船**：
-              船名、船型、泊位。前几屏都没提过"卡拉维尔帆船"这种具体信息，
-              而它决定了这一局的航速与载重，值得在开船前占一行。
-            */}
-            <div className="flex items-center gap-2.5 rounded-lg border border-gold-700/30 inlay px-3 py-2">
-              <img
-                src={shipSprite('caravel')}
-                alt=""
-                aria-hidden="true"
-                draggable={false}
-                className="h-9 w-auto object-contain shrink-0 select-none"
-                onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none' }}
-              />
-              <div className="min-w-0">
-                <div className="text-gold-300">「圣玛利亚号」</div>
-                <div className="text-gold-600 text-xs">卡拉维尔帆船 · 泊于塞维利亚港</div>
-              </div>
+          {/* 座船卡和上面五张天赋卡长得一样，必须给一行小标题隔开——
+              否则它看起来像"第六个可选天赋"，玩家会去点它然后发现点不动。 */}
+          {/* 上一档金色在深色底上像素实测只有 3.92:1（12px 正文 AA 要 4.5:1）；
+              提到与卡片主名同档的金色后达标，小标题仍靠字号/字距区分层次。 */}
+          <p className="text-gold-300 text-xs font-serif mt-3.5 mb-1 w-full max-w-md text-left tracking-wide">
+            你的座船
+          </p>
+          <div className="flex items-center gap-2.5 rounded-lg border border-gold-700/25 bg-ocean-900/30 px-3 py-2 w-full max-w-md">
+            <img
+              src={shipSprite('caravel')}
+              alt=""
+              aria-hidden="true"
+              draggable={false}
+              className="h-9 w-auto object-contain shrink-0 select-none"
+              onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none' }}
+            />
+            <div className="min-w-0 text-left">
+              <div className="text-gold-300">「圣玛利亚号」</div>
+              <div className="text-gold-300 text-xs">卡拉维尔帆船 · 泊于塞维利亚港</div>
             </div>
-            <p>点击海图任意一点就能规划航线——先看距离、危险与补给，再升起旗帜。</p>
-            <p className="text-gold-500 text-xs">
-              {gameMode === 'visitor'
-                ? '每段航程开始选一次方针即可；操舵可以整段交给水手，遇事也能袖手旁观。没人催你做任何事。'
-                : '每段航程开始选一次方针、再亲手掌舵 15 秒——这是全游戏最要紧的两件事。'}
-              完整规则随时按 <span className="text-gold-300">?</span> 查看。
-            </p>
           </div>
         </>
       ),
@@ -322,7 +311,7 @@ export default function IntroScreen() {
   }
 
   return (
-    <div className="fixed inset-0 flex items-center justify-center bg-ocean-900/95 backdrop-blur-md overflow-y-auto py-6" style={{ zIndex: 9999 }}>
+    <div data-testid="intro-screen" className="fixed inset-0 flex items-center justify-center bg-ocean-900/95 backdrop-blur-md overflow-y-auto py-6" style={{ zIndex: 9999 }}>
       {/* 主标题背景（H1）：母港夜景与银河，衬在航海日志卡片之后 */}
       <img
         src={BG_ASSETS.title}

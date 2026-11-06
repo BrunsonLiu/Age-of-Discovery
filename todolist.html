@@ -1,0 +1,422 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>航海图 · 待办清单</title>
+<style>
+  :root{
+    --bg:#f4eddd; --card:#fffaf0; --ink:#2b1e0e; --muted:#7a6a52;
+    --line:#d9c8a8; --gold:#8a6a3f; --accent:#3c5a6b;
+    --p0-bg:#f6dfd9; --p0-ink:#8c2f22;
+    --p1-bg:#f7e9cd; --p1-ink:#8a5a12;
+    --p2-bg:#e9e7e1; --p2-ink:#4f5560;
+    --done:#3f6b4d; --freeze:#5b6470;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:"Noto Serif SC","Source Han Serif SC",Georgia,"Microsoft YaHei",serif;
+    font-size:14px;line-height:1.65}
+  .wrap{max-width:960px;margin:0 auto;padding:28px 20px 64px}
+  header h1{margin:0 0 4px;font-size:26px;letter-spacing:2px}
+  header p{margin:0;color:var(--muted);font-size:13px}
+  .summary{display:flex;align-items:baseline;gap:14px;margin:20px 0 10px;flex-wrap:wrap}
+  .summary b{font-size:22px;color:var(--accent)}
+  .bar{height:8px;background:#e4d7bd;border-radius:5px;overflow:hidden;margin-bottom:18px}
+  .bar i{display:block;height:100%;background:var(--accent);width:0;transition:width .25s}
+  .toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:20px;
+    padding-bottom:16px;border-bottom:1px solid var(--line)}
+  button{font-family:inherit;font-size:13px;cursor:pointer;border:1px solid var(--line);
+    background:var(--card);color:var(--ink);padding:6px 12px;border-radius:6px}
+  button:hover{border-color:var(--gold)}
+  button.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .spacer{flex:1}
+  section{margin:0 0 26px}
+  section h2{font-size:16px;margin:0 0 10px;padding-bottom:6px;border-bottom:1px solid var(--line);
+    display:flex;align-items:baseline;gap:10px}
+  section h2 small{color:var(--muted);font-size:12px;font-weight:400}
+  .item{display:flex;gap:12px;background:var(--card);border:1px solid var(--line);
+    border-radius:8px;padding:12px 14px;margin-bottom:8px}
+  .item.done{opacity:.62}
+  .item.done .t{text-decoration:line-through}
+  .item input[type=checkbox]{margin-top:5px;width:17px;height:17px;flex:0 0 auto;accent-color:var(--accent)}
+  .body{flex:1;min-width:0}
+  .t{font-size:14.5px;font-weight:600;line-height:1.5}
+  .chips{display:inline-flex;gap:6px;margin-left:8px;vertical-align:2px;flex-wrap:wrap}
+  .chip{font-size:11px;padding:1px 7px;border-radius:10px;line-height:1.7;white-space:nowrap}
+  .p0{background:var(--p0-bg);color:var(--p0-ink)}
+  .p1{background:var(--p1-bg);color:var(--p1-ink)}
+  .p2{background:var(--p2-bg);color:var(--p2-ink)}
+  .fz{background:#e4e7ea;color:var(--freeze)}
+  .vd{background:#dcebdc;color:var(--done)}
+  .vb{background:#f6e2cf;color:#8a4a16}
+  .vp{background:#e3e9ef;color:#37536b}
+  .why{margin:6px 0 0;color:#4b3d2a;font-size:13px}
+  .acc{margin:4px 0 0;color:var(--accent);font-size:12.5px}
+  .acc b,.src b{font-weight:600}
+  .src{margin:3px 0 0;color:var(--muted);font-size:12px}
+  .freeze-mark{flex:0 0 auto;align-self:flex-start;font-size:11px;color:var(--freeze);
+    border:1px dashed #aab0b8;border-radius:4px;padding:1px 6px;margin-top:2px}
+  .add{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+  .add input{flex:1;min-width:220px;font-family:inherit;font-size:13px;padding:7px 10px;
+    border:1px solid var(--line);border-radius:6px;background:var(--card);color:var(--ink)}
+  .add select{font-family:inherit;font-size:13px;padding:7px 8px;border:1px solid var(--line);
+    border-radius:6px;background:var(--card);color:var(--ink)}
+  footer{margin-top:34px;padding-top:14px;border-top:1px solid var(--line);
+    color:var(--muted);font-size:12px}
+  @media(max-width:600px){
+    .wrap{padding:18px 12px 48px} header h1{font-size:21px}
+    .item{padding:10px} .chips{margin-left:0;display:flex;margin-top:4px}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>航海图 · 待办清单</h1>
+    <p>依据 27 轮工作日志整理 · 2026-11-06 逐条复核并实做 · 勾选状态只存本机浏览器</p>
+  </header>
+
+  <div class="summary"><b id="count">0 / 0</b><span id="hint">已完成 / 可执行项（已核实的自动勾上；冻结项不计）</span></div>
+  <div class="bar"><i id="bar"></i></div>
+
+  <div class="toolbar" id="filters">
+    <button data-f="all" class="on">全部</button>
+    <button data-f="todo">未完成</button>
+    <button data-f="done">已完成</button>
+    <button data-f="freeze">明确不做</button>
+    <span class="spacer"></span>
+    <button id="export">导出 Markdown</button>
+    <button id="reset">重置勾选</button>
+  </div>
+
+  <main id="list"></main>
+
+  <div class="add">
+    <input id="newText" type="text" placeholder="补一条自己的待办…">
+    <select id="newGroup"></select>
+    <button id="add">添加</button>
+  </div>
+
+  <footer>
+    数据来自 .workbuddy/memory/ 与 test/e2e/README.md；「明确不做」是已被实测否掉的方向，不计入进度，别再重开。
+    本页是纯静态文件，不联网、不上传。
+  </footer>
+</div>
+
+<script>
+const GROUPS = [
+  { id:'release', name:'发布与提交', note:'下一步主要在用户本机终端' },
+  { id:'play',    name:'玩法与内容', note:'影响「还想再开一趟」' },
+  { id:'visual',  name:'视觉与素材', note:'多数等原生素材，先别硬改代码' },
+  { id:'eng',     name:'工程与验证', note:'覆盖缺口与触发式维护' },
+  { id:'never',   name:'明确不做（有实测证据）', note:'冻结，不计入进度', frozen:true },
+]
+
+const ITEMS = [
+  // 发布与提交
+  { g:'release', p:'P0', t:'提交并推送 23 轮累积改动',
+    why:'工作区约 120 项未提交，HEAD 仍是 3e9d126；本环境 git push 被代理 502 拦住，只能在你自己的终端执行。',
+    acc:'git log -1 不再是 3e9d126，且 Actions 里对应 head_sha 的 conclusion=success。',
+    src:'MEMORY §0.5 / 第 23 轮日志' },
+  { g:'release', p:'P1', t:'push 之后跑一次线上回归',
+    why:'本地全绿不等于线上：Pages 会 gzip、路径带 /Age-of-Discovery/ 前缀，且产物是全新构建的。',
+    acc:'online-check / verify_online_deploy 无控制台错误、地图能渲染、港口图能加载。',
+    src:'MEMORY §7' },
+  { g:'release', p:'P2', t:'手动重发 WorkBuddy 发布快照',
+    why:'age-of-discovery-24406.app.workbuddy.host 是发布式快照，不会随 GitHub Pages 自动更新。',
+    acc:'打开分享链接，能看到本轮改动（如开局 4 屏、参观徽标）。',
+    src:'MEMORY §7' },
+  { g:'release', p:'P1', t:'把「全链分三段」写进 e2e README',
+    why:'19 个脚本单次跑会超过 10 分钟上限被 SIGTERM，本轮就中断在第 9 个脚本；后来分三段才跑完。',
+    acc:'README 给出可直接复制的三段命令，并写明 logbook 要排在 3D 负载之后。',
+    src:'第 23 轮日志' },
+
+  // 玩法与内容
+  { g:'play', p:'P0', t:'修远洋收益倒挂',
+    why:'长期航线按天摊薄后反而低于 1 天短途（日志实测：巴达维亚 1400 对澳门 150），跑得越远越亏，玩家没有理由出远海。',
+    acc:'长航线单位天数收益不低于短途，且玩家不需要自己做算术（默认给推荐、细账折叠）。',
+    src:'2026-11-04 §七 / MEMORY §2' },
+  { g:'play', p:'P1', t:'修「每两轮一次空船回程」',
+    why:'加的斯是纯消费港，回程无货可载；日志里标为「单独一轮的事，已记入待办」。',
+    acc:'连续 4 趟不出现空船回程，或有明确、可见的补偿而不是靠玩家猜。',
+    src:'2026-11-05 版长期记忆 · 已知未修' },
+  { g:'play', p:'P1', t:'给「天生探险家」一个可见的痕迹',
+    why:'五个天赋效果都实现了，但探险家只改事件触发率 +30%，反事实链没有「这一刻」可挂一行字。',
+    acc:'该天赋在界面上有一处可见痕迹，且文案不吹牛（没生效就返回 null，别硬编）。',
+    src:'2026-11-04 §七 / §八' },
+  { g:'play', p:'P2', t:'补齐 14 张立绘对应的玩法（现只实现 8 个）',
+    why:'美术按 14 个做齐了，玩法只用了 8 个；立绘已就位，是不用等素材的内容扩展路线。',
+    acc:'先列清要补哪 6 个、各自挂在哪一类事件，再动手，别一次全上。',
+    src:'2026-11-04 line 274' },
+  { g:'play', p:'P2', t:'事件正文的长篇文案密度',
+    why:'帮助已 2762 字 → 目录态 ≤220 字，小游戏开场 128 → 56 字，但事件正文还没量过也没折叠。',
+    acc:'copy-density-audit 覆盖事件正文，且带「信息守恒」下界（只查字变少会奖励删内容）。',
+    src:'MEMORY §2（玩家侧原则）' },
+  { g:'play', p:'P2', t:'船停在当前港时盖住锚徽章',
+    why:'停泊态下船标与港口锚徽章叠在一起，是长期挂着的小视觉缺陷。',
+    acc:'停泊态两者 rect 不重叠，2D 与 2.5D 各查一次。',
+    src:'2026-11-05 版长期记忆 · 已知未修' },
+
+  // 视觉与素材
+  { g:'visual', p:'P1', t:'其余港口岸上背景仍是共用图（需新素材）',
+    why:'20 港只有 13 张图，7 港共用同一张区域图。实测 1440 屏 object-cover 缩放 0.905~1.03（DPR1 是缩小），截图里帆船/棕榈/人群都清楚——问题不是「缩略图放大糊」，是重复。',
+    acc:'补专属全景后跑 harbor-view；同名替换即可（harborBackdrop 已按 id 取图）。',
+    src:'2026-11-06 实测 probe-decor-dpi.mjs' },
+  { g:'visual', p:'P2', t:'对白立绘在 2x 屏放大 1.37 倍',
+    why:'三张差分立绘原生只有 512×640，手机 2x 密度实测 0.73；缩小显示会牺牲构图。',
+    acc:'等更大源图；替换后手机 2x 密度 ≥1，单张仍 ≤200KB（现有守卫）。',
+    src:'第 18 轮日志' },
+  { g:'visual', p:'P1', t:'3D 外圈断纹与近景阴影偏黑',
+    why:'外圈与波纹交界有断纹；关掉阴影后材质要 needsUpdate，否则「关阴影」对照等于没做。',
+    acc:'3D 截图目检 + map3d-check 84/0 无回归；先隐藏整个父 Group 逐件二分定位暗块。',
+    src:'MEMORY §3 / 2026-11-05 版已知未修' },
+  { g:'visual', p:'P2', t:'3D 漂流物疏散可能把图标推到浅滩',
+    why:'迭代松弛最多偏离锚点 24px，靠海岸时会落到陆地上（点木桶却捞到零钱是另一个已修的坑）。',
+    acc:'疏散结果用 seaDistanceField() 否决落在陆地的点；debris-3d.mjs 保持 16/0。',
+    src:'2026-11-05 已知限制 / MEMORY §3' },
+  { g:'visual', p:'P2', t:'生物群系：数据分不开，别硬分类',
+    why:'同一份 DEM 下阿尔卑斯谷 0.106、撒哈拉 0.102，数据本身分不开；2048 全球 DEM 也撑不起 zoom5 hillshade。',
+    acc:'只做否决、不做指定；真要分类必须引入新的植被数据源，先给用户看 A/B。',
+    src:'MEMORY §3' },
+  { g:'visual', p:'P2', t:'内陆偏空（撒哈拉 / 西伯利亚大片留白）',
+    why:'符号数 296（175+121）；真解决需要更细的地形或 128×64 植被灰度图，历史备注写明「需用户点头」。',
+    acc:'先出两张对照构图让用户选，再决定要不要引入数据；不要直接改生成参数。',
+    src:'2026-11-03 §剩余 TODO' },
+  { g:'visual', p:'P2', t:'2D 与 3D 地形判据不一致',
+    why:'2D 仍是 PEAK_MIN_ELEV 0.12 + 随机 kind（撒哈拉会长山/树），3D 用山脊判据。统一属行为变更。',
+    acc:'统一判据后 land-texture / map3d-check 全过，且 2D 不再出现沙漠山脉。',
+    src:'2026-11-03 §剩余 TODO' },
+  { g:'visual', p:'P2', t:'3D 侧壁「沙带」与极远视角经纬网',
+    why:'斜视下侧壁仍是一圈偏亮的沙带；经纬网在极远视角与海岸线/航线争注意力，opacity 未随距离调。',
+    acc:'斜视截图侧壁不比水平面亮；经纬网在远视角 opacity 有衰减且不抢航线。',
+    src:'2026-11-03 §剩余 TODO 3/4' },
+  { g:'visual', p:'P2', t:'装饰层横向溢出（已修）与底图放大（已证伪）',
+    why:'scrollWidth 1548>1440 的真凶是时间轴 day=200 刻线（left 132.67%），不是装饰 SVG；底图实测没有放大（coverScale 0.905~1.03）。',
+    acc:'documentElement.scrollWidth === clientWidth（layout-audit 已有页面级判据，注入旧写法会红）。',
+    src:'2026-11-06 实测 probe-overflow-culprit.mjs / probe-decor-dpi.mjs' },
+  { g:'visual', p:'P2', t:'按 asset-prompts.txt 生成 1-8 号素材',
+    why:'1-6 是日志线描，7-8 是岸上油画全景（另一套风格锚，别混用）；每条都写了实际显示尺寸。',
+    acc:'透明 PNG、无任何文字/伪字、按标注尺寸输出；接入后跑一次 harbor-view 与日志面板巡检。',
+    src:'.workbuddy/asset-prompts.txt' },
+
+  // 工程与验证
+  { g:'eng', p:'P2', t:'中文字体 362KB 仍在首屏路径上',
+    why:'font-display: swap，不阻塞 FCP，但占带宽；上一轮已证明「挡 25KB 与挡 2MB 效果一样」。',
+    acc:'任何优化先用 serve-gzip + 4G + 禁缓存量过第一屏，没有可证明收益就别动。',
+    src:'MEMORY §0.5 / 第 21 轮' },
+  { g:'eng', p:'P1', t:'mobile-prod.mjs 不在全链里',
+    why:'生产产物下的移动端覆盖只有一个独立脚本，且全链明确不含它；本轮全绿不代表生产移动端绿。',
+    acc:'每次新构建后单独跑一次，或写进分段链；判据沿用 mobile-layout 的 37 条。',
+    src:'test/e2e/README.md' },
+  { g:'eng', p:'P2', t:'把全链拆成可分段执行的脚本',
+    why:'19 脚本超过单次命令 10 分钟上限，本轮跑到第 9 个被 SIGTERM（前 8 个日志 0 个失败）。',
+    acc:'一条命令能跑完且不超时；或文档写明分段顺序与理由。',
+    src:'第 23 轮日志' },
+  { g:'eng', p:'P1', t:'触发式维护：文案新增字后重跑字体子集脚本',
+    why:'旧子集漏过 41 个界面在用的字，浏览器静默回退且本机装了同款字体，肉眼查不出。',
+    acc:'npm test 字体守卫绿（sha1 + cmap 双向），font-coverage.mjs 5/0。',
+    src:'第 21 轮 / scripts/make_font_subset.py' },
+  { g:'eng', p:'P2', t:'报告产物体积前先确认 dist 是全新构建',
+    why:'曾因中断的 build 留下 1.9MB 死 PNG，连报几轮「34MB」；本轮又遇到 Vite emptyOutDir 被沙箱拦。',
+    acc:'先把旧 dist 整体挪到系统 temp 再 build，然后核对 du -sh 与文件数。',
+    src:'第 18 / 23 轮日志' },
+
+  // 明确不做
+  { g:'never', p:'—', t:'简化 / 压缩 land.geojson 来优化首屏',
+    why:'Pages 会 gzip，真实首屏数据只有 561KB；禁缓存对照里挡 2MB 数据与挡 25KB 字体，FCP 都降约 490ms，那 490ms 是绘制/解码排队，不是传输。',
+    acc:'方向已证伪，别再试。', src:'第 21 轮' },
+  { g:'never', p:'—', t:'3D 海面做几何起伏',
+    why:'贴图下洋流余量只有 0.0008~0.0028，起伏会穿帮；改让浮着的东西摇。',
+    acc:'方向已证伪，别再试。', src:'MEMORY §3' },
+  { g:'never', p:'—', t:'用 2048 全球 DEM 撑 zoom5 hillshade',
+    why:'分辨率不够，且同一 DEM 下不同地貌数值分不开。',
+    acc:'方向已证伪，别再试。', src:'MEMORY §3' },
+  { g:'never', p:'—', t:'每日登录奖励 / 每日被动士气衰减',
+    why:'浏览器无账号无推送，每日奖励会变成惩罚缺席；士气本来就是事件驱动的（粮水足时全程不动）。',
+    acc:'设计原则，别再加。', src:'MEMORY §2 / §4' },
+  { g:'never', p:'—', t:'让玩家做算术的优化题（如限期跑商）',
+    why:'用户 2026-11-05 明确否决这个方向：玩家是上了一天班的人，默认给推荐、细账折叠。',
+    acc:'设计原则，别再加。', src:'MEMORY §2' },
+  { g:'never', p:'—', t:'静态 import three.js 或让 3D 组件进 2D 包',
+    why:'静态引入会拖 565KB 进首屏；renderMode 故意不持久化，2D 组件不许 import map3d/*。',
+    acc:'架构约束，React.lazy + Suspense 保持。', src:'MEMORY §1' },
+  { g:'never', p:'—', t:'对照实验里复用同一浏览器缓存',
+    why:'连开多页第一档会把 JS 缓存住，量出过「省 1.1 秒」的假结果。',
+    acc:'一律 Network.setCacheDisabled: true。', src:'第 21 轮' },
+
+  // 追加在数组末尾：已有条目的 index（= 本地勾选状态的 id）不能变
+  { g:'eng', p:'P1', t:'6 个孤儿 e2e 巡检纳入回归链',
+    why:'intro-check / no-dialogue-interrupt / contrast-audit / weather-2d / land-texture / debris-3d 都自带失败退出、清存档、只需 dev server，却常年不在任何分段里，只靠手工跑；补进来当天就查出 2 条红。',
+    acc:'seg6 整段 0 失败；full 与 all 都含 seg6；单测守卫逐条核对脚本名与分段包含关系。',
+    src:'第 26 轮' },
+  { g:'eng', p:'P0', t:'出航计划补给数字与实际结算对账',
+    why:'实测同屏矛盾：面板写「每日耗 3 粮 / 5 水」、顶栏写「每天吃 1 份」、港内实际扣 1/2；判定用最省抢行 15 粮，结论句却写「约 6 天可达」（按部就班要 18 粮）——粮=15 时说「补给偏紧」，玩家照默认走法第 5 天断粮。',
+    acc:'面板同时标出「港内每日」与「起航后按部就班」两套日耗且与 dailyRates 同源；判定线改为按部就班总账；临界值必须报「不够」并给写清总量的抢行退路。supply-parity.mjs 13/0，注入两种旧写法 e2e 与单测都红。',
+    src:'第 27 轮 / .workbuddy/probe-supply-parity.mjs' },
+]
+
+/*
+ * 2026-11-06 逐条复核结果（先核对再动手，别把已做的功能重做一遍）。
+ * done    = 代码里已实现，或本轮实做并跑过回归
+ * blocked = 物理上要你本机操作，或要等图像素材 / 你点头引入新数据
+ * partial = 做了一部分，剩下的有明确前置
+ * frozen  = 复核后认定「不该做」，有实测证据，移进冻结组
+ */
+const VERIFIED = {
+  '提交并推送 23 轮累积改动': 'blocked',
+  'push 之后跑一次线上回归': 'blocked',
+  '手动重发 WorkBuddy 发布快照': 'blocked',
+  '把「全链分三段」写进 e2e README': 'done',
+
+  '修远洋收益倒挂': 'blocked',
+  '修「每两轮一次空船回程」': 'done',
+  '给「天生探险家」一个可见的痕迹': 'done',
+  '补齐 14 张立绘对应的玩法（现只实现 8 个）': 'done',
+  '事件正文的长篇文案密度': 'done',
+  '船停在当前港时盖住锚徽章': 'done',
+
+  '其余港口岸上背景仍是共用图（需新素材）': 'blocked',
+  '对白立绘在 2x 屏放大 1.37 倍': 'blocked',
+  '3D 外圈断纹与近景阴影偏黑': 'done',
+  '3D 漂流物疏散可能把图标推到浅滩': 'done',
+  '生物群系：数据分不开，别硬分类': 'done',
+  '内陆偏空（撒哈拉 / 西伯利亚大片留白）': 'blocked',
+  '2D 与 3D 地形判据不一致': 'frozen',
+  '3D 侧壁「沙带」与极远视角经纬网': 'done',
+  '装饰层横向溢出（已修）与底图放大（已证伪）': 'done',
+  '按 asset-prompts.txt 生成 1-8 号素材': 'blocked',
+
+  '中文字体 362KB 仍在首屏路径上': 'frozen',
+  'mobile-prod.mjs 不在全链里': 'done',
+  '把全链拆成可分段执行的脚本': 'done',
+  '触发式维护：文案新增字后重跑字体子集脚本': 'done',
+  '报告产物体积前先确认 dist 是全新构建': 'done',
+  '6 个孤儿 e2e 巡检纳入回归链': 'done',
+  '出航计划补给数字与实际结算对账': 'done',
+}
+
+/** 复核后补上的结论，直接显示在条目说明后面 */
+const NOTES = {
+  '修远洋收益倒挂': '当前 selectBestDeal 按「每海里」排序是首局 11 秒闭环的故意设计，改排序只会让玩家更常选到按天更亏的长线。真修要新增远洋回报机制，属于平衡变更，等你定方向，本轮不擅自动价格。',
+  '2D 与 3D 地形判据不一致': '两套判据不同是有实测依据的设计：2D 是纸面符号、只做否决（PEAK_MIN_ELEV 删掉平原上的山），3D 是真地形、用山脊相对高度（平原 0%、阿尔卑斯 88%）。单测 4201/4764 段专门守着这个结论，硬统一会把已验证的效果改坏。按证据冻结。',
+  '中文字体 362KB 仍在首屏路径上': '验收本身就写着「没有可证明收益就别动」，历史 4G 实测也证伪了字节归因。按证据冻结，不再列 optimization。',
+  '3D 漂流物疏散可能把图标推到浅滩': '本轮实做：松弛后反投影查 isOnLand，落陆地时绕锚点找「海面 + 与其余点 ≥44px」的替代位。中间试过简单退回锚点，两两间距掉到 34px 被 debris-3d 抓到，已改。',
+  'mobile-prod.mjs 不在全链里': '本轮接进 test:e2e:full，并修掉两条 `|| true` 假绿断言：生产包里致辞与教学是先后出现的两层遮罩，漏掉教学层会把后面所有点击吃掉。修复后 20/0。',
+  '事件正文的长篇文案密度': '本轮给 copy-density-audit 补第 5 节：逐字等于数据源的信息守恒判据 + 内容下界 + 不被裁切，41/0。',
+  '装饰层横向溢出（已修）与底图放大（已证伪）': '第 25 轮实做：二分定位到 TimelineBar 的 day=200 刻线（rect [1546,1548]），过滤超跨度节点 + clamp 后 scrollWidth 1548→1440；layout-audit 加页面级判据（旧巡检因 r.width<4 跳过 2px 元素才一直全绿），注入旧写法实测会红 9 处。底图 coverScale 0.905~1.03、DPR1 是缩小，截图清晰，「放大糊」被证伪。',
+  '其余港口岸上背景仍是共用图（需新素材）': '实测 DPR2 下塞维利亚原生全景放大 1.97x、哈瓦那回落图 1.81x，两者相当，回落图并不更糊；真问题是 20 港共用 13 张图。仍需专属素材，blocked 不变。',
+  '6 个孤儿 e2e 巡检纳入回归链': '第 26 轮实做：新增 seg6（3D 软渲染排段尾，避免污染前面截图像素判据），full/all 都接上，单测加 21 条守卫。当天查出天赋页两段 12px 文字 3.92/4.4:1（提到主名同档金色后达标，注入旧色实测会红 1 段），以及 no-dialogue-interrupt 的前置污染假红（「上岸走走」关面板后残留对白；每轮清场后 5/0）。',
+  '出航计划补给数字与实际结算对账': '第 27 轮实做：判定线从「三档最省」改为结论句里那个走法（按部就班）的总账，两套日耗都改走 dailyRates 并显式标出港内/起航后口径；不够但抢行够时给写清总量的第二条路。新增 supply-parity.mjs（13/0）进 seg2 与 all、15 条源码守卫，注入两种旧写法后 e2e 分别红 2/5 条、单测 exit=1。',
+}
+
+const KEY = 'aod-todolist-v1'
+let state = { done:{}, custom:[] }
+try { const s = JSON.parse(localStorage.getItem(KEY) || '{}'); if (s && typeof s === 'object') state = { done:s.done||{}, custom:Array.isArray(s.custom)?s.custom:[] } } catch(e) {}
+let filter = 'all'
+
+const all = () => ITEMS.map((x,i) => {
+  const v = VERIFIED[x.t] || ''
+  // 复核判定「按证据不做」的条目并进冻结组，不计进度、不给勾选
+  return { ...x, id:'b'+i, v, g: v === 'frozen' ? 'never' : x.g }
+}).concat(state.custom)
+// 已核实的条目首次打开就勾上；用户手动取消过（false）则尊重取消
+for (const x of all()) if (x.v === 'done' && state.done[x.id] === undefined) state.done[x.id] = true
+// file:// 下部分浏览器会禁掉 localStorage；存不了也要能正常勾选（只是刷新后不保留）
+const save = () => { try { localStorage.setItem(KEY, JSON.stringify(state)) } catch(e) {} }
+const isFrozen = x => GROUPS.find(g => g.id === x.g)?.frozen
+const actionable = () => all().filter(x => !isFrozen(x))
+
+function render(){
+  const list = document.getElementById('list')
+  const items = all().filter(x => {
+    if (filter === 'todo')   return !isFrozen(x) && !state.done[x.id]
+    if (filter === 'done')   return !isFrozen(x) &&  state.done[x.id]
+    if (filter === 'freeze') return isFrozen(x)
+    return true
+  })
+  list.innerHTML = GROUPS.map(g => {
+    const rows = items.filter(x => x.g === g.id)
+    if (!rows.length) return ''
+    return '<section><h2>' + g.name + '<small>' + g.note + ' · ' + rows.length + ' 条</small></h2>' +
+      rows.map(x => {
+        const fz = isFrozen(x), done = !!state.done[x.id]
+        const chip = fz ? '<span class="chip fz">冻结</span>'
+          : '<span class="chip ' + (x.p||'p2').toLowerCase() + '">' + (x.p||'P2') + '</span>'
+        const v = x.v || ''
+        const vChip = fz ? '' : (v === 'done' ? '<span class="chip vd">已核实完成</span>'
+          : v === 'blocked' ? '<span class="chip vb">需你 / 等素材</span>'
+          : v === 'partial' ? '<span class="chip vp">部分完成</span>' : '')
+        const note = NOTES[x.t]
+          ? ' <span style="color:var(--accent)">【复核】' + esc(NOTES[x.t]) + '</span>' : ''
+        return '<div class="item' + (done?' done':'') + '">' +
+          (fz ? '<span class="freeze-mark">不做</span>' :
+            '<input type="checkbox" data-id="' + x.id + '"' + (done?' checked':'') + '>') +
+          '<div class="body"><div><span class="t">' + esc(x.t) + '</span><span class="chips">' + chip + vChip + '</span></div>' +
+          '<p class="why">' + esc(x.why||'') + note + '</p>' +
+          '<p class="acc"><b>验收：</b>' + esc(x.acc||'') + '</p>' +
+          '<p class="src"><b>来源：</b>' + esc(x.src||'—') + '</p></div></div>'
+      }).join('') + '</section>'
+  }).join('') || '<p style="color:var(--muted)">这个筛选下没有条目。</p>'
+
+  list.querySelectorAll('input[type=checkbox]').forEach(el => {
+    el.addEventListener('change', () => {
+      state.done[el.dataset.id] = el.checked
+      save(); render()
+    })
+  })
+
+  const act = actionable(), n = act.filter(x => state.done[x.id]).length
+  document.getElementById('count').textContent = n + ' / ' + act.length
+  document.getElementById('bar').style.width = (act.length ? n/act.length*100 : 0) + '%'
+}
+
+function esc(s){ return String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])) }
+
+document.getElementById('filters').addEventListener('click', e => {
+  const b = e.target.closest('button[data-f]'); if (!b) return
+  filter = b.dataset.f
+  document.querySelectorAll('#filters button[data-f]').forEach(x => x.classList.toggle('on', x === b))
+  render()
+})
+
+const sel = document.getElementById('newGroup')
+sel.innerHTML = GROUPS.filter(g => !g.frozen).map(g => '<option value="' + g.id + '">' + g.name + '</option>').join('')
+function addItem(){
+  const el = document.getElementById('newText'), t = el.value.trim()
+  if (!t) return
+  state.custom.push({ id:'c'+Date.now(), g:sel.value, p:'P2', t,
+    why:'自己补的待办', acc:'自己定验收判据', src:'手动添加' })
+  el.value = ''; save(); render()
+}
+document.getElementById('add').addEventListener('click', addItem)
+document.getElementById('newText').addEventListener('keydown', e => { if (e.key === 'Enter') addItem() })
+
+document.getElementById('reset').addEventListener('click', () => {
+  if (!confirm('清空所有勾选与手动添加的条目？')) return
+  state = { done:{}, custom:[] }; save(); render()
+})
+
+document.getElementById('export').addEventListener('click', () => {
+  const lines = ['# 航海图 · 待办清单', '', '依据 27 轮工作日志整理 · ' + new Date().toLocaleDateString('zh-CN'), '']
+  GROUPS.forEach(g => {
+    const rows = all().filter(x => x.g === g.id)
+    if (!rows.length) return
+    lines.push('## ' + g.name, '')
+    rows.forEach(x => {
+      const mark = isFrozen(x) ? '[不做] ' : (state.done[x.id] ? '[x] ' : '[ ] ')
+      lines.push('- ' + mark + '**' + (x.p||'P2') + '** ' + x.t)
+      lines.push('  - ' + (x.why||'') + ' 验收：' + (x.acc||'') + '（' + (x.src||'') + '）')
+    })
+    lines.push('')
+  })
+  const blob = new Blob([lines.join('\n')], { type:'text/markdown;charset=utf-8' })
+  const a = document.createElement('a')
+  a.href = URL.createObjectURL(blob); a.download = '航海图-todolist.md'; a.click()
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000)
+})
+
+render()
+</script>
+</body>
+</html>

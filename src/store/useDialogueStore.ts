@@ -44,3 +44,14 @@ export const useDialogueStore = create<DialogueStore>((set, get) => ({
 
   skip: () => set({ scriptId: null, lineIndex: 0 }),
 }))
+
+/**
+ * 开发调试钩子：仅 dev 构建暴露，生产会被 tree-shake 掉。
+ *
+ * 为什么需要：对白层是 `fixed/absolute inset-0` 的全屏遮罩，e2e 里"点了没反应"
+ * 十有八九是被它吃掉，但在此之前只能靠 body 文案猜（"有没有出现某句台词"）——
+ * 判断不出"是对白开着"还是"页面坏了"。有了这个钩子可以直接读 scriptId。
+ */
+if (typeof import.meta !== 'undefined' && import.meta.env?.DEV && typeof window !== 'undefined') {
+  ;(window as unknown as { __dialogueStore: typeof useDialogueStore }).__dialogueStore = useDialogueStore
+}

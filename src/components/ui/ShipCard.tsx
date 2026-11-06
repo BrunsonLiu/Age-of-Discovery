@@ -68,12 +68,12 @@ export default function ShipCard({ onClose }: { onClose: () => void }) {
           <div className="flex items-center gap-1.5">
             <span className="font-serif text-sm text-gold-200 truncate">{ship.name}</span>
             {isFlagship && (
-              <span className="shrink-0 text-[9px] font-serif text-gold-300 bg-gold-700/40 border border-gold-600/40 rounded px-1 py-[1px]">
+              <span className="shrink-0 text-xs font-serif text-gold-300 bg-gold-700/40 border border-gold-600/40 rounded px-1 py-[1px]">
                 旗舰
               </span>
             )}
           </div>
-          <div className="text-[10px] font-serif text-gold-600">
+          <div className="text-xs font-serif text-gold-600">
             {SHIP_TYPE_NAMES[ship.type] ?? ship.type}
           </div>
         </div>
@@ -88,7 +88,7 @@ export default function ShipCard({ onClose }: { onClose: () => void }) {
 
       {/* 四项属性 */}
       <div className="px-3 py-2 space-y-1.5">
-        <div className="flex items-center gap-2 text-[10px] font-serif">
+        <div className="flex items-center gap-2 text-xs font-serif">
           <Shield size={11} className="shrink-0 text-gold-500" aria-hidden="true" />
           <span className="text-gold-500 w-7">耐久</span>
           <Meter value={ship.durability} max={ship.maxDurability} color={durColor} />
@@ -96,7 +96,7 @@ export default function ShipCard({ onClose }: { onClose: () => void }) {
             {ship.durability}/{ship.maxDurability}
           </span>
         </div>
-        <div className="flex items-center gap-2 text-[10px] font-serif">
+        <div className="flex items-center gap-2 text-xs font-serif">
           <Package size={11} className="shrink-0 text-gold-500" aria-hidden="true" />
           <span className="text-gold-500 w-7">货舱</span>
           <Meter value={used} max={total} color="#c9a96e" />
@@ -104,7 +104,7 @@ export default function ShipCard({ onClose }: { onClose: () => void }) {
             {used}/{total}
           </span>
         </div>
-        <div className="flex items-center gap-4 pt-0.5 text-[10px] font-serif text-gold-400">
+        <div className="flex items-center gap-4 pt-0.5 text-xs font-serif text-gold-400">
           <span className="flex items-center gap-1">
             <Gauge size={11} className="text-gold-500" aria-hidden="true" />
             {ship.speed} 节
@@ -123,14 +123,14 @@ export default function ShipCard({ onClose }: { onClose: () => void }) {
       {/* 货物 */}
       {cargo.length > 0 && (
         <div className="px-3 pb-2.5">
-          <div className="text-[9px] font-serif text-gold-700 mb-1">舱内货物</div>
+          <div className="text-xs font-serif text-gold-700 mb-1">舱内货物</div>
           <div className="flex flex-wrap gap-1">
             {cargo.map(c => {
               const g = goods.find(x => x.id === c.goodId)
               return (
                 <span
                   key={c.goodId}
-                  className="text-[10px] font-serif text-gold-300 bg-black/30 border border-gold-700/30 rounded px-1.5 py-0.5"
+                  className="text-xs font-serif text-gold-300 bg-black/30 border border-gold-700/30 rounded px-1.5 py-0.5"
                   title={g?.name}
                 >
                   {g?.name ?? '?'} ×{c.quantity}

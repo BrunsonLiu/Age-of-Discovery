@@ -8,11 +8,16 @@ interface ParchmentCardProps {
   /** 标题旁的小字（如成就进度 x / y） */
   subtitle?: string
   children: ReactNode
+  /**
+   * 不随正文滚动的常驻页脚。给「不管看到哪一节都得能点到」的操作入口用
+   * （帮助面板的导出/导入存档、换模式）。缺省时行为与旧版完全一致。
+   */
+  footer?: ReactNode
   className?: string
   onClose?: () => void
 }
 
-export default function ParchmentCard({ title, subtitle, children, className = '', onClose }: ParchmentCardProps) {
+export default function ParchmentCard({ title, subtitle, children, footer, className = '', onClose }: ParchmentCardProps) {
   return (
     <div
       className={`relative rounded-lg overflow-hidden ${className}`}
@@ -113,9 +118,16 @@ export default function ParchmentCard({ title, subtitle, children, className = '
             用 ScrollFade 而不是裸 div：面板内容长起来（港口面板的服务+军官+
             船员+任务）会在这里被裁掉，玩家看到最后一行断在半截却没有提示，
             和之前 7 个内层列表是同一个毛病。渐隐色就是本卡片的底色 #30241a。 */}
-        <ScrollFade className="max-h-[68dvh] md:max-h-[60vh] overflow-y-auto scroll-parchment">
+        {/* 有常驻页脚时给正文让出高度，否则两层加起来会顶出屏幕。
+            没有 footer 的 11 个面板仍是原来的 68dvh / 60vh，不受影响。 */}
+        <ScrollFade className={
+          footer
+            ? 'max-h-[40dvh] md:max-h-[38vh] overflow-y-auto scroll-parchment'
+            : 'max-h-[68dvh] md:max-h-[60vh] overflow-y-auto scroll-parchment'
+        }>
           {children}
         </ScrollFade>
+        {footer}
       </div>
     </div>
   )

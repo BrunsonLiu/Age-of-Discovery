@@ -357,6 +357,30 @@ export interface RivalNews {
 /** 已招募军官 id 列表 */
 export type OfficerId = 'pilot' | 'quartermaster' | 'surgeon'
 
+/** 航海日志的一页（见数据层 data/logbook.ts） */
+export interface LogbookEntry {
+  id: string
+  kind: 'arrival' | 'title' | 'echo'
+  day: number
+  portId: number | null
+  title: string
+  text: string
+  /** 页边小注：一句氛围，不记账 */
+  aside: string
+  /** 下一趟的线索：不过期、不惩罚 */
+  hint: string | null
+  /** 线索指向的港口；点条目只把地图移过去，不替玩家出航 */
+  targetPortId: number | null
+  read: boolean
+}
+
+/** 达标写进日志的称号（不再停机弹结局） */
+export interface VictoryClaim {
+  key: string
+  name: string
+  desc: string
+}
+
 export interface GameState {
   fleet: Fleet
   currentRoute: Route | null
@@ -472,6 +496,15 @@ export interface GameState {
    * 而不是玩到一半才发现"原来这一整段是强制的"。
    */
   gameMode: GameMode
+  /**
+   * 航海日志的页：到港带回一页见闻，达标写一页称号。
+   * 这是「跨趟」的累积资产，所以必须进 partialize 存档（见 saveFile.ts 的导出）。
+   */
+  logbook: LogbookEntry[]
+  /** 已领取的称号 key：保证三条阈值各只庆祝一次，之后继续航行 */
+  claimedVictories: string[]
+  /** 图鉴：已打捞过的漂流物种类 */
+  collectedDebris: string[]
 }
 
 /**

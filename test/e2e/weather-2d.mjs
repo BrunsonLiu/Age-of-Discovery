@@ -51,8 +51,7 @@ await page.evaluate(() => {
   if (!o) return
   ;[...o.querySelectorAll('button')].filter(b => /商界血脉|铁壁舰长|魅力领袖|天生探险家|随船医生/.test(b.textContent || ''))[0]?.click()
 }); await sleep(400)
-await clickIn('扬帆起航', '扬帆起航'); await sleep(700)
-await clickIn('第一次出航', '启航'); await sleep(1500)
+await clickIn('选择你的天赋', '启航'); await sleep(1500)
 await clickIn('跳过引导', '跳过引导'); await sleep(400)
 await page.keyboard.press('Escape'); await sleep(400)
 await page.keyboard.press('Escape'); await sleep(800)

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Coins, Package, TrendingUp, TrendingDown, Sprout, HandCoins } from 'lucide-react'
-import { useGameStore, selectBuyPrice, selectSellPrice, selectPriceTone } from '@/store/useGameStore'
+import { useGameStore, selectBuyPrice, selectSellPrice, selectPriceTone, selectBestDeal } from '@/store/useGameStore'
 import { portGoods, localSpecialties, localDemands } from '@/data/ports'
 import { goods } from '@/data/goods'
 import ParchmentCard from '@/components/ui/ParchmentCard'
@@ -17,13 +17,14 @@ import { useFxStore as useFx } from '@/store/useFxStore'
  * 现在价格一律取自 store 的 selectBuyPrice（与 buyGood 结算走同一个函数），
  * 面板显示 = 实际发生。
  */
-function BuyRow({ portId, pg, fleet, usedCapacity, totalCapacity, onBuy }: {
+function BuyRow({ portId, pg, fleet, usedCapacity, totalCapacity, onBuy, recommended }: {
   portId: number
   pg: (typeof portGoods)[number]
   fleet: { gold: number }
   usedCapacity: number
   totalCapacity: number
   onBuy: (goodId: number, qty: number) => void
+  recommended?: boolean
 }) {
   const buyPrice = useGameStore(s => selectBuyPrice(s, portId, pg.goodId))
   const tone = useGameStore(s => selectPriceTone(s, portId, pg.goodId))
@@ -40,9 +41,23 @@ function BuyRow({ portId, pg, fleet, usedCapacity, totalCapacity, onBuy }: {
   }
 
   return (
-    <div className="inlay--flat rounded p-2" data-testid="trade-buy-row" data-good-id={pg.goodId}>
+    <div
+      className={`inlay--flat rounded p-2 ${recommended ? 'ring-1 ring-gold-500/70' : ''}`}
+      data-testid="trade-buy-row"
+      data-good-id={pg.goodId}
+      data-recommended={recommended ? '1' : undefined}
+    >
       <div className="flex items-center justify-between mb-1.5">
-        <span className="text-gold-200 text-[14px] font-serif">{good.nameCn}</span>
+        <span className="text-gold-200 text-[14px] font-serif">
+          {good.nameCn}
+          {/* 标出"掮客让你买的这一件"。没有这个标记时，玩家在五件货里只能靠
+              "哪件便宜"来选——实测开局最便宜的烟草 52 金，卖到最近的加的斯只
+              +2/件；而丝绸 89 金卖过去 +77/件。便宜 ≠ 能赚，这一步需要算，
+              而玩家不该算。 */}
+          {recommended && (
+            <span className="ml-1.5 text-gold-400 text-[12px] font-serif">· 掮客推荐</span>
+          )}
+        </span>
         <span
           className={`flex items-center gap-1 text-[15px] font-serif ${TONE_CLASS[tone]}`}
           data-price={buyPrice}
@@ -136,7 +151,25 @@ export default function TradePanel() {
   const portId = fleet.currentPortId
   if (!portId) return null
 
-  const currentPortGoods = portGoods.filter(pg => pg.portId === portId)
+  /*
+   * 掮客这一单：与左下角那张掮客卡**同一个函数**（selectBestDeal），
+   * 所以两边说的货、数量、目的地、利润必然一致——不会出现"卡片说丝绸、
+   * 面板标烟草"这种自相矛盾。
+   *
+   * 为什么不订阅 marketStock：它变了但 fleet 没变时确实不会重渲染，
+   * 但买卖本身一定会改 fleet（金币/货舱），所以每一次真实交易后这里都会重算。
+   * 少订阅一个对象，少一次全局重渲染。
+   */
+  const deal = selectBestDeal(useGameStore.getState())
+
+  /*
+   * 推荐那件必须排第一。实测它在第三行时，面板滚动区只有 240px 高，
+   * `+1/+5/+10` 三个按钮刚好落在折叠线以下——玩家看见"掮客说买丝绸"，
+   * 伸手却点不到，得先滚动。推荐不能只写在标题上。
+   */
+  const currentPortGoods = portGoods
+    .filter(pg => pg.portId === portId)
+    .sort((a, b) => Number(b.goodId === deal?.goodId) - Number(a.goodId === deal?.goodId))
   const totalCapacity = fleet.ships.reduce((s, sh) => s + sh.capacity, 0)
   const usedCapacity = fleet.cargo.reduce((s, c) => s + c.quantity, 0)
 
@@ -166,8 +199,7 @@ export default function TradePanel() {
     }
   }
 
-  const handleSell = (goodId: number, qty: number) => {
-    const before = useGameStore.getState().fleet.gold
+  const handleSell = (goodId: number, qty: number) => {    const before = useGameStore.getState().fleet.gold
     sellGood(portId, goodId, qty)
     const earned = useGameStore.getState().fleet.gold - before
     if (earned > 0) {
@@ -214,6 +246,24 @@ export default function TradePanel() {
             </div>
           )}
 
+          {tab === 'buy' && deal && (
+            <div
+              className="inlay border border-gold-600/45 rounded p-2 space-y-0.5"
+              data-testid="trade-recommend"
+            >
+              <p className="text-gold-300 text-[13px] font-serif flex items-start gap-1">
+                <HandCoins size={12} className="mt-0.5 shrink-0" />
+                <span>
+                  掮客说：买 <span className="text-gold-100">{deal.goodName}</span> {deal.qty} 件，运到{' '}
+                  <span className="text-gold-100">{deal.toPortName}</span> 卖
+                </span>
+              </p>
+              <p className="text-gold-500 text-[12px] font-serif pl-4 tabular-nums">
+                约 {deal.totalProfit} 金 / {deal.days} 天 · 本港 {deal.buy} 金，那边 {deal.sell} 金
+              </p>
+            </div>
+          )}
+
           {/*
            * 【买卖页签：凸/凹，不是深/浅】
            * 原来选中态是 bg-gold-700/40，未选中是 .inlay--flat —— 两者混合到面板底色后
@@ -254,6 +304,7 @@ export default function TradePanel() {
                   usedCapacity={usedCapacity}
                   totalCapacity={totalCapacity}
                   onBuy={handleBuy}
+                  recommended={deal?.goodId === pg.goodId}
                 />
               ))}
             </ScrollFade>

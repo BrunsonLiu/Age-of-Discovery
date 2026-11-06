@@ -106,6 +106,21 @@ export function checkEventTrigger(
   if ((gameState.crewRoster ?? []).some(m => m.id === 'corsair') && event.type === 'pirate') {
     probability *= 0.85
   }
+  /*
+   * 船医（军官）：「疾病类事件概率减半」。
+   *
+   * 【为什么这一条以前是空的】军官卡上从第一版就印着这句话，但触发层只接了
+   * 学者/向导/探险家三个**名船员**，`officers` 从没被读过。另有航医（名船员 medic）
+   * 在断粮时把**船员病死概率**减半，那是 `tickCrewLoyalty` 里的另一件事——
+   * 两个不同的人、两条不同的判据，别混成一条。
+   *
+   * 只压 disease 这一类：坏血病、瘟疫都算，风暴与海盗照旧。
+   * 乘法放在「最终掷值」之前，不改 rand() 的消耗次数（全函数只在末尾掷一次），
+   * 所以不会像「continue 少消耗一次随机」那样把后面的事件序列整体错位。
+   */
+  if ((gameState.officers ?? []).includes('surgeon') && event.type === 'disease') {
+    probability *= 0.5
+  }
 
   // 「遇事率」由航段方针统一控制（STANCES[stance].eventRateMul），
   // 施加在**全局触发闸门**上（见 store.advanceDay 的 eventBias）。

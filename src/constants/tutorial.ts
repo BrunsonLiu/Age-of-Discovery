@@ -30,7 +30,9 @@ export const TUTORIAL_STEP_COUNT = 10
 
 export const TUTORIAL_STEPS: TutorialStep[] = [
   {
-    text: '欢迎来到大航海时代。让我带你走一遍基本操作。',
+    // 开场致辞（opening_pilot：「去吧。等你的故事传回这条海岸……」）现在先播、
+    // 教学后播，所以这句从"欢迎来到大航海时代"改成接话——否则等于先讲结论再讲开场白。
+    text: '好——先跟我走一遍。这几步熟了，海就是你的。',
     buttonText: '下一步',
   },
   {

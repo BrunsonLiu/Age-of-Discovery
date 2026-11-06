@@ -133,7 +133,7 @@ export default function LookoutGame({ modifiers, onDone }: {
     <div className="p-5 space-y-4">
       {/* 信号灯塔 */}
       <div>
-        <div className="flex items-center justify-between text-[10px] font-serif text-gold-600 mb-2">
+        <div className="flex items-center justify-between text-xs font-serif text-gold-600 mb-2">
           <span>瞭望信号灯</span>
           <span>第 <span ref={seqTextRef} className="text-gold-400">{LOOKOUT_START_LEN}</span> 盏</span>
         </div>
@@ -146,7 +146,7 @@ export default function LookoutGame({ modifiers, onDone }: {
               style={{ opacity: '0.28' }}
             >
               <span className="text-xl text-gold-300">{ESCAPE_DIR_KEY[dir]}</span>
-              <span className="text-[10px] font-serif text-gold-500 mt-0.5">
+              <span className="text-xs font-serif text-gold-500 mt-0.5">
                 {dir === 'up' ? '上' : dir === 'down' ? '下' : dir === 'left' ? '左' : '右'}
               </span>
             </div>
@@ -156,7 +156,7 @@ export default function LookoutGame({ modifiers, onDone }: {
 
       {/* 复现进度 */}
       <div>
-        <div className="flex items-center justify-between text-[10px] font-serif text-gold-600 mb-1.5">
+        <div className="flex items-center justify-between text-xs font-serif text-gold-600 mb-1.5">
           <span>你的复现</span>
           <span className="text-gold-400">第 {round} 轮</span>
         </div>
@@ -189,7 +189,7 @@ export default function LookoutGame({ modifiers, onDone }: {
           : phase === 'roundOver' ? hint || '看仔细'
           : '看仔细'}
       </p>
-      <p className="text-[10px] font-serif text-gold-600 text-center">
+      <p className="text-xs font-serif text-gold-600 text-center">
         {showInput ? '方向键或 WASD · 顺序不能错' : '灯号亮起时不要按键'}
       </p>
 

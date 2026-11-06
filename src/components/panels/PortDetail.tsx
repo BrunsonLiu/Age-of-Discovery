@@ -48,6 +48,7 @@ export default function PortDetail() {
   const crewRoster = useGameStore(s => s.crewRoster)
   const recruitCrewMember = useGameStore(s => s.recruitCrewMember)
   const factionRep = useGameStore(s => s.factionRep)
+  const setViewMode = useMapStore(s => s.setViewMode)
 
   const portId = fleet.currentPortId || selectedPortId
   const port = ports.find(p => p.id === portId)
@@ -133,6 +134,27 @@ export default function PortDetail() {
               style={{ background: 'linear-gradient(180deg, rgba(30,22,13,0) 0%, rgba(30,22,13,0.85) 100%)' }}
             />
           </div>
+        )}
+        {/*
+          上岸入口：缩略图下面紧跟着"可以放大看"的那一步。
+          只在**人真的在这座港且没在航行**时出现——远处港口的详情卡不该
+          承诺一个走不到的岸。点进去先收起卡片，让岸上视图独占这一层。
+        */}
+        {isAtPort && !fleet.isSailing && (
+          <button
+            onClick={() => { setActivePanel(null); setViewMode('harbor') }}
+            data-testid="harbor-enter"
+            className="w-full mb-2 px-2 py-2 rounded border border-gold-500/60
+              bg-gold-700/25 hover:bg-gold-700/45 press transition-colors text-left"
+          >
+            <span className="flex items-center gap-1.5 text-gold-100 font-serif text-[14px]">
+              <Map size={14} aria-hidden="true" />
+              上岸走走
+            </span>
+            <span className="block text-gold-400 font-serif text-[12px] mt-0.5 pl-5">
+              收起海图，走进这座城
+            </span>
+          </button>
         )}
         {/* 三角旗串（F5）：港口张灯结彩 */}
         <img
@@ -273,7 +295,7 @@ export default function PortDetail() {
                     <Coins size={10} /> {GAME_BALANCE.FEAST_COST}
                   </ActionButton>
                 </div>
-                <p className="text-gold-400 text-[11px] font-serif">士气低于 45 时，舰队可能爆发哗变——疲惫的船员比风暴更危险。</p>
+                <p className="text-gold-400 text-xs font-serif">士气低于 45 时，舰队可能爆发哗变——疲惫的船员比风暴更危险。</p>
               </div>
             </div>
           )}
@@ -301,7 +323,7 @@ export default function PortDetail() {
               <h4 className="text-gold-300 font-serif text-[13px] mb-1.5 flex items-center gap-1">
                 <Compass size={12} /> 酒馆·招募军官
               </h4>
-              <p className="text-gold-400 text-[11px] font-serif mb-1.5">
+              <p className="text-gold-400 text-xs font-serif mb-1.5">
                 军官按日支薪——养团队是长期投资，也是长期开销。
               </p>
               <div className="space-y-1.5">
@@ -337,8 +359,8 @@ export default function PortDetail() {
                             </ActionButton>
                           )}
                         </div>
-                        <p className="text-gold-500 text-[11px] font-serif">{o.effect}</p>
-                        <p className="text-gold-400 text-[11px] font-serif">日薪 {o.dailyWage} 金币</p>
+                        <p className="text-gold-500 text-xs font-serif">{o.effect}</p>
+                        <p className="text-gold-400 text-xs font-serif">日薪 {o.dailyWage} 金币</p>
                       </div>
                     </div>
                   )
@@ -352,7 +374,7 @@ export default function PortDetail() {
               <h4 className="text-gold-300 font-serif text-[13px] mb-1.5 flex items-center gap-1">
                 <Users size={12} /> 码头·寻访名船员
               </h4>
-              <p className="text-gold-400 text-[11px] font-serif mb-1.5">
+              <p className="text-gold-400 text-xs font-serif mb-1.5">
                 这些人有名字、有过去、有脾气。低士气会磨掉他们的忠诚——忠诚归零，人就会走。
               </p>
               <div className="space-y-1.5">
@@ -393,8 +415,8 @@ export default function PortDetail() {
                             </ActionButton>
                           )}
                         </div>
-                        <p className="text-gold-500 text-[11px] font-serif">{c.perk}</p>
-                        <p className="text-gold-400 text-[11px] font-serif italic">“{c.quote}”</p>
+                        <p className="text-gold-500 text-xs font-serif">{c.perk}</p>
+                        <p className="text-gold-400 text-xs font-serif italic">“{c.quote}”</p>
                       </div>
                     </div>
                   )

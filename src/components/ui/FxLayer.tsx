@@ -94,7 +94,7 @@ export default function FxLayer() {
               {t.text}
             </div>
             {t.sub && (
-              <div className="text-[11px] font-serif text-gold-500 text-center drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]">
+              <div className="text-xs font-serif text-gold-500 text-center drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]">
                 {t.sub}
               </div>
             )}

@@ -4,6 +4,7 @@ import type {
   Fleet, Ship, GameState, GameEvent, EventOutcome, EventLogEntry,
   Route, PanelType, CargoItem, Waypoint, GameStats, RouteIntel, OfficerId, Rival, RivalNews,
   FactionId, CrewCharId, CrewMember, NotorietyAxis, StanceId, GameMode,
+  VictoryClaim,
 } from '@/types'
 import { ports, portGoods, localDemands } from '@/data/ports'
 import { events } from '@/data/events'
@@ -35,6 +36,8 @@ import {
 import { advanceDebris } from '@/utils/seaDebris'
 import { debrisGain, DEBRIS_INFO, type DebrisSpot } from '@/data/debris'
 import { newlyReached } from '@/data/voyageMilestones'
+import { appendLogbook, findClueFor, makeArrivalEntry, makeEchoEntry, makeTitleEntry, markAllRead } from '@/data/logbook'
+import { SAVE_KEY, SAVE_VERSION } from '@/utils/saveFile'
 
 const createStartingShip = (): Ship => ({
   id: 1,
@@ -236,6 +239,9 @@ const initialGameState: GameState = {
   dialogueSeen: [],
   /** 默认船长模式；参观模式由 initGame(mode) 写入 */
   gameMode: 'captain',
+  logbook: [],
+  claimedVictories: [],
+  collectedDebris: [],
 }
 
 interface GameStore extends GameState {
@@ -383,6 +389,13 @@ interface GameStore extends GameState {
   nextTutorialStep: () => void
   skipTutorial: () => void
   setShowHelp: (show: boolean) => void
+  /** 打开「见闻」页时清掉侧栏的小圆点 */
+  markLogbookRead: () => void
+  /**
+   * 翻船之后不清进度、以参观模式继续看海。
+   * 失败结局不再只能是"重新起航"——日志是本局的资产，不该跟着一起清空。
+   */
+  continueAsVisitor: () => void
   resetGame: () => void
 }
 
@@ -744,20 +757,46 @@ function withAchievements(state: GameState & { notifications?: StoreNotification
   return voyage ? { ...merged, ...voyage } : merged
 }
 
-/** 检查并返回本局达成的胜利结局描述（null 表示未达成） */
-function checkVictory(state: GameState): string | null {  if (state.discoveredPorts.length >= GAME_BALANCE.VICTORY_DISCOVER_ALL) {
-    return '你发现了世上全部 20 座港口——每一片海岸都记得你的帆影。'
+/**
+ * 三条并列阈值 → 三页**称号**。
+ *
+ * 【为什么不再返回一句结局文案】
+ * 原来是 `checkVictory` 命中就把 gamePhase 改成 'gameover'，弹全屏、停 rAF、
+ * 玩家只能「重新起航」。可这三条都是单调可加的累积阈值、horizon 无穷，
+ * 于是「通关」只是在玩家最想继续开船的那一刻把他踢出去。
+ * 现在命中只写一页日志 + 一条横幅，claimedVictories 保证不重领，航行继续。
+ *
+ * 【为什么返回数组】同一次 advanceDay 可能同时跨过两条阈值（例如直航东方
+ * 既点亮全部港口又攒够金币），分两天领完只会让人莫名其妙。
+ *
+ * "完成全部任务"按任务总数动态判定，随任务线扩充自动生效。
+ * 参观模式跳过这一条：只看世界的人不该被"任务做完没"算成就。
+ */
+function checkVictories(state: GameState): VictoryClaim[] {
+  const claimed = new Set(state.claimedVictories)
+  const out: VictoryClaim[] = []
+  if (!claimed.has('all_ports') && state.discoveredPorts.length >= GAME_BALANCE.VICTORY_DISCOVER_ALL) {
+    out.push({
+      key: 'all_ports',
+      name: '海图尽头的船长',
+      desc: '二十座港口都靠过一次，海图上再没有你没见过的岸。',
+    })
   }
-  // "完成全部任务"按任务总数动态判定，随任务线扩充自动生效。
-  // 参观模式跳过这一条：只看世界的人不该被"任务做完没"判定输赢，
-  // 他们的结束条件只有一个——把 20 座港口都看过。
-  if (state.completedTasks.length >= tasks.length && state.gameMode !== 'visitor') {
-    return `${tasks.length} 段冒险全部写进了你的航海日志——传奇船长，实至名归。`
+  if (!claimed.has('all_tasks') && state.completedTasks.length >= tasks.length && state.gameMode !== 'visitor') {
+    out.push({
+      key: 'all_tasks',
+      name: '传闻写满的人',
+      desc: `${tasks.length} 段冒险全写进了册子。酒馆里再没人说"这事儿没人办成过"。`,
+    })
   }
-  if (state.fleet.gold >= GAME_BALANCE.VICTORY_GOLD) {
-    return '两万金币的家底——你的船队比西班牙珍宝舰队还令人垂涎。'
+  if (!claimed.has('rich') && state.fleet.gold >= GAME_BALANCE.VICTORY_GOLD) {
+    out.push({
+      key: 'rich',
+      name: '两万金币的船队',
+      desc: '账房先生换了第三本账簿。珍宝舰队回港那天，码头上看的是你的帆。',
+    })
   }
-  return null
+  return out
 }
 
 export const useGameStore = create<GameStore>()(
@@ -1535,28 +1574,39 @@ export const useGameStore = create<GameStore>()(
           if (state.simSpeed > 1) newSimSpeed = 1
         }
 
-        // 胜利检查（不覆盖 gameover）
-        if (newGamePhase === 'playing') {
-          const victoryDesc = checkVictory({ ...state, fleet: newFleet, discoveredPorts: state.discoveredPorts, completedTasks: state.completedTasks })
-          if (victoryDesc) {
-            set(withAchievements({ ...state, fleet: newFleet, stats: newStats }, {
-              fleet: newFleet,
-              gamePhase: 'gameover',
-              currentEvent: null,
-              notifications: newNotifications,
-              seenHistoricalEvents: newSeenHistoricalEvents,
-              marketStock: newMarketStock,
-              lastEventDay: state.lastEventDay,
-              victoryDay: newDay,
-              stats: newStats,
-              rivals: newRivals,
-              rivalNews: newRivalNews,
-              officers: newOfficers,
-              crewRoster: newCrewRoster,
-              weather: newWeather,
-            }))
-            return
-          }
+        /*
+         * 达标 = 往册子里写一页称号，不再弹全屏结局把玩家踢下线。
+         *
+         * 原来这里有一句 `return`：胜利分支自己 set 了一份**残缺的** patch
+         * （漏了 simSpeed / eventFlags / seaOmen / debrisSpots），还顺手把
+         * gamePhase 改成 gameover 停掉 rAF。合并进主 set 之后，无论达标与否
+         * 每天都走同一条写入路径，不会再有"赢了这一天状态少一半"的分支。
+         */
+        // 只要不是"翻船当天"就结算：称号是累积状态，不该因为当天恰好弹出
+        // 一个事件（newGamePhase === 'event'）而推迟到不知道哪一天才发。
+        const claims = newGamePhase === 'gameover'
+          ? []
+          : checkVictories({ ...state, fleet: newFleet })
+        let newLogbook = state.logbook
+        for (const claim of claims) {
+          newLogbook = appendLogbook(newLogbook, makeTitleEntry(claim, newDay))
+        }
+        if (claims.length > 0) {
+          useFxStore.getState().fx(
+            {
+              kind: 'banner', tone: 'gold',
+              text: `称号 · ${claims[0].name}`,
+              sub: claims.length > 1 ? `今天写下了 ${claims.length} 页 · 海还在，明天照常出航` : '航海日志添了新的一页 · 海还在，明天照常出航',
+            },
+            'milestone',
+          )
+          newNotifications = [...newNotifications, {
+            id: `title-${newDay}-${claims[0].key}`,
+            type: 'achievement' as const,
+            title: '航海日志添了一页',
+            message: `「${claims[0].name}」已经写进册子。没有终点，想开船随时开。`,
+            timestamp: Date.now(),
+          }]
         }
 
         set(withAchievements({ ...state, fleet: newFleet, stats: newStats }, {
@@ -1578,6 +1628,11 @@ export const useGameStore = create<GameStore>()(
           seaOmen: newSeaOmen,
           lastOmenDay: newLastOmenDay,
           debrisSpots: newDebris,
+          logbook: newLogbook,
+          claimedVictories: claims.length > 0
+            ? [...state.claimedVictories, ...claims.map(c => c.key)]
+            : state.claimedVictories,
+          victoryDay: claims.length > 0 ? (state.victoryDay ?? newDay) : state.victoryDay,
         }))
       },
 
@@ -1586,6 +1641,32 @@ export const useGameStore = create<GameStore>()(
         useFxStore.getState().cue('anchor')
         set((state) => {
           const port = ports.find(p => p.id === portId)
+          const discoveredAfter = state.discoveredPorts.includes(portId)
+            ? state.discoveredPorts
+            : [...state.discoveredPorts, portId]
+          /*
+           * 每带回一趟就写一页见闻 —— 这是「这趟结束后，还有东西在等下一趟」。
+           * 线索从**到港之后**的已发现列表里挑，否则会指向脚下这座港。
+           * id 带 day+portId，同一天反复靠同一港不会刷出重复页。
+           */
+          const entry = makeArrivalEntry(portId, state.fleet.day, discoveredAfter)
+          let logbook = entry && !state.logbook.some(e => e.id === entry.id)
+            ? appendLogbook(state.logbook, entry)
+            : state.logbook
+          /*
+           * 线索的回响：第一次靠上某座港、且册子里有旧页指向它时，多写一页。
+           * 只在「首次发现」这一刻判 —— 线索本来就是从当时的未发现港里挑的，
+           * 之后再回同一港不该再"应验"一次。findClueFor 还会查已有应验页，
+           * 两道锁一起挡住导入旧存档 / 同日反复靠岸造成的重复。
+           * 不派任务、不设期限、不发奖励：只是一句话有了下文。
+           */
+          const clue = state.discoveredPorts.includes(portId)
+            ? null
+            : findClueFor(state.logbook, portId)
+          const echo = clue ? makeEchoEntry(clue, portId, state.fleet.day) : null
+          if (echo && !logbook.some(e => e.id === echo.id)) {
+            logbook = appendLogbook(logbook, echo)
+          }
           return {
             fleet: { ...state.fleet, currentPortId: portId, isSailing: false },
             // 记下"从哪来"：currentRoute 马上就要清空，回程建议要用它
@@ -1597,7 +1678,8 @@ export const useGameStore = create<GameStore>()(
             // 到港即放弃任何未确认的出航计划
             pendingVoyage: null,
             shipPosition: port ? [port.latitude, port.longitude] : state.shipPosition,
-            discoveredPorts: state.discoveredPorts.includes(portId) ? state.discoveredPorts : [...state.discoveredPorts, portId],
+            discoveredPorts: discoveredAfter,
+            logbook,
           }
         })
       },
@@ -2193,6 +2275,10 @@ export const useGameStore = create<GameStore>()(
         useFxStore.getState().cue('splash')
         return withAchievements(state, {
           debrisSpots: state.debrisSpots.filter(d => d.id !== id),
+          // 图鉴里点亮这一格：捞过什么，册子替你记着
+          collectedDebris: state.collectedDebris.includes(spot.kind)
+            ? state.collectedDebris
+            : [...state.collectedDebris, spot.kind],
           fleet: {
             ...state.fleet,
             gold: state.fleet.gold + gain.gold,
@@ -2224,6 +2310,51 @@ export const useGameStore = create<GameStore>()(
       skipTutorial: () => set({ tutorialStep: -1 }),
       setShowHelp: (show) => set({ showHelp: show }),
 
+      markLogbookRead: () => set((state) => ({ logbook: markAllRead(state.logbook) })),
+
+      /*
+       * 翻船之后不清进度、以参观模式继续看海。
+       *
+       * 【为什么不是"重新起航"一条路】
+       * 日志、图鉴、称号都是这一局攒下来的东西，因为一次士气归零全清掉，
+       * 等于前面所有"会累积"的承诺一次性作废。参观模式本来就不判胜负、
+       * 不扣粮水、耐久有下限，正好接住"我就想再看看这张海图"的人。
+       * 资源拉回可航行区间是必要的：否则点完继续，开船第一天又断粮，
+       * 「继续」就成了假按钮。
+       */
+      continueAsVisitor: () => set((state) => ({
+        gameMode: 'visitor',
+        gamePhase: 'playing',
+        currentEvent: null,
+        tutorialStep: -1,
+        showHelp: false,
+        activePanel: 'event',
+        notifications: [],
+        fleet: {
+          ...state.fleet,
+          isSailing: false,
+          morale: Math.max(state.fleet.morale, 60),
+          food: Math.max(state.fleet.food, 60),
+          water: Math.max(state.fleet.water, 60),
+          ships: state.fleet.ships.map(sh => ({
+            ...sh,
+            durability: Math.max(sh.durability, 40),
+          })),
+        },
+        logbook: appendLogbook(state.logbook, {
+          id: `title-continue-${state.fleet.day}`,
+          kind: 'title',
+          day: state.fleet.day,
+          portId: null,
+          title: '另外一页 · 船还在',
+          text: '那天以后，账本合上了，海图没有。换个走法，接着往外看。',
+          aside: '不用重来，也不必交代去了哪儿。',
+          hint: null,
+          targetPortId: null,
+          read: false,
+        }),
+      })),
+
       resetGame: () => {
         const startPort = ports.find(p => p.id === 6)
         set({
@@ -2237,8 +2368,10 @@ export const useGameStore = create<GameStore>()(
       },
     }),
     {
-      name: 'age-of-discovery-save',
-      version: 15,
+      // 存档键与版本号只在 utils/saveFile.ts 定义一份：导出/导入读的是同一把钥匙，
+      // 版本校验不该和这里各写一个数字（曾经吃过"两处写死会漂"的亏）。
+      name: SAVE_KEY,
+      version: SAVE_VERSION,
       onRehydrateStorage: () => (state, error) => {
         if (error) {
           console.warn('存档数据损坏，已重置', error)
@@ -2363,6 +2496,18 @@ export const useGameStore = create<GameStore>()(
         if (version < 15) {
           if (pState.gameMode === undefined) pState.gameMode = 'captain'
         }
+        // v15→v16: 航海日志 / 称号 / 漂流物图鉴。
+        // 老存档不是"丢了几页"，而是那时候还没有这本册子 —— 从空册子开始，
+        // 已有的 discoveredPorts / achievements / stats 会在图鉴里立刻显示成已点亮。
+        if (version < 16) {
+          if (!Array.isArray(pState.logbook)) pState.logbook = []
+          if (!Array.isArray(pState.claimedVictories)) pState.claimedVictories = []
+          if (!Array.isArray(pState.collectedDebris)) pState.collectedDebris = []
+          // 老存档可能已经在「胜利结局」阶段，不能把它留在停机画面里
+          if (pState.gamePhase === 'gameover' && pState.victoryDay != null) {
+            pState.gamePhase = 'playing'
+          }
+        }
         return persistedState
       },
       partialize: (state) => ({
@@ -2400,6 +2545,9 @@ export const useGameStore = create<GameStore>()(
         weather: state.weather,
         dialogueSeen: state.dialogueSeen,
         gameMode: state.gameMode,
+        logbook: state.logbook,
+        claimedVictories: state.claimedVictories,
+        collectedDebris: state.collectedDebris,
       }),
       // 存档软锁修复：存档里若停在事件阶段但事件未持久化，重开时落回 playing
       merge: (persisted, current) => {

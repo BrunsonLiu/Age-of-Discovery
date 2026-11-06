@@ -86,7 +86,7 @@ export default function StormGame({ modifiers, onDone }: {
     <div className="p-5 space-y-3">
       {/* 风压表 */}
       <div>
-        <div className="flex items-center justify-between text-[10px] font-serif text-gold-600 mb-1">
+        <div className="flex items-center justify-between text-xs font-serif text-gold-600 mb-1">
           <span>风压</span>
           <span>绿区 = 收帆窗口</span>
         </div>

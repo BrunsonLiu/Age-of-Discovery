@@ -41,7 +41,7 @@ export default function AchievementPanel() {
             { label: '历史目击', value: stats.historySeen },
           ].map(item => (
             <div key={item.label} className="inlay rounded px-2 py-1.5 border border-gold-700/20">
-              <div className="text-gold-400 text-[11px] font-serif">{item.label}</div>
+              <div className="text-gold-400 text-xs font-serif">{item.label}</div>
               <div className="text-gold-200 text-[15px] font-serif tabular-nums">{item.value}</div>
             </div>
           ))}

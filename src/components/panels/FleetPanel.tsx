@@ -125,15 +125,15 @@ export default function FleetPanel() {
           {/* 舰队总览 */}
           <div className="grid grid-cols-3 gap-1 text-center inlay--flat rounded p-1.5">
             <div>
-              <div className="text-gold-500 text-[11px] font-serif">船只</div>
+              <div className="text-gold-500 text-xs font-serif">船只</div>
               <div className="text-gold-200 text-[13px] font-serif">{fleet.ships.length} 艘</div>
             </div>
             <div>
-              <div className="text-gold-500 text-[11px] font-serif">均速</div>
+              <div className="text-gold-500 text-xs font-serif">均速</div>
               <div className="text-gold-200 text-[13px] font-serif">{avgSpeed.toFixed(1)} 节</div>
             </div>
             <div>
-              <div className="text-gold-500 text-[11px] font-serif">总货舱</div>
+              <div className="text-gold-500 text-xs font-serif">总货舱</div>
               <div className="text-gold-200 text-[13px] font-serif">{totalCapacity}</div>
             </div>
           </div>
@@ -168,7 +168,7 @@ export default function FleetPanel() {
           <div className="rounded p-2 inlay border border-gold-700/20 space-y-1">
             <div className="flex items-center justify-between text-[13px] font-serif">
               <span className="text-gold-500 flex items-center gap-1"><Globe size={11} aria-hidden="true" />四方态度</span>
-              <span className="text-gold-400 text-[11px]">同一行为，两副面孔</span>
+              <span className="text-gold-400 text-xs">同一行为，两副面孔</span>
             </div>
             {FACTIONS.map(f => {
               const rep = factionRep[f.id] ?? 0
@@ -183,7 +183,7 @@ export default function FleetPanel() {
                     att.tone === 'good' ? 'text-safe-400' : att.tone === 'bad' ? 'text-danger-400' : 'text-gold-500'
                   }`}>
                     <span aria-hidden>{'★'.repeat(att.level)}{'☆'.repeat(Math.max(0, 3 - att.level + 1))}</span>
-                    {att.label} <span className="font-mono text-[11px]">({rep > 0 ? '+' : ''}{rep})</span>
+                    {att.label} <span className="font-mono text-xs">({rep > 0 ? '+' : ''}{rep})</span>
                   </span>
                 </div>
               )
@@ -203,7 +203,7 @@ export default function FleetPanel() {
                 return (
                   <div key={id} className="flex items-center justify-between text-[13px] font-serif">
                     <span className="flex items-center gap-1 text-gold-300"><o.icon size={11} aria-hidden="true" />{o.name}</span>
-                    <span className="text-gold-500 text-[11px]">{o.effect}</span>
+                    <span className="text-gold-500 text-xs">{o.effect}</span>
                   </div>
                 )
               })}
@@ -215,7 +215,7 @@ export default function FleetPanel() {
             <div className="rounded p-2 inlay border border-gold-700/20 space-y-1.5">
               <div className="flex items-center justify-between text-[13px] font-serif">
                 <span className="text-gold-500 flex items-center gap-1"><Users size={11} /> 船上的人</span>
-                <span className="text-gold-400 text-[11px]">忠诚低会离船</span>
+                <span className="text-gold-400 text-xs">忠诚低会离船</span>
               </div>
               {crewRoster.map(m => {
                 const def = CREW_CHAR_MAP.get(m.id)
@@ -237,7 +237,7 @@ export default function FleetPanel() {
                         <def.icon size={11} className="inline -mt-0.5 mr-1" aria-hidden="true" />
                         {def.name} <span className="text-gold-400">· {def.title}</span>
                       </span>
-                      <span className={`text-[11px] ${
+                      <span className={`text-xs ${
                         m.loyalty <= 25 ? 'text-danger-400' : m.loyalty < 50 ? 'text-gold-400' : 'text-safe-400'
                       }`}>
                         忠诚 {m.loyalty}
@@ -249,7 +249,7 @@ export default function FleetPanel() {
                         style={{ width: `${m.loyalty}%` }}
                       />
                     </div>
-                    <p className="text-gold-400 text-[11px] mt-0.5">{def.perk}</p>
+                    <p className="text-gold-400 text-xs mt-0.5">{def.perk}</p>
                   </div>
                 )
               })}
@@ -323,11 +323,11 @@ export default function FleetPanel() {
                   <span>船员 {ship.crew}/{ship.maxCrew}</span>
                   <span>货舱 {ship.usedCapacity}/{ship.capacity}</span>
                   {isFlagship ? (
-                    <span className="text-gold-400 text-[11px] font-serif">旗舰</span>
+                    <span className="text-gold-400 text-xs font-serif">旗舰</span>
                   ) : (
                     <button
                       onClick={() => setFlagship(ship.id)}
-                      className="text-gold-400 hover:text-gold-300 text-[11px] font-serif transition-colors"
+                      className="text-gold-400 hover:text-gold-300 text-xs font-serif transition-colors"
                     >
                       设为旗舰
                     </button>

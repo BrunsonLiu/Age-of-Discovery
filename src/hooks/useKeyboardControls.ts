@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import { useGameStore } from '@/store/useGameStore'
+import { useMapStore } from '@/store/useMapStore'
 import { useDialogueStore } from '@/store/useDialogueStore'
 import { emitUiCommand, isMiniGameActive } from '@/utils/uiBus'
 import { STANCE_ORDER } from '@/utils/segment'
@@ -136,8 +137,19 @@ export function useKeyboardControls() {
           break
         }
         case 'escape': {
+          // Esc 一层一层退：先关面板，再关帮助，最后才离开岸上。
+          // 若岸上视图自己也监听 Esc，面板开着时按一下会同时关面板 + 回海图，
+          // 玩家会觉得"退得太远"。所有退路都收在这里，顺序才不会打架。
           if (s.activePanel) s.setActivePanel(null)
           else if (s.showHelp) s.setShowHelp(false)
+          else if (useMapStore.getState().viewMode === 'harbor') useMapStore.getState().setViewMode('chart')
+          break
+        }
+        case 'a': {
+          // 岸上 ⇄ 海图。航行中不许上岸：船不在港，视角不能撒谎。
+          const m = useMapStore.getState()
+          if (m.viewMode === 'harbor') m.setViewMode('chart')
+          else if (!s.fleet.isSailing && s.fleet.currentPortId != null) m.setViewMode('harbor')
           break
         }
         case '?':

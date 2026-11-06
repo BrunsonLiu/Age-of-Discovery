@@ -31,7 +31,7 @@ import { buildMap3DCoastline } from './mapCoastline3d'
 import { buildMap3DPeaks, type PeakFacing } from './mapPeaks3d'
 import { buildTerrainSymbols, filterPeaksByElevation } from '@/utils/terrainDecor'
 import { loadElevationSampler } from '@/utils/elevation'
-import { buildMap3DGraticule } from './mapGraticule3d'
+import { buildMap3DGraticule, GRATICULE_OPACITY_NEAR } from './mapGraticule3d'
 import { fetchBordersGeojson } from '@/utils/mapGeoJson'
 import { decidePixelRatio } from '@/utils/adaptiveResolution'
 import { isTapGesture } from '@/utils/tapGesture'
@@ -1529,6 +1529,18 @@ export default function Map3DView() {
         const dt = Math.min(0.1, rawMs / 1000)
         lastT = tNow
 
+        /*
+         * 岸上视角是一整块不透明覆盖层，3D 画布此刻一个像素都看不见。
+         * 继续逐帧投影标签、更新漂流物 DOM、再画满屏三角形纯属空转：
+         * 实测 2 秒内 15876 次 draw call（比海图时的 10584 还多，因为
+         * 地图层被压暗推远又触发了一次重算）。
+         *
+         * 这里早退，但**保留 rAF**：下一帧照常来，切回海图立刻恢复绘制，
+         * 不用重建场景（重建才是切换卡顿的来源）。lastT 已在上面更新过，
+         * 所以切回时 dt 不会攒出一大跳；自适应分辨率也不采岸上的样本。
+         */
+        if (useMapStore.getState().viewMode === 'harbor') return
+
         if (rawMs > 0 && rawMs < 100) frameMsBuf.push(rawMs)
         if (frameMsBuf.length >= 40) {
           if (tNow - lastRatioChangeAt > 3000) {
@@ -1867,6 +1879,11 @@ export default function Map3DView() {
           }
           graticule.material.color.copy(gratBase).multiplyScalar(lineMul)
           coolLine(graticule.material.color, nightK)
+          // 极远视角下经纬网会和海岸线/航线争注意力：只按相机距离压透明度，
+          // 不碰颜色（颜色归上面的日相/天气链，两处各写一遍会互相覆盖）。
+          // dist 范围 3~40：≤12 保持 0.22，到 40 降到 0.121，近景仍读得出网格。
+          const farK = Math.min(1, Math.max(0, (camState.dist - 12) / (40 - 12)))
+          graticule.material.opacity = GRATICULE_OPACITY_NEAR * (1 - 0.45 * farK)
           // 山也是不受光材质（画在纸上的墨迹），同一套倍率
           for (const mat of peakMats) {
             mat.color.copy(peakBase).multiplyScalar(lineMul)

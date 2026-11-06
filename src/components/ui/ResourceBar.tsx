@@ -45,7 +45,7 @@ export default function ResourceBar({
         <div className="flex justify-between items-baseline mb-0.5">
           <span className="text-xs text-gold-300 font-serif">{label}</span>
           <span className="flex items-baseline gap-1.5">
-            {hint && <span className={`text-[10px] font-serif ${hintColor}`}>{hint}</span>}
+            {hint && <span className={`text-xs font-serif ${hintColor}`}>{hint}</span>}
             <span className="text-xs text-gold-400 font-mono">
               {value}/{maxValue}
             </span>

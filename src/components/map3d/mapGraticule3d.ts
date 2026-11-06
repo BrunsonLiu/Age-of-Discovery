@@ -18,7 +18,10 @@ import { graticuleSegments } from '@/utils/chartLines'
  * 而不是"你读它"。实测这一档在羊皮纸陆地上只有约 4 级亮度差 —— 也就是说
  * 网格实际上只在水面上看得见（陆地把它遮住了，见 GRATICULE_Y）。
  * 再高（试过 0.35）会和国界线混成一片，玩家分不清哪条是政治边界。
+ * 0.22 是**近景基准**：相机拉远后 Map3DView 会按距离把 opacity 继续压低，
+ * 免得极远视角下网格和海岸线/航线抢注意力。基准值只在这里写一次。
  */
+export const GRATICULE_OPACITY_NEAR = 0.22
 export interface Map3DGraticule {
   lines: LineSegments2
   material: LineMaterial
@@ -33,7 +36,7 @@ export function buildMap3DGraticule(y: number): Map3DGraticule {
     color: 0x5b4425,
     linewidth: 1,
     transparent: true,
-    opacity: 0.22,
+    opacity: GRATICULE_OPACITY_NEAR,
     depthWrite: false,
   })
 

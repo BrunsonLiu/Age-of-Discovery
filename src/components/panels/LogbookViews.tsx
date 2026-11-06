@@ -1,0 +1,288 @@
+import { useEffect, useState } from 'react'
+import { Anchor, Compass, Lock, MapPin, Package, ScrollText, Sparkles } from 'lucide-react'
+import { useGameStore } from '@/store/useGameStore'
+import { useMapStore } from '@/store/useMapStore'
+import { ports } from '@/data/ports'
+import { achievements } from '@/data/achievements'
+import { DEBRIS_INFO } from '@/data/debris'
+import { REGION_CN, countEchoes, echoDayFor } from '@/data/logbook'
+import { clueCenter } from '@/utils/harbor'
+import type { DebrisKind } from '@/data/debris'
+
+/**
+ * 航海日志的三页内容：见闻 / 图鉴 / 记事（记事在 EventLog.tsx）。
+ *
+ * 【为什么把「见闻」放在第一页】
+ * 玩家点开日志通常是刚靠岸，想看"这趟带回了什么"。
+ * 把累计统计放第一页会立刻变成第二张报表——日志的价值是它不记账。
+ *
+ * 【为什么每个格子都能点】
+ * 最初的反馈就是"点了没反应"。图鉴里未点亮的格子如果按下去毫无回执，
+ * 玩家会以为是坏的。所以统一给一条详情行：要么讲这是什么，要么把地图移过去。
+ */
+
+/** 点击详情行的统一回执文案 */
+function useDetail() {
+  const [detail, setDetail] = useState<string | null>(null)
+  return { detail, setDetail }
+}
+
+export function SightingsView() {
+  const logbook = useGameStore(s => s.logbook)
+  const markLogbookRead = useGameStore(s => s.markLogbookRead)
+  const setActivePanel = useGameStore(s => s.setActivePanel)
+  const setCenter = useMapStore(s => s.setCenter)
+
+  /*
+   * mount 那一刻记下哪些是新的：effect 马上会把 read 标成 true，
+   * 但不该让"这次刚带回的那一页"在玩家眼前瞬间失去高亮。
+   */
+  const [fresh] = useState(() => new Set(logbook.filter(e => !e.read).map(e => e.id)))
+  useEffect(() => {
+    if (logbook.some(e => !e.read)) markLogbookRead()
+  }, [logbook, markLogbookRead])
+
+  const followClue = (targetPortId: number | null) => {
+    // 与岸上视角的「在地图上看看」共用 clueCenter：
+    // 只把地图移过去，不替玩家出航、不承诺奖励、不设期限
+    const center = clueCenter(targetPortId)
+    if (!center) return
+    setCenter(center)
+    setActivePanel(null)
+  }
+
+  return (
+    <div className="space-y-2">
+      {logbook.length === 0 ? (
+        /* 空册子也要说清"接下来会发生什么"，不能只摆一个图标 */
+        <div className="text-center py-6">
+          <ScrollText size={30} className="mx-auto text-gold-500/60 mb-2" />
+          <p className="text-gold-300 text-[13px] font-serif">这本册子还是空的</p>
+          <p className="text-gold-400 text-[13px] font-serif mt-1 leading-relaxed">
+            每靠一次岸，就多一页见闻和一句去处。<br />不赶时间，也没人催。
+          </p>
+        </div>
+      ) : (
+        <>
+          <div className="flex items-baseline gap-2 pb-1.5 border-b border-gold-700/30">
+            <span className="text-gold-300 text-[13px] font-serif">共 {logbook.length} 页</span>
+            <span className="text-gold-500 text-[12px] font-serif ml-auto">新的一页在最上面</span>
+          </div>
+
+          <div className="space-y-2">
+            {logbook.map(entry => {
+              const isFresh = fresh.has(entry.id)
+              // 旧页不改写：那句话当时确实"没人催"。只在下面补一行真实的下文，
+              // 天数从应验页读（不是拿今天算），册子才不会自己改口。
+              const echoDay = echoDayFor(logbook, entry.targetPortId)
+              return (
+                <article
+                  key={entry.id}
+                  data-testid={entry.kind === 'echo' ? 'echo-entry' : undefined}
+                  className={`rounded-md px-2.5 py-2 border ${
+                    entry.kind === 'title' || entry.kind === 'echo'
+                      ? 'border-gold-400/60 bg-gold-700/15'
+                      : isFresh
+                        ? 'border-gold-400/45 bg-gold-700/10'
+                        : 'border-gold-700/25'
+                  }`}
+                >
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {entry.kind === 'title'
+                      ? <Sparkles size={13} className="text-gold-300 shrink-0" aria-hidden="true" />
+                      : entry.kind === 'echo'
+                        ? <MapPin size={13} className="text-gold-300 shrink-0" aria-hidden="true" />
+                        : <Anchor size={13} className="text-gold-400 shrink-0" aria-hidden="true" />}
+                    <h4 className="text-gold-200 text-[14px] font-serif tracking-wide">{entry.title}</h4>
+                    {isFresh && (
+                      <span className="text-xs text-gold-300 border border-gold-500/40 rounded px-1 leading-4">新</span>
+                    )}
+                    <span className="ml-auto text-gold-500 text-[12px] font-serif tabular-nums">第 {entry.day} 天</span>
+                  </div>
+
+                  <p className="text-gold-300 text-[13px] font-serif leading-relaxed mt-1.5">{entry.text}</p>
+                  <p className="text-gold-500 text-[12px] font-serif italic mt-1 pl-2 border-l border-gold-700/40">
+                    {entry.aside}
+                  </p>
+
+                  {entry.hint && (
+                    <div className="mt-2 pt-2 border-t border-gold-700/25">
+                      <p className="text-gold-400 text-[12px] font-serif leading-relaxed">{entry.hint}</p>
+                      {echoDay != null && (
+                        <p data-testid="clue-fulfilled" className="text-gold-200 text-[12px] font-serif mt-1.5">
+                          这句已应验 · 第 {echoDay} 天到的
+                        </p>
+                      )}
+                      {entry.targetPortId != null && (
+                        <button
+                          type="button"
+                          onClick={() => followClue(entry.targetPortId)}
+                          className="mt-1.5 inline-flex items-center gap-1 text-[12px] font-serif text-gold-200 hover:text-gold-100 border border-gold-600/40 rounded px-2 py-1 press"
+                        >
+                          <MapPin size={12} aria-hidden="true" />
+                          在地图上看看
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </article>
+              )
+            })}
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+/** 图鉴的一格：视觉可以分大小，命中区域统一 ≥40px */
+function AtlasCell({
+  label, sub, found, onClick, icon,
+}: {
+  label: string
+  sub: string
+  found: boolean
+  onClick: () => void
+  icon?: React.ReactNode
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={found ? label : `${sub} · 还没见过`}
+      className={`min-h-[44px] w-full text-left rounded px-2 py-1.5 border press transition-colors ${
+        found
+          ? 'border-gold-500/45 bg-gold-700/15 hover:bg-gold-700/25'
+          : 'border-gold-700/25 hover:border-gold-600/40'
+      }`}
+    >
+      <span className="flex items-center gap-1.5">
+        <span className={`shrink-0 ${found ? 'text-gold-300' : 'text-gold-500/70'}`}>
+          {found ? (icon ?? <Compass size={13} />) : <Lock size={13} />}
+        </span>
+        <span className={`text-[12px] font-serif truncate ${found ? 'text-gold-200' : 'text-gold-500'}`}>
+          {found ? label : '？'}
+        </span>
+      </span>
+      <span className="block text-xs font-serif text-gold-500 mt-0.5 truncate">{sub}</span>
+    </button>
+  )
+}
+
+function SectionTitle({ children, right }: { children: React.ReactNode; right?: string }) {
+  return (
+    <div className="flex items-baseline gap-2 pt-1">
+      <h4 className="text-gold-300 text-[13px] font-serif tracking-wide">{children}</h4>
+      {right && <span className="ml-auto text-gold-500 text-[12px] font-serif tabular-nums">{right}</span>}
+    </div>
+  )
+}
+
+export function AtlasView() {
+  const discoveredPorts = useGameStore(s => s.discoveredPorts)
+  const earned = useGameStore(s => s.achievements)
+  const collected = useGameStore(s => s.collectedDebris)
+  const stats = useGameStore(s => s.stats)
+  const logbook = useGameStore(s => s.logbook)
+  const setActivePanel = useGameStore(s => s.setActivePanel)
+  const setCenter = useMapStore(s => s.setCenter)
+  const { detail, setDetail } = useDetail()
+
+  const gotPorts = new Set(discoveredPorts)
+  const gotAchievements = new Set(earned)
+  const gotDebris = new Set(collected)
+  const debrisKinds = Object.keys(DEBRIS_INFO) as DebrisKind[]
+
+  const litCount = discoveredPorts.length + earned.length + collected.length
+  const totalCount = ports.length + achievements.length + debrisKinds.length
+
+  return (
+    <div className="space-y-2">
+      {/* 只给一个"点亮了多少"的完成感，不做进度考核、不写任何差额计算 */}
+      <div className="flex items-baseline gap-2 pb-1.5 border-b border-gold-700/30">
+        <span className="text-gold-300 text-[13px] font-serif">已点亮</span>
+        <span className="text-gold-100 text-[16px] font-serif tabular-nums">{litCount}</span>
+        <span className="text-gold-500 text-[12px] font-serif">/ {totalCount} 格</span>
+        <span className="ml-auto text-gold-500 text-[12px] font-serif">缺的格子慢慢来</span>
+      </div>
+
+      <SectionTitle right={`${discoveredPorts.length}/${ports.length}`}>港口</SectionTitle>
+      <div className="grid grid-cols-2 gap-1.5">
+        {ports.map(p => (
+          <AtlasCell
+            key={p.id}
+            label={p.nameCn}
+            sub={REGION_CN[p.region] ?? ''}
+            found={gotPorts.has(p.id)}
+            icon={<Anchor size={13} />}
+            onClick={() => {
+              if (!gotPorts.has(p.id)) {
+                setDetail(`${REGION_CN[p.region] ?? '那片海'}还有没靠过的岸。去了自然就点亮，不去也没关系。`)
+                return
+              }
+              setCenter([p.latitude, p.longitude])
+              setActivePanel(null)
+            }}
+          />
+        ))}
+      </div>
+
+      <SectionTitle right={`${earned.length}/${achievements.length}`}>成就</SectionTitle>
+      <div className="grid grid-cols-2 gap-1.5">
+        {achievements.map(a => {
+          const Icon = a.icon
+          return (
+            <AtlasCell
+              key={a.id}
+              label={a.title}
+              sub="成就"
+              found={gotAchievements.has(a.id)}
+              icon={<Icon size={13} />}
+              onClick={() => setDetail(gotAchievements.has(a.id) ? a.description : '还没发生的事，册子先空着一格。')}
+            />
+          )
+        })}
+      </div>
+
+      <SectionTitle right={`${collected.length}/${debrisKinds.length}`}>海上拾遗</SectionTitle>
+      <div className="grid grid-cols-2 gap-1.5">
+        {debrisKinds.map(kind => (
+          <AtlasCell
+            key={kind}
+            label={DEBRIS_INFO[kind].label}
+            sub="漂流物"
+            found={gotDebris.has(kind)}
+            icon={<Package size={13} />}
+            onClick={() => setDetail(gotDebris.has(kind) ? DEBRIS_INFO[kind].hint : '海面上还会漂来东西，看见捞起来就是。')}
+          />
+        ))}
+      </div>
+
+      {/*
+       * 个人纪录只陈列、不比较、不排名：这是从 4399 那套"破自己纪录"借来的钩子，
+       * 纯本地、零算术、零服务器，也不制造"明天必须回来"的债务。
+       */}
+      <SectionTitle>个人纪录</SectionTitle>
+      <div className="grid grid-cols-2 gap-1.5">
+        {[
+          { k: '靠过的岸', v: `${discoveredPorts.length} 座` },
+          { k: '海上的日子', v: `${stats.daysSailed} 天` },
+          { k: '最大一笔买卖', v: `${stats.bestDeal} 金` },
+          { k: '经历过的风浪', v: `${stats.eventsSurvived} 回` },
+          // 只陈列已经写进册子的事，不设目标、不显示"还差多少"
+          { k: '应验的线索', v: `${countEchoes(logbook)} 句` },
+          { k: '册子攒下', v: `${logbook.length} 页` },
+        ].map(r => (
+          <div key={r.k} className="rounded border border-gold-700/25 px-2 py-1.5">
+            <span className="block text-xs font-serif text-gold-500">{r.k}</span>
+            <span className="block text-gold-200 text-[15px] font-serif tabular-nums mt-0.5">{r.v}</span>
+          </div>
+        ))}
+      </div>
+
+      {detail && (
+        <p className="text-gold-300 text-[12px] font-serif px-2 py-1.5 rounded bg-gold-700/15">{detail}</p>
+      )}
+    </div>
+  )
+}

@@ -135,7 +135,7 @@ export default function GambleGame({ modifiers, onDone }: {
     <div className="p-5 space-y-3">
       {/* 庄家的区间牌 */}
       <div className="rounded-lg border-2 border-gold-700/40 bg-ocean-800/60 p-4 text-center">
-        <p className="text-[10px] font-serif text-gold-600 mb-1">
+        <p className="text-xs font-serif text-gold-600 mb-1">
           {revealed ? '庄家开牌' : '庄家报了区间（点数在此范围内）'}
         </p>
         <div className="text-3xl font-serif text-gold-200 tracking-widest">
@@ -167,21 +167,21 @@ export default function GambleGame({ modifiers, onDone }: {
           className="py-3 rounded-lg border border-gold-700/40 bg-ocean-800/60 hover:bg-gold-700/30 press transition-all"
         >
           <div className="text-lg text-gold-200">押大 ↑</div>
-          <div className="text-[10px] font-serif text-gold-500 mt-0.5">赢 +{GAMBLE_STAKE}</div>
+          <div className="text-xs font-serif text-gold-500 mt-0.5">赢 +{GAMBLE_STAKE}</div>
         </button>
         <button
           onClick={() => { const s = stateRef.current; if (s && !s.revealed) bet(s, 'low') }}
           className="py-3 rounded-lg border border-gold-700/40 bg-ocean-800/60 hover:bg-gold-700/30 press transition-all"
         >
           <div className="text-lg text-gold-200">押小 ↓</div>
-          <div className="text-[10px] font-serif text-gold-500 mt-0.5">赢 +{GAMBLE_STAKE}</div>
+          <div className="text-xs font-serif text-gold-500 mt-0.5">赢 +{GAMBLE_STAKE}</div>
         </button>
         <button
           onClick={() => { const s = stateRef.current; if (s && !s.revealed) { skipGambleRound(s); setRevealed(true); scheduleNext(s) } }}
           className="py-3 rounded-lg border border-gold-700/40 bg-ocean-800/60 hover:bg-gold-700/30 press transition-all"
         >
           <div className="text-lg text-gold-200">不押 ←→</div>
-          <div className="text-[10px] font-serif text-gold-500 mt-0.5">观望一手</div>
+          <div className="text-xs font-serif text-gold-500 mt-0.5">观望一手</div>
         </button>
       </div>
 

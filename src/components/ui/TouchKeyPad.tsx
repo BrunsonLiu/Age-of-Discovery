@@ -79,7 +79,7 @@ export default function TouchKeyPad({ keys, layout = 'row', className = '' }: To
         >
           <span className="text-base leading-none block">{k.label}</span>
           {k.hint && (
-            <span className="text-[9px] text-gold-600 font-serif block mt-0.5">{k.hint}</span>
+            <span className="text-xs text-gold-600 font-serif block mt-0.5">{k.hint}</span>
           )}
         </button>
       ))}

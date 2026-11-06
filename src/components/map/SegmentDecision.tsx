@@ -84,7 +84,7 @@ function StanceCard({
       <div className="flex items-center gap-3">
         {/* 键盘序号 */}
         <span className="w-5 h-5 rounded border border-gold-700/40 bg-ocean-900/70
-          text-gold-400 font-mono text-[10px] flex items-center justify-center shrink-0">
+          text-gold-400 font-mono text-xs flex items-center justify-center shrink-0">
           {index + 1}
         </span>
 
@@ -93,10 +93,10 @@ function StanceCard({
             <span className={`text-sm leading-none ${tone.text}`}>{s.icon}</span>
             <span className="font-serif text-sm text-gold-200">{s.name}</span>
             {!affordable && (
-              <span className="font-serif text-[10px] text-danger-400">· 补给不足</span>
+              <span className="font-serif text-xs text-danger-400">· 补给不足</span>
             )}
           </div>
-          <p className="text-gold-600 font-serif text-[10px] leading-snug mt-0.5 truncate">
+          <p className="text-gold-600 font-serif text-xs leading-snug mt-0.5 truncate">
             {tradeoff}
           </p>
         </div>
@@ -107,10 +107,10 @@ function StanceCard({
             <span className="font-serif text-2xl text-gold-100 tabular-nums leading-none">
               {Math.round(rollDays)}
             </span>
-            <span className="text-gold-500 font-serif text-[10px]">天</span>
+            <span className="text-gold-500 font-serif text-xs">天</span>
           </div>
           {deltaDays !== 0 && (
-            <div className={`font-mono text-[10px] tabular-nums ${deltaDays < 0 ? 'text-safe-400' : 'text-danger-400'}`}>
+            <div className={`font-mono text-xs tabular-nums ${deltaDays < 0 ? 'text-safe-400' : 'text-danger-400'}`}>
               {deltaDays < 0 ? '快' : '慢'} {Math.abs(deltaDays)} 天
             </div>
           )}
@@ -233,11 +233,11 @@ export default function SegmentDecision() {
         <div className="px-4 py-2.5 border-b border-gold-700/30 bg-ocean-800/60">
           <div className="flex items-baseline gap-2">
             <h2 className="pirate-title text-base text-gold-200">航行方针</h2>
-            <span className="text-gold-500 font-serif text-[11px] tabular-nums">
+            <span className="text-gold-500 font-serif text-xs tabular-nums">
               第 {pending.index + 1} / {pending.total} 段
             </span>
           </div>
-          <p className="text-gold-500 font-serif text-[11px] mt-0.5 truncate">
+          <p className="text-gold-500 font-serif text-xs mt-0.5 truncate">
             <span className="text-gold-300">{pending.hazard}</span>
             {' · '}距港 {Math.round(pending.remainingNm)} 海里
             {' · '}约 {pending.daysLeft} 天
@@ -275,22 +275,22 @@ export default function SegmentDecision() {
               aria-expanded={showLedger}
               className="w-full flex items-center gap-2 px-1 py-1 text-left press"
             >
-              <span className="font-serif text-[11px] text-gold-500">
+              <span className="font-serif text-xs text-gold-500">
                 粮水 / 船损 / 遇事 / 士气 细账
               </span>
               {!showLedger && (
-                <span className="font-serif text-[10px] text-gold-700 truncate flex-1">
+                <span className="font-serif text-xs text-gold-700 truncate flex-1">
                   抢行省粮但伤船
                 </span>
               )}
-              <span className="ml-auto font-serif text-[10px] text-gold-700 shrink-0">
+              <span className="ml-auto font-serif text-xs text-gold-700 shrink-0">
                 {showLedger ? '收起 ▴' : '▾'}
               </span>
             </button>
 
             {showLedger && (
               <div className="mt-1 bg-ocean-800/40 border border-gold-700/20 rounded px-2.5 py-2">
-                <div className="grid grid-cols-6 gap-1 font-serif text-[10px] text-gold-600 mb-1">
+                <div className="grid grid-cols-6 gap-1 font-serif text-xs text-gold-600 mb-1">
                   <span />
                   <span className="text-right">食物</span>
                   <span className="text-right">淡水</span>
@@ -299,7 +299,7 @@ export default function SegmentDecision() {
                   <span className="text-right">士气</span>
                 </div>
                 {ledgers.map(l => (
-                  <div key={l.stance.id} className="grid grid-cols-6 gap-1 font-mono text-[10px] tabular-nums text-gold-300 py-0.5">
+                  <div key={l.stance.id} className="grid grid-cols-6 gap-1 font-mono text-xs tabular-nums text-gold-300 py-0.5">
                     <span className="font-serif text-gold-500 truncate">{l.stance.name}</span>
                     <span className="text-right">{l.food}</span>
                     <span className="text-right">{l.water}</span>
@@ -310,11 +310,11 @@ export default function SegmentDecision() {
                     </span>
                   </div>
                 ))}
-                <p className="font-serif text-[10px] text-gold-700 mt-1.5 leading-relaxed">
+                <p className="font-serif text-xs text-gold-700 mt-1.5 leading-relaxed">
                   三个方针在每个维度上都是同序的：快的永远省粮水但伤船、代价更重；稳的永远相反。
                   所以只需要决定一件事——要多快。
                 </p>
-                <p className="font-serif text-[10px] text-gold-700 mt-1 leading-relaxed">
+                <p className="font-serif text-xs text-gold-700 mt-1 leading-relaxed">
                   「遇事」是次数。快慢走同一段路的总暴露时间差不多，所以次数差别不大；
                   真正的差别在<strong className="text-gold-500">单次事件的后果</strong>
                   ——抢行放大到 1.45 倍，谨慎只有 0.5 倍。
@@ -324,13 +324,13 @@ export default function SegmentDecision() {
           </div>
 
           {/* 当前库存 */}
-          <div className="mt-2 pt-2 border-t border-gold-700/20 flex items-center justify-between text-[11px] font-serif">
+          <div className="mt-2 pt-2 border-t border-gold-700/20 flex items-center justify-between text-xs font-serif">
             <span className="text-gold-600">
               船上：粮 <span className="text-gold-300 tabular-nums">{fleet.food}</span>
               {' · '}水 <span className="text-gold-300 tabular-nums">{fleet.water}</span>
               {' · '}士气 <span className="text-gold-300 tabular-nums">{fleet.morale}</span>
             </span>
-            <span className="text-gold-700 text-[10px]">按 1 / 2 / 3 选择</span>
+            <span className="text-gold-700 text-xs">按 1 / 2 / 3 选择</span>
           </div>
         </div>
       </div>

@@ -112,23 +112,46 @@ console.log('\n=== 移动端 · 生产产物冒烟 ===')
 }
 
 // --- ③ 教学与致辞（生产包里也没有 dev 钩子，只能靠按钮文字） ---
+/*
+ * 【这里原来是两条假绿，别改回去】写的是 `check(!!skipped || true)` 和
+ * `check(skipDlg ? dlgGone : true)`：致辞比 sleep(1500) 晚一点点渲染时，
+ * 脚本找不到「跳过这段致辞」按钮就恒真通过，随后整屏遮罩吃掉后面所有点击。
+ * 实测（生产包）：贸易标签中心 elementFromPoint 命中 IMG.dlg-float（致辞立绘），
+ * 点标签抽屉不开、点海面不弹计划，而 DOM/控制台一条错都没有。
+ * 现在改成轮询等遮罩出现 → 真点掉 → 确认 `[role=dialog]` 消失；
+ * 若本局压根没有遮罩，也以「确实没有遮罩」为准，而不是「没找到按钮就算过」。
+ */
 {
-  const skipped = await page.evaluate(() => {
-    const b = [...document.querySelectorAll('button')].find(x => /跳过引导/.test(x.textContent || ''))
-    if (b instanceof HTMLElement) { b.click(); return 'tutorial' }
-    return null
-  })
-  if (skipped) await sleep(600)
-  check(!!skipped || true, `教学引导可跳过（${skipped ?? '未出现'}）`)
-
-  const skipDlg = await page.evaluate(() => {
-    const b = [...document.querySelectorAll('button')].find(x => /跳过这段致辞/.test(x.textContent || ''))
-    if (b instanceof HTMLElement) { b.click(); return true }
-    return false
-  })
-  await sleep(900)
-  const dlgGone = await page.evaluate(() => !document.querySelector('[role="dialog"][aria-label*="致辞"]'))
-  check(skipDlg ? dlgGone : true, '致辞可跳过（触屏没有 Esc 键的替代品）')
+  let sawTutorial = false, sawDialogue = false, sawAny = false, stable = 0, cleared = false
+  for (let i = 0; i < 120; i++) {
+    const step = await page.evaluate(() => {
+      const btns = [...document.querySelectorAll('button')]
+      const tut = btns.find(x => /跳过引导/.test(x.textContent || ''))
+      if (tut) { tut.click(); return 'tutorial' }
+      const skip = btns.find(x => /跳过这段致辞/.test(x.textContent || ''))
+      if (skip) { skip.click(); return 'dialogue' }
+      return 'clean'
+    })
+    if (step === 'tutorial') { sawTutorial = true; sawAny = true; stable = 0 }
+    else if (step === 'dialogue') { sawDialogue = true; sawAny = true; stable = 0 }
+    else {
+      // 【别一见 clean 就收工】MainMap 里致辞与教学是**先后**出现的
+      // （`!dialogueOpen` 才渲染教学）。点掉致辞的下一帧教学才挂上来，
+      // 中间那一瞬两个按钮都不在，早退就会把整屏 bg-black/80 留在场上。
+      stable++
+      if (sawAny && stable >= 4) { cleared = true; break }
+    }
+    await sleep(150)
+  }
+  const finalLayer = await page.evaluate(() => ({
+    dialogs: document.querySelectorAll('[role="dialog"]').length,
+    blackOut: [...document.querySelectorAll('div.fixed.inset-0')]
+      .filter(d => /bg-black\/80/.test(d.className || '')).length,
+    skipBtns: [...document.querySelectorAll('button')]
+      .filter(b => /跳过引导|跳过这段致辞/.test(b.textContent || '')).length,
+  }))
+  check(cleared && finalLayer.dialogs === 0 && finalLayer.blackOut === 0 && finalLayer.skipBtns === 0,
+    `开局两层遮罩都真的清掉了（致辞 ${sawDialogue ? '已跳' : '未出现'} / 教学 ${sawTutorial ? '已跳' : '未出现'}，残留 ${JSON.stringify(finalLayer)}）`)
 }
 
 // --- ④ 标签栏 / 溢出 / 罗盘徽章 ---
@@ -137,9 +160,9 @@ console.log('\n=== 移动端 · 生产产物冒烟 ===')
   check(!!tabBar, '生产包里有底部标签栏')
   if (tabBar) {
     const labels = await page.$$eval('[data-testid="mobile-tab-bar"] button', els => els.map(e => e.getAttribute('aria-label')))
-    const want = ['舰队', '任务', '日志', '成就', '见闻', '港口', '贸易', '造船', '帮助']
+    const want = ['上岸', '舰队', '任务', '日志', '成就', '见闻', '港口', '贸易', '造船', '帮助']
     const missing = want.filter(w => !labels.includes(w))
-    check(missing.length === 0, `九个入口一个不少（缺：${missing.join('、') || '无'}）`)
+    check(missing.length === 0, `十个入口一个不少（缺：${missing.join('、') || '无'}）`)
   }
   const desktopSide = await page.$$('[data-tut="fleet"]')
   check(desktopSide.length === 0, `桌面侧栏按钮在移动端不出现（${desktopSide.length} 个）`)
@@ -172,8 +195,12 @@ console.log('\n=== 移动端 · 生产产物冒烟 ===')
   const tradeTab = await page.$('[data-testid="mobile-tab-bar"] button[aria-label="贸易"]')
   if (tradeTab) {
     await tradeTab.click()
-    await sleep(800)
-    const drawer = await page.$('[data-testid="mobile-drawer"]')
+    // 面板是 lazy chunk，生产包里首次点击要现取，写死 800ms 会读到「还没渲染」
+    let drawer = null
+    for (let i = 0; i < 40 && !drawer; i++) {
+      drawer = await page.$('[data-testid="mobile-drawer"]')
+      if (!drawer) await sleep(150)
+    }
     check(!!drawer, '生产包里点标签 → 底部抽屉升起')
     if (drawer) {
       const box = await drawer.boundingBox()
@@ -218,9 +245,14 @@ console.log('\n=== 移动端 · 生产产物冒烟 ===')
   let planShown = false
   for (const [x, y] of clicked) {
     await page.mouse.click(x, y)
-    await sleep(1200)
-    const has = await page.evaluate(() =>
-      [...document.querySelectorAll('div.fixed.inset-0')].some(o => /出航计划/.test(o.textContent || '')))
+    let has = false
+    // 出航计划是 lazy chunk：点完轮询等它出现，别用一次固定 sleep 判生死
+    for (let k = 0; k < 16; k++) {
+      has = await page.evaluate(() =>
+        [...document.querySelectorAll('div.fixed.inset-0')].some(o => /出航计划/.test(o.textContent || '')))
+      if (has) break
+      await sleep(150)
+    }
     if (has) { planShown = true; break }
   }
   check(planShown, '点海面 → 出航计划面板弹出')

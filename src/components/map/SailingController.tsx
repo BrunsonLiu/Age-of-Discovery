@@ -5,6 +5,7 @@ import { isLandAt } from '@/utils/seaRoute'
 import { advanceAlongRoute } from '@/utils/sailStep'
 import { effectiveFleetSpeed, dailyDistanceNm } from '@/utils/navigation'
 import { useFxStore as useFx } from '@/store/useFxStore'
+import { echoAt } from '@/data/logbook'
 import { STANCES } from '@/utils/segment'
 import { WEATHER_INFO, weatherFavorFactor } from '@/utils/weather'
 import {
@@ -339,6 +340,20 @@ function haversineNm(lat1: number, lng1: number, lat2: number, lng2: number): nu
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)) * 0.539957
 }
 
+/**
+ * 到港通知的一句话回执。
+ *
+ * 必须读 arriveAtPort **之后**的 store：应验页是它刚写进去的，拿调用前的快照
+ * 问不到。写着"添了几页"就得真添几页 —— 应验时是见闻页 + 应验页共两页。
+ */
+function arrivalMessage(portName: string, portId: number): string {
+  const now = useGameStore.getState()
+  const echoed = echoAt(now.logbook, portId, now.fleet.day)
+  return echoed
+    ? `你到达了${portName}。上回那句话应验了，日志添了两页，去翻翻看。`
+    : `你到达了${portName}。日志添了一页，去翻翻看。`
+}
+
 /** 抵达处理 */
 function arrive(state: ReturnType<typeof useGameStore.getState>) {
   const target = state.waypoint
@@ -352,7 +367,9 @@ function arrive(state: ReturnType<typeof useGameStore.getState>) {
       id: `arrive-${target.portId}-${Date.now()}`,
       type: 'discovery',
       title: '抵达港口',
-      message: `你到达了${port?.nameCn ?? '目的地'}`,
+      // 「回来有个东西在等你」：到港必带回一页见闻，通知里得指过去，
+      // 否则新页只会静悄悄躺在面板里，玩家以为这一趟什么都没留下。
+      message: arrivalMessage(port?.nameCn ?? '目的地', target.portId),
     })
   } else {
     let nearestPort: { port: typeof ports[0]; dist: number } | null = null
@@ -370,7 +387,7 @@ function arrive(state: ReturnType<typeof useGameStore.getState>) {
         id: `arrive-${nearestPort.port.id}-${Date.now()}`,
         type: 'discovery',
         title: '抵达附近港口',
-        message: `你到达了${nearestPort.port.nameCn}`,
+        message: arrivalMessage(nearestPort.port.nameCn, nearestPort.port.id),
       })
     } else {
       useGameStore.setState({

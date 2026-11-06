@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Anchor, Sailboat, Swords, Star, Waves } from 'lucide-react'
+import { Anchor, ChevronDown, Sailboat, Swords, Star, Waves } from 'lucide-react'
 import MiniGameGlyph from '@/components/ui/MiniGameGlyph'
 import { useGameStore } from '@/store/useGameStore'
 import { useFxStore as useFx } from '@/store/useFxStore'
@@ -66,6 +66,9 @@ export default function MiniGameOverlay({ gameId, onFinish }: MiniGameOverlayPro
 
   const [phase, setPhase] = useState<Phase>('intro')
   const [score, setScore] = useState(0)
+  // 开场只留「按哪个键」这一句；轮数、秒数、加成百分比都是想算才算的细账，
+  // 默认收起（信息一条不删，展开后仍是改前那份完整说明）。
+  const [showFinePrint, setShowFinePrint] = useState(false)
   const copy = MINI_GAME_COPY[gameId]
 
   // 占用全局键盘：挂载期间空格/数字键/方向键归小游戏，其余通道一律不响应
@@ -123,7 +126,7 @@ export default function MiniGameOverlay({ gameId, onFinish }: MiniGameOverlayPro
       role="dialog"
       aria-label="事件小游戏"
     >
-      <div className="my-auto w-[30rem] max-w-[94vw] bg-ocean-900/95 border border-gold-700/40 rounded-xl shadow-2xl overflow-hidden animate-fade-in-scale">
+      <div className="my-auto w-[30rem] max-w-[94vw] bg-ocean-900/95 border border-gold-700/40 rounded-xl shadow-2xl overflow-hidden animate-fade-in-scale" data-testid="minigame-panel">
         {/* 标题栏 */}
         <div className="px-4 py-3 border-b border-gold-700/30 bg-ocean-800/50 flex items-center justify-between">
           <div>
@@ -141,37 +144,57 @@ export default function MiniGameOverlay({ gameId, onFinish }: MiniGameOverlayPro
 
         {/* ---------- 开始前 ---------- */}
         {phase === 'intro' && (
-          <div className="p-5 space-y-4">
-            <div className="bg-ocean-800/40 border border-gold-700/20 rounded p-3 space-y-2 text-xs font-serif">
+          <div className="p-5 space-y-3">
+            {/* 唯一必读的一句：讲清这个游戏按什么键 */}
+            <div className="bg-ocean-800/40 border border-gold-700/20 rounded p-3 text-xs font-serif">
               <p
                 className="text-gold-200"
                 dangerouslySetInnerHTML={{ __html: copy.brief }}
               />
-              <ul className="space-y-1.5 text-gold-400">
-                {copy.bullets.map((b, i) => (
-                  <li key={i}>· {b}</li>
-                ))}
-              </ul>
             </div>
 
-            <div className="bg-gold-900/10 border border-gold-700/25 rounded p-3 text-xs font-serif">
-              <p className="flex items-center gap-1 text-gold-300 mb-1">
-                <Anchor size={11} aria-hidden="true" />
-                你的船况
-              </p>
-              <ul className="space-y-1 text-gold-500">
-                {describeModifiers(modifiers, ctx).map(line => (
-                  <li key={line}>· {line}</li>
-                ))}
-              </ul>
-            </div>
+            <button
+              type="button"
+              aria-expanded={showFinePrint}
+              data-testid="minigame-fine-print-toggle"
+              onClick={() => setShowFinePrint(v => !v)}
+              className="w-full min-h-[36px] flex items-center justify-center gap-1 text-gold-400 hover:text-gold-200 text-xs font-serif press transition-colors"
+            >
+              {showFinePrint ? '收起细则' : '怎么算分 · 船况加成'}
+              <ChevronDown size={12} aria-hidden="true" className={`transition-transform ${showFinePrint ? 'rotate-180' : ''}`} />
+            </button>
 
-            <p className="text-gold-400 text-[11px] font-serif text-center">
-              这一段的操作会决定结局概率往哪边偏——手稳的人拿好结果。
-            </p>
+            {showFinePrint && (
+              <div className="space-y-3" data-testid="minigame-fine-print">
+                <div className="bg-ocean-800/40 border border-gold-700/20 rounded p-3 text-xs font-serif">
+                  <ul className="space-y-1.5 text-gold-400">
+                    {copy.bullets.map((b, i) => (
+                      <li key={i}>· {b}</li>
+                    ))}
+                  </ul>
+                </div>
+
+                <div className="bg-gold-900/10 border border-gold-700/25 rounded p-3 text-xs font-serif">
+                  <p className="flex items-center gap-1 text-gold-300 mb-1">
+                    <Anchor size={11} aria-hidden="true" />
+                    你的船况
+                  </p>
+                  <ul className="space-y-1 text-gold-500">
+                    {describeModifiers(modifiers, ctx).map(line => (
+                      <li key={line}>· {line}</li>
+                    ))}
+                  </ul>
+                </div>
+
+                <p className="text-gold-400 text-xs font-serif text-center">
+                  这一段的操作会决定结局概率往哪边偏——手稳的人拿好结果。
+                </p>
+              </div>
+            )}
 
             <button
               onClick={startRun}
+              data-testid="minigame-start"
               className="w-full py-2.5 text-sm font-serif text-gold-100 bg-gold-700/70 hover:bg-gold-600/80 rounded-lg press transition-all"
             >
               {copy.start}
@@ -214,11 +237,11 @@ export default function MiniGameOverlay({ gameId, onFinish }: MiniGameOverlayPro
 
             <div className="grid grid-cols-2 gap-2 text-center bg-ocean-800/40 rounded p-2.5">
               <div>
-                <div className="text-gold-500 text-[10px] font-serif">操作评分</div>
+                <div className="text-gold-500 text-xs font-serif">操作评分</div>
                 <div className="text-gold-200 text-lg font-serif">{score.toFixed(2)}</div>
               </div>
               <div>
-                <div className="text-gold-500 text-[10px] font-serif">加成修正</div>
+                <div className="text-gold-500 text-xs font-serif">加成修正</div>
                 <div className="text-gold-200 text-lg font-serif">
                   {modifiers.windowBonus > 0 ? `+${Math.round(modifiers.windowBonus * 100)}%` : '基准'}
                 </div>

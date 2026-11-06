@@ -43,7 +43,7 @@ export default function SoundToggle() {
             aria-label="配乐音量"
             title={`配乐音量 ${Math.round(bgm * 100)}%`}
           />
-          <span className="text-[9px] text-gold-400 font-serif tabular-nums w-6 text-right">
+          <span className="text-xs text-gold-400 font-serif tabular-nums w-6 text-right">
             {Math.round(bgm * 100)}%
           </span>
         </div>

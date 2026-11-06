@@ -62,7 +62,7 @@ export default function EventResult({ outcome, performance, traitNote, onContinu
               {MINI_GAME_GRADE_LABEL[grade]} · {performance.toFixed(2)}
             </span>
           </div>
-          <p className="text-[11px] font-serif text-gold-500 leading-relaxed">
+          <p className="text-xs font-serif text-gold-500 leading-relaxed">
             {describePerformance(performance)}
           </p>
         </div>
@@ -124,7 +124,7 @@ export default function EventResult({ outcome, performance, traitNote, onContinu
               </div>
             )
           })}
-          <p className="text-gold-400 text-[10px] font-serif">
+          <p className="text-gold-400 text-xs font-serif">
             {Object.values(outcome.factionChange).some(v => (v ?? 0) > 0) && Object.values(outcome.factionChange).some(v => (v ?? 0) < 0)
               ? '有人记住了你的好处，也有人记住了你的坏处——海上没有只赚不赔的选择。'
               : Object.values(outcome.factionChange).some(v => (v ?? 0) > 0)
@@ -150,7 +150,7 @@ export default function EventResult({ outcome, performance, traitNote, onContinu
               </div>
             )
           })}
-          <p className="text-gold-400 text-[10px] font-serif">
+          <p className="text-gold-400 text-xs font-serif">
             酒馆里的传闻正在成形：他们开始用一个词来形容你。
           </p>
         </div>
@@ -159,7 +159,7 @@ export default function EventResult({ outcome, performance, traitNote, onContinu
       {/* 第二条线：名船员个人事件的回响 */}
       {outcome.crewEvent && (
         <div className="inlay rounded-lg p-3">
-          <p className="flex items-center gap-1.5 text-gold-500 text-[10px] font-serif">
+          <p className="flex items-center gap-1.5 text-gold-500 text-xs font-serif">
             {outcome.crewEvent.dies ? (
               <><Skull size={11} className="shrink-0 text-danger-400" aria-hidden="true" />全舰默哀。</>
             ) : outcome.crewEvent.leaves ? (

@@ -4,6 +4,7 @@ import { useGameStore } from '@/store/useGameStore'
 import { UI_ASSETS } from '@/data/uiAssets'
 import { GAME_BALANCE } from '@/data/gameConfig'
 import { calculateDailyConsumption, prevailingWindBearing, dailyDistanceNm } from '@/utils/navigation'
+import { dailyRates } from '@/utils/voyage'
 import { ports } from '@/data/ports'
 import { shipSprite } from '@/data/shipSprites'
 import { onUiCommand } from '@/utils/uiBus'
@@ -53,14 +54,14 @@ function Fold({
         aria-expanded={open}
         className="w-full flex items-center gap-2 px-2.5 py-1.5 text-left press"
       >
-        <span className={`inline-flex items-center gap-1.5 font-serif text-[11px] shrink-0 ${danger ? 'text-danger-300' : 'text-gold-400'}`}>
+        <span className={`inline-flex items-center gap-1.5 font-serif text-xs shrink-0 ${danger ? 'text-danger-300' : 'text-gold-400'}`}>
           {icon}
           {title}
         </span>
         {!open && summary && (
-          <span className="font-serif text-[10px] text-gold-600 truncate flex-1">{summary}</span>
+          <span className="font-serif text-xs text-gold-600 truncate flex-1">{summary}</span>
         )}
-        <span className="ml-auto font-serif text-[10px] text-gold-700 shrink-0">
+        <span className="ml-auto font-serif text-xs text-gold-700 shrink-0">
           {open ? '收起 ▴' : '▾'}
         </span>
       </button>
@@ -99,6 +100,7 @@ export default function VoyagePlanModal() {
   const buyRouteIntel = useGameStore(s => s.buyRouteIntel)
   const weather = useGameStore(s => s.weather)
   const shipPos = useGameStore(s => s.shipPosition)
+  const stance = useGameStore(s => s.stance)
 
   // 键盘通道：Enter 升起旗帜，Esc 再想想（见 hooks/useKeyboardControls）
   // 注意：钩子必须在提前 return 之前注册，避免 pendingVoyage 变化时钩子顺序变化
@@ -151,11 +153,35 @@ export default function VoyagePlanModal() {
     durabilityCarry: fleet.durabilityCarry,
   })
 
-  // 补给是否够：按最省的方针算（抢行最省粮），仍不够就是真的不够
-  const cheapestFood = Math.min(...ledgers.map(l => l.food))
-  const cheapestWater = Math.min(...ledgers.map(l => l.water))
-  const foodOk = fleet.food >= cheapestFood
-  const waterOk = fleet.water >= cheapestWater
+  /**
+   * 补给够不够：**按结论句里写的那个走法算**。
+   *
+   * 结论写的是「约 N 天可达」，N 是「按部就班」的天数；旧实现却拿
+   * 三个方针里最省的（抢行）总消耗当判定线。实测：粮 15 / 水充足、
+   * 6 天航程，抢行只要 15 粮但按部就班要 18 粮 —— 界面说「补给偏紧 ·
+   * 约 6 天可达」，玩家照默认一路按部就班，第 5 天就断粮。
+   * 判定与文案不同源，等于开了一张兑现不了的空头支票。
+   *
+   * 抢行仍够时另给一条可行动的路（明确写清总共要多少粮水），
+   * 而不是笼统一句「回港补给」。
+   */
+  const steadyLedger = ledgers.find(l => l.stance.id === 'steady')!
+  const rushLedger = ledgers.find(l => l.stance.id === 'rush')!
+  const needFood = steadyLedger.food
+  const needWater = steadyLedger.water
+  const foodOk = fleet.food >= needFood
+  const waterOk = fleet.water >= needWater
+  const rushOk = fleet.food >= rushLedger.food && fleet.water >= rushLedger.water
+
+  /**
+   * 两套日耗都必须走 dailyRates（与顶栏、store.advanceDay 同源）。
+   * 港内是「船员上岸自给」的 1/4 口径，起航后才按方针倍率扣。
+   * 旧实现在这里直接写基础消耗 crew×0.1 / ×0.15：实测 30 人船
+   * 面板写「每日耗 3 粮 / 5 水」，顶栏同一屏写「每天吃 1 份」，
+   * 港内实际只扣 1 / 2 —— 一屏两个互相矛盾的数字。
+   */
+  const portRates = dailyRates(fleet, stance)
+  const seaRates = dailyRates({ ...fleet, isSailing: true }, 'steady')
 
   // 三日天气预报：起锚前的最后一眼（位置取出发地/船位）
   const forecast = (() => {
@@ -171,9 +197,10 @@ export default function VoyagePlanModal() {
   // 「最快方针需 12 粮 / 18 水」和「12 / 500」两组数字。
   // 那是一次心算，而玩家此刻只想得到一个"能走/不能走"。
   // 系统明明有全部数据，没理由让玩家自己除。
-  const steadyDays = ledgers.find(l => l.stance.id === 'steady')?.days ?? 0
-  const foodDays = consumption.food > 0 ? Math.floor(fleet.food / consumption.food) : 99
-  const waterDays = consumption.water > 0 ? Math.floor(fleet.water / consumption.water) : 99
+  const steadyDays = steadyLedger.days
+  // 「只够几天」也按起航后按部就班的日耗算，不拿港内口径或基础值混用
+  const foodDays = seaRates.foodPerDay > 0 ? Math.floor(fleet.food / seaRates.foodPerDay) : 99
+  const waterDays = seaRates.waterPerDay > 0 ? Math.floor(fleet.water / seaRates.waterPerDay) : 99
 
   const verdict = (() => {
     if (!foodOk || !waterOk) {
@@ -182,17 +209,19 @@ export default function VoyagePlanModal() {
       return {
         tone: 'danger' as const,
         icon: '⚠',
-        text: `${what}——只够 ${shortDays} 天，这趟最少要 ${steadyDays} 天`,
-        sub: '回港补给，或改去更近的港口',
+        text: `${what}——按部就班只够 ${shortDays} 天，这趟要 ${steadyDays} 天`,
+        sub: rushOk
+          ? `回港补给，或一路「抢行」：全程只需 ${rushLedger.food} 粮 / ${rushLedger.water} 水`
+          : '回港补给，或改去更近的港口',
       }
     }
-    // 够但余量不到 1.5 倍：不拦你，但提醒一句
-    const tight = fleet.food < cheapestFood * 1.5 || fleet.water < cheapestWater * 1.5
+    // 够但余量不到 1.5 倍：不拦你，但提醒一句（口径与上面的判定同源）
+    const tight = fleet.food < needFood * 1.5 || fleet.water < needWater * 1.5
     return {
       tone: tight ? 'gold' as const : 'safe' as const,
       icon: tight ? '△' : '✓',
       text: tight ? `补给偏紧 · 约 ${steadyDays} 天可达` : `补给充足 · 约 ${steadyDays} 天可达`,
-      sub: tight ? '路上别耽搁；「抢行」能再省一些粮水' : '',
+      sub: tight ? '路上别耽搁；细账可展开看' : '',
     }
   })()
 
@@ -237,7 +266,7 @@ export default function VoyagePlanModal() {
           />
           <div className="min-w-0">
             <h2 className="pirate-title text-base text-gold-300">出航计划</h2>
-            <p className="text-gold-500 font-serif text-[11px] mt-0.5 truncate">
+            <p className="text-gold-500 font-serif text-xs mt-0.5 truncate">
               {fromPort?.nameCn ?? '当前海域'} → <span className="text-gold-200">{destName}</span>
             </p>
           </div>
@@ -248,25 +277,25 @@ export default function VoyagePlanModal() {
           <div className={`rounded border px-3 py-2 ${verdictCls}`}>
             <div className="flex items-baseline gap-1.5">
               <span className="text-sm shrink-0">{verdict.icon}</span>
-              <span className="font-serif text-[13px] leading-snug">{verdict.text}</span>
+              <span data-testid="voyage-verdict-text" className="font-serif text-[13px] leading-snug">{verdict.text}</span>
             </div>
             {verdict.sub && (
-              <p className="font-serif text-[10px] mt-0.5 opacity-70">{verdict.sub}</p>
+              <p className="font-serif text-xs mt-0.5 opacity-70">{verdict.sub}</p>
             )}
           </div>
 
           {/* ② 三个关键数字：航程 / 危险 / 风向 */}
           <div className="grid grid-cols-3 gap-2 text-center bg-ocean-800/40 rounded px-2 py-1.5">
             <div>
-              <div className="text-gold-600 text-[10px] font-serif">航程</div>
+              <div className="text-gold-600 text-xs font-serif">航程</div>
               <div className="text-gold-200 text-xs font-serif tabular-nums">{route.distance} 海里</div>
             </div>
             <div>
-              <div className="text-gold-600 text-[10px] font-serif">危险</div>
+              <div className="text-gold-600 text-xs font-serif">危险</div>
               <div className="text-danger-400 text-xs font-serif">{dangerStars(route.dangerLevel)}</div>
             </div>
             <div>
-              <div className="text-gold-600 text-[10px] font-serif">风向</div>
+              <div className="text-gold-600 text-xs font-serif">风向</div>
               <div className={`text-xs font-serif ${wind.cls}`}>{wind.text}</div>
             </div>
           </div>
@@ -279,12 +308,12 @@ export default function VoyagePlanModal() {
                   const fi = WEATHER_INFO[w.kind]
                   return (
                     <div key={i} className="text-center bg-ocean-900/40 rounded py-1">
-                      <div className="text-gold-600 text-[10px] font-serif">第{fleet.day + i}天</div>
+                      <div className="text-gold-600 text-xs font-serif">第{fleet.day + i}天</div>
                       <div className="flex justify-center my-1 text-gold-300">
                         <WeatherIcon kind={w.kind} size={15} />
                       </div>
-                      <div className="text-gold-200 text-[11px] font-serif">{fi.label}</div>
-                      <div className={`text-[10px] font-serif tabular-nums ${fi.sailMul < 1 ? 'text-danger-400' : 'text-safe-400'}`}>
+                      <div className="text-gold-200 text-xs font-serif">{fi.label}</div>
+                      <div className={`text-xs font-serif tabular-nums ${fi.sailMul < 1 ? 'text-danger-400' : 'text-safe-400'}`}>
                         航速 ×{fi.sailMul.toFixed(2)}
                       </div>
                     </div>
@@ -297,23 +326,23 @@ export default function VoyagePlanModal() {
           {/* 航线情报：只有 3 个数字，买之前只有一行——不需要折叠 */}
           <div className="bg-ocean-800/35 border border-gold-700/20 rounded px-2.5 py-1.5">
             <div className="flex items-center gap-2">
-              <span className="flex items-center gap-1 text-gold-400 font-serif text-[11px] shrink-0">
+              <span className="flex items-center gap-1 text-gold-400 font-serif text-xs shrink-0">
                 <MapIcon size={11} aria-hidden="true" />
                 航线情报
               </span>
               {intel ? (
-                <span className="font-mono text-[10px] tabular-nums text-gold-600">
+                <span className="font-mono text-xs tabular-nums text-gold-600">
                   晴 <span className="text-safe-400">{Math.round(intel.fairWeather * 100)}%</span>
                   {' · '}匪 <span className="text-danger-400">{Math.round(intel.pirateRisk * 100)}%</span>
                   {' · '}风暴 <span className="text-danger-400">{Math.round(intel.stormRisk * 100)}%</span>
                 </span>
               ) : (
                 <>
-                  <span className="font-serif text-[10px] text-gold-700 flex-1 truncate">未掌握</span>
+                  <span className="font-serif text-xs text-gold-700 flex-1 truncate">未掌握</span>
                   <button
                     onClick={buyRouteIntel}
                     disabled={fleet.gold < GAME_BALANCE.INTEL_COST}
-                    className="shrink-0 text-[10px] font-serif text-gold-200 bg-gold-700/40 hover:bg-gold-600/50 disabled:opacity-40 px-2 py-0.5 rounded transition-colors"
+                    className="shrink-0 text-xs font-serif text-gold-200 bg-gold-700/40 hover:bg-gold-600/50 disabled:opacity-40 px-2 py-0.5 rounded transition-colors"
                   >
                     买通老船长 · {GAME_BALANCE.INTEL_COST} 金
                   </button>
@@ -344,7 +373,7 @@ export default function VoyagePlanModal() {
                   )
                 }
                 return (
-                  <div key={s.id} className="flex items-baseline gap-2 text-[10px] font-mono tabular-nums text-gold-500">
+                  <div key={s.id} className="flex items-baseline gap-2 text-xs font-mono tabular-nums text-gold-500">
                     <span className="font-serif text-gold-300 w-14 shrink-0">{s.icon} {s.name}</span>
                     <span className="text-gold-200 w-10 shrink-0">{l.days} 天</span>
                     <span>粮{deltaText(d.food)}</span>
@@ -355,19 +384,23 @@ export default function VoyagePlanModal() {
                 )
               })}
             </div>
-            <p className="font-serif text-[10px] text-gold-700 leading-relaxed">
+            <p className="font-serif text-xs text-gold-700 leading-relaxed">
               数字是与「按部就班」相比的差值。每到航段起点再选，这里只是提前看一眼。
             </p>
           </Fold>
 
-          {/* 当前库存：一行，供对照 */}
-          <div className="flex items-center justify-between text-[10px] font-serif text-gold-600 px-0.5">
+          {/* 当前库存 + 两套日耗：港内是此刻真正生效的口径，起航后是这趟的口径。
+              数字都走 dailyRates，与顶栏和 store.advanceDay 逐字同源。 */}
+          <div className="flex flex-col gap-0.5 text-xs font-serif text-gold-600 px-0.5">
             <span>
               船上：粮 <span className="text-gold-300 tabular-nums">{fleet.food}</span>
               {' · '}水 <span className="text-gold-300 tabular-nums">{fleet.water}</span>
               {' · '}士气 <span className="text-gold-300 tabular-nums">{fleet.morale}</span>
             </span>
-            <span className="text-gold-700">每日耗 {consumption.food} 粮 / {consumption.water} 水</span>
+            <span data-testid="voyage-supply-rates" className="text-gold-500">
+              港内每日 {portRates.foodPerDay} 粮 / {portRates.waterPerDay} 水
+              {' · '}起航后按部就班 {seaRates.foodPerDay} 粮 / {seaRates.waterPerDay} 水
+            </span>
           </div>
         </div>
 

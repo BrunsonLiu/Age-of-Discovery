@@ -119,7 +119,7 @@ export default function BoardingGame({ modifiers, onDone }: {
             <span className="plank-mark absolute left-1/2 -translate-x-1/2 opacity-0 transition-opacity z-30 text-gold-300" style={{ bottom: '4px' }}>
               <Skull size={26} strokeWidth={1.6} aria-hidden="true" />
             </span>
-            <span className="absolute top-1.5 left-1/2 -translate-x-1/2 text-[10px] font-serif text-gold-400 z-10">
+            <span className="absolute top-1.5 left-1/2 -translate-x-1/2 text-xs font-serif text-gold-400 z-10">
               {i + 1}
             </span>
           </button>
@@ -135,7 +135,7 @@ export default function BoardingGame({ modifiers, onDone }: {
       </div>
 
       <p className="text-gold-300 text-xs font-serif text-center h-4">{hint}</p>
-      <p className="text-[10px] font-serif text-gold-600 text-center">
+      <p className="text-xs font-serif text-gold-600 text-center">
         按 1 / 2 / 3 或直接点跳板 · 进度条见红时推他
       </p>
     </div>

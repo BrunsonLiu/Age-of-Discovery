@@ -127,7 +127,7 @@ export default function HaggleGame({ modifiers, onDone }: {
     <div className="p-5 space-y-4">
       {/* 价格标尺 */}
       <div>
-        <div className="flex items-center justify-between text-[10px] font-serif text-gold-600 mb-2">
+        <div className="flex items-center justify-between text-xs font-serif text-gold-600 mb-2">
           <span>价格标尺</span>
           <span>第 <span ref={roundRef}>1</span>/{HAGGLE_ROUNDS} 轮</span>
         </div>
@@ -158,7 +158,7 @@ export default function HaggleGame({ modifiers, onDone }: {
             style={{ left: '50%', background: '#7dd3a0' }}
           />
         </div>
-        <div className="flex justify-between text-[10px] font-serif text-gold-600 mt-1">
+        <div className="flex justify-between text-xs font-serif text-gold-600 mt-1">
           <span className="text-rose-400/80">底线 {HAGGLE_FLOOR}</span>
           <span className="text-amber-500/70">危险线 {HAGGLE_DANGER_LINE}</span>
           <span>上限 {HAGGLE_CEILING}</span>
@@ -167,12 +167,12 @@ export default function HaggleGame({ modifiers, onDone }: {
 
       {/* 当前报价 */}
       <div className="text-center rounded-lg border border-gold-700/30 bg-ocean-800/40 py-3">
-        <p className="text-[10px] font-serif text-gold-600">当前报价</p>
+        <p className="text-xs font-serif text-gold-600">当前报价</p>
         <p className="text-3xl font-serif text-gold-200">
           {broken ? '谈崩' : `${price}`}
           {!broken && <span className="text-sm text-gold-500 ml-1">金</span>}
         </p>
-        <p className="text-[10px] font-serif text-gold-600 mt-0.5">
+        <p className="text-xs font-serif text-gold-600 mt-0.5">
           开价 {HAGGLE_START_PRICE} · 对方上限 {HAGGLE_CEILING} · 每加一次 +{HAGGLE_RAISE_STEP}
         </p>
       </div>
@@ -186,21 +186,21 @@ export default function HaggleGame({ modifiers, onDone }: {
           className="py-3 rounded-lg border border-gold-700/40 bg-ocean-800/60 hover:bg-gold-700/30 press transition-all"
         >
           <div className="text-base text-gold-200">加价 ↑</div>
-          <div className="text-[10px] font-serif text-gold-500 mt-0.5">+{HAGGLE_RAISE_STEP}</div>
+          <div className="text-xs font-serif text-gold-500 mt-0.5">+{HAGGLE_RAISE_STEP}</div>
         </button>
         <button
           onClick={() => { const s = stateRef.current; if (s && !s.finished) act(s, 'concede') }}
           className="py-3 rounded-lg border border-gold-700/40 bg-ocean-800/60 hover:bg-gold-700/30 press transition-all"
         >
           <div className="text-base text-gold-200">成交 ↓</div>
-          <div className="text-[10px] font-serif text-gold-500 mt-0.5">按现价落袋</div>
+          <div className="text-xs font-serif text-gold-500 mt-0.5">按现价落袋</div>
         </button>
         <button
           onClick={() => { const s = stateRef.current; if (s && !s.finished) act(s, 'accept') }}
           className="py-3 rounded-lg border border-gold-700/40 bg-ocean-800/60 hover:bg-gold-700/30 press transition-all"
         >
           <div className="text-base text-gold-200">收手 ␣</div>
-          <div className="text-[10px] font-serif text-gold-500 mt-0.5">对方再让一步</div>
+          <div className="text-xs font-serif text-gold-500 mt-0.5">对方再让一步</div>
         </button>
       </div>
     </div>

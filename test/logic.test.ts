@@ -24,7 +24,7 @@ import {
   coastSegments, graticuleSegments,
   GRATICULE_MERIDIANS, GRATICULE_PARALLELS, GRATICULE_STEP_DEG,
 } from '../src/utils/chartLines'
-import { readFileSync, readdirSync } from 'node:fs'
+import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { birdPose, flagYaw, smokePose } from '../src/utils/portLife'
 import { DIALOGUE_RULES, dialogueBudget, pickDialogue, unreachableScripts, type DialogueContext } from '../src/utils/dialogueTriggers'
 import { traitEffect } from '../src/utils/outcomeAdjust'
@@ -51,13 +51,16 @@ import {
   normalizeAngle, type HelmSample,
 } from '../src/utils/helm'
 import { useGameStore } from '../src/store/useGameStore'
+import { useMapStore } from '../src/store/useMapStore'
+import { arrivalCountAt, clueCenter, hasAnyService, latestArrivalAt, previousArrivalAt } from '../src/utils/harbor'
+import type { LogbookEntry } from '../src/types'
 import { SHIP_SPRITES, SPECIAL_SPRITES, shipSprite } from '../src/data/shipSprites'
 import { crewPortrait, officerPortrait, rivalPortrait } from '../src/data/portraits'
 import { sceneImage, shouldUseSceneImage } from '../src/data/sceneImages'
 import { UI_ASSETS } from '../src/data/uiAssets'
 import { getStatusColor } from '../src/utils/resourceColor'
 import { FX_ASSETS, BG_ASSETS } from '../src/data/envAssets'
-import { portImage } from '../src/data/portImages'
+import { harborBackdrop, portImage } from '../src/data/portImages'
 import {
   DIALOGUE_SCRIPTS, OPENING_SCRIPT_ID, SPEAKERS,
   advanceDialogueIndex, getScript, getSpeaker,
@@ -145,6 +148,7 @@ import {
 import { calculateBearing } from '../src/utils/navigation'
 import { readFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
+import { createHash } from 'node:crypto'
 import type { EventOutcome, Fleet, GameEvent, MiniGameId, Route } from '../src/types'
 import {
   greatCircleNm, greatCirclePoint, buildRouteGeometry, positionAtNm, traveledNmAt,
@@ -159,6 +163,11 @@ import { hasSnow, SNOW_LAT, rankMaxForZoom, PEAK_MIN_ELEV } from '../src/utils/t
 import { chooseLabelSides } from '../src/utils/portLabels'
 import { ports } from '../src/data/ports'
 import { tasks } from '../src/data/tasks'
+import {
+  appendLogbook, countEchoes, echoAt, echoDayFor, echoForPort, findClueFor,
+  makeArrivalEntry, makeEchoEntry, makeTitleEntry, markAllRead, pickRumor, LOGBOOK_MAX,
+} from '../src/data/logbook'
+import { parseSaveText, SAVE_FIELDS, SAVE_KEY, SAVE_VERSION } from '../src/utils/saveFile'
 
 let passed = 0
 let failed = 0
@@ -1047,15 +1056,20 @@ console.log('== 27. 肖像与事件场景资产 ==')
     const info = imageInfo(readFileSync(p))
     assert(info.width > 1000 && info.width < 1400 && info.height > 500 && info.height < 800, `场景 ${name} 高清尺寸合规（${info.width}×${info.height}）`)
   }
-  // 第二批 P2：9 枚徽记（4 派系 + 5 特质），SVG 与 PNG 各一份
+  /*
+   * 第二批 P2：9 枚徽记（4 派系 + 5 特质）。
+   * 原来 SVG 与 PNG 各留一份、两条都断言存在；实测代码（data/badges.ts）只引用 .svg，
+   * PNG 那 9 份（合计 0.79MB）是死文件，已移进 `unused-assets/legacy/assets/ui/`。
+   * 现在只断言**真正被加载的 .svg**，并顺带确认它是个 SVG（防止放个空文件）。
+   */
   for (const file of [
     'faction_crown', 'faction_guild', 'faction_scholars', 'faction_brethren',
     'trait_merchant', 'trait_bulwark', 'trait_leader', 'trait_explorer', 'trait_surgeon',
   ]) {
     const svgP = join(pubDir, 'public', 'assets', 'ui', `${file}.svg`)
-    const pngP = join(pubDir, 'public', 'assets', 'ui', `${file}.png`)
     assert(existsSync(svgP), `徽记 ${file}.svg 存在`)
-    assert(existsSync(pngP), `徽记 ${file}.png 存在`)
+    const head = readFileSync(svgP, 'utf8').slice(0, 120)
+    assert(/<svg[\s>]/.test(head), `徽记 ${file}.svg 是有效 SVG（开头：${head.slice(0, 40)}）`)
     const buf = readFileSync(svgP)
     const text = buf.toString('utf8')
     assert(text.includes('<svg') && text.includes('viewBox="0 0 512 512"'),
@@ -1081,14 +1095,29 @@ console.log('== 29. 环境资产：海面/港口/天气层/结局背景 ==')
     assert(w === 512 && h === 512, `海面 ${file} 为 512×512（实际 ${w}×${h}）`)
     assert(buf[24] === 8 && buf[25] === 2, `海面 ${file} 为 8bit RGB`)
   }
-  // C 组港口：五张 1600×900 场景图
-  const PORT_FILES = ['port_caribbean.png', 'port_northern_europe.png', 'port_seville.png', 'port_southeast_asia.png', 'port_west_africa.png']
-  for (const file of PORT_FILES) {
-    const p = join(pubDir, 'public', 'assets', 'ports', file)
-    assert(existsSync(p), `港口 ${file} 存在`)
-    const buf = readFileSync(p)
-    const w = buf.readUInt32BE(16); const h = buf.readUInt32BE(20)
-    assert(w === 1600 && h === 900, `港口 ${file} 为 1600×900（实际 ${w}×${h}）`)
+  /*
+   * C 组港口：五张 1600×900 场景图 —— **只保留 WebP 版**。
+   * 原来这里断言的是同名 .png（每张 2MB+，合计 11.3MB），而代码引用的一直是 .webp；
+   * 那批 PNG 已移进 `unused-assets/legacy/`（产物因此从 34MB 降到 19MB）。
+   * 现在断言的必须是**真正被加载的那个文件**，否则守卫在守一个没人用的东西。
+   */
+  const PORT_FILES = ['port_caribbean', 'port_northern_europe', 'port_seville', 'port_southeast_asia', 'port_west_africa']
+  for (const stem of PORT_FILES) {
+    for (const ext of ['webp']) {
+      const file = `${stem}.${ext}`
+      const p = join(pubDir, 'public', 'assets', 'ports', file)
+      assert(existsSync(p), `港口 ${file} 存在`)
+      const buf = readFileSync(p)
+      // WebP 三种容器的尺寸位置不同，与上面 harbor_europe 的解析保持同一套
+      const tag = buf.subarray(12, 16).toString('ascii')
+      let w = 0, h = 0
+      if (tag === 'VP8X') { w = buf.readUIntLE(24, 3) + 1; h = buf.readUIntLE(27, 3) + 1 }
+      else if (tag === 'VP8 ') { w = buf.readUInt16LE(26) & 0x3fff; h = buf.readUInt16LE(28) & 0x3fff }
+      else if (tag === 'VP8L') { const bits = buf.readUInt32LE(21); w = (bits & 0x3fff) + 1; h = ((bits >> 14) & 0x3fff) + 1 }
+      assert(w === 1600 && h === 900, `港口 ${file} 为 1600×900（实际 ${w}×${h}）`)
+      const kb = Math.round(buf.length / 1024)
+      assert(kb <= 400, `港口 ${file} ≤400KB（实际 ${kb}KB；PNG 原图是 2MB+）`)
+    }
   }
   // 20 个港口全部有图，且抽样式对位正确
   for (const port of ports) {
@@ -1123,6 +1152,53 @@ console.log('== 29. 环境资产：海面/港口/天气层/结局背景 ==')
     // 断言写"至少 13"而不是"等于 20"：剩下的 12 港本来就该共用区域图，
     // 要求 20 张等于要求这 12 港也各有专属图——那是还没做的内容，不是 bug。
     assert(distinct >= 13, `20 个港口用 ${distinct} 张不同的图（改造前只有 5 张）`)
+  }
+  /*
+   * 【岸上整屏背景：必须是全景图，不能拿 96px 缩略图放大】
+   *
+   * 这条守卫防的是"图能显示就算过"的假绿：port_seville.webp 在面板里当 96px
+   * 缩略图完全够用，可铺满 1440~1920 的整屏就是一团涂抹，玩家认不出这是哪。
+   * 判据四条：
+   *   ① 伊比利亚三港的 backdrop 指向 harbor_europe，且与缩略图**不是同一张**；
+   *   ② 文件真实存在，WebP 头解出来的原生宽 ≥1600（不许降级替换）；
+   *   ③ 体积 ≤600KB（原始无损是 2.7MB，首屏背景不能这个量级）；
+   *   ④ 没配全景的港口回落到 portImage，不能变空图。
+   */
+  {
+    const HB = ['harbor_europe.webp']
+    for (const id of [6, 7, 20]) {
+      const u = harborBackdrop(id)
+      assert(!!u && u.endsWith(HB[0]), `港口 ${id} 的岸上背景用全景图（${u}）`)
+      assert(u !== portImage(id), `港口 ${id} 的全景图与面板缩略图是两张（不是同一文件）`)
+    }
+    // 没配全景的港口必须回落，不能 undefined
+    for (const port of ports) {
+      assert(!!harborBackdrop(port.id), `港口 ${port.nameCn} 的岸上背景有值（回落或全景）`)
+    }
+    assert(harborBackdrop(8) === portImage(8), '未配全景的港口（伦敦）回落到缩略图，行为不变')
+
+    const p = join(pubDir, 'public', 'assets', 'ports', HB[0])
+    assert(existsSync(p), '全景图 harbor_europe.webp 存在')
+    const buf = readFileSync(p)
+    assert(buf.subarray(0, 4).toString('ascii') === 'RIFF', '全景图是 WebP 容器')
+    // VP8X（扩展）/ VP8 （有损）/ VP8L（无损）三种头的尺寸位置不同，逐个分支解
+    let w = 0, h = 0
+    const tag = buf.subarray(12, 16).toString('ascii')
+    if (tag === 'VP8X') {
+      w = buf.readUIntLE(24, 3) + 1
+      h = buf.readUIntLE(27, 3) + 1
+    } else if (tag === 'VP8 ') {
+      w = buf.readUInt16LE(26) & 0x3fff
+      h = buf.readUInt16LE(28) & 0x3fff
+    } else if (tag === 'VP8L') {
+      const bits = buf.readUInt32LE(21)
+      w = (bits & 0x3fff) + 1
+      h = ((bits >> 14) & 0x3fff) + 1
+    }
+    assert(w >= 1600, `全景图原生宽 ≥1600（实际 ${w}×${h}）`)
+    assert(h >= 900, `全景图原生高 ≥900（实际 ${w}×${h}）`)
+    const kb = Math.round(buf.length / 1024)
+    assert(kb <= 600, `全景图体积 ≤600KB（实际 ${kb}KB；原始无损是 2.7MB，别直接塞回去）`)
   }
   // G 组天气层：四张 1024² 带透明通道（雨/雾/飞沫/云）—— alpha 是硬需求，丢了会出黑框
   for (const [key, url] of Object.entries(FX_ASSETS)) {
@@ -5716,5 +5792,770 @@ console.log('\n== 天数口径守卫 ==')
   assert(dailyDistanceNm(f, [], 1, 1, 0.6) < dailyDistanceNm(f, [], 1, 1, 1),
     '天候倍率确实进了日航程（暴风雨慢于晴天）')
 }
+
+/* ===== 航海日志 / 存档导出导入 / 结局不停机 ===== */
+{
+  console.log('\n== 航海日志与存档 ==')
+
+  // --- 见闻：线索必须是"真实存在且没去过"的港口，不编造目标 ---
+  const allPortIds = ports.map(p => p.id)
+  const firstRumor = pickRumor([6], 3, 6)
+  assert(firstRumor !== null && firstRumor.id !== 6 && allPortIds.includes(firstRumor.id),
+    '线索指向真实存在、且没去过的港')
+  assert(pickRumor(allPortIds, 3, 6) === null, '全图点亮后不再编造线索')
+  assert(makeArrivalEntry(999, 3, [6]) === null, '未知港口不写页')
+
+  const page = makeArrivalEntry(1, 3, [6])!
+  assert(page.id === 'arrival-3-1' && page.read === false, '到港生成一页未读见闻')
+  assert(page.targetPortId !== 1 && page.targetPortId != null, '线索不指向脚下这座港')
+  assert(page.hint !== null && page.hint.includes('不催'), '线索不设期限、明说没有催')
+  assert(makeArrivalEntry(1, 3, [6])?.id === page.id, '同一天同港 id 稳定（可去重）')
+  assert(makeArrivalEntry(1, 4, [6])?.id !== page.id, '不同天是不同的一页')
+
+  // --- 封顶淘汰：称号页是最早写的，不能因为长局被挤掉 ---
+  const titlePage = makeTitleEntry({ key: 't', name: '甲', desc: '乙' }, 1)
+  let thick = appendLogbook([], titlePage)
+  for (let d = 2; d <= LOGBOOK_MAX + 12; d++) {
+    thick = appendLogbook(thick, makeArrivalEntry(1, d, [6])!)
+  }
+  assert(thick.length === LOGBOOK_MAX, `长局日志封顶在 ${LOGBOOK_MAX} 页`)
+  assert(thick.some(e => e.kind === 'title'), '封顶淘汰时称号页永远保留')
+  assert(markAllRead(thick).every(e => e.read), '打开见闻页后全部标已读')
+
+  // --- 存档：格式校验 + 白名单（导入不能覆盖 store 的 action 函数） ---
+  const goodText = JSON.stringify({
+    version: SAVE_VERSION,
+    state: { fleet: { gold: 500, day: 3 }, logbook: [], setActivePanel: 'OVERWRITE' },
+  })
+  const good = parseSaveText(goodText)
+  assert(good.ok === true, '合法存档可读入')
+  if (good.ok) {
+    assert(!('setActivePanel' in good.value.state), '白名单挡住伪造的 action 字段')
+    assert((good.value.state.fleet as { gold: number }).gold === 500, '存档里的舰队数据原样保留')
+  }
+  assert(parseSaveText('not json').ok === false, '坏 JSON 被拒')
+  assert(parseSaveText('{}').ok === false, '缺版本号被拒')
+  assert(parseSaveText(JSON.stringify({ version: SAVE_VERSION, state: {} })).ok === false, '缺舰队数据被拒')
+  assert(parseSaveText(JSON.stringify({ version: SAVE_VERSION + 1, state: { fleet: { gold: 1 } } })).ok === false,
+    '来自未来版本的存档被拒（不静默丢日志）')
+  assert(parseSaveText(JSON.stringify({ version: 1, state: { fleet: { gold: 1 } } })).ok === true,
+    '老版本存档放行，交给 migrate 补字段')
+
+  /*
+   * 白名单与 partialize 必须是同一份：改一处忘另一处，导入就会悄悄丢进度。
+   * 这里用源码守卫而不是 persist.getOptions() —— Node 环境没有 localStorage，
+   * middleware 不会挂上 .persist，运行时拿不到配置；读源码反而是稳定的判据。
+   */
+  const storeSrc = readFileSync(join(process.cwd(), 'src', 'store', 'useGameStore.ts'), 'utf8')
+  assert(storeSrc.includes('name: SAVE_KEY'), '存档键只定义一份（store 引用常量）')
+  assert(storeSrc.includes('version: SAVE_VERSION'), '存档版本只定义一份（store 引用常量）')
+  const pStart = storeSrc.indexOf('partialize: (state) => ({')
+  const pEnd = storeSrc.indexOf('}),', pStart)
+  const partialBlock = storeSrc.slice(pStart, pEnd)
+  const persistedKeys = [...partialBlock.matchAll(/(\w+):\s*state\.(\w+)/g)].map(m => m[1])
+  const missing = SAVE_FIELDS.filter(k => !persistedKeys.includes(k))
+  const extra = persistedKeys.filter(k => !(SAVE_FIELDS as readonly string[]).includes(k))
+  assert(missing.length === 0 && extra.length === 0,
+    `导入白名单与 partialize 完全一致${missing.length || extra.length ? `（缺 ${missing.join(',')} / 多 ${extra.join(',')}）` : ''}`)
+
+  // --- store 集成：到港写页、同天去重 ---
+  const base = useGameStore.getState()
+  useGameStore.setState({
+    logbook: [], claimedVictories: [], collectedDebris: [],
+    discoveredPorts: [6], gamePhase: 'playing', victoryDay: null,
+    currentEvent: null,
+    fleet: { ...base.fleet, day: 10, currentPortId: 1, isSailing: false, gold: 100, morale: 80, food: 100, water: 100 },
+  })
+  useGameStore.getState().arriveAtPort(1)
+  assert(useGameStore.getState().logbook.length === 1, '靠岸带回一页见闻')
+  useGameStore.getState().arriveAtPort(1)
+  assert(useGameStore.getState().logbook.length === 1, '同一天同港不刷重复页')
+  useGameStore.setState({ fleet: { ...useGameStore.getState().fleet, day: 11 } })
+  useGameStore.getState().arriveAtPort(2)
+  assert(useGameStore.getState().logbook.length === 2, '下一趟又多一页（册子会自己变厚）')
+
+  // --- 达标 = 写称号页 + 横幅，不再 gameover 停机 ---
+  const beforeWin = useGameStore.getState()
+  useGameStore.setState({
+    gamePhase: 'playing', gameMode: 'captain', victoryDay: null,
+    claimedVictories: [], currentEvent: null,
+    pendingSegment: null, pendingHelm: null, segmentCount: 0, segmentIndex: 0,
+    fleet: {
+      ...beforeWin.fleet, gold: GAME_BALANCE.VICTORY_GOLD + 10,
+      morale: 80, food: 100, water: 100, isSailing: true, day: 12,
+    },
+  })
+  const pagesBeforeWin = useGameStore.getState().logbook.length
+  useGameStore.getState().advanceDay()
+  const won = useGameStore.getState()
+  assert(won.gamePhase !== 'gameover', '攒够金币不再弹出停机结局')
+  assert(won.claimedVictories.includes('rich'), '称号只领一次地记进状态')
+  assert(won.logbook.some(e => e.kind === 'title'), '称号写成日志里的一页')
+  assert(won.logbook.length === pagesBeforeWin + 1, '达标那天确实多了一页')
+  assert(won.victoryDay !== null, '首次达标日仍被记录（生涯回顾要用）')
+  useGameStore.getState().advanceDay()
+  assert(useGameStore.getState().claimedVictories.filter(k => k === 'rich').length === 1,
+    '第二天不重复领同一个称号')
+
+  // --- 翻船后「接着看海」：不清日志 ---
+  const beforeContinue = useGameStore.getState()
+  useGameStore.setState({
+    gamePhase: 'gameover', gameMode: 'captain',
+    fleet: {
+      ...beforeContinue.fleet, morale: 0, food: 0,
+      ships: beforeContinue.fleet.ships.map(sh => ({ ...sh, durability: 0 })),
+    },
+  })
+  const pagesBeforeContinue = useGameStore.getState().logbook.length
+  useGameStore.getState().continueAsVisitor()
+  const cv = useGameStore.getState()
+  assert(cv.gamePhase === 'playing' && cv.gameMode === 'visitor', '接着看海 → 回到可航行的参观模式')
+  assert(cv.logbook.length === pagesBeforeContinue + 1, '日志没被清空，还添了一页')
+  assert(cv.fleet.morale >= 60 && cv.fleet.food >= 60 && cv.fleet.ships[0].durability >= 40,
+    '资源拉回可航行区间（「继续」不是假按钮）')
+
+  // --- 打捞会在图鉴里点亮一格 ---
+  useGameStore.setState({
+    collectedDebris: [],
+    debrisSpots: [{ id: 'probe-barrel', kind: 'barrel', lat: 10, lng: -20, bornDay: 1 }],
+  })
+  useGameStore.getState().collectDebris('probe-barrel')
+  assert(useGameStore.getState().collectedDebris.includes('barrel'), '捞过的漂流物点亮图鉴一格')
+
+  // --- 源码守卫：结局层不再按 victoryDay 判胜负（否则"先拿称号后翻船"会显示传奇船长） ---
+  const mainSrc = readFileSync(join(process.cwd(), 'src', 'pages', 'MainMap.tsx'), 'utf8')
+  assert(!/const victoryDay\s*=/.test(mainSrc), '结局层不再用 victoryDay 判胜负')
+  const advanceBlock = storeSrc.slice(storeSrc.indexOf('advanceDay: () =>'), storeSrc.indexOf('arriveAtPort: '))
+  assert(!/gamePhase:\s*'gameover'/.test(advanceBlock), 'advanceDay 里不再因达标写 gameover')
+}
+// ---- 岸上视角：第二个空间的纯规则、存档边界与源码守卫 ----
+{
+  // 读源码而不是 useMapStore.persist.getOptions()：Node 里没有 localStorage，
+  // persist middleware 的 API 在测试 bundle 中不一定挂得上（实测 undefined）。
+  const mapStoreSrc = readFileSync(join(process.cwd(), 'src', 'store', 'useMapStore.ts'), 'utf8')
+  const pm = mapStoreSrc.match(/partialize:\s*\(state\)\s*=>\s*\(\{([\s\S]*?)\}\)/)
+  assert(!!pm, '地图 store 的 partialize 仍是显式列字段（守卫前提）')
+  assert(!/viewMode/.test(pm?.[1] ?? ''), 'viewMode 不进存档（刷新一律回海图）')
+  assert(!/renderMode/.test(pm?.[1] ?? ''), 'renderMode 仍不进存档（顺带守住旧规则）')
+  assert(useMapStore.getState().viewMode === 'chart', '默认在海图')
+  useMapStore.getState().setViewMode('harbor')
+  assert(useMapStore.getState().viewMode === 'harbor', '可以切到岸上')
+  useMapStore.getState().setViewMode('chart')
+  assert(useMapStore.getState().viewMode === 'chart', '可以切回海图')
+
+  // 线索只移地图，不编假港口；服务入口按本港设施过滤
+  const seville = ports.find(p => p.id === 6)
+  assert(clueCenter(6)?.[0] === seville?.latitude && clueCenter(6)?.[1] === seville?.longitude,
+    '线索指向真实港口的坐标')
+  assert(clueCenter(null) === null, '没有线索时返回 null，不编一个假港')
+  assert(clueCenter(9999) === null, '不存在的港口 id 返回 null')
+  assert(hasAnyService(['supply', 'trade'], ['repair', 'trade']), '任一服务命中就给入口')
+  assert(!hasAnyService(['supply'], ['shipyard']), '本港没有造船厂就不给造船入口（承诺要兑现）')
+
+  const pages: LogbookEntry[] = [
+    { id: 'new', kind: 'arrival', day: 3, portId: 6, title: '新页', text: '新', aside: '', hint: '听人提起', targetPortId: 1, read: false },
+    { id: 'title', kind: 'title', day: 2, portId: null, title: '称号', text: '', aside: '', hint: null, targetPortId: null, read: true },
+    { id: 'old', kind: 'arrival', day: 1, portId: 6, title: '旧页', text: '旧', aside: '', hint: null, targetPortId: null, read: true },
+    { id: 'other', kind: 'arrival', day: 1, portId: 2, title: '别港', text: '', aside: '', hint: null, targetPortId: null, read: true },
+  ]
+  assert(latestArrivalAt(pages, 6)?.id === 'new', '取该港最新一页，不是最旧')
+  assert(latestArrivalAt(pages, 2)?.id === 'other', '别港的页不会串到本港')
+  assert(latestArrivalAt(pages, 99) === null, '没写过的港返回 null（界面直说还没写）')
+  assert(latestArrivalAt(pages, 6)?.kind === 'arrival', '称号页不会被当成到港见闻')
+  // 岸上铭牌的「第 N 次靠岸」与「上一趟留下的」靠这两个纯函数，
+  // 判据必须是"该港的 arrival 页"，不能把称号页或别港的页数进去。
+  assert(arrivalCountAt(pages, 6) === 2, '该港累计两页，不含称号页与别港')
+  assert(arrivalCountAt(pages, 2) === 1, '别港只数自己的页')
+  assert(arrivalCountAt(pages, 99) === 0, '没去过的港是 0，界面不该写「第 0 次」')
+  assert(previousArrivalAt(pages, 6)?.id === 'old', '上一趟取该港第二新的页，不是最新')
+  assert(previousArrivalAt(pages, 2) === null, '只来过一趟的港没有「上一趟」')
+  assert(previousArrivalAt(pages, 99) === null, '没去过的港也没有「上一趟」')
+
+  // 源码守卫：这些是"改坏就打断玩家"的关键点，注入旧写法必须失败
+  const mainSrc2 = readFileSync(join(process.cwd(), 'src', 'pages', 'MainMap.tsx'), 'utf8')
+  assert(/pointerEvents:\s*viewMode === 'harbor' \? 'none'/.test(mainSrc2),
+    '岸上时地图层关掉命中测试（否则点岸上会穿透设航点）')
+  assert(/fleet\.isSailing \|\| fleet\.currentPortId == null/.test(mainSrc2),
+    '出航或当前港清空时自动回海图（视角不撒谎）')
+  const inviteSrc = readFileSync(join(process.cwd(), 'src', 'components', 'harbor', 'HarborInvite.tsx'), 'utf8')
+  assert(/wasSailing\.current && !fleet\.isSailing/.test(inviteSrc),
+    '邀请条只认「刚从海上回来」的下降沿，刷新页面不重弹')
+  assert(/AUTO_HIDE_MS/.test(inviteSrc), '邀请条会自动收起，不常驻')
+  const harborSrc = readFileSync(join(process.cwd(), 'src', 'components', 'harbor', 'HarborView.tsx'), 'utf8')
+  assert(/hasAnyService\(port\.services, s\.needs\)/.test(harborSrc),
+    '岸上服务入口按本港设施过滤')
+  assert(/clueCenter\(entry\?\.targetPortId/.test(harborSrc),
+    '岸上线索与日志面板共用同一份判定')
+  const logbookViewSrc = readFileSync(join(process.cwd(), 'src', 'components', 'panels', 'LogbookViews.tsx'), 'utf8')
+  assert(/clueCenter\(targetPortId\)/.test(logbookViewSrc), '日志面板也走同一份线索判定')
+
+  // 第二空间不能只有港口面板里的隐藏入口：桌面/移动都要有常驻开关
+  assert(mainSrc2.includes('data-testid="view-mode-switch"'), '桌面侧栏有常驻的海图/岸上开关')
+  assert(/disabled=\{!canAshore && viewMode !== 'harbor'\}/.test(mainSrc2),
+    '航行中开关是明确的禁用态，不是"点了没反应"')
+  const tabSrc = readFileSync(join(process.cwd(), 'src', 'components', 'ui', 'MobileTabBar.tsx'), 'utf8')
+  assert(tabSrc.includes("it.key === 'view' ? 'view-mode-switch' : undefined"),
+    '移动端底栏也有同一个常驻开关')
+  assert(tabSrc.includes('grid-cols-10') && tabSrc.includes('grid-cols-5'),
+    '十个入口在横屏一行 / 竖屏两行都排得下，不把港口贸易挤出屏幕')
+  assert(/harbor-previous-visit/.test(harborSrc), '第二趟起岸上能翻到上一趟留下的那页')
+  /*
+   * 【首局顺序：致辞在前，教学在后】
+   * 原来是"教学进行中不弹致辞"，于是玩家被 10 步教学教完、刚点「开始冒险」，
+   * 一段老领航员对白才压上来把侧栏全盖住——实测这时候连点两次「贸易」都命中
+   * 在那层 `bg-black/45` 上，`activePanel` 一直是 null。这是"点了没反应"的又一例。
+   * 三条守卫锁住当前约定：
+   *   ① 开场致辞不再等教学（条件里没有 tutorialActive）；
+   *   ② 教学渲染要等对白关掉（否则两块整屏层叠在一起、Enter 被两边抢）；
+   *   ③ 教学首句不能再是"欢迎来到大航海时代"（致辞刚说过，等于倒着讲）。
+   */
+  assert(/if \(gamePhase === 'playing' && !dialogueSeen\.includes\(OPENING_SCRIPT_ID\)\)/.test(mainSrc2),
+    '开场致辞不再以"教学未开始"为前提')
+  assert(/!dialogueOpen && tutorialStep >= 0/.test(mainSrc2),
+    '对白开着时不叠教学遮罩（两块整屏层会互相吃掉点击）')
+  /*
+   * 【开局只留 4 屏，且最后一屏不许把重复内容加回来】
+   * 原先 5 屏，最后一屏「第一次出航」91 字，两句提示在教程第 4/5 步和模式卡上
+   * 都讲过一遍（而且更细），属于纯重复：多一屏动画、多一次点击、零信息增益。
+   * 现在把"你的座船"那张卡搬到天赋页底部，删除整屏。
+   * 三条断言：页数=4；「第一次出航」标题不再出现；那句重复的航线提示不再出现。
+   */
+  /*
+   * 【字体必须自托管，不许再有 Google Fonts 外链】
+   * 实测（.workbuddy/probe-fonts-offline.mjs，CDP 阻断两个域名）：
+   *   外链时：FCP +436ms、DCL +530ms（这还是"立即失败"的乐观情况，真实被墙是超时）
+   *   自托管后：阻断 GF 完全无影响，FCP/LCP 各降约 400ms
+   * 五个 latin 子集合计 109KB，比等一个可能永远不来的请求划算。
+   */
+  {
+    const html = readFileSync(join(process.cwd(), 'index.html'), 'utf8')
+    assert(!/fonts\.googleapis\.com|fonts\.gstatic\.com/.test(html),
+      'index.html 里没有 Google Fonts 外链（外链样式表会阻塞渲染）')
+    const css = readFileSync(join(process.cwd(), 'src', 'index.css'), 'utf8')
+    for (const f of ['pirata-one-400-latin', 'crimson-text-400-latin',
+      'crimson-text-400-italic-latin', 'crimson-text-600-latin', 'crimson-text-700-latin']) {
+      const p = join(process.cwd(), 'src', 'assets', 'fonts', `${f}.woff2`)
+      assert(existsSync(p), `字体 ${f}.woff2 存在`)
+      assert(css.includes(`./assets/fonts/${f}.woff2`), `index.css 里声明了 ${f}`)
+      const kb = Math.round(readFileSync(p).length / 1024)
+      assert(kb > 4 && kb <= 120, `字体 ${f} 体积合理（实际 ${kb}KB）`)
+    }
+    // 标题/正文两族的 @font-face 都要有，缺一个就会静默回退到系统衬线
+    assert(/font-family: 'Pirata One'/.test(css), '@font-face 声明了 Pirata One')
+    assert(/font-family: 'Crimson Text'/.test(css), '@font-face 声明了 Crimson Text')
+  }
+  /*
+   * 【开局 4 屏不许等地图代码】
+   * bundle 实测（`.workbuddy/vite.analyze.ts`，按库/目录拆包）：
+   *   拆之前 首屏 JS 313KB gz（index 一个 chunk 装下 react + leaflet + 地图 + 面板 + 数据）
+   *   拆之后 189KB gz（地图 62KB、事件卡 28KB、面板各自 1~5KB 都进了懒加载块）
+   * 实测第一屏出现 903~959ms → 464~473ms（同一把尺子：模拟 Pages 的 gzip 服务 + 4G + 禁缓存，
+   * 判据是"翻开日志"按钮出现，不用 FCP —— 无头环境 FCP 与字节数不成比例）。
+   * 守卫要点：
+   *   ① 地图/面板/浮层必须是 `lazy(() => import(...))`，不许回到静态 import（一回去就全进首屏）；
+   *   ② 地图块在**模块求值时**预取：它是玩家点「启航」立刻要的东西（放空闲取实测要等 280ms）；
+   *   ③ 每个懒加载组件都得有 Suspense 兜底，否则挂起时整棵树报错；
+   *   ④ react-router 已移除 —— 全项目只有一条路由，白带 35KB/13KB gz。
+   */
+  {
+    const mainSrc = readFileSync(join(process.cwd(), 'src', 'pages', 'MainMap.tsx'), 'utf8')
+    for (const [name, mod] of [
+      ['MapView', '@/components/map/MapView'],
+      ['HarborView', '@/components/harbor/HarborView'],
+      ['TradePanel', '@/components/panels/TradePanel'],
+      ['FleetPanel', '@/components/panels/FleetPanel'],
+      ['PortDetail', '@/components/panels/PortDetail'],
+      ['ShipyardPanel', '@/components/panels/ShipyardPanel'],
+      ['TaskPanel', '@/components/panels/TaskPanel'],
+      ['AchievementPanel', '@/components/panels/AchievementPanel'],
+      ['RivalPanel', '@/components/panels/RivalPanel'],
+      ['EventLog', '@/components/panels/EventLog'],
+      ['VoyagePlanModal', '@/components/map/VoyagePlanModal'],
+      ['SegmentDecision', '@/components/map/SegmentDecision'],
+      ['HelmModal', '@/components/map/HelmModal'],
+      ['EventCard', '@/components/events/EventCard'],
+    ] as const) {
+      assert(mainSrc.includes(`const ${name} = lazy(() => import('${mod}'))`),
+        `${name} 是懒加载块（静态 import 会把地图/面板塞回首屏）`)
+      assert(!new RegExp(`^import ${name} from`, 'm').test(mainSrc),
+        `${name} 没有残留静态 import`)
+    }
+    // ② 地图块在模块求值时预取（不是只在空闲时）
+    assert(/if \(import\.meta\.env\.PROD\) void import\('@\/components\/map\/MapView'\)/.test(mainSrc),
+      '地图块在模块求值时预取（否则急性子玩家点「启航」要干等约 280ms）')
+    assert(/function prefetchSurface/.test(mainSrc), '其余块有空闲预取函数')
+    assert(/requestIdleCallback/.test(mainSrc), '空闲预取用 requestIdleCallback（别和开局大图抢带宽）')
+    // 预取只在生产跑：dev server 按需编译，13 个动态 import 会把主线程和 dev server 一起占住，
+    // 让 e2e 出现"点开面板没反应"的假故障（本轮实测）
+    assert(/if \(!import\.meta\.env\.PROD\) return/.test(mainSrc), '预取在 dev 下直接返回')
+    // ③ Suspense 兜底：地图 / 岸上 / 左面板 / 右面板 / 浮层组 / 事件卡
+    const suspenseN = (mainSrc.match(/<Suspense /g) ?? []).length
+    assert(suspenseN >= 5, `懒加载组件都有 Suspense 兜底（实际 ${suspenseN} 处）`)
+    // ④ 路由依赖彻底移除
+    const appSrc = readFileSync(join(process.cwd(), 'src', 'App.tsx'), 'utf8')
+    // 只匹配 import 语句：注释里为了解释原因也写了 react-router，
+    // 全文匹配会把解释当成违规（这类误报已经第四次了，判据一律落在语法结构上）
+    assert(!/from 'react-router-dom'/.test(appSrc), 'App 不再套 react-router（单路由，纯死重量）')
+    const pkg = JSON.parse(readFileSync(join(process.cwd(), 'package.json'), 'utf8')) as
+      { dependencies?: Record<string, string> }
+    assert(!pkg.dependencies?.['react-router-dom'], 'package.json 里没有 react-router-dom')
+    assert(!/from 'react-router/.test(readFileSync(join(process.cwd(), 'src', 'pages', 'MainMap.tsx'), 'utf8')),
+      'MainMap 里也没有路由引用')
+    // 首屏探针判「进入游戏」靠的是这块遮罩消失，不是「翻开日志」按钮消失
+    // （那个按钮点第一下就没了，曾量出 -8182ms）。锚点没了要能立刻发现。
+    const introSrc = readFileSync(join(process.cwd(), 'src', 'components', 'intro', 'IntroScreen.tsx'), 'utf8')
+    assert(/data-testid="intro-screen"/.test(introSrc), '开局遮罩有稳定锚点（首屏探针靠它判进入游戏）')
+    // 事件正文锚点：copy-density-audit 靠它做「逐字等于数据源」的信息守恒巡检
+    const eventCardSrc = readFileSync(join(process.cwd(), 'src', 'components', 'events', 'EventCard.tsx'), 'utf8')
+    assert(/data-testid="event-description"/.test(eventCardSrc),
+      '事件正文有巡检锚点（密度巡检靠它读文案，别只量帮助和小游戏）')
+    // 经纬网透明度按相机距离衰减：基准值只在一处定义，运行时不许写死第二个 0.22
+    const gratSrc = readFileSync(join(process.cwd(), 'src', 'components', 'map3d', 'mapGraticule3d.ts'), 'utf8')
+    const viewSrc = readFileSync(join(process.cwd(), 'src', 'components', 'map3d', 'Map3DView.tsx'), 'utf8')
+    assert(/export const GRATICULE_OPACITY_NEAR/.test(gratSrc), '经纬网近景透明度有单一来源')
+    assert(/graticule\.material\.opacity = GRATICULE_OPACITY_NEAR/.test(viewSrc),
+      '极远视角会按相机距离压低经纬网透明度')
+    assert(/\(camState\.dist - 12\)/.test(viewSrc), '衰减读的是真实相机距离，不是常量')
+    // 3D 漂流物疏散的安全边界：钳住偏移 + 反投影查海陆，别把图标画到岸上
+    const debrisSrc = readFileSync(join(process.cwd(), 'src', 'components', 'map3d', 'debrisLayer3d.ts'), 'utf8')
+    assert(/const MAX_OFFSET = MIN_GAP \* 1\.5/.test(debrisSrc),
+      '疏散偏移有兜底上限，且不能小到破坏「两两间距 ≥ MIN_GAP」的收敛结果')
+    assert(/isOnLand\(/.test(debrisSrc) && /isLandLoaded\(/.test(debrisSrc), '疏散后会反投影查海陆')
+    // 判据只认「调用了项目自己的投影函数」，不写死局部变量名：
+    // 上一版匹配 `worldZToLat(wz), worldXToLon(wx)`，当实现把 wz/wx 内联后
+    // 就变成假红（`npm test | tail -3` 还把失败行截掉了，拖了一轮才发现）。
+    assert(/from '@\/utils\/mapProjection'/.test(debrisSrc)
+      && /worldZToLat\(/.test(debrisSrc) && /worldXToLon\(/.test(debrisSrc),
+      '反投影用项目自己的投影函数，不手写换算公式')
+  }
+  /*
+   * 【中文字体必须覆盖所有界面用字】
+   * 中文子集是按文案现切的（`.workbuddy/make_font_subset.py`），文案一长就会漏字。
+   * 漏字**不报错**：浏览器静默回退到另一个衬线体，一句话里两种字形。
+   * 实测旧子集漏了 41 个字（啊/梅/鸡/酸/饼/舢/啐…，全在事件正文与对白里），
+   * 而开发机恰好装了同款 Noto Serif SC —— 肉眼、截图、`document.fonts.check`
+   * 三种查法全都看不出来（check 把系统回退也算成"能画"，恒为 true）。
+   * 所以判据落在这份**由脚本从字体 cmap 直接生成**的清单上，外加字体指纹：
+   *   只改字体不改清单 → sha1 对不上；只加文案不重切 → 用字不在清单里。
+   */
+  {
+    const fontPath = join(process.cwd(), 'src', 'assets', 'fonts', 'noto-serif-sc-subset.woff2')
+    const manifestPath = join(process.cwd(), 'src', 'assets', 'fonts', 'noto-serif-sc-coverage.json')
+    assert(existsSync(fontPath), '中文子集字体存在')
+    assert(existsSync(manifestPath), '中文字体覆盖清单存在（跑 .workbuddy/make_font_subset.py 生成）')
+    const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as
+      { fontSha1: string; chars: string; fontKB: number }
+    const sha1 = createHash('sha1').update(readFileSync(fontPath)).digest('hex')
+    assert(sha1 === manifest.fontSha1,
+      `字体与覆盖清单是同一份（清单 ${manifest.fontSha1.slice(0, 8)}… / 实际 ${sha1.slice(0, 8)}…）`
+      + ' —— 改了字体要重跑 .workbuddy/make_font_subset.py')
+
+    const covered = new Set(manifest.chars)
+    // 与 make_font_subset.py 同一套字符判据：去注释、只取字符串字面量与 JSX 文本
+    const lit = /'([^'\\\n]*)'|"([^"\\\n]*)"|`([^`\\]*)`|>([^<>{}]*)</gs
+    const used = new Set<string>()
+    const walk = (dir: string): string[] => readdirSync(dir).flatMap(f => {
+      const p = join(dir, f)
+      return statSync(p).isDirectory() ? walk(p) : [p]
+    })
+    const walkTyped = (dir: string): string[] => walk(dir).filter(f => /\.(ts|tsx|css|html)$/.test(f))
+    for (const f of walkTyped(join(process.cwd(), 'src'))) {
+      let src = readFileSync(f, 'utf8')
+      src = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
+      for (const m of src.matchAll(lit)) {
+        for (const g of m.slice(1)) {
+          if (!g) continue
+          for (const ch of g) if (ch >= '\u3000' && ch <= '\u9fff') used.add(ch)
+        }
+      }
+    }
+    const missing = [...used].filter(c => !covered.has(c))
+    assert(missing.length === 0,
+      `界面用字 ${used.size} 个全在字体里（缺 ${missing.length} 个：${missing.join('')}）`
+      + ' —— 跑 python .workbuddy/make_font_subset.py 重切')
+    // 清单本身别退化成空壳：至少要比用字多（还有 ASCII 与标点）
+    assert(manifest.chars.length > used.size, `覆盖清单 ${manifest.chars.length} 字 > 文案用字 ${used.size}`)
+    // 字体不能无限长胖：现在是 362KB，卡 500KB
+    assert(manifest.fontKB <= 500, `中文字体 ≤500KB（实际 ${manifest.fontKB}KB）`)
+  }
+  /*
+   * 【素材目录不许再放 PNG】实测：ports/ 里 5 张 1600×900 PNG（11.3MB）、
+   * scenes/ 里 3 张（3.2MB）、ui/ 里 9 张（0.79MB）全部**没有任何代码引用**——
+   * 同目录都有 .webp 或 .svg 版本在用。它们从 10 月起就躺在 public 里，
+   * 每次 build 都被拷进 dist，产物因此虚胖 15MB（34MB → 19MB 就是移走它们省下的）。
+   * 守卫：这三类目录里出现 .png 就是又有人把未压缩的大图丢进来了。
+   */
+  {
+    for (const dir of ['ports', 'scenes', 'ui']) {
+      const d = join(process.cwd(), 'public', 'assets', dir)
+      const pngs = readdirSync(d).filter(f => f.endsWith('.png'))
+      assert(pngs.length === 0,
+        `public/assets/${dir} 里没有 PNG（实际 ${pngs.length} 张：${pngs.slice(0, 3).join(', ')}）`)
+    }
+    // 站内素材总量上限：现在是 17MB，卡 24MB 留出加素材的余量，
+    // 但 30MB+ 那种"没清死文件"的状态会被这条挡住。
+    const walkSize = (dir: string): number => readdirSync(dir).reduce((a, f) => {
+      const p = join(dir, f)
+      const st = statSync(p)
+      return a + (st.isDirectory() ? walkSize(p) : st.size)
+    }, 0)
+    const pubMb = walkSize(join(process.cwd(), 'public')) / 1024 / 1024
+    assert(pubMb <= 24, `public 总体积 ≤24MB（实际 ${pubMb.toFixed(1)}MB；含死文件时会到 31MB）`)
+  }
+  /*
+   * 【立绘必须是压缩过的 WebP，不许回退成整张 PNG】
+   * 开局致辞那三张差分（calm/serious/hope）原来是 PNG，512×640 每张 640KB，
+   * 合计 1.9MB —— 而它们是**开局第一屏就要加载**的三张图。转成 q0.88 的 WebP
+   * 后每张 ~110KB（合计 328KB），视觉无差（油画质感仍在，实测手机截图比对）。
+   * 守卫三件：引用必须是 .webp；portraits 目录里不许有 png；单张 ≤200KB。
+   */
+  {
+    const dlgSrc = readFileSync(join(process.cwd(), 'src', 'utils', 'dialogue.ts'), 'utf8')
+    const pngRefs = dlgSrc.match(/officer_pilot_(calm|serious|hope)\.png/g) ?? []
+    assert(pngRefs.length === 0, `对白差分立绘不再引用 PNG（实际 ${pngRefs.length} 处）`)
+    for (const n of ['calm', 'serious', 'hope']) {
+      assert(dlgSrc.includes(`officer_pilot_${n}.webp`), `对白引用了 ${n} 的 WebP 版本`)
+      const p = join(process.cwd(), 'public', 'assets', 'portraits', `officer_pilot_${n}.webp`)
+      assert(existsSync(p), `${n}.webp 文件存在`)
+      const kb = Math.round(readFileSync(p).length / 1024)
+      assert(kb <= 200, `${n}.webp ≤200KB（实际 ${kb}KB；PNG 原图是 640KB）`)
+    }
+    const pngs = readdirSync(join(process.cwd(), 'public', 'assets', 'portraits')).filter(f => f.endsWith('.png'))
+    assert(pngs.length === 0, `portraits 目录里没有 PNG（实际 ${pngs.join(', ') || '无'}）`)
+  }
+  /*
+   * 【参观模式的三条承诺】模式选择页上明写着"不会输：断粮沉船都与你无关"，
+   * 加上"没有教学"。这四条分散在 store 的不同分支里，任何一条被改掉，
+   * 玩家就会在以为"只是逛逛"的时候被掀翻。代码层守卫 + e2e 实测双保险
+   * （e2e 见 `visitor-mode.mjs`：同条件下船长第 2 天翻船、参观推到第 19 天还活着）。
+   */
+  {
+    const storeSrc = readFileSync(join(process.cwd(), 'src', 'store', 'useGameStore.ts'), 'utf8')
+    assert(/const newFood = isVisitor\s*\?\s*fleet\.food/.test(storeSrc),
+      '参观模式不扣粮（承诺"断粮与你无关"）')
+    assert(/const newWater = isVisitor\s*\?\s*fleet\.water/.test(storeSrc), '参观模式不扣水')
+    assert(/gameMode !== 'visitor' && \(allShipsDestroyed \|\| newFleet\.morale <= 0\)/.test(storeSrc),
+      '参观模式不判翻船（船毁/士气 0 都不结束）')
+    assert(/const floor = isVisitor \? 1 : 0/.test(storeSrc), '参观模式船体耐久下限是 1，不会归零')
+    assert(/pendingSegment: isVisitor \|\| isShortHop \? null/.test(storeSrc),
+      '参观模式不进航段方针环节')
+    const barSrc = readFileSync(join(process.cwd(), 'src', 'components', 'ui', 'TimelineBar.tsx'), 'utf8')
+    assert(barSrc.includes('data-testid="visitor-badge"'), '主界面有常驻的「参观」标识（不只是帮助里能看到）')
+    assert(/gameMode === 'visitor' && \(/.test(barSrc), '标识只在参观模式出现，船长模式不占位')
+    // 手机端也要看得见：徽标不能带 hidden md:（曾经为了不挤顶栏藏起来，
+    // 结果手机上只能去帮助里查模式）。让位的是「事件名」那格，不是徽标。
+    assert(/className="inline-flex items-center shrink-0 rounded border border-gold-600\/55/.test(barSrc),
+      '「参观」徽标在手机上也显示（不再 hidden md:）')
+    assert(/hidden sm:block text-gold-400 font-serif text-\[13px\] min-w-\[130px\]/.test(barSrc),
+      '「事件名」那格在手机上让位（130px 才能腾给轨道）')
+  }
+  const introSrc = readFileSync(join(process.cwd(), 'src', 'components', 'intro', 'IntroScreen.tsx'), 'utf8')
+  {
+    const pageCount = (introSrc.match(/^\s+button: '/gm) ?? []).length
+    assert(pageCount === 4, `开局是 4 屏（实际 ${pageCount} 屏；每多一屏就多一次点击）`)
+    // 只查 JSX 文本节点：解释原因的注释里也有这个标题，全文 includes 会误报
+    // （源码守卫被注释误报，这是第二次了）
+    assert(!introSrc.includes('>第一次出航<'), '删掉的那屏标题没有被加回来')
+    assert(!introSrc.includes('点击海图任意一点就能规划航线'),
+      '那句"怎么出航"不再重复（教程第 4 步已经讲得更细）')
+    assert(/shipSprite\('caravel'\)/.test(introSrc), '座船卡还在（船型决定航速与载重，别处没有）')
+  }
+  const tutSrc = readFileSync(join(process.cwd(), 'src', 'constants', 'tutorial.ts'), 'utf8')
+  // 只查 text: 里面真正的文案——注释里为了解释原因也写了这句话，
+  // 全文 includes 会把解释本身当成违规（源码守卫被注释误报，犯过一次了）
+  assert(!/text:\s*'[^']*欢迎来到大航海时代/.test(tutSrc),
+    '教学首句不再和开场致辞抢同一句话')
+  /*
+   * 【掮客推荐必须在贸易面板里看得见】
+   * 实测：开局最便宜的烟草 52 金，卖到最近的加的斯只 +2/件；而丝绸 85 金
+   * 卖过去 +89/件。玩家按"哪个便宜买哪个"必然白跑一趟。推荐条与左下角那张
+   * 掮客卡必须同源（都调 selectBestDeal），否则两边会各说一套。
+   */
+  const tradeSrc = readFileSync(join(process.cwd(), 'src', 'components', 'panels', 'TradePanel.tsx'), 'utf8')
+  assert(/selectBestDeal\(useGameStore\.getState\(\)\)/.test(tradeSrc),
+    '贸易面板的推荐来自 selectBestDeal（与掮客卡同一份数据）')
+  assert(tradeSrc.includes('data-testid="trade-recommend"'), '推荐条有稳定锚点，e2e 才查得到')
+  assert(tradeSrc.includes("data-recommended={recommended ? '1' : undefined}"),
+    '被推荐的那一行有机器可读标记（不是只加个颜色）')
+  assert(/\.sort\(\(a, b\) => Number\(b\.goodId === deal\?\.goodId\)/.test(tradeSrc),
+    '被推荐的商品排到第一行（排第三行时 +N 按钮在折叠线以下，看得见点不到）')
+  const brokerSrc = readFileSync(join(process.cwd(), 'src', 'components', 'map', 'BrokerTip.tsx'), 'utf8')
+  assert(/selectBestDeal\(st\)/.test(brokerSrc), '掮客卡也用同一个 selectBestDeal（两边不会各说一套）')
+  /*
+   * 背景必须走 harborBackdrop（全景图），而不是 portImage（96px 缩略图）。
+   * 这条是接新素材时最容易悄悄退回去的地方：缩略图也能铺满 object-cover，
+   * 页面不报错、截图不空白，只是"糊"——而"糊"没有任何断言会失败。
+   */
+  assert(/harborBackdrop\(port\)/.test(harborSrc), '岸上背景取全景图，不拿面板缩略图放大')
+  assert(!/portImage\(port\)/.test(harborSrc), '岸上组件里不再残留 portImage(port)')
+  /*
+   * 【压暗参数要有上限】接高清素材时最容易白干的一步：图换对了，可 filter 与
+   * 两层暗角叠下去，屏幕上的景只剩 0.08 亮度（实测）。这两个数是"能不能看见景"
+   * 的直接原因，写进守卫比靠截图眼judge 可靠。
+   *   brightness 0.82 → 水面 0.08（旧）；0.88 → 0.15~0.18（现在）
+   *   暗角最外圈 0.92 → 四角纯黑；0.74 → 仍有轮廓
+   */
+  {
+    const bright = Number((harborSrc.match(/brightness\((0?\.\d+)\)/) ?? [])[1])
+    assert(bright >= 0.85, `背景亮度系数 ≥0.85（实际 ${bright}；0.82 时画面只剩 0.08）`)
+    // 暗角最外圈用的是 rgba(10,7,3,α)，全文只此一处，可以精确定位
+    const outer = Number((harborSrc.match(/rgba\(10,7,3,([\d.]+)\)/) ?? [])[1])
+    assert(outer > 0 && outer < 0.80, `暗角最外圈 <0.80（实际 ${outer}；0.92 时四角纯黑、景消失）`)
+  }
+}
+
+/* ===== 线索的回响 + 岸上 3D 不空转 ===== */
+{
+  console.log('\n== 线索应验与 3D 岸上不空转 ==')
+
+  // 造一句"第 1 天在塞维利亚听人提起哈瓦那"的旧线索
+  const clue: LogbookEntry = {
+    ...makeArrivalEntry(6, 1, [6])!,
+    id: 'arrival-1-6',
+    hint: '酒馆里有人提起哈瓦那——没说什么时候去，也不催。',
+    targetPortId: 1,
+    read: true,
+  }
+  assert(findClueFor([clue], 1)?.id === clue.id, '能找到指向该港的旧线索')
+  assert(findClueFor([clue], 2) === null, '别的港不认这条线索')
+
+  const echo = makeEchoEntry(clue, 1, 5)!
+  assert(echo.kind === 'echo' && echo.id === 'echo-5-1' && echo.day === 5, '应验页记的是本次到达日')
+  assert(echo.text.includes('第 1 天') && echo.text.includes('塞维利亚') && echo.text.includes('哈瓦那'),
+    '应验文案的天数 / 听说地 / 到达港全部来自真实数据')
+  assert(echo.hint === null && echo.targetPortId === null, '应验页不再派新任务、不再接新尾巴')
+  const book = [echo, clue]
+  assert(echoDayFor(book, 1) === 5, '旧页能读到真实应验天数')
+  assert(echoDayFor([clue], 1) === null && echoDayFor(book, null) === null, '没应验就不编天数')
+  assert(echoAt(book, 1, 5) === echo && echoAt(book, 1, 6) === null, '通知只认本次到达的应验页')
+  assert(findClueFor(book, 1) === null, '已有应验页时不再重复收尾')
+  assert(echoForPort(book, 1) === echo && countEchoes(book) === 1, '个人纪录只数真正应验过的页')
+
+  // 应验页同时是去重凭据：被上限挤掉就会"再应验一次"
+  let thick2 = appendLogbook([], echo)
+  for (let d = 2; d <= LOGBOOK_MAX + 12; d++) {
+    thick2 = appendLogbook(thick2, makeArrivalEntry(1, d, [6])!)
+  }
+  assert(thick2.length === LOGBOOK_MAX && echoForPort(thick2, 1)?.id === echo.id,
+    '长局里应验页不被挤掉（否则会重复应验）')
+
+  // store 集成：第一次靠上线索指向的港，见闻 + 应验共两页
+  const s0 = useGameStore.getState()
+  useGameStore.setState({
+    logbook: [clue], discoveredPorts: [6], claimedVictories: [], collectedDebris: [],
+    gamePhase: 'playing', victoryDay: null, currentEvent: null,
+    fleet: { ...s0.fleet, day: 5, currentPortId: 6, isSailing: false, gold: 100, morale: 80, food: 100, water: 100 },
+  })
+  useGameStore.getState().arriveAtPort(1)
+  const after = useGameStore.getState().logbook
+  assert(after.length === 3, '首次靠上线索指向的港：见闻 + 应验共添两页（1 → 3 页）')
+  assert(after[0].kind === 'echo' && after[0].day === 5, '应验页在最上面，是这趟最该先看到的一页')
+  assert(after.some(e => e.kind === 'arrival' && e.portId === 1), '普通到港见闻照旧还在')
+  assert(echoForPort(after, 1)?.text.includes('第 1 天'), '写的是旧线索那天，不是今天')
+
+  useGameStore.setState({ fleet: { ...useGameStore.getState().fleet, day: 6 } })
+  useGameStore.getState().arriveAtPort(1)
+  assert(countEchoes(useGameStore.getState().logbook) === 1, '再回同一港不重复应验')
+
+  useGameStore.setState({
+    logbook: [], discoveredPorts: [6],
+    fleet: { ...useGameStore.getState().fleet, day: 7 },
+  })
+  useGameStore.getState().arriveAtPort(2)
+  const plain = useGameStore.getState().logbook
+  assert(plain.length === 1 && plain[0].kind === 'arrival' && countEchoes(plain) === 0,
+    '没有旧线索时只写见闻，不硬凑一页应验')
+
+  // 源码守卫：改坏就打断玩家 / 数字会对不上
+  const sc = readFileSync(join(process.cwd(), 'src', 'components', 'map', 'SailingController.tsx'), 'utf8')
+  assert(/echoAt\(now\.logbook, portId, now\.fleet\.day\)/.test(sc),
+    '到港通知读的是 arriveAtPort 写入之后的状态（拿旧快照问不到应验页）')
+  assert(sc.includes('日志添了两页'), '应验时通知说的页数等于实际写入的页数')
+  // 到港有两条路径（航点就是港口 / 落在港口附近），只改一处就会一边说一页、
+  // 一边说两页。教训：一次脚本多处替换必须逐处校验，别看"命令成功"。
+  assert((sc.match(/message: arrivalMessage\(/g) ?? []).length === 2,
+    '两条到港路径都走同一个通知文案（不多不少两处）')
+  const lv = readFileSync(join(process.cwd(), 'src', 'components', 'panels', 'LogbookViews.tsx'), 'utf8')
+  assert(/echoDayFor\(logbook, entry\.targetPortId\)/.test(lv), '旧线索页显示真实应验天数')
+  assert(lv.includes('data-testid="clue-fulfilled"'), '旧线索页有可见的「已应验」回执')
+  assert(/countEchoes\(logbook\)/.test(lv), '图鉴里的句数从日志推导，不是写死的')
+  const hv = readFileSync(join(process.cwd(), 'src', 'components', 'harbor', 'HarborView.tsx'), 'utf8')
+  assert(/echoForPort\(logbook, port\?\.id/.test(hv), '岸上把应验页摆回来')
+  assert(hv.includes('data-testid="harbor-clue-echo"'), '岸上的回响是可见的，不是只躺在日志里')
+  assert(/\{echo\.text\}/.test(hv), '岸上直接陈列应验页文案，不在第二处另拼一句')
+  const m3 = readFileSync(join(process.cwd(), 'src', 'components', 'map3d', 'Map3DView.tsx'), 'utf8')
+  assert(/if \(useMapStore\.getState\(\)\.viewMode === 'harbor'\) return/.test(m3),
+    '岸上时 3D 帧循环早退，不再逐帧空转')
+}
+
+// 中文 12px 下限：全项目不许再出现 <12px 的 Tailwind 字号。
+// 实测取证见 .workbuddy/probe-small-text.mjs：改前 18 个界面共 68 条去重中文小字，
+// 全部藏在浮层里，只巡检「地图上、无浮层」的 typography-audit.mjs 一条也看不见。
+// 只有两个不含中文的纯符号角标例外，白名单本身也要断言命中，防止守卫空转。
+{
+  const srcRoot = join(process.cwd(), 'src')
+  const walk = (dir: string): string[] => readdirSync(dir, { withFileTypes: true }).flatMap(e => {
+    const p = join(dir, e.name)
+    return e.isDirectory() ? walk(p) : (/\.tsx?$/.test(e.name) ? [p] : [])
+  })
+  const TINY = /text-\[(?:9|10|11)px\]/
+  const ALLOW = [
+    { name: 'MiniMap.tsx', line: /text-\[10px\].*?>N<\/span>/ },
+    { name: 'WeatherBadge.tsx', line: /text-\[11px\].*?>▾<\/span>/ },
+  ]
+  const hitAllow = [0, 0]
+  const bad: string[] = []
+  for (const f of walk(srcRoot)) {
+    readFileSync(f, 'utf8').split('\n').forEach((ln, i) => {
+      if (!TINY.test(ln)) return
+      const k = ALLOW.findIndex(a => f.endsWith(a.name) && a.line.test(ln))
+      if (k >= 0) { hitAllow[k]++; return }
+      bad.push(`${f.slice(process.cwd().length + 1)}:${i + 1}`)
+    })
+  }
+  assert(bad.length === 0,
+    `中文 UI 不得小于 12px（残留 ${bad.length} 处：${bad.slice(0, 3).join(', ') || '无'}）`)
+  ALLOW.forEach((a, i) => assert(hitAllow[i] === 1,
+    `${a.name} 的纯符号角标白名单恰好命中 1 处（守卫不空转）`))
+  const audit = readFileSync(join(process.cwd(), 'test', 'e2e', 'small-text-audit.mjs'), 'utf8')
+  assert(/px < 12/.test(audit), '浏览器巡检按真实 computed 字号判定，不是读源码')
+  assert(/if \(marker\)/.test(audit), '每个关键场景带「确实进去了」标记，防假绿')
+}
+
+// ---- 决策浮层：默认给结论、细账折叠，但一条信息都不许删 ----
+// 只断言「字变少」是危险的：把说明删掉也能让审计变漂亮，所以浏览器侧
+// 有「逐节点开读回原字数」的守恒断言，这里守的是实现结构与判据本身。
+{
+  const help = readFileSync(join(process.cwd(), 'src', 'components', 'intro', 'HelpPanel.tsx'), 'utf8')
+  const card = readFileSync(join(process.cwd(), 'src', 'components', 'ui', 'ParchmentCard.tsx'), 'utf8')
+  const mg = readFileSync(join(process.cwd(), 'src', 'components', 'events', 'MiniGameOverlay.tsx'), 'utf8')
+  const audit = readFileSync(join(process.cwd(), 'test', 'e2e', 'copy-density-audit.mjs'), 'utf8')
+
+  assert(help.includes("useState<string | null>(null)") && help.includes('openSection === section.title'),
+    '帮助 19 节默认收起，一次只展开一节')
+  assert(help.includes('aria-expanded={open}') && help.includes('data-testid={`help-section-${section.title}`}'),
+    '每节是可访问的折叠按钮，且带巡检锚点')
+  assert(help.includes('footer={'), '存档/换模式入口放在不随正文滚动的常驻页脚')
+  assert(!help.includes('scroll-parchment max-h-[70vh]'),
+    '帮助面板不许再套第二层滚动容器（会把存档区裁到面板外）')
+  assert(help.includes("btn.closest('.scroll-parchment')"),
+    '点开的节要顶到滚动区开头，否则正文只露一行半')
+  assert(card.includes('footer?: ReactNode') && card.includes('{footer}'),
+    'ParchmentCard 提供可选常驻页脚')
+  // 用正则：源码是 CRLF，写死 '\n' 会在 Windows 上假失败
+  assert(/footer\s*\?\s*'max-h-\[40dvh\]/.test(card)
+    && card.includes(": 'max-h-[68dvh] md:max-h-[60vh]"),
+    '有常驻页脚时正文滚动区让出高度，其余面板沿用旧高度')
+
+  assert(mg.includes('useState(false)') && mg.includes('data-testid="minigame-fine-print-toggle"'),
+    '小游戏开场细则默认收起')
+  assert(mg.includes('copy.bullets.map') && mg.includes('describeModifiers(modifiers, ctx)'),
+    '三条玩法细则与船况加成没有被删掉，只是折叠了')
+  assert(mg.includes('这一段的操作会决定结局概率往哪边偏'), '操作与结局的说明段仍在折叠区')
+  assert(mg.includes('data-testid="minigame-start"'), '开始按钮带巡检锚点')
+
+  assert(audit.includes('readBack >= 2500'), '浏览器巡检带「信息守恒」下界，不是只查字变少')
+  assert(audit.includes('elementFromPoint'), '存档按钮做的是真实命中测试，不读 innerText 自证')
+  assert(audit.includes('layout.scrollers === 1'), '巡检守「只有一层滚动区」')
+  assert(audit.includes('reveal.visibleBody >= 90'), '巡检守「展开后正文真的看得见」')
+  assert(audit.includes('width: 390, height: 844') && audit.includes('mm.exportHit'),
+    '巡检覆盖移动端抽屉：页脚在屏内且导出/导入真能命中')
+}
+
+// ---------------- 历史时间轴刻线：不许画到屏幕外 ----------------
+// 实测：1440 视口下 day=200 那根 2px 刻线的 rect 是 [1546,1548]，
+// 把 documentElement.scrollWidth 从 1440 撑成 1548；玩家却永远看不见它。
+{
+  const bar = readFileSync(join(process.cwd(), 'src', 'components', 'ui', 'TimelineBar.tsx'), 'utf8')
+  const data = readFileSync(join(process.cwd(), 'src', 'data', 'historicalTimeline.ts'), 'utf8')
+  const audit = readFileSync(join(process.cwd(), 'test', 'e2e', 'layout-audit.mjs'), 'utf8')
+  const days = [...data.matchAll(/\{ day: (\d+)/g)].map(m => Number(m[1]))
+
+  assert(days.length >= 16 && Math.max(...days) > 150,
+    `数据里确实有超过 150 天的成就节点，过滤才有区分力（最大 day=${Math.max(...days)}）`)
+  assert(/const TIMELINE_LAST_DAY = 150/.test(bar), '年份换算 / 进度条 / 刻度共用同一个跨度常量')
+  assert(/historicalTimeline\.filter\(e => e\.day <= TIMELINE_LAST_DAY\)/.test(bar),
+    '超过历史跨度的成就节点不画刻度（否则 left>100% 会把刻线画到屏外）')
+  assert(/Math\.min\(1, \(event\.day - 1\) \/ TIMELINE_LAST_DAY\)/.test(bar),
+    '刻度位置有 clamp 兜底，以后加更靠后的节点也不会再溢出')
+  assert(/docScrollWidth/.test(audit) && /noPageOverflow/.test(audit),
+    '布局巡检有页面级横向溢出判据，不再被 2px 元素的宽高阈值漏掉')
+
+  const harborAudit = readFileSync(join(process.cwd(), 'test', 'e2e', 'harbor-view.mjs'), 'utf8')
+  assert(/getComputedStyle\(v\)\.opacity >= 0\.999/.test(harborAudit),
+    '岸上像素巡检要等整屏淡入动画结束，不能截到半透明帧')
+  assert(/requestAnimationFrame\(\(\) => requestAnimationFrame\(res\)\)/.test(harborAudit),
+    '淡入结束后还要等两帧，让解码完的背景图真正合成到屏幕')
+}
+
+// ---------------- 回归链不许再漏掉「孤儿」巡检 ----------------
+// 第 26 轮实测：6 个自带失败退出的 e2e 脚本常年不在 seg/full/all 里，只靠手工跑，
+// 其中 intro-check（天赋页对比度）与 no-dialogue-interrupt（前置污染）当时就是红的。
+{
+  const pkg = JSON.parse(readFileSync(join(process.cwd(), 'package.json'), 'utf8')) as {
+    scripts: Record<string, string>
+  }
+  const ORPHANS = [
+    'intro-check.mjs', 'no-dialogue-interrupt.mjs', 'contrast-audit.mjs',
+    'weather-2d.mjs', 'land-texture.mjs', 'debris-3d.mjs',
+  ]
+  const names = readdirSync(join(process.cwd(), 'test', 'e2e'))
+  const seg6 = pkg.scripts['test:e2e:seg6'] ?? ''
+  for (const name of ORPHANS) {
+    assert(names.includes(name), `${name} 文件还在（别把巡检删了）`)
+    assert(seg6.includes(name), `${name} 已进 seg6，不再只靠手工跑`)
+  }
+  const full = pkg.scripts['test:e2e:full'] ?? ''
+  for (let i = 1; i <= 6; i++) {
+    assert(full.includes(`npm run test:e2e:seg${i}`), `full 包含 seg${i}`)
+  }
+  assert(full.includes('npm run test:e2e:prod'), 'full 包含生产移动端')
+  assert((pkg.scripts['test:e2e:all'] ?? '').includes('npm run test:e2e:seg6'),
+    'all 也包含 seg6（旧的展开式单命令不能漏）')
+  // 替换脚本定义时，seg5 的值与 all 的前缀相同，曾经误把 seg6 串进 seg5 自身
+  assert(!(pkg.scripts['test:e2e:seg5'] ?? '').includes('seg6'),
+    'seg5 没有误引用 seg6（分段之间不许自引用）')
+}
+
+// ---------------- 出航计划：补给数字必须对得上实际结算 ----------------
+// 第 27 轮实测（30 人船、哈瓦那→皇家港 6 天）：
+//   面板「每日耗 3 粮 / 5 水」 vs 同一屏顶栏「每天吃 1 份」、港内实际扣 1/2；
+//   判定用抢行总耗 15 粮、结论句却写「约 6 天可达」（按部就班要 18 粮）→
+//   粮=15 时界面说「补给偏紧」，玩家照默认走法第 5 天断粮。
+{
+  const plan = readFileSync(join(process.cwd(), 'src', 'components', 'map', 'VoyagePlanModal.tsx'), 'utf8')
+  const audit = readFileSync(join(process.cwd(), 'test', 'e2e', 'supply-parity.mjs'), 'utf8')
+  const pkg = JSON.parse(readFileSync(join(process.cwd(), 'package.json'), 'utf8')) as {
+    scripts: Record<string, string>
+  }
+
+  assert(/from '@\/utils\/voyage'/.test(plan) && /dailyRates\(/.test(plan),
+    '两套日耗都走 dailyRates（与顶栏、store.advanceDay 同源）')
+  assert(/dailyRates\(\{ \.\.\.fleet, isSailing: true \}, 'steady'\)/.test(plan),
+    '起航后日耗按结论句里的「按部就班」口径算')
+  assert(!/每日耗 \{consumption\./.test(plan),
+    '不许再把基础消耗 crew×0.1 当成「每日耗」直接印在屏幕上')
+  assert(/ledgers\.find\(l => l\.stance\.id === 'steady'\)/.test(plan),
+    '判定取「按部就班」那一档的总账（结论句写的就是它的天数）')
+  assert(!/Math\.min\(\.\.\.ledgers\.map/.test(plan),
+    '不许拿三档里最省的方针当判定线，那是兑现不了的承诺')
+  assert(/港内每日/.test(plan) && /起航后按部就班/.test(plan),
+    '面板同时标明港内与起航后两套日耗，不再让同一屏出现两个矛盾数字')
+  assert(/按部就班只够/.test(plan), '「只够 N 天」标明走法，不与港内口径混用')
+  assert(/全程只需/.test(plan), '按部就班不够但抢行够时，把抢行的总量写清楚')
+  assert(/data-testid="voyage-supply-rates"/.test(plan) && /data-testid="voyage-verdict-text"/.test(plan),
+    '对账巡检有稳定 DOM 锚点，不靠从整屏文本里正则捞')
+
+  assert(pkg.scripts['test:e2e:supply']?.includes('supply-parity.mjs'), '补给对账有独立命令')
+  assert(pkg.scripts['test:e2e:seg2']?.includes('test:e2e:supply'), '补给对账进了 seg2')
+  assert(pkg.scripts['test:e2e:all']?.includes('test:e2e:supply'), 'all 也含补给对账')
+  assert(!(pkg.scripts['test:e2e:seg5'] ?? '').includes('supply'),
+    'seg5 没有误引用补给对账（分段之间不许自引用）')
+  assert(/advanceOnce\(\)/.test(audit) && /dailyRates\(\{ \.\.\.s\.fleet, isSailing: true \}, 'rush'\)/.test(audit),
+    '巡检量的是 advanceDay 真实扣减，抢行期望值来自同一套 dailyRates')
+  assert(/altRoute/.test(audit) && /假绿/.test(audit),
+    '「给抢行退路」这条断言不能用 /抢行/ 判（折叠摘要恒含此词，是假绿）')
+}
+
 console.log(`\n最终结果：${passed} 通过 / ${failed} 失败`)
 if (failed > 0) process.exit(1)

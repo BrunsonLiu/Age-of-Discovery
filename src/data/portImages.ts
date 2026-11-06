@@ -64,3 +64,32 @@ export function portImage(port: number | Pick<Port, 'id' | 'region'>): string | 
   if (NORTHERN_EUROPE_IDS.has(id)) return `${BASE}assets/ports/port_northern_europe.webp`
   return REGION_IMAGES[region]
 }
+
+/**
+ * 岸上视角的**整屏**背景，与上面那套 96px 缩略图分开取。
+ *
+ * 【为什么必须分开】面板里那张图只显示 96px 高，原生 800×220 插值到 1600×900
+ * 也看不出问题；可岸上视角是 `object-cover` 铺满整屏，同一张图会被放大到
+ * 1500~2500px 宽，观感就是一团涂抹——玩家连"这地方长什么样"都看不出来，
+ * 岸上这一屏就白做了。
+ *
+ * 现在只有欧洲这张是真·原生全景（1672×941，无上采样，q0.72 有损 391KB）。
+ * 素材方的 README 标注"未达 2560×1440，不可当 production approved"——
+ * 对浏览器背景来说 1440 屏下是 0.86 倍、不放大，只有 2K/4K 屏才会放大 1.2~1.5 倍；
+ * 所以可用于游戏，但**不能对外声称达到 2560 原生**，等原生大图到位再同名替换。
+ *
+ * 其余港口暂回落到缩略图（现有行为不变），补到哪张就加哪张。
+ */
+const HARBOR_BACKDROP_BY_ID: Record<number, string> = {
+  6: 'harbor_europe',  // 塞维利亚
+  7: 'harbor_europe',  // 里斯本
+  20: 'harbor_europe', // 加的斯
+
+}
+
+export function harborBackdrop(port: number | Pick<Port, 'id' | 'region'>): string | undefined {
+  const id = typeof port === 'number' ? port : port.id
+  const backdrop = HARBOR_BACKDROP_BY_ID[id]
+  if (backdrop) return `${BASE}assets/ports/${backdrop}.webp`
+  return portImage(port)
+}

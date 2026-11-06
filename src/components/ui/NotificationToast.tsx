@@ -153,7 +153,7 @@ export default function NotificationToast() {
         )
       })}
       {overflow > 0 && (
-        <div className="self-end text-gold-500 text-[10px] font-serif px-2 py-0.5 rounded bg-ocean-900/85 border border-gold-700/25">
+        <div className="self-end text-gold-500 text-xs font-serif px-2 py-0.5 rounded bg-ocean-900/85 border border-gold-700/25">
           还有 {overflow} 条通知
         </div>
       )}

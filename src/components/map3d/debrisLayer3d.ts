@@ -1,5 +1,6 @@
 import * as THREE from 'three'
-import { lonToWorldX, latToWorldZ } from '@/utils/mapProjection'
+import { lonToWorldX, latToWorldZ, worldXToLon, worldZToLat } from '@/utils/mapProjection'
+import { isOnLand, isLandLoaded } from '@/utils/landCheck'
 import { useGameStore } from '@/store/useGameStore'
 import { DEBRIS_INFO, type DebrisKind } from '@/data/debris'
 import { debrisMarkerHtml } from '@/utils/debrisGlyph'
@@ -40,6 +41,16 @@ const DEBRIS_Y = -0.085
 /** 两个漂流物至少要隔开这么远，44px 的热区才不会互相盖住 */
 const MIN_GAP = 50
 
+/**
+ * 疏散偏移的**数值兜底**：只用来防异常把图标甩到屏幕外，不是「靠岸安全半径」。
+ *
+ * 别把它设成 24px：那是旧日志里记的「实测最多偏离锚点」，但 3 个物件投影只差
+ * 1~3px 时，要收敛到 MIN_GAP=50px 的间距本来就需要更大的位移。实测钳在 24px 后
+ * 最小间距掉到 34px，热区重新互相盖住（debris-3d.mjs 抓到）。
+ * 真正防止图标画到陆地上，靠下面按 isOnLand 做的反投影否决。
+ */
+const MAX_OFFSET = MIN_GAP * 1.5
+
 interface Node {
   el: HTMLButtonElement
   kind: DebrisKind
@@ -65,6 +76,8 @@ export interface DebrisLayer3d {
 
 export function createDebrisLayer3d(mount: HTMLElement): DebrisLayer3d {
   const nodes = new Map<string, Node>()
+  /** 复用的反投影向量，避免每帧 new 一个 Vector3 */
+  const rayDir = new THREE.Vector3()
 
   const make = (id: string, kind: DebrisKind): Node => {
     const el = document.createElement('button')
@@ -134,7 +147,8 @@ export function createDebrisLayer3d(mount: HTMLElement): DebrisLayer3d {
       const vis = items.filter(i => i.visible)
       const pts = vis
         .sort((a, b) => a.id.localeCompare(b.id))
-        .map(it => ({ node: it.node, x: it.ax, y: it.ay }))
+        // 锚点要一起带进松弛：疏散后的偏移上限与「落陆地就退回」都要用到它
+        .map(it => ({ node: it.node, x: it.ax, y: it.ay, ax: it.ax, ay: it.ay }))
 
       for (let iter = 0; iter < 6; iter++) {
         let moved = false
@@ -159,6 +173,65 @@ export function createDebrisLayer3d(mount: HTMLElement): DebrisLayer3d {
           }
         }
         if (!moved) break
+      }
+
+      /*
+       * 【疏散的安全边界】松弛只在屏幕空间两两推开，不知道推到的地方是海还是陆地：
+       * 靠岸时可能把图标推到岸上（"点木桶捞到零钱"是另一类错，已经修过；
+       * 这里是"图标画在陆地上"）。做两件事：
+       *   ① 把偏移钳在 MAX_OFFSET 内，只防数值异常甩飞，不限制正常疏散；
+       *   ② 把最终屏幕点反投影回海面平面，查 isOnLand；落陆地就绕锚点找
+       *      一个「海面 + 与其余点 ≥44px」的替代位，找不到才退回锚点
+       *      —— 锚点是漂流物生成时保证过的海面点。
+       * 陆地数据没加载完时只做 ①，不靠猜测判海陆。
+       * 代价要说清楚：极端贴岸、四周全是陆地时仍会退回锚点，两两只差 1~3px；
+       * 这时优先保证"图标不画在陆地上"，因为画错地方比挤在一起更容易点空。
+       * 简单退回锚点是不行的：实测两两间距会掉到 34px，热区重新互相盖住。
+       */
+      const landReady = isLandLoaded()
+      /** 屏幕点 → 反投影回海面平面 → 查是不是陆地（复用项目自己的投影函数） */
+      const onLandAt = (sx: number, sy: number): boolean => {
+        rayDir.set((sx / width) * 2 - 1, -(sy / height) * 2 + 1, 0.5)
+          .unproject(camera).sub(camera.position)
+        if (Math.abs(rayDir.y) < 1e-6) return false
+        const t = (DEBRIS_Y - camera.position.y) / rayDir.y
+        if (t <= 0) return false
+        return isOnLand(
+          worldZToLat(camera.position.z + rayDir.z * t),
+          worldXToLon(camera.position.x + rayDir.x * t),
+        )
+      }
+      for (const pt of pts) {
+        const ox = pt.x - pt.ax, oy = pt.y - pt.ay
+        const off = Math.hypot(ox, oy)
+        if (off > MAX_OFFSET) {
+          pt.x = pt.ax + (ox / off) * MAX_OFFSET
+          pt.y = pt.ay + (oy / off) * MAX_OFFSET
+        }
+      }
+      if (landReady) {
+        for (const pt of pts) {
+          if (!onLandAt(pt.x, pt.y)) continue
+          /*
+           * 不能简单退回锚点：实测那样做两两中心距掉到 34px，热区又互相盖住
+           * （debris-3d.mjs 抓到）。以锚点为圆心绕一圈，找一个既在海面、
+           * 又与其余点 ≥44px 的位置；找不到才退回，并承认这时间距可能让步。
+           */
+          const baseR = Math.max(MIN_GAP, Math.hypot(pt.x - pt.ax, pt.y - pt.ay))
+          let placed = false
+          for (let k = 0; k < 16 && !placed; k++) {
+            const a = k * Math.PI / 8
+            for (const r of [baseR, MIN_GAP, MIN_GAP * 1.5]) {
+              const nx = pt.ax + Math.cos(a) * r
+              const ny = pt.ay + Math.sin(a) * r
+              if (onLandAt(nx, ny)) continue
+              if (pts.some(o => o !== pt && Math.hypot(o.x - nx, o.y - ny) < 44)) continue
+              pt.x = nx; pt.y = ny; placed = true
+              break
+            }
+          }
+          if (!placed) { pt.x = pt.ax; pt.y = pt.ay }
+        }
       }
 
       const placed = new Map<Node, { x: number; y: number }>()

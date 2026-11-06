@@ -29,6 +29,55 @@
   src: url('./assets/fonts/noto-serif-sc-subset.woff2') format('woff2');
 }
 
+/* ==========================================================================
+ * Pirata One（标题装饰体）与 Crimson Text（英文正文）—— 自托管，不再走 Google Fonts
+ *
+ * 【为什么必须自托管】这两族原来写在 index.html 的
+ * `<link href="https://fonts.googleapis.com/css2?...">` 里，而外链样式表是
+ * **阻塞渲染**的。实测（.workbuddy/probe-fonts-offline.mjs，CDP 阻断两个域名）：
+ *   A 能连上：FCP 1868ms / DCL 581ms
+ *   B 连不上：FCP 2304ms / DCL 1111ms（+530ms）
+ * 而那还是"立即失败"的乐观情况；真实被墙是**超时**，只会更久。
+ * 两款字体加起来只有 109KB（latin 子集），自托管比等一个可能永远不来的请求划算。
+ *
+ * 只取 latin 子集：中文由 Noto Serif SC 承担，这两族不覆盖汉字。
+ * ========================================================================== */
+@font-face {
+  font-family: 'Pirata One';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('./assets/fonts/pirata-one-400-latin.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Crimson Text';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('./assets/fonts/crimson-text-400-latin.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Crimson Text';
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+  src: url('./assets/fonts/crimson-text-400-italic-latin.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Crimson Text';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('./assets/fonts/crimson-text-600-latin.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Crimson Text';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('./assets/fonts/crimson-text-700-latin.woff2') format('woff2');
+}
+
 @tailwind components;
 @tailwind utilities;
 

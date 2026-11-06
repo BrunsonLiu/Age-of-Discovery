@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "build:clean": "node scripts/clean-build.mjs",
+    "font:subset": "python scripts/make_font_subset.py",
     "lint": "eslint .",
     "preview": "vite preview",
     "check": "tsc -b --noEmit",
@@ -16,6 +18,7 @@
     "test:e2e:map": "node test/e2e/map-legibility.mjs",
     "test:e2e:map3d": "node test/e2e/map3d-check.mjs",
     "test:e2e:trade": "node test/e2e/trade-quote.mjs",
+    "test:e2e:supply": "node test/e2e/supply-parity.mjs",
     "test:e2e:notify": "node test/e2e/notification-overlap.mjs",
     "test:e2e:mobile": "node test/e2e/mobile-layout.mjs",
     "test:e2e:clickable": "node test/e2e/clickable-audit.mjs",
@@ -25,7 +28,22 @@
     "test:e2e:mobile:prod": "node test/e2e/mobile-prod.mjs",
     "test:e2e:load": "node test/e2e/measure-map-load.mjs",
     "test:e2e:online": "node test/e2e/online-load-time.mjs",
-    "test:e2e:all": "npm run test:e2e && npm run test:e2e:scenes && npm run test:e2e:audio && npm run test:e2e:map && npm run test:e2e:map3d && npm run test:e2e:trade && npm run test:e2e:notify && npm run test:e2e:mobile && npm run test:e2e:clickable && npm run test:e2e:clickable:1024 && npm run test:e2e:clickable:3d && npm run test:e2e:layout"
+    "test:e2e:logbook": "node test/e2e/logbook.mjs",
+    "test:e2e:harbor": "node test/e2e/harbor-view.mjs",
+    "test:e2e:firstrun": "node test/e2e/first-run.mjs",
+    "test:e2e:visitor": "node test/e2e/visitor-mode.mjs",
+    "test:e2e:font": "node test/e2e/font-coverage.mjs",
+    "test:e2e:smalltext": "node test/e2e/small-text-audit.mjs",
+    "test:e2e:copy": "node test/e2e/copy-density-audit.mjs",
+    "test:e2e:seg1": "npm run test:e2e && npm run test:e2e:scenes && npm run test:e2e:audio && npm run test:e2e:map",
+    "test:e2e:seg2": "npm run test:e2e:map3d && npm run test:e2e:trade && npm run test:e2e:supply && npm run test:e2e:notify && npm run test:e2e:mobile",
+    "test:e2e:seg3": "npm run test:e2e:clickable && npm run test:e2e:clickable:1024 && npm run test:e2e:clickable:3d && npm run test:e2e:logbook",
+    "test:e2e:seg4": "npm run test:e2e:layout && npm run test:e2e:harbor && npm run test:e2e:smalltext && npm run test:e2e:copy",
+    "test:e2e:seg5": "npm run test:e2e:firstrun && npm run test:e2e:visitor && npm run test:e2e:font",
+    "test:e2e:seg6": "node test/e2e/intro-check.mjs && node test/e2e/no-dialogue-interrupt.mjs && node test/e2e/contrast-audit.mjs && node test/e2e/weather-2d.mjs && node test/e2e/land-texture.mjs && node test/e2e/debris-3d.mjs",
+    "test:e2e:prod": "npm run test:e2e:mobile:prod",
+    "test:e2e:full": "npm run test:e2e:seg1 && npm run test:e2e:seg2 && npm run test:e2e:seg3 && npm run test:e2e:seg4 && npm run test:e2e:seg5 && npm run test:e2e:seg6 && npm run test:e2e:prod",
+    "test:e2e:all": "npm run test:e2e && npm run test:e2e:scenes && npm run test:e2e:audio && npm run test:e2e:map && npm run test:e2e:map3d && npm run test:e2e:trade && npm run test:e2e:supply && npm run test:e2e:notify && npm run test:e2e:mobile && npm run test:e2e:clickable && npm run test:e2e:clickable:1024 && npm run test:e2e:clickable:3d && npm run test:e2e:layout && npm run test:e2e:logbook && npm run test:e2e:harbor && npm run test:e2e:smalltext && npm run test:e2e:copy && npm run test:e2e:firstrun && npm run test:e2e:visitor && npm run test:e2e:font && npm run test:e2e:seg6"
   },
   "dependencies": {
     "clsx": "^2.1.1",
@@ -34,7 +52,6 @@
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-leaflet": "^4.2.1",
-    "react-router-dom": "^7.3.0",
     "tailwind-merge": "^3.0.2",
     "three": "^0.186.1",
     "zustand": "^5.0.3"

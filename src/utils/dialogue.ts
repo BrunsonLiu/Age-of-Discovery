@@ -112,9 +112,9 @@ export const DIALOGUE_SCRIPTS: DialogueScript[] = [
     // 三句对应三种表情：宽慰 → 严肃 → 期许。
     // 立绘差分素材（第二批 P3）在 assets/portraits/ 下，早已存在但一直没用上。
     portraits: [
-      `${BASE}assets/portraits/officer_pilot_calm.png`,
-      `${BASE}assets/portraits/officer_pilot_serious.png`,
-      `${BASE}assets/portraits/officer_pilot_hope.png`,
+      `${BASE}assets/portraits/officer_pilot_calm.webp`,
+      `${BASE}assets/portraits/officer_pilot_serious.webp`,
+      `${BASE}assets/portraits/officer_pilot_hope.webp`,
     ],
   },
 

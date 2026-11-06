@@ -1,22 +1,11 @@
-import { useEffect } from 'react'
-import { Ship, Anchor, Scroll, Flag, Package, HelpCircle, Trophy, Newspaper, Hammer } from 'lucide-react'
+import { useEffect, lazy, Suspense } from 'react'
+import { Ship, Anchor, Scroll, Flag, Package, HelpCircle, Trophy, Newspaper, Hammer, Map } from 'lucide-react'
 import { useGameStore } from '@/store/useGameStore'
 import { useMapStore } from '@/store/useMapStore'
-import MapView from '@/components/map/MapView'
+import HarborInvite from '@/components/harbor/HarborInvite'
 import SailingController from '@/components/map/SailingController'
-import FleetPanel from '@/components/panels/FleetPanel'
-import PortDetail from '@/components/panels/PortDetail'
-import TradePanel from '@/components/panels/TradePanel'
-import ShipyardPanel from '@/components/panels/ShipyardPanel'
-import EventLog from '@/components/panels/EventLog'
-import TaskPanel from '@/components/panels/TaskPanel'
-import AchievementPanel from '@/components/panels/AchievementPanel'
-import RivalPanel from '@/components/panels/RivalPanel'
-import VoyagePlanModal from '@/components/map/VoyagePlanModal'
-import SegmentDecision from '@/components/map/SegmentDecision'
 import WeatherFx from '@/components/map/WeatherFx'
 import SeaOmen from '@/components/map/SeaOmen'
-import EventCard from '@/components/events/EventCard'
 import BottomBar from '@/components/ui/BottomBar'
 import BrokerTip from '@/components/map/BrokerTip'
 import VoyageControls from '@/components/map/VoyageControls'
@@ -31,14 +20,12 @@ import IntroScreen from '@/components/intro/IntroScreen'
 import { TUTORIAL_STEP_COUNT } from '@/constants/tutorial'
 import TutorialOverlay from '@/components/intro/TutorialOverlay'
 import HelpPanel from '@/components/intro/HelpPanel'
-import HelmModal from '@/components/map/HelmModal'
 import DialogueOverlay from '@/components/ui/DialogueOverlay'
 import WindParticles from '@/components/map/WindParticles'
 import { useKeyboardControls } from '@/hooks/useKeyboardControls'
 import { useIsMobile } from '@/hooks/useIsMobile'
 import { prevailingWindBearing } from '@/utils/navigation'
 import type { PanelType } from '@/types'
-import { tasks } from '@/data/tasks'
 import { currentTitle } from '@/data/titles'
 import { FACTIONS } from '@/data/factions'
 import { CREW_CHAR_MAP } from '@/data/crewChars'
@@ -47,10 +34,94 @@ import { BG_ASSETS } from '@/data/envAssets'
 import { OPENING_SCRIPT_ID } from '@/utils/dialogue'
 import { pickDialogue } from '@/utils/dialogueTriggers'
 import { skyAt } from '@/utils/skyClock'
+import { DURATION, EASE_STANDARD, prefersReducedMotion } from '@/utils/motion'
 import { ports } from '@/data/ports'
+
+/*
+ * 【懒加载：把「地图 + 面板 + 浮层」移出首屏】
+ * bundle 实测（`.workbuddy/vite.analyze.ts`）：首屏 JS 313KB gz，其中 leaflet 43KB、
+ * app-map 28KB、app-panels 15KB、app-events 15KB、app-harbor 4KB ——
+ * 这 105KB 在「开局 4 屏」阶段一行都用不到（地图被开场界面整块盖着）：
+ * 实测第一屏出现要 900ms，等的就是那个 313KB 的 index chunk。
+ * 拆开之后，开局只需要 index（自家数据/商店/文案）+ react。
+ *
+ * 【不能让玩家等 chunk】`prefetchSurface()` 在第一屏画完后（空闲时）就把这些块取回来，
+ * 玩家读完 4 屏点「启航」时它们已经在内存里 —— 因此点开面板仍然是"立刻"。
+ */
+const MapView = lazy(() => import('@/components/map/MapView'))
+const HarborView = lazy(() => import('@/components/harbor/HarborView'))
+const FleetPanel = lazy(() => import('@/components/panels/FleetPanel'))
+const PortDetail = lazy(() => import('@/components/panels/PortDetail'))
+const TradePanel = lazy(() => import('@/components/panels/TradePanel'))
+const ShipyardPanel = lazy(() => import('@/components/panels/ShipyardPanel'))
+const EventLog = lazy(() => import('@/components/panels/EventLog'))
+const TaskPanel = lazy(() => import('@/components/panels/TaskPanel'))
+const AchievementPanel = lazy(() => import('@/components/panels/AchievementPanel'))
+const RivalPanel = lazy(() => import('@/components/panels/RivalPanel'))
+const VoyagePlanModal = lazy(() => import('@/components/map/VoyagePlanModal'))
+const SegmentDecision = lazy(() => import('@/components/map/SegmentDecision'))
+const HelmModal = lazy(() => import('@/components/map/HelmModal'))
+const EventCard = lazy(() => import('@/components/events/EventCard'))
+
+/**
+ * 开局期间把上面这些块悄悄取回来（幂等：同一 specifier 的 import() 只会发一次请求）。
+ *
+ * 用 `requestIdleCallback` 而不是立刻执行：第一屏刚画完时主线程正在解码开局大图
+ * （bg_title 161KB + 船精灵 190KB），这时候抢带宽/主线程会拖慢第一屏本身。
+ * 带 timeout 兜底，避免一直空闲不下来（某些浏览器后台标签页 rIC 不触发）。
+ */
+/*
+ * 最强的那一块提前到**模块求值时**就去取：它是唯一"玩家随时可能立刻需要"的块
+ * （点「启航」→ 地图）。放在首帧后再取的话，急性子玩家要等约 280ms（实测）；
+ * 而 62KB gz 提前下载对第一屏的影响可以忽略（同一批请求里还有 199KB 的主包）。
+ */
+void import('@/components/map/MapView')
+
+/*
+ * 最强的那一块提前到**模块求值时**就去取：它是唯一"玩家随时可能立刻需要"的块
+ * （点「启航」→ 地图）。放在首帧后再取的话，急性子玩家要等约 280ms（实测）；
+ * 而 62KB gz 提前下载对第一屏的影响可以忽略（同一批请求里还有 199KB 的主包）。
+ */
+if (import.meta.env.PROD) void import('@/components/map/MapView')
+
+function prefetchSurface(): void {
+  /*
+   * 只在生产构建里预取。
+   * dev server 是按需编译的：这 13 个动态 import 会立刻触发几十个模块的编译请求，
+   * 把主线程和 dev server 一起占住 —— e2e 在 dev 上跑，会变成"点开面板/帮助偶尔没反应"的假故障。
+   * 而 dev 下拆包本来就没有收益（模块是分开请求的）。生产里 chunk 是切好的，预取才有意义。
+   */
+  if (!import.meta.env.PROD) return
+  /*
+   * 分两批：
+   *   ① 地图块（62KB gz）—— 玩家点「启航」立刻就要它，所以首帧一画完就去取。
+   *      实测：只在空闲时取，动作快的玩家点完「启航」要干等 352ms（4 屏文字很快读完的人并不多，
+   *      但"点下去没反应"正是这个项目反复修的那类问题）。
+   *   ② 其余（面板 / 浮层 / 岸上 / 事件卡）—— 都是"要打开才用"，放空闲里取，别抢开局大图的带宽。
+   */
+  const load = () => {
+    void import('@/components/harbor/HarborView')
+    void import('@/components/panels/FleetPanel')
+    void import('@/components/panels/PortDetail')
+    void import('@/components/panels/TradePanel')
+    void import('@/components/panels/ShipyardPanel')
+    void import('@/components/panels/EventLog')
+    void import('@/components/panels/TaskPanel')
+    void import('@/components/panels/AchievementPanel')
+    void import('@/components/panels/RivalPanel')
+    void import('@/components/map/VoyagePlanModal')
+    void import('@/components/map/SegmentDecision')
+    void import('@/components/map/HelmModal')
+    void import('@/components/events/EventCard')
+  }
+  const ric = (window as unknown as {
+    requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => number
+  }).requestIdleCallback
+  if (ric) ric(load, { timeout: 1200 })
+  else window.setTimeout(load, 300)
+}
 import { useDialogueStore } from '@/store/useDialogueStore'
 
-const totalTasks = tasks.length
 const totalAchievements = achievements.length
 
 const panelButtons: { type: PanelType; icon: React.ReactNode; label: string; side: 'left' | 'right' }[] = [
@@ -70,6 +141,8 @@ const Z = {
   MAP: 0,
   WIND: 5,
   COMPASS: 10,
+  /** 岸上视角：盖住地图与罗盘，但让侧栏 / 面板 / 底栏照常可点（见 HarborView 注释） */
+  HARBOR: 12,
   SIDE_BUTTONS: 20,
   PANEL: 30,
   BOTTOM_BAR: 40,
@@ -93,7 +166,10 @@ export default function MainMap() {
   const tutorialStep = useGameStore(s => s.tutorialStep)
   const showHelp = useGameStore(s => s.showHelp)
   const setShowHelp = useGameStore(s => s.setShowHelp)
-  const victoryDay = useGameStore(s => s.victoryDay)
+  const claimedVictories = useGameStore(s => s.claimedVictories)
+  const continueAsVisitor = useGameStore(s => s.continueAsVisitor)
+  /** 侧栏「日志」的小圆点：这趟带回的新页还没翻过 */
+  const unreadLogbook = useGameStore(s => s.logbook.filter(e => !e.read).length)
   const discoveredPorts = useGameStore(s => s.discoveredPorts)
   const completedTasks = useGameStore(s => s.completedTasks)
   const stats = useGameStore(s => s.stats)
@@ -116,17 +192,29 @@ export default function MainMap() {
   useKeyboardControls()
 
   // 剧情线触发点①：开局致辞。initGame 会清空 dialogueSeen，故每开新局必播一次；
+  // 开局 4 屏期间把地图/面板的 chunk 取回来（见文件上方的 prefetchSurface）
+  useEffect(() => {
+    // 首帧之后再触发，别和开场界面的首次绘制抢主线程
+    const raf = requestAnimationFrame(() => prefetchSurface())
+    return () => cancelAnimationFrame(raf)
+  }, [])
+
   // 刷新页面时 dialogueSeen 已存档，不重播。后续触发点（rival 遭遇等）照此模式加。
   //
-  // 教学进行中暂缓播放：教学是全屏遮罩且键盘优先级更高，对白压在底下既看不全
-  // 也推进不了（Enter 被教学吃掉），等教学结束再开场致辞。
+  // 【顺序：致辞在前，教学在后】原先是"教学进行中不弹，等教学结束再开场致辞"，
+  // 实际效果是玩家先被 10 步教学教完，刚点「开始冒险」想做第一个决定，一段
+  // 老领航员对白才压上来把侧栏全盖住——实测这时候连点两次「贸易」都命中在那层
+  // `bg-black/45` 上（`elementFromPoint` 返回 DIV，`activePanel` 一直是 null）。
+  // 叙事顺序也拧着：教学第一句本来就是"欢迎来到大航海时代"，等于先说结论再说开场白。
+  // 现在反过来：致辞先播，教学等它播完（见下方 TutorialOverlay 的渲染条件）。
   const dialogueSeen = useGameStore(s => s.dialogueSeen)
+  const dialogueOpen = useDialogueStore(s => s.scriptId !== null)
   const tutorialActive = gamePhase === 'playing' && tutorialStep >= 0 && tutorialStep < TUTORIAL_STEP_COUNT
   useEffect(() => {
-    if (gamePhase === 'playing' && !tutorialActive && !dialogueSeen.includes(OPENING_SCRIPT_ID)) {
+    if (gamePhase === 'playing' && !dialogueSeen.includes(OPENING_SCRIPT_ID)) {
       useDialogueStore.getState().open(OPENING_SCRIPT_ID)
     }
-  }, [gamePhase, dialogueSeen, tutorialActive])
+  }, [gamePhase, dialogueSeen])
 
   // 视野中心所处的行星风带（罗盘风向标 + 风向粒子的风向来源）
   const mapCenter = useMapStore((s) => s.center)
@@ -204,6 +292,40 @@ export default function MainMap() {
     activePanel, showHelp,
   ])
 
+  const viewMode = useMapStore(s => s.viewMode)
+  const setViewMode = useMapStore(s => s.setViewMode)
+
+  /*
+   * 船一离港（或当前港被清空）就自动回海图。
+   * 岸上是「人走到了码头上」的视角，船开走后还留在岸上等于视角撒谎；
+   * 也顺手保证出航时玩家立刻看见航线，不用先手动退一层。
+   * 放在 UI 层而不是 store：viewMode 是会话状态，不该污染游戏状态机。
+   */
+  useEffect(() => {
+    if (viewMode === 'harbor' && (fleet.isSailing || fleet.currentPortId == null)) {
+      setViewMode('chart')
+    }
+  }, [viewMode, fleet.isSailing, fleet.currentPortId, setViewMode])
+
+  /*
+   * 第二空间的常驻开关。
+   *
+   * 上一轮「岸上」只在港口面板里有一个入口，加上到港 9 秒就收的邀请，
+   * 玩家完全可能整局都没发现还有另一个景别 —— 那"第二个空间"等于没做。
+   * 现在桌面右侧栏、移动底栏各放一个**一直都在**的切换按钮，
+   * 与 A 键、Esc 退层、出航自动回海图共用同一套判定。
+   *
+   * 航行中不隐藏按钮：隐藏会让玩家以为功能时有时无；改成明确的禁用态 +
+   * title 说明「靠岸后才能上岸」，是可预期的灰，不是"点了没反应"。
+   */
+  const canAshore = !fleet.isSailing && fleet.currentPortId != null
+  const viewLabel = viewMode === 'harbor' ? '回海图' : '上岸走走'
+  const toggleViewMode = () => {
+    if (viewMode === 'harbor') { setViewMode('chart'); return }
+    if (!canAshore) return
+    setViewMode('harbor')
+  }
+
   const windBearing = weather.windDir || prevailingWindBearing(mapCenter[0])
   const windSpeed = weather.windSpeed
 
@@ -212,13 +334,6 @@ export default function MainMap() {
     { name: '你', gold: fleet.gold, fame: fleet.fame, ports: discoveredPorts.length, isPlayer: true },
     ...rivals.map(r => ({ name: r.name, gold: r.gold, fame: r.fame, ports: r.portsFound, isPlayer: false })),
   ].sort((a, b) => b.gold - a.gold || b.fame - a.fame)
-
-  const victoryDesc = useGameStore(() => {
-    if (discoveredPorts.length >= 20) return '你发现了世上全部 20 座港口——每一片海岸都记得你的帆影。'
-    if (completedTasks.length >= totalTasks) return `${totalTasks} 段冒险全部写进了你的航海日志——传奇船长，实至名归。`
-    if (fleet.gold >= 20000) return '两万金币的家底——你的船队比西班牙珍宝舰队还令人垂涎。'
-    return '你的名字已被这片大海记住。'
-  })
 
   const togglePanel = (panel: PanelType) => {
     if (showHelp) setShowHelp(false)
@@ -270,13 +385,44 @@ export default function MainMap() {
   return (
     <div className="h-screen w-screen overflow-hidden bg-ocean-900">
 
-      <div className="absolute inset-0" style={{ zIndex: Z.MAP }}>
-        <MapView />
+      {/*
+        地图层不卸载：Leaflet / three.js 实例重建要几百毫秒，还会丢掉相机位置。
+        上岸时把它「推远压暗」当背景，关掉命中测试即可；切回来零重建。
+        transform/filter 与岸上层的淡入共用 motion.ts 的同一档时长。
+      */}
+      <div
+        className="absolute inset-0"
+        style={{
+          zIndex: Z.MAP,
+          transform: viewMode === 'harbor' ? 'scale(0.94)' : undefined,
+          filter: viewMode === 'harbor' ? 'brightness(0.55) saturate(0.75)' : undefined,
+          transition: prefersReducedMotion()
+            ? undefined
+            : `transform ${DURATION.grand}ms ${EASE_STANDARD}, filter ${DURATION.grand}ms ${EASE_STANDARD}`,
+          pointerEvents: viewMode === 'harbor' ? 'none' : undefined,
+        }}
+        aria-hidden={viewMode === 'harbor'}
+        data-testid="chart-layer"
+      >
+        <Suspense fallback={null}>
+          <MapView />
+        </Suspense>
         <SailingController />
         <WeatherFx />
         {/* 海上异闻：只画剪影与一行字，不接收任何点击（pointer-events-none） */}
         <SeaOmen />
       </div>
+
+      {viewMode === 'harbor' && (
+        <div
+          className="absolute inset-0 overflow-hidden"
+          style={{ zIndex: Z.HARBOR, backgroundColor: '#140d06' }}
+        >
+          <Suspense fallback={null}>
+            <HarborView />
+          </Suspense>
+        </div>
+      )}
 
       {/*
         罗盘 + 天候徽章（左上角）。
@@ -352,6 +498,13 @@ export default function MainMap() {
             >
               <span className="shrink-0 flex items-center justify-center w-5">{btn.icon}</span>
               <span className="font-serif text-sm whitespace-nowrap leading-none">{btn.label}</span>
+              {btn.type === 'event' && unreadLogbook > 0 && (
+                <span
+                  className="w-2 h-2 rounded-full bg-gold-300 shrink-0"
+                  aria-label={`${unreadLogbook} 页新见闻`}
+                  data-testid="logbook-unread-dot"
+                />
+              )}
             </button>
           ))}
         </div>
@@ -360,6 +513,29 @@ export default function MainMap() {
           className="absolute right-0 flex flex-col justify-center gap-1.5 px-1.5 pointer-events-none"
           style={{ zIndex: Z.SIDE_BUTTONS, top: '60px', bottom: '52px' }}
         >
+          {/* 空间切换不是「第九个面板」：金边更亮、带一道分隔，和下面三块
+              面板入口分开。位置固定在最上面，两个空间一眼可辨。 */}
+          <button
+            onClick={toggleViewMode}
+            disabled={!canAshore && viewMode !== 'harbor'}
+            data-testid="view-mode-switch"
+            aria-label={viewLabel}
+            aria-pressed={viewMode === 'harbor'}
+            title={!canAshore && viewMode !== 'harbor' ? '还在海上，靠岸后才能上岸' : (viewMode === 'harbor' ? '回到海图（A）' : '上岸走走（A）')}
+            className={`pointer-events-auto flex items-center gap-2 pl-3 pr-2.5 py-2.5 rounded-sm
+              font-serif text-sm whitespace-nowrap leading-none press transition-all
+              border border-gold-500/70
+              ${viewMode === 'harbor'
+                ? 'text-gold-100 bg-ocean-900/80'
+                : 'text-gold-100 bg-ocean-900/55 hover:bg-ocean-900/70'}
+              disabled:opacity-40 disabled:cursor-not-allowed`}
+          >
+            <span>{viewLabel}</span>
+            <span className="shrink-0 flex items-center justify-center w-5">
+              {viewMode === 'harbor' ? <Map size={18} /> : <Anchor size={18} />}
+            </span>
+          </button>
+          <div className="h-px mx-2 bg-gold-700/40" aria-hidden="true" />
           {panelButtons.filter(b => b.side === 'right').map(btn => (
             <button
               key={btn.type}
@@ -406,6 +582,9 @@ export default function MainMap() {
           · 侧板是横向滑入的动画，抽屉应该从下往上滑。
         所以移动端走独立的渲染分支，而不是靠 CSS 挪位置。
       */}
+      {/* 面板组件都是懒加载块：整块包一层 Suspense，fallback 用 null
+          —— 面板平时没打开时这里本来就是空的，不会闪白。 */}
+      <Suspense fallback={null}>
       {activeLeftPanel && (
         isMobile ? (
           drawer(
@@ -429,7 +608,9 @@ export default function MainMap() {
           </div>
         )
       )}
+      </Suspense>
 
+      <Suspense fallback={null}>
       {activeRightPanel && (
         isMobile ? (
           drawer(
@@ -449,6 +630,7 @@ export default function MainMap() {
           </div>
         )
       )}
+      </Suspense>
 
       {showHelp && (
         isMobile ? (
@@ -476,7 +658,9 @@ export default function MainMap() {
         都会在某一档把卡片压到栏底下（实测手机按钮被整条盖住）。改由下面那个
         fixed 容器按文档流往上叠，结构上就不可能重叠。
       */}
-      {!isMobile && <BrokerTip />}
+      {/* 岸上是另一个空间：跑商提案是"站在海图前"的提示，压在港口近景上
+          既违和、移动端还会盖住服务按钮。回海图后照常出现，不丢功能。 */}
+      {!isMobile && viewMode !== 'harbor' && <BrokerTip />}
       {/*
         航行中：改方针 / 亲手掌舵 / 加餐（原来前两个是每段自动弹的全屏层）。
         桌面：浮在左下、底栏之上。
@@ -486,18 +670,26 @@ export default function MainMap() {
         但只渲染了移动端那一份 —— 桌面玩家除非知道按 H，否则**看不到这两个入口**。
         与掮客卡互斥（一个停泊时出现、一个航行时出现），所以同在左下不会打架。
       */}
-      {!isMobile && <VoyageControls />}
+      {!isMobile && viewMode !== 'harbor' && <VoyageControls />}
 
 
       {isMobile ? (
         <div className="fixed bottom-0 left-0 right-0" style={{ zIndex: Z.BOTTOM_BAR }}>
-          <VoyageControls placement="stack" />
-          <BrokerTip placement="stack" />
+          {viewMode !== 'harbor' && <VoyageControls placement="stack" />}
+          {viewMode !== 'harbor' && <BrokerTip placement="stack" />}
           <BottomBar />
           <MobileTabBar
-            buttons={panelButtons.map(b => ({ type: b.type, icon: b.icon, label: b.label }))}
+            buttons={panelButtons.map(b => ({
+              type: b.type,
+              icon: b.icon,
+              label: b.label,
+              badge: b.type === 'event' ? unreadLogbook : 0,
+            }))}
             activePanel={activePanel}
             onToggle={togglePanel}
+            viewMode={viewMode}
+            canAshore={canAshore}
+            onToggleView={toggleViewMode}
             showHelp={showHelp}
             onToggleHelp={() => {
               if (activePanel) setActivePanel(null)
@@ -515,6 +707,10 @@ export default function MainMap() {
         <TimelineBar />
       </div>
 
+      {/* 靠岸邀请条：只在"刚从海上回来"时露 9 秒，自己定位、自己收起。
+          不放进下面的通知容器——那层是 pointer-events-none，按钮会点不动。 */}
+      <HarborInvite />
+
       {/* 通知自己定位（桌面右上 / 移动端顶部通栏），这里只给层级。
           容器必须 pointer-events-none，否则这层会盖住整张地图的点击。 */}
       <div className="absolute inset-0 pointer-events-none" style={{ zIndex: Z.NOTIFICATION }}>
@@ -528,20 +724,27 @@ export default function MainMap() {
       <BgmController />
 
       {/* 出航计划：点击地图后先评估、（可选）买情报，再升起旗帜 */}
-      <VoyagePlanModal />
+      {/* 这四个都在懒加载块里（首屏用不到）：合成一个 Suspense，
+          避免每个各包一层。fallback 用 null —— 它们平时也都不渲染任何东西。 */}
+      <Suspense fallback={null}>
+        {/* 出航计划：点击地图后先评估、（可选）买情报，再升起旗帜 */}
+        <VoyagePlanModal />
 
-      {/* 航段抉择：每段航程开始时选一个方针（1/2/3）——这是唯一的速度旋钮 */}
-      <SegmentDecision />
+        {/* 航段抉择：每段航程开始时选一个方针（1/2/3）——这是唯一的速度旋钮 */}
+        <SegmentDecision />
 
-      {/* 操舵挑战：航行中的实时操作小游戏（H 键或底部按钮进入） */}
-      <HelmModal />
+        {/* 操舵挑战：航行中的实时操作小游戏（H 键或底部按钮进入） */}
+        <HelmModal />
+      </Suspense>
 
       {/* 剧情对白：角色立绘滑入致辞（开局由下方触发器拉起，Enter 推进 / Esc 跳过） */}
       <DialogueOverlay />
 
       {currentEvent && gamePhase === 'event' && (
         <div className="absolute inset-0 flex items-center justify-center" style={{ zIndex: Z.OVERLAY }}>
-          <EventCard />
+          <Suspense fallback={null}>
+            <EventCard />
+          </Suspense>
         </div>
       )}
 
@@ -551,45 +754,40 @@ export default function MainMap() {
         </div>
       )}
 
-      {/* 教学引导：组件内部 portal 到 body，自带 z-index，不受这里的 OVERLAY 容器约束 */}
-      {gamePhase === 'playing' && tutorialStep >= 0 && tutorialStep < TUTORIAL_STEP_COUNT && (
+      {/* 教学引导：组件内部 portal 到 body，自带 z-index，不受这里的 OVERLAY 容器约束。
+          有对白开着就先不开教学：两块都是整屏层，叠在一起玩家只会看见上面那块，
+          而键盘 Enter 又同时被两边抢——先让致辞播完，教学再接手。 */}
+      {gamePhase === 'playing' && !dialogueOpen && tutorialStep >= 0 && tutorialStep < TUTORIAL_STEP_COUNT && (
         <TutorialOverlay />
       )}
 
       {gamePhase === 'gameover' && (
         <div className="fixed inset-0 flex items-center justify-center bg-black/80 backdrop-blur-md overflow-y-auto py-8" style={{ zIndex: Z.OVERLAY }}>
-          {/* 结局背景（H2/H3）：凯旋夕阳 / 暴风雨沉船 */}
+          {/*
+            三条胜利阈值已经改成"写进日志的一页称号"，达标不再停机。
+            所以这块全屏层现在**只**由翻船触发，不用再判是胜是败——
+            留着 `victoryDay !== null ? 胜利 : 失败` 的分支，会让"先拿了称号、
+            后来翻船"的玩家看到一屏「传奇船长」，那是在说谎。
+          */}
           <img
-            src={victoryDay !== null ? BG_ASSETS.victory : BG_ASSETS.defeat}
+            src={BG_ASSETS.defeat}
             alt=""
             aria-hidden="true"
             className="absolute inset-0 w-full h-full object-cover opacity-85"
           />
           <div className="text-center space-y-6 max-w-md px-6 relative">
-            {victoryDay !== null ? (
-              <>
-                <div className="text-5xl mb-4">👑</div>
-                <h1 className="pirate-title text-4xl text-gold-300">传奇船长</h1>
-                <p className="text-gold-400 font-serif text-lg">第{victoryDay}天，四海皆知你的名号</p>
-                <div className="space-y-1 text-gold-500 font-serif text-sm">
-                  <p>{victoryDesc}</p>
-                  <p>累积财富: <span className="text-gold-300">{fleet.gold} 金币</span> · 声望: <span className="text-gold-300">{fleet.fame}</span></p>
-                  <p>探索港口: <span className="text-gold-300">{discoveredPorts.length}/20</span> · 完成冒险: <span className="text-gold-300">{completedTasks.length}</span></p>
-                </div>
-              </>
-            ) : (
-              <>
-                <div className="text-5xl mb-4">🏴‍☠️</div>
-                <h1 className="pirate-title text-4xl text-danger-400">航行终结</h1>
-                <p className="text-gold-400 font-serif text-lg">
-                  你的舰队在第{fleet.day}天走向了终结
-                </p>
-                <div className="space-y-1 text-gold-500 font-serif text-sm">
-                  <p>积累财富: <span className="text-gold-300">{fleet.gold} 金币</span> · 声望: <span className="text-gold-300">{fleet.fame}</span></p>
-                  <p>探索港口: <span className="text-gold-300">{discoveredPorts.length}/20</span> · 完成冒险: <span className="text-gold-300">{completedTasks.length}</span></p>
-                </div>
-              </>
-            )}
+            <div className="text-5xl mb-4">🏴‍☠️</div>
+            <h1 className="pirate-title text-4xl text-danger-400">航行终结</h1>
+            <p className="text-gold-400 font-serif text-lg">
+              你的舰队在第{fleet.day}天走向了终结
+            </p>
+            <div className="space-y-1 text-gold-500 font-serif text-sm">
+              <p>积累财富: <span className="text-gold-300">{fleet.gold} 金币</span> · 声望: <span className="text-gold-300">{fleet.fame}</span></p>
+              <p>探索港口: <span className="text-gold-300">{discoveredPorts.length}/20</span> · 完成冒险: <span className="text-gold-300">{completedTasks.length}</span></p>
+              {claimedVictories.length > 0 && (
+                <p className="text-gold-300">册子里已写下 {claimedVictories.length} 页称号，都还在。</p>
+              )}
+            </div>
 
             {/* 生涯总结 */}
             <div className="bg-ocean-800/50 border border-gold-700/30 rounded-lg p-3 text-left">
@@ -655,17 +853,28 @@ export default function MainMap() {
               </div>
             </div>
 
-            <p className="text-gold-600 font-serif text-sm italic">
-              {victoryDay !== null
-                ? '大航海时代落幕了，但酒馆里永远流传着你的航迹。'
-                : '大海收回了它的租金。下一次，也许风会站在你这边。'}
+            <p className="text-gold-400 font-serif text-sm italic">
+              大海收回了它的租金。海图还在，日志也还在——不重来，也能接着往外看。
             </p>
-            <button
-              onClick={resetGame}
-              className="btn-nautical px-6 py-2 rounded-lg font-serif hover:bg-gold-500 transition-all"
-            >
-              重新起航
-            </button>
+            {/*
+              翻船不再只有「重新起航」一条路。日志、图鉴、称号是这一局攒下的东西，
+              因为一次士气归零全清掉，等于前面所有"会累积"的承诺一次性作废。
+            */}
+            <div className="flex flex-wrap items-center justify-center gap-2">
+              <button
+                onClick={continueAsVisitor}
+                className="btn-nautical px-6 py-2 rounded-lg font-serif hover:bg-gold-500 transition-all"
+                data-testid="continue-as-visitor"
+              >
+                接着看海（进度不清）
+              </button>
+              <button
+                onClick={resetGame}
+                className="px-5 py-2 rounded-lg font-serif text-gold-400 hover:text-gold-200 border border-gold-700/40 press transition-all"
+              >
+                重新起航
+              </button>
+            </div>
           </div>
         </div>
       )}

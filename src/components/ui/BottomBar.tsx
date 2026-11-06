@@ -210,7 +210,7 @@ export default function BottomBar() {
             {/* 航段指示：第几段 / 共几段——玩家随时知道"下次抉择还有多远" */}
             {segmentCount > 0 && (
               <span
-                className="text-[11px] font-serif text-gold-600 shrink-0 tabular-nums"
+                className="text-xs font-serif text-gold-600 shrink-0 tabular-nums"
                 title={`航段 ${segmentIndex + 1} / ${segmentCount}`}
               >
                 段{segmentIndex + 1}/{segmentCount}

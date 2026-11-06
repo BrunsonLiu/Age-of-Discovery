@@ -100,9 +100,9 @@ const traitPicked = await page.evaluate(() => {
 })
 check(!!traitPicked, `选择了一张天赋卡（${traitPicked}）`)
 await sleep(400)
-await clickIn('扬帆起航', '扬帆起航')
-await sleep(700)
-await clickIn('第一次出航', '启航')
+// 天赋页现在就是最后一页（原来后面还有一屏「第一次出航」，内容与教程/模式卡重复，
+// 已删；座船卡搬进天赋页底部），所以按钮是「启航！」而不是「扬帆起航！」。
+await clickIn('启航', '启航！')
 await sleep(1500)
 let st = await page.evaluate(() => {
   const s = window.__gameStore.getState()
@@ -370,7 +370,19 @@ await page.evaluate(async () => {
   const ev = mod.events.find(e => e.id === 236)
   window.__gameStore.getState().setCurrentEvent(ev)
 })
-await sleep(800)
+// EventCard 是 lazy chunk：dev server 冷启动首次编译常超过 1s。
+// 固定 sleep(800) 会在全链第一个脚本读到「还没渲染」，再被下面的 badge.otherBadges
+// 变成空指针崩溃（2026-11-06 实测）。轮询等它真的出现。
+const overlayReady = await (async () => {
+  for (let i = 0; i < 80; i++) {
+    const ok = await page.evaluate(() => [...document.querySelectorAll('div.fixed.inset-0')]
+      .some(x => /掉头迎战/.test(x.textContent || '')))
+    if (ok) return true
+    await sleep(150)
+  }
+  return false
+})()
+check(overlayReady, '事件卡渲染出来了（懒加载 chunk 冷启动要等编译）')
 // 小游戏选项不该再显示风险档：它的概率会被操作改写，硬挂一个档位就是编造结论
 const badge = await page.evaluate(() => {
   const o = [...document.querySelectorAll('div.fixed.inset-0')].find(x => /掉头迎战/.test(x.textContent || ''))
@@ -386,7 +398,7 @@ const badge = await page.evaluate(() => {
 })
 check(!!badge && !badge.mgBadge, '小游戏选项不再显示风险档（不编造未计算过的结论）')
 check(!!badge && badge.otherBadges.every(r => ['steady', 'gamble', 'risky'].includes(r)),
-  `普通选项的风险档只取真算出的三档（实际 ${badge.otherBadges.join(',') || '本例未显示'}）`)
+  `普通选项的风险档只取真算出的三档（实际 ${badge?.otherBadges?.join(',') || '本例未显示'}）`)
 await page.screenshot({ path: `${SHOTS}/voyage-event-minigame.png` })
 await clickIn('掉头迎战', '掉头迎战')
 await sleep(600)

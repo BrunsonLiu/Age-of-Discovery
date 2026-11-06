@@ -88,7 +88,7 @@ export default function VoyageNextCard() {
           <Anchor size={13} aria-hidden="true" />
           航路 · {target.title}
         </span>
-        <span className="text-gold-500 text-[11px] font-serif">
+        <span className="text-gold-500 text-xs font-serif">
           第 {Math.min(doneCount + 1, voyageMilestones.length)}/{voyageMilestones.length} 段
         </span>
       </div>
@@ -115,7 +115,7 @@ export default function VoyageNextCard() {
           </span>
         </button>
       )}
-      <div className="mt-1 text-[11px] font-serif text-gold-500">
+      <div className="mt-1 text-xs font-serif text-gold-500">
         完成奖励 +{target.reward.gold} 金 · +{target.reward.fame} 声望
       </div>
     </div>

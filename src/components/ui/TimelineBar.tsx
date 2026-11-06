@@ -4,8 +4,24 @@ import { useEffect, useRef, useState } from 'react'
 import { Award } from 'lucide-react'
 import { useFxStore as useFx } from '@/store/useFxStore'
 
+/**
+ * 历史时间轴的刻度跨度（天）。三条口径必须共用同一个数：年份换算、进度条、刻度位置。
+ *
+ * 【为什么必须过滤掉超过它的节点】historicalTimeline 里还有一条 day=200 的
+ * 「四海皆知你的名号」——那是**玩家自己的成就**，不是 1492~1650 的历史事件。
+ * 旧代码把它的刻度按 (200-1)/150 = 132.67% 定位，画到轨道外、屏幕外：
+ * 1440 视口下实测那根 2px 刻线的 rect 是 [1546,1548]，正好把
+ * documentElement.scrollWidth 从 1440 撑到 **1548**（触屏上会多出一条横向拖动）。
+ * 而那根刻线玩家永远看不见，等于既溢出又没用。
+ * 成就本身照常兑现：advanceDay 会发通知（年份+正文），顶栏也会显示它的标题。
+ */
+const TIMELINE_LAST_DAY = 150
+const HISTORY_TICKS = historicalTimeline.filter(e => e.day <= TIMELINE_LAST_DAY)
+
 export default function TimelineBar() {
   const day = useGameStore(s => s.fleet.day)
+  const gameMode = useGameStore(s => s.gameMode)
+  const setShowHelp = useGameStore(s => s.setShowHelp)
   const fame = useGameStore(s => s.fleet.fame)
   const seenHistoricalEvents = useGameStore(s => s.seenHistoricalEvents)
   const [hoveredEvent, setHoveredEvent] = useState<number | null>(null)
@@ -20,8 +36,8 @@ export default function TimelineBar() {
     lastHistoricalCount.current = seenHistoricalEvents.length
   }, [seenHistoricalEvents.length])
 
-  const currentYear = Math.round(1492 + (day - 1) * (1650 - 1492) / 150)
-  const progress = Math.min(1, (day - 1) / 150)
+  const currentYear = Math.round(1492 + (day - 1) * (1650 - 1492) / TIMELINE_LAST_DAY)
+  const progress = Math.min(1, (day - 1) / TIMELINE_LAST_DAY)
 
   const currentEvent = historicalTimeline.find(e => e.day === day)
   const latestSeenEvent = historicalTimeline
@@ -31,6 +47,9 @@ export default function TimelineBar() {
   return (
     <div
       className="wood-beam absolute top-0 left-0 right-0 h-12 flex items-center px-4 gap-4"
+      // 手机上事件名那格让位给了「参观」徽标（见下方），
+      // 于是把"当前处在哪个历史节点"挂到整条木梁的 title 上，长按/悬停仍能看到。
+      title={currentEvent?.title ?? latestSeenEvent?.title ?? undefined}
       style={{
         /* 材质与底栏共用 .wood-beam（原本两处各写一份内联渐变）。
            边框与投影留在这里：顶栏是"压在屏幕上的一块木头"，
@@ -45,6 +64,31 @@ export default function TimelineBar() {
       <div className="text-gold-300 font-serif text-[15px] tracking-wide min-w-[56px]">
         {currentYear}年
       </div>
+
+      {/*
+        【参观模式的身份标识】
+        选了「我只是来逛逛」之后，主界面和船长模式长得一模一样——任务、贸易、造船、
+        成就全在，只是没有教程、不扣粮水、不会翻船（这三条已实测：同条件下船长模式
+        第 2 天翻船，参观模式推到第 11 天还活着，船体耐久从 0 被抬回下限 1）。
+        差别全在"看不见的地方"，玩家不看帮助就不知道自己是什么模式。
+        这块小标是唯一常驻的交代，点一下直接打开帮助里的模式说明（那里能换玩法）。
+
+        为什么手机端藏起来：390px 宽的顶栏已经装了 年份(56) + 事件名(130) + 声望(74)
+        + 两处 gap + padding ≈ 340px，再塞 56px 会把时间轴轨道压成 0。移动端玩家
+        目前只能在「帮助」里看到当前模式——这是已知局限，不是漏做。
+      */}
+      {gameMode === 'visitor' && (
+        <button
+          onClick={() => setShowHelp(true)}
+          data-testid="visitor-badge"
+          title="参观模式：不会被逼着做任何事。点这里看说明或换个玩法"
+          className="inline-flex items-center shrink-0 rounded border border-gold-600/55
+            px-1.5 py-0.5 text-gold-200 font-serif text-[12px] leading-none
+            hover:bg-gold-700/30 press transition-colors"
+        >
+          参观
+        </button>
+      )}
 
       <div className="flex-1 relative h-6 flex items-center">
         {/*
@@ -74,8 +118,9 @@ export default function TimelineBar() {
           }}
         />
 
-        {historicalTimeline.map((event) => {
-          const eventProgress = (event.day - 1) / 150
+        {HISTORY_TICKS.map((event) => {
+          // clamp 是防御：以后往数据里再加更靠后的节点，也不会再把刻度画到屏幕外
+          const eventProgress = Math.min(1, (event.day - 1) / TIMELINE_LAST_DAY)
           const isPast = event.day <= day
           const isCurrent = event.day === day
           const isSeen = seenHistoricalEvents.includes(event.day)
@@ -114,7 +159,7 @@ export default function TimelineBar() {
                     <div className="text-gold-300 font-serif text-[13px] tabular-nums">{event.year}年</div>
                     <div className="text-gold-100 text-[13px] mt-0.5">{event.title}</div>
                     {isPast && (
-                      <div className="text-gold-500 text-[11px] mt-1 max-w-[210px] whitespace-normal leading-relaxed">{event.description}</div>
+                      <div className="text-gold-500 text-xs mt-1 max-w-[210px] whitespace-normal leading-relaxed">{event.description}</div>
                     )}
                   </div>
                   <div className="absolute top-full left-1/2 -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-ocean-900/95" />
@@ -132,7 +177,7 @@ export default function TimelineBar() {
         </div>
       </div>
 
-      <div className="text-gold-400 font-serif text-[13px] min-w-[130px] text-right truncate">
+      <div className="hidden sm:block text-gold-400 font-serif text-[13px] min-w-[130px] text-right truncate">
         {currentEvent ? currentEvent.title : latestSeenEvent ? latestSeenEvent.title : '启航'}
       </div>
 

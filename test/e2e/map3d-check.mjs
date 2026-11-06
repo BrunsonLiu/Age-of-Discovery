@@ -1069,6 +1069,42 @@ check(weatherChk.base && weatherChk.back
   && Math.abs(weatherChk.back.lights - weatherChk.base.lights) < weatherChk.base.lights * 0.02,
   `改回晴天后颜色与光照都恢复（灯强容差 2%，日相在走；${JSON.stringify(weatherChk.back)}）`)
 
+// ---- 岸上视角不空转 ----
+// 岸上是一整块不透明覆盖层，3D 画布此刻一个像素都看不见。修复前它仍逐帧
+// 绘制（实测 2 秒 15876 次 draw call）。判据用 three 自己的帧号，比外部
+// hook draw* 更贴近"renderer 到底有没有 submit 一帧"，也顺带验切回不黑屏。
+const idle = await page.evaluate(async () => {
+  const m = window.__mapStore
+  const r = window.__map3d?.renderer
+  if (!m || !r) return null
+  const wait = ms => new Promise(res => setTimeout(res, ms))
+  const frame = () => r.info.render.frame
+  // swiftshader 软件渲染只有 2~3 fps，固定窗口里数帧会误报。改成轮询：
+  // 最多等 6 秒，只要真出过一帧就算"在画"。
+  const alive = async () => {
+    const s = frame(), t0 = performance.now()
+    while (performance.now() - t0 < 6000) {
+      await wait(120)
+      if (frame() > s) return true
+    }
+    return false
+  }
+  const chartAlive = await alive()
+  m.getState().setViewMode('harbor')
+  await wait(200)
+  const h0 = frame()
+  await wait(1800)
+  const harborFrames = frame() - h0
+  m.getState().setViewMode('chart')
+  await wait(200)
+  const backAlive = await alive()
+  return { chartAlive, harborFrames, backAlive, calls: r.info.render.calls }
+})
+check(idle && idle.chartAlive, '海图状态下确实在逐帧渲染')
+check(idle && idle.harborFrames === 0, `切到岸上后渲染完全停下（1.8 秒内 ${idle?.harborFrames} 帧）`)
+check(idle && idle.backAlive && idle.calls > 0,
+  `切回海图立刻恢复绘制，没有黑屏（末帧 ${idle?.calls} draw calls）`)
+
 await clickReal('[data-testid="map-mode-toggle"]')
 await sleep(2500)
 const back = await page.evaluate(() => ({

@@ -492,10 +492,10 @@ export default function CannonGame({ modifiers, onDone }: {
       <p className="text-gold-300 text-xs font-serif text-center h-4" data-testid="cannon-hint">{hint}</p>
 
       {/* 逐轮账目 */}
-      <div className="text-[10px] font-serif text-gold-600 space-y-0.5 min-h-[2.2em]" data-testid="cannon-log">
+      <div className="text-xs font-serif text-gold-600 space-y-0.5 min-h-[2.2em]" data-testid="cannon-log">
         {log.map((line, i) => <div key={i}>{line}</div>)}
       </div>
-      <p className="text-[10px] font-serif text-gold-600 text-center">
+      <p className="text-xs font-serif text-gold-600 text-center">
         标尺压在敌舰正中开火 · 来袭标越过中线再架盾
       </p>
     </div>

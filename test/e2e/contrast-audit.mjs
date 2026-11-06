@@ -28,6 +28,16 @@ const VW = Number(argOf('vw') ?? 1440)
 const VH = Number(argOf('vh') ?? 900)
 /** 可选：先打开某个面板再审计（--panel=port） */
 const PANEL = argOf('panel')
+/** 可选：切到岸上视角再审计（--harbor）。岸上是整屏深褐 + 半透明板，
+ *  不能用主界面的结论代替，必须单独跑一遍像素直方图。 */
+const HARBOR = process.argv.includes('--harbor')
+/** 可选：即使 0 未达标也列出最弱的 25 段（--all）。
+ *  只有 fails 才打印的老逻辑会让"刚好 4.6:1"这类临界值隐身——
+ *  调背景亮度时恰恰需要看这些临界项有没有被推下去。 */
+const SHOW_ALL = process.argv.includes('--all')
+/** 可选：以参观模式审计（--mode=visitor）。参观模式多一枚顶栏「参观」标识、
+ *  少了教程，是第二套界面，此前从未被单独审计过。 */
+const MODE = argOf('mode')
 
 mkdirSync('.workbuddy/shots', { recursive: true })
 
@@ -52,13 +62,37 @@ await page.evaluate(() => {
   if (!o) return
   ;[...o.querySelectorAll('button')].filter(b => /商界血脉|铁壁舰长|魅力领袖|天生探险家|随船医生/.test(b.textContent || ''))[0]?.click()
 }); await sleep(400)
-await clickIn('扬帆起航', '扬帆起航'); await sleep(700)
-await clickIn('第一次出航', '启航'); await sleep(1500)
+await clickIn('选择你的天赋', '启航'); await sleep(1500)
 await clickIn('跳过引导', '跳过引导'); await sleep(400)
 await page.keyboard.press('Escape'); await sleep(400)
 await page.keyboard.press('Escape'); await sleep(800)
 
-if (PANEL === 'event') {
+if (MODE === 'visitor') {
+  // 只改状态、不重走开局：审的是主界面那套 HUD，与怎么进来无关。
+  // 参观模式比船长模式多一枚顶栏「参观」标识，这是新加的常驻文字，必须审。
+  await page.evaluate(() => {
+    window.__gameStore.setState({ gameMode: 'visitor', tutorialStep: -1, gamePhase: 'playing', activePanel: null })
+    window.__dialogueStore?.getState?.().skip?.()
+  })
+  await sleep(900)
+}
+
+if (HARBOR) {
+  await page.evaluate(() => {
+    window.__gameStore.setState({
+      activePanel: null,
+      logbook: [{
+        id: 'contrast-probe', kind: 'arrival', day: 3, portId: 6,
+        title: '靠岸 · 塞维利亚', text: '教堂的钟比船上的更准，账房先生比水手还忙。',
+        aside: '码头上晒着糖，空气里全是甜味和焦油味。',
+        hint: '酒馆里有人提起西边还有一处没去过的港。',
+        targetPortId: 1, read: true,
+      }],
+    })
+    window.__mapStore.getState().setViewMode('harbor')
+  })
+  await sleep(900)
+} else if (PANEL === 'event') {
   /*
    * 航海日志（左栏）没有 data-tut，而且平时是空的 —— 要先塞几条记录才有字可审。
    * 直接写 eventLog 而不是走事件流程：这一步只是为了"让面板里有典型的文字"，
@@ -89,7 +123,7 @@ if (PANEL === 'event') {
   await sleep(900)
 }
 
-const shotPath = `.workbuddy/shots/contrast-${PANEL ?? 'map'}.png`
+const shotPath = `.workbuddy/shots/contrast-${HARBOR ? 'harbor' : (PANEL ?? 'map')}.png`
 await page.screenshot({ path: shotPath })
 
 // ---- 收集所有可见文字节点 ----
@@ -316,7 +350,7 @@ const graded = measured.filter(m => m.contrast != null).map((m) => {
 })
 const fails = graded.filter(m => !m.pass).sort((a, b) => a.contrast - b.contrast)
 
-console.log(`\n视口 ${VW}×${VH}${PANEL ? ` · 面板 ${PANEL}` : ''} · 可见文字 ${graded.length} 段`)
+console.log(`\n视口 ${VW}×${VH}${HARBOR ? ' · 岸上视角' : PANEL ? ` · 面板 ${PANEL}` : ''}${MODE === 'visitor' ? ' · 参观模式' : ''} · 可见文字 ${graded.length} 段`)
 console.log(`  未达标 ${fails.length} 段（AA：正文 4.5 / 大字 3.0）`)
 /*
  * 靠描边通过的要单独报：这类元素"字 vs 底色"是不达标的（奶油字压浅色陆地 2.81），
@@ -333,9 +367,10 @@ console.log(`  未达标 ${fails.length} 段（AA：正文 4.5 / 大字 3.0）`)
   }
 }
 
-if (fails.length) {
-  console.log('\n最差的 25 段：')
-  for (const m of fails.slice(0, 25)) {
+if (fails.length || SHOW_ALL) {
+  const list = fails.length ? fails : [...graded].sort((a, b) => a.contrast - b.contrast)
+  console.log(fails.length ? '\n最差的 25 段：' : '\n最弱的 25 段（未达标 0，仅供看临界值）：')
+  for (const m of list.slice(0, 25)) {
     console.log(`  ${String(m.contrast).padStart(5)}:1 (需 ${m.need})  ${m.fs}px${m.bold ? ' bold' : ''} @(${Math.round(m.rect.x)},${Math.round(m.rect.y)})  字 ${m.color}  底 rgb(${m.bg.r},${m.bg.g},${m.bg.b})  「${m.txt}」`)
     console.log(`         dbg fg=${JSON.stringify(m.dbg.fg)} | ${m.tag}.${m.cls} <- ${m.parentCls}`)
   }

@@ -464,7 +464,7 @@ export default function HelmModal() {
 
               {/* 夹角读数 */}
               <div className="absolute left-1/2 -translate-x-1/2 bottom-1 text-center">
-                <span className="text-gold-500 font-serif text-[10px]">航向·风向夹角 </span>
+                <span className="text-gold-500 font-serif text-xs">航向·风向夹角 </span>
                 <span ref={angleTextRef} className="text-gold-200 font-serif text-sm">0°</span>
                 <span ref={statusTextRef} className="font-serif text-sm ml-1" style={{ color: '#6ee7b7' }}>吃风</span>
               </div>
@@ -495,7 +495,7 @@ export default function HelmModal() {
               </div>
             </div>
 
-            <div className="flex items-center justify-between text-[10px] font-serif text-gold-600">
+            <div className="flex items-center justify-between text-xs font-serif text-gold-600">
               <span>A/D 转向 · W/S 帆缆</span>
               <span>Enter 收舵</span>
             </div>
@@ -543,15 +543,15 @@ export default function HelmModal() {
 
             <div className="grid grid-cols-3 gap-2 text-center bg-ocean-800/40 rounded p-2.5">
               <div>
-                <div className="text-gold-500 text-[10px] font-serif">综合评分</div>
+                <div className="text-gold-500 text-xs font-serif">综合评分</div>
                 <div className="text-gold-200 text-sm font-serif">{result.score.toFixed(2)}</div>
               </div>
               <div>
-                <div className="text-gold-500 text-[10px] font-serif">吃风时长</div>
+                <div className="text-gold-500 text-xs font-serif">吃风时长</div>
                 <div className="text-gold-200 text-sm font-serif">{Math.round(result.timeInArcRatio * 100)}%</div>
               </div>
               <div>
-                <div className="text-gold-500 text-[10px] font-serif">最佳连击</div>
+                <div className="text-gold-500 text-xs font-serif">最佳连击</div>
                 <div className="text-gold-200 text-sm font-serif">{result.bestStreak.toFixed(1)}s</div>
               </div>
             </div>

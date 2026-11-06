@@ -8,6 +8,10 @@
 # Google Fonts 的中文是 303 个 unicode-range 分片 + 225KB 的 CSS，
 # 且国内访问不了——对 Windows 玩家等于没改（照样回退宋体）。
 # 自托管一个子集：单文件、无外部依赖、国内可用、可用 preload 提前加载。
+#
+# ⚠️ 注意：**切字体请用 `scripts/make_font_subset.py`**。本脚本只提取字符清单，
+# 不产字体，且整文件读、不剥注释（注释里的字会被算进去）。2026-11 起字体由
+# make_font_subset.py 生成，它同时写 noto-serif-sc-coverage.json 供单测校验。
 import io
 import json
 import os

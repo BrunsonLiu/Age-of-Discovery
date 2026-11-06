@@ -32,7 +32,7 @@ export const OFFICERS: OfficerDef[] = [
     icon: Anchor,
     hireCost: 250,
     dailyWage: 2,
-    effect: '弹压得住场面：哗变与海盗事件的士气惩罚减半',
+    effect: '弹压得住场面：事件里的士气打击减半',
   },
   {
     id: 'surgeon',
@@ -41,7 +41,11 @@ export const OFFICERS: OfficerDef[] = [
     icon: Stethoscope,
     hireCost: 280,
     dailyWage: 3,
-    effect: '每日士气衰减 -2，疾病类事件概率减半',
+    // 【为什么写「断粮断水时」而不是「每日」】实测：粮水充足、士气 40 时推进一天，
+    // 士气一点不掉；`advanceDay` 只在 newFood===0 || newWater===0 时扣 5 点，
+    // 船医与神甫各减免 2 点（下限 1）。写「每日衰减 -2」会让玩家以为天天在生效。
+    // 后半句「疾病类事件概率减半」由 utils/eventEngine 的 officers 判据兑现。
+    effect: '断粮断水时少掉 2 点士气（5 → 3）；疾病类事件触发率减半',
   },
 ]
 

@@ -12,6 +12,10 @@ dist
 dist-ssr
 # WorkBuddy 发布用产物（base=/ 的根路径版本，供分享链接使用）
 dist-wb
+# 体积分析时的构建副本（vite.analyze.ts 产物，不是源码）
+dist-analyze*/
+# 从 public/ 退役的旧素材备份：留在本地便于回查，不进仓库
+unused-assets/
 *.local
 
 # Editor directories and files

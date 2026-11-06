@@ -58,8 +58,7 @@ await page.evaluate(() => {
   if (!o) return
   ;[...o.querySelectorAll('button')].filter(b => /商界血脉|铁壁舰长|魅力领袖|天生探险家|随船医生/.test(b.textContent || ''))[0]?.click()
 }); await sleep(400)
-await clickIn('扬帆起航', '扬帆起航'); await sleep(700)
-await clickIn('第一次出航', '启航'); await sleep(1500)
+await clickIn('选择你的天赋', '启航'); await sleep(1500)
 await clickIn('跳过引导', '跳过引导'); await sleep(400)
 await page.keyboard.press('Escape'); await sleep(400)
 await page.keyboard.press('Escape'); await sleep(700)
@@ -158,10 +157,15 @@ console.log(`\n=== 全局字号分布 ===`)
 for (const [px, n] of pxSorted) console.log(`  ${String(px).padStart(4)}px  ${String(n).padStart(4)} 个  ${'█'.repeat(Math.round(n / 4))}`)
 
 const total = report.rows.length
-const tiny = report.rows.filter(r => r.px < 12).length
+const tiny = report.rows.filter(r => r.px < 12)
+const tinyCn = tiny.filter(r => /[\u3400-\u9fff]/.test(r.txt))
 const small = report.rows.filter(r => r.px >= 12 && r.px < 14).length
 const ok = report.rows.filter(r => r.px >= 14).length
-console.log(`\n  <12px（中文读不动）: ${tiny} 个 = ${(tiny / total * 100).toFixed(1)}%`)
+// 中文下限 12px；纯符号角标（罗盘 N、展开箭头 ▾）不含汉字，允许保持小尺寸。
+// 不分开报的话，这两个符号会让「中文读不动」的数字永远显示 2，看着像没修。
+console.log(`\n  <12px 合计         : ${tiny.length} 个 = ${(tiny.length / total * 100).toFixed(1)}%`)
+console.log(`    其中含中文      : ${tinyCn.length} 个（应为 0；多场景巡检见 small-text-audit.mjs）`)
+console.log(`    纯符号角标      : ${tiny.length - tinyCn.length} 个（N / ▾，允许）`)
 console.log(`  12~13px（勉强）    : ${small} 个 = ${(small / total * 100).toFixed(1)}%`)
 console.log(`  ≥14px（合格）      : ${ok} 个 = ${(ok / total * 100).toFixed(1)}%`)
 

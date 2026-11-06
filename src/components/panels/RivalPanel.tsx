@@ -69,14 +69,14 @@ export default function RivalPanel() {
                     )}
                     <div className="flex items-center justify-between flex-1 min-w-0">
                       <span className="text-gold-200 font-serif text-sm">{r.name}</span>
-                      <span className={`text-[11px] font-serif px-1.5 py-0.5 rounded border ${badge.cls}`}>
+                      <span className={`text-xs font-serif px-1.5 py-0.5 rounded border ${badge.cls}`}>
                         {r.title} · {badge.label}
                       </span>
                     </div>
                   </div>
                   <div className="grid grid-cols-3 gap-1 text-center">
                     <div>
-                      <div className="text-gold-500 text-[11px] font-serif flex items-center justify-center gap-0.5">
+                      <div className="text-gold-500 text-xs font-serif flex items-center justify-center gap-0.5">
                         <Coins size={11} /> 金币
                       </div>
                       <div className={`text-[13px] font-serif ${r.gold >= fleet.gold ? 'text-gold-300' : 'text-gold-500'}`}>
@@ -84,7 +84,7 @@ export default function RivalPanel() {
                       </div>
                     </div>
                     <div>
-                      <div className="text-gold-500 text-[11px] font-serif flex items-center justify-center gap-0.5">
+                      <div className="text-gold-500 text-xs font-serif flex items-center justify-center gap-0.5">
                         <Star size={11} /> 声望
                       </div>
                       <div className={`text-[13px] font-serif ${r.fame >= fleet.fame ? 'text-gold-300' : 'text-gold-500'}`}>
@@ -92,7 +92,7 @@ export default function RivalPanel() {
                       </div>
                     </div>
                     <div>
-                      <div className="text-gold-500 text-[11px] font-serif flex items-center justify-center gap-0.5">
+                      <div className="text-gold-500 text-xs font-serif flex items-center justify-center gap-0.5">
                         <MapIcon size={11} /> 探索
                       </div>
                       <div className={`text-[13px] font-serif ${r.portsFound >= myPorts ? 'text-gold-300' : 'text-gold-500'}`}>
@@ -100,7 +100,7 @@ export default function RivalPanel() {
                       </div>
                     </div>
                   </div>
-                  <p className="text-gold-400 text-[11px] font-serif italic mt-1.5">
+                  <p className="text-gold-400 text-xs font-serif italic mt-1.5">
                     「{r.lastAction}」
                   </p>
                 </div>
@@ -116,19 +116,19 @@ export default function RivalPanel() {
             </div>
             <div className="grid grid-cols-3 gap-1 text-center text-[13px] font-serif">
               <div>
-                <div className="text-gold-500 text-[11px]">财富</div>
+                <div className="text-gold-500 text-xs">财富</div>
                 <div className="text-gold-200">{fleet.gold} / {bestRivalGold}</div>
               </div>
               <div>
-                <div className="text-gold-500 text-[11px]">声望</div>
+                <div className="text-gold-500 text-xs">声望</div>
                 <div className="text-gold-200">{fleet.fame} / {bestRivalFame}</div>
               </div>
               <div>
-                <div className="text-gold-500 text-[11px]">探索</div>
+                <div className="text-gold-500 text-xs">探索</div>
                 <div className="text-gold-200">{myPorts} / {bestRivalPorts}</div>
               </div>
             </div>
-            <p className="text-gold-400 text-[11px] font-serif mt-1">
+            <p className="text-gold-400 text-xs font-serif mt-1">
               斜线后为同代最强。落后不可怕——可怕的是停下。
             </p>
           </div>
@@ -147,8 +147,8 @@ export default function RivalPanel() {
                   return (
                     <div key={n.id} className="inlay--flat rounded p-2 border-l-2 border-gold-700/40">
                       <div className="flex items-center justify-between mb-0.5">
-                        <span className="text-gold-400 text-[11px] font-serif">{rival?.name ?? '某位船长'}</span>
-                        <span className="text-gold-400 text-[11px] font-serif">第 {n.day} 天</span>
+                        <span className="text-gold-400 text-xs font-serif">{rival?.name ?? '某位船长'}</span>
+                        <span className="text-gold-400 text-xs font-serif">第 {n.day} 天</span>
                       </div>
                       <p className="text-gold-300 text-[13px] font-serif">{n.text}</p>
                     </div>

@@ -42,8 +42,7 @@ async function enter(w, h) {
   await page.evaluate(() => document.querySelector('button[data-mode="captain"]')?.click()); await sleep(400)
   await clickIn('你想怎么玩', '继续'); await sleep(700)
   await page.evaluate(() => { const o = [...document.querySelectorAll('div.fixed.inset-0')].find(x => /选择你的天赋/.test(x.textContent || '')); o && [...o.querySelectorAll('button')].filter(b => /商界血脉|铁壁舰长|魅力领袖|天生探险家|随船医生/.test(b.textContent || '')).at(0)?.click() }); await sleep(400)
-  await clickIn('扬帆起航', '扬帆起航'); await sleep(700)
-  await clickIn('第一次出航', '启航'); await sleep(1500)
+  await clickIn('选择你的天赋', '启航'); await sleep(1500)
   await page.evaluate(() => { [...document.querySelectorAll('button')].find(b => /跳过引导/.test(b.textContent || ''))?.click() }); await sleep(500)
   await page.keyboard.press('Escape'); await sleep(400)
   await page.keyboard.press('Escape'); await sleep(700)
@@ -74,8 +73,17 @@ const scan = () => page.evaluate(() => {
     }
     if (r.bottom > H + 1) offBottom.push({ tag, bottom: Math.round(r.bottom) })
   }
-  return { W, H, offRight: offRight.slice(0, 8), offBottom: offBottom.slice(0, 8), textClip: textClip.slice(0, 8) }
+  // 页面级横向滚动宽度：这一条不依赖单个元素的宽高阈值。
+  // 曾有一根 2px 宽的历史刻线被画到 x=1546（视口 1440），
+  // 上面「元素越界」扫描因为 r.width < 4 直接跳过它，于是巡检全绿、
+  // 但 documentElement.scrollWidth 实际是 1548（触屏上能横向拖动）。
+  const de = document.documentElement
+  return { W, H, offRight: offRight.slice(0, 8), offBottom: offBottom.slice(0, 8), textClip: textClip.slice(0, 8),
+    docScrollWidth: de.scrollWidth, clientWidth: de.clientWidth }
 })
+const noPageOverflow = (s, where) => check(
+  s.docScrollWidth <= s.clientWidth + 1,
+  `${where} 页面无横向溢出（实测 scrollWidth ${s.docScrollWidth} / 视口 ${s.clientWidth}）`)
 
 for (const w of widths) {
   const h = w <= 1024 ? 768 : 900
@@ -86,6 +94,7 @@ for (const w of widths) {
   console.log('  主界面：')
   check(main.offRight.length === 0, `无元素横向越界${main.offRight.length ? '：' + main.offRight.map(o => `${o.tag}@${o.right}`).join(', ') : ''}`)
   check(main.textClip.length === 0, `无文字被裁${main.textClip.length ? '：' + main.textClip.map(o => `「${o.text}」${o.sw}>${o.cw}`).join(', ') : ''}`)
+  noPageOverflow(main, '主界面')
 
   for (const p of PANELS) {
     const opened = await page.evaluate((type) => {
@@ -98,6 +107,7 @@ for (const w of widths) {
     const s = await scan()
     check(s.offRight.length === 0, `面板 ${p} 无横向越界${s.offRight.length ? '：' + s.offRight.map(o => `${o.tag}@${o.right}`).join(', ') : ''}`)
     check(s.textClip.length === 0, `面板 ${p} 无文字被裁${s.textClip.length ? '：' + s.textClip.map(o => `「${o.text}」${o.sw}>${o.cw}`).join(', ') : ''}`)
+    noPageOverflow(s, `面板 ${p}`)
     // 关掉
     await page.evaluate((type) => document.querySelector(`[data-tut="${type}"]`)?.click(), p)
     await sleep(300)

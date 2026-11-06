@@ -52,7 +52,7 @@ export default function EventChoice({ choice, index, summary, onSelect }: EventC
           {tag && (
             /* 要动手的选项：给出明确标记，玩家知道选了就得操作 */
             <span
-              className="flex items-center gap-1 rounded-full border border-gold-600/50 bg-gold-900/40 px-2 py-0.5 text-[10px] font-serif text-gold-300"
+              className="flex items-center gap-1 rounded-full border border-gold-600/50 bg-gold-900/40 px-2 py-0.5 text-xs font-serif text-gold-300"
               title="选这一项会进入一段实时操作小游戏"
             >
               <MiniGameGlyph icon={tag.icon} size={10} />
@@ -74,14 +74,14 @@ export default function EventChoice({ choice, index, summary, onSelect }: EventC
               : '按各结局概率加权的估算值，实际结果仍看运气'}
           >
             {summary.plain ? (
-              <span className="text-[11px] font-serif text-gold-500">
+              <span className="text-xs font-serif text-gold-500">
                 {choice.miniGame ? '操作定成败 · 评分改写概率' : '影响甚微'}
               </span>
             ) : (
               chips.map(chip => (
                 <span
                   key={chip.key}
-                  className={`flex items-center gap-1 font-mono text-[11px] tabular-nums ${
+                  className={`flex items-center gap-1 font-mono text-xs tabular-nums ${
                     chip.ev > 0 ? 'ink-good' : 'ink-bad'
                   }`}
                 >
@@ -96,7 +96,7 @@ export default function EventChoice({ choice, index, summary, onSelect }: EventC
               等于凭空编造一个根本没算过的结论——左侧那句因果说明已经够了。 */}
           {risk && !choice.miniGame && (!summary.plain || summary.risk !== 'steady') && (
             <span
-              className={`shrink-0 font-serif text-[11px] ${risk.className}`}
+              className={`shrink-0 font-serif text-xs ${risk.className}`}
               title={risk.hint}
               data-risk={summary.risk}
             >

@@ -78,7 +78,7 @@ export default function TaskPanel() {
                   return (
                     <div key={task.id} className="inlay--flat rounded p-2">
                       <div className="flex items-center gap-1.5 mb-1">
-                        <span className="text-[11px] px-1 py-0.5 rounded bg-gold-700/30 text-gold-300 font-serif shrink-0">
+                        <span className="text-xs px-1 py-0.5 rounded bg-gold-700/30 text-gold-300 font-serif shrink-0">
                           {typeLabels[task.type] ?? task.type}
                         </span>
                         <span className="text-gold-200 text-[13px] font-serif">{task.title}</span>
@@ -143,7 +143,7 @@ export default function TaskPanel() {
                 {availableTasks.map(task => (
                   <div key={task.id} className="inlay--flat rounded p-2">
                     <div className="flex items-center gap-1.5 mb-1">
-                      <span className="text-[11px] px-1 py-0.5 rounded bg-gold-700/30 text-gold-300 font-serif shrink-0">
+                      <span className="text-xs px-1 py-0.5 rounded bg-gold-700/30 text-gold-300 font-serif shrink-0">
                         {typeLabels[task.type] ?? task.type}
                       </span>
                       <span className="text-gold-200 text-[13px] font-serif">{task.title}</span>
