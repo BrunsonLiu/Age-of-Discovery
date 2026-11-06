@@ -6606,5 +6606,49 @@ console.log('\n== 天数口径守卫 ==')
   assert(/documentElement\.scrollWidth/.test(audit), '移动端巡检量页面级横向溢出')
 }
 
+// ---------------- 到港回执：回来的理由常驻可见 ----------------
+// 第 29 轮实测 1440×900 连跑 10 趟：主屏可见文本里「靠岸 ·」「酒馆里有人提起」
+// 「应验 ·」一次都没出现，唯一提示是侧栏 8px 红点 + 屏幕上看不见的 aria-label；
+// 册子本身（见闻 / 线索 / 应验 / 图鉴）做得很完整，缺的是常驻出口。
+// 守卫只匹配语法结构（import、JSX 属性、表达式），不写死注释措辞。
+{
+  const hint = readFileSync(join(process.cwd(), 'src', 'components', 'map', 'VoyageNextHint.tsx'), 'utf8')
+  const hook = readFileSync(join(process.cwd(), 'src', 'hooks', 'useArrivalReceipt.ts'), 'utf8')
+  const views = readFileSync(join(process.cwd(), 'src', 'components', 'panels', 'LogbookViews.tsx'), 'utf8')
+  const audit = readFileSync(join(process.cwd(), 'test', 'e2e', 'arrival-receipt.mjs'), 'utf8')
+  const pkg = JSON.parse(readFileSync(join(process.cwd(), 'package.json'), 'utf8')) as {
+    scripts: Record<string, string>
+  }
+
+  assert(/from '@\/hooks\/useArrivalReceipt'/.test(hint) && /useArrivalReceipt\(\)/.test(hint),
+    '常驻条消费同一个回执 hook，不与册子各算一套')
+  assert(/logbook\.filter\(e => !e\.read\)/.test(hook), '只读未读页：翻开就收起，不留消不掉的横条')
+  assert(/const MAX_GIST = 16/.test(hook), '12px 主行有硬上限（上一轮港名被 truncate 裁 7px 的教训）')
+  assert(/hint\.indexOf\('——'\)/.test(hook), '线索句截到破折号前，留下那句「没讲完的尾巴」')
+  assert(/entry\.hint/.test(hook) && /entry\.title/.test(hook) && /LogbookEntry/.test(hook),
+    '短句只读 LogbookEntry 的真实字段，不凭空造字')
+  assert(/data-testid="arrival-receipt"/.test(hint) && /data-unread=\{receipt\.unread\}/.test(hint),
+    '回执条有稳定 DOM 锚点，未读数可与 logbook 实际值对账')
+  assert(/刚带回 · \{receipt\.gist\}/.test(hint), '主屏短句来自 hook，不是写死一句「有新内容」')
+  assert(/receipt\.latest \? \(/.test(hint),
+    '回执条由「是否有未读页」决定渲染，不许写死 false 把它藏回面板里')
+  assert(/receiptHead \?\? \(/.test(hint) && /下一站：\{suggest\.nameCn\}/.test(hint),
+    '副行「下一站」独立保留，回执没有把上一轮刚做常驻的方向换掉')
+  assert(/setActivePanel\('event'\)/.test(hint), '点回执翻开的是航海日志，不是冒险笔记')
+  assert(/placement === 'stack' \? null : receiptHead/.test(hint),
+    '移动端不叠第二块内容（底栏「日志」标签自带未读徽标）')
+  assert(/markLogbookRead\(\)/.test(views), '翻开见闻页把未读归零，回执才会自动收起')
+
+  assert(pkg.scripts['test:e2e:receipt']?.includes('arrival-receipt.mjs'), '回执有独立巡检命令')
+  assert(pkg.scripts['test:e2e:seg2']?.includes('test:e2e:receipt'), '回执巡检进了 seg2')
+  assert(pkg.scripts['test:e2e:all']?.includes('test:e2e:receipt'), 'all 也含回执巡检')
+  assert(!(pkg.scripts['test:e2e:seg5'] ?? '').includes('receipt'),
+    'seg5 没有误引用（分段之间不许自引用）')
+  assert(/latestHint/.test(audit) && /同源/.test(audit), '巡检做主屏与册子的同源对账')
+  assert(/scrollWidth > el\.clientWidth/.test(audit) && /elementFromPoint/.test(audit),
+    '巡检量主行裁切 + 真实命中测试（DOM 存在 ≠ 玩家看得见、点得到）')
+  assert(/setViewport\(\{ width: 390/.test(audit), '巡检覆盖移动端结构不变')
+}
+
 console.log(`\n最终结果：${passed} 通过 / ${failed} 失败`)
 if (failed > 0) process.exit(1)

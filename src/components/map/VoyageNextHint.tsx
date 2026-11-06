@@ -1,9 +1,10 @@
-import { Anchor, ChevronRight, MapPin } from 'lucide-react'
+import { Anchor, ChevronRight, MapPin, ScrollText } from 'lucide-react'
 import { useGameStore } from '@/store/useGameStore'
 import { useMapStore } from '@/store/useMapStore'
 import { ports } from '@/data/ports'
 import { voyageMilestones } from '@/data/voyageMilestones'
 import { useVoyageNext } from '@/hooks/useVoyageNext'
+import { useArrivalReceipt } from '@/hooks/useArrivalReceipt'
 
 /**
  * 主屏常驻的「下一站」指引。
@@ -35,6 +36,8 @@ export default function VoyageNextHint({ placement = 'float' }: { placement?: 'f
   const setActivePanel = useGameStore(s => s.setActivePanel)
   const setCenter = useMapStore(s => s.setCenter)
   const { target, suggest, days } = useVoyageNext()
+  // 「这趟带回了什么」与「往哪开」共用同一条常驻位，不另起一张浮卡
+  const receipt = useArrivalReceipt()
 
   // 开局致辞 / 教学 / 结局遮罩期不抢画面；面板打开时玩家已经在看细节了，
   // 此时把常驻条收起，免得和面板里的同一张航路卡并排出现两次。
@@ -45,6 +48,38 @@ export default function VoyageNextHint({ placement = 'float' }: { placement?: 'f
     if (p) setCenter([p.latitude, p.longitude])
   }
   const openDetail = () => setActivePanel('task')
+  const openLogbook = () => setActivePanel('event')
+
+  /*
+   * 有未读回执时，把 12px 主行换成册子里那句「没讲完的尾巴」并做成按钮。
+   * 副行「下一站：X · N 海里」一个字都不动 —— 实测连跑 10 趟，主屏从没
+   * 出现过「酒馆里有人提起…」，而「往哪开」上一轮才刚做成常驻，不能为了
+   * 补回执又把它换掉。两行合起来正好是「回来的理由 + 下一趟的方向」。
+   * 打开日志（默认见闻页）会 markLogbookRead，已读归零后主行自动恢复
+   * 「航路 · 目标」，不会留一条消不掉的横条。
+   */
+  const receiptHead = receipt.latest ? (
+    <button
+      type="button"
+      onClick={openLogbook}
+      data-testid="arrival-receipt"
+      data-unread={receipt.unread}
+      title={`${receipt.latest.title}：${receipt.latest.text}（翻开航海日志）`}
+      className="press block w-full truncate text-left font-serif text-[12px] leading-tight
+        text-gold-300 hover:text-gold-100"
+    >
+      刚带回 · {receipt.gist}
+    </button>
+  ) : null
+  const headIcon = receipt.latest
+    ? <ScrollText size={14} className="text-gold-300 shrink-0" aria-hidden="true" />
+    : <Anchor size={14} className="text-gold-300 shrink-0" aria-hidden="true" />
+  /*
+   * 移动端刻意保持原样：底栏「日志」标签自带未读数徽标（badge: unreadLogbook），
+   * 比桌面那个 8px 红点明显得多，桌面才是这次要补的缺口。stack 分支继续
+   * 只占一行「航路 · 下一站」，不给 390px 屏再叠内容，也不动上一轮的巡检判据。
+   */
+  const showReceipt = placement === 'stack' ? null : receiptHead
 
   const distance = suggest && suggest.distanceNm > 0
     ? `${suggest.distanceNm} 海里${days ? ` · 约 ${days} 天` : ''}`
@@ -72,10 +107,16 @@ export default function VoyageNextHint({ placement = 'float' }: { placement?: 'f
           className="flex items-center gap-2 pl-2.5 pr-1.5 py-1.5 rounded-lg"
           style={cardStyle}
         >
-          <Anchor size={14} className="text-gold-300 shrink-0" aria-hidden="true" />
-          <span className="min-w-0 flex-1 font-serif text-[13px] text-gold-100">
-            航路走完了 · {voyageMilestones.length} 段都写进了日志
-          </span>
+          {placement === 'stack'
+            ? <Anchor size={14} className="text-gold-300 shrink-0" aria-hidden="true" />
+            : headIcon}
+          <div className="min-w-0 flex-1">
+            {showReceipt ?? (
+              <span className="font-serif text-[13px] text-gold-100">
+                航路走完了 · {voyageMilestones.length} 段都写进了日志
+              </span>
+            )}
+          </div>
           {detailBtn}
         </div>
       </div>
@@ -117,23 +158,25 @@ export default function VoyageNextHint({ placement = 'float' }: { placement?: 'f
         className="flex items-center gap-2 pl-2.5 pr-1.5 py-1.5 rounded-lg"
         style={cardStyle}
       >
-        <Anchor size={14} className="text-gold-300 shrink-0" aria-hidden="true" />
-        <button
-          type="button"
-          onClick={locate}
-          data-testid="next-port-locate"
-          title="在地图上定位这个港口，不会出航"
-          className="press min-w-0 flex-1 text-left"
-        >
-          <span className="block font-serif text-[12px] leading-tight text-gold-300">
-            航路 · {target.title}
-          </span>
-          <span className="flex items-center gap-1 font-serif text-[13px] leading-tight text-gold-100">
+        {headIcon}
+        <div className="min-w-0 flex-1">
+          {receiptHead ?? (
+            <span className="block font-serif text-[12px] leading-tight text-gold-300">
+              航路 · {target.title}
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={locate}
+            data-testid="next-port-locate"
+            title="在地图上定位这个港口，不会出航"
+            className="press flex w-full items-center gap-1 text-left font-serif text-[13px] leading-tight text-gold-100"
+          >
             <MapPin size={12} className="shrink-0" aria-hidden="true" />
             <span className="truncate">下一站：{suggest.nameCn}</span>
             <span className="shrink-0 font-mono text-[12px] text-gold-300 tabular-nums">{distance}</span>
-          </span>
-        </button>
+          </button>
+        </div>
         {detailBtn}
       </div>
     </div>
