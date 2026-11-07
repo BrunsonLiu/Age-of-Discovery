@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { useGameStore } from '@/store/useGameStore'
+import { useMapStore } from '@/store/useMapStore'
 import { ports } from '@/data/ports'
 import { isLandAt } from '@/utils/seaRoute'
 import { advanceAlongRoute } from '@/utils/sailStep'
@@ -75,6 +76,20 @@ export default function SailingController() {
   const geomRef = useRef<RouteGeometry | null>(null)
   /** 几何对应的航线 id —— 改道后要重建 */
   const geomKeyRef = useRef<number>(0)
+  /**
+   * 几何建好时**航线几何是否已就绪**（掩码到位）。
+   *
+   * 【为什么几何要按这个重建】
+   * 航线弧长靠 A* 在海陆掩码上搜；掩码没到位时算出来的是**横穿陆地的大圆直线**。
+   * 如果船在掩码到位前就出发，`geomRef` 会一直抱着那条直线——
+   * 缓存清了也没用（清的是模块级 geomCache，不是这个 ref），
+   * 于是船会沿着一条穿过大陆的直线开完整趟，屏幕上的里程也跟着说谎。
+   *
+   * 所以「几何是否就绪」是几何身份的一部分：它一变，几何重建。
+   * 【但已走里程必须保留】船已经走了 N 海里，重建后若按船位反推，
+   * 进度会跳（船位在旧直线上、不在新航路上）。所以只有**改道**才反推里程。
+   */
+  const geomReadyRef = useRef<boolean | null>(null)
   /** 已入账的操舵奖励 token——同一个 token 只入账一次 */
   const helmTokenRef = useRef<number>(0)
 
@@ -136,10 +151,13 @@ export default function SailingController() {
       // 之前船走 lat/lng 直线、地图画贝塞尔弧，两者根本不是一条路——
       // 这就是玩家最早抱怨的「船和路线没对齐」。
       //
-      // 几何按「航线 id」缓存：中途改道（changeCourse）换了目的地，
-      // 几何必须重建，且从船的当前位置重新起算。
+      // 几何按「航线 id + 几何是否已就绪」缓存：中途改道（changeCourse）换了目的地，
+      // 或者海陆掩码后到（几何从直线变成避陆弧线），几何都必须重建。
       const routeKey = state.currentRoute?.id ?? 0
-      if (!geomRef.current || geomKeyRef.current !== routeKey) {
+      const geoReady = useMapStore.getState().landDataReady
+      const prevRouteKey = geomKeyRef.current
+      const prevReady = geomReadyRef.current
+      if (!geomRef.current || prevRouteKey !== routeKey || prevReady !== geoReady) {
         // 几何的起点是**航线起点**（出港位置），不是当前船位——
         // 否则船一动，几何就变了，地图上的线也跟着变。
         const from = state.routeOrigin ?? state.shipPosition
@@ -148,9 +166,15 @@ export default function SailingController() {
           [state.waypoint.latitude, state.waypoint.longitude],
         )
         geomKeyRef.current = routeKey
+        geomReadyRef.current = geoReady
+        // 只有「改道」或「首次建几何」才按船位反推已走里程。
+        // 掩码后到引起的那次重建**必须保留已走里程**（见 geomReadyRef 的注释）。
+        //
         // 从存档恢复时船可能已在航线中段——用位置反推已走里程，
         // 否则读档后进度会从 0 重来（等于白走一趟）。
-        traveledNmRef.current = traveledNmAt(geomRef.current, state.shipPosition[0], state.shipPosition[1])
+        if (prevRouteKey !== routeKey || prevReady === null) {
+          traveledNmRef.current = traveledNmAt(geomRef.current, state.shipPosition[0], state.shipPosition[1])
+        }
       }
       const geom = geomRef.current
       const totalNm = geom.totalNm

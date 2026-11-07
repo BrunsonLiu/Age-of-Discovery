@@ -45,6 +45,24 @@ interface MapState {
    * 不写进存档（刷新后重新加载掩码即可）。
    */
   landDataReady: boolean
+  /**
+   * 海陆掩码**加载失败**（不是「还没到」，是「确认拿不到」）。
+   *
+   * 【为什么单独一个标志，而不是把 landDataReady 留在 false 就算完】
+   * 掩码到位之前，航线几何是**没结论**的（可能被陆地横穿）；
+   * 掩码确认失败之后，几何是**有结论的**——虽然那条结论是「只能走直线」。
+   *
+   * 这两种状态对待方式不同：
+   *   - 没结论 → 界面不许报里程/天数（还没到时候）；
+   *   - 失败   → 界面仍不报里程（数据确实没有），
+   *              但**地图要照常出来**（不能因为一个可选文件拿不到就把游戏卡死）。
+   *
+   * 地图内容（航线虚线、商船）挂载的判据是这两个标志的**或**：
+   * 几何有结论之后才挂载，于是玩家永远不会看到一条横穿陆地的航线。
+   *
+   * 【不持久化】同 landDataReady。
+   */
+  landDataFailed: boolean
   setCenter: (center: [number, number]) => void
   setZoom: (zoom: number) => void
   toggleWindOverlay: () => void
@@ -53,6 +71,7 @@ interface MapState {
   setSelectedPortId: (id: number | null) => void
   setRenderMode: (mode: '2d' | '3d') => void
   setLandDataReady: (ready: boolean) => void
+  setLandDataFailed: (failed: boolean) => void
 }
 
 export const useMapStore = create<MapState>()(
@@ -77,6 +96,7 @@ export const useMapStore = create<MapState>()(
       renderMode: '2d',
       viewMode: 'chart',
       landDataReady: false,
+      landDataFailed: false,
       setViewMode: (mode) => set({ viewMode: mode }),
       setCenter: (center) => set({ center }),
       setZoom: (zoom) => set({ zoom }),
@@ -86,6 +106,7 @@ export const useMapStore = create<MapState>()(
       setSelectedPortId: (id) => set({ selectedPortId: id }),
       setRenderMode: (mode) => set({ renderMode: mode }),
       setLandDataReady: (ready) => set({ landDataReady: ready }),
+      setLandDataFailed: (failed) => set({ landDataFailed: failed }),
     }),
     {
       name: 'age-of-discovery-map',

@@ -6728,6 +6728,85 @@ console.log('\n== 天数口径守卫 ==')
     '掮客对账真的点「买进并起航」把出航计划面板开出来比数字')
 }
 
+// ---------------- 航线几何没就绪：地图不许拿直线冒充航线 ----------------
+// 第 34 轮实测：地图内容（候选航线虚线、NPC 商船航线）在**挂载那一刻**算一次
+// 航线几何，而挂载那一刻海陆掩码常常还在路上——那几何是**横穿陆地的大圆直线**：
+//   挂载那一刻算出来的商船腿： 439 / 4035 / 1971 / 137 海里
+//   掩码到位后重算的真值：      781 / 4121 / 2158 / 140 海里   （第一条差 78%）
+// 而且这些几何被 React 的 memo/ref 记住，**永远不会自己纠正**。
+//
+// 关键机制（上一轮踩过）：`loading` 遮罩只是盖在上面的一个覆盖层，
+// 它**不阻止子组件挂载**——`<MapContainer>` 与它的子组件在 2D 分支里立刻挂载。
+// 所以「在 loadData 里等掩码」对几何没有约束力（实测改完仍测到 439）。
+// 真正管用的是：**地图内容在几何有结论之后才挂载**。
+{
+  const mapView = readFileSync(join(process.cwd(), 'src', 'components', 'map', 'MapView.tsx'), 'utf8')
+  const mapStore = readFileSync(join(process.cwd(), 'src', 'store', 'useMapStore.ts'), 'utf8')
+  const npc2d = readFileSync(join(process.cwd(), 'src', 'components', 'map', 'NpcShips2D.tsx'), 'utf8')
+  const routeLine = readFileSync(join(process.cwd(), 'src', 'components', 'map', 'RouteLine.tsx'), 'utf8')
+  const sailing = readFileSync(join(process.cwd(), 'src', 'components', 'map', 'SailingController.tsx'), 'utf8')
+  const map3d = readFileSync(join(process.cwd(), 'src', 'components', 'map3d', 'Map3DView.tsx'), 'utf8')
+  const geoAudit = readFileSync(join(process.cwd(), 'test', 'e2e', 'geometry-ready.mjs'), 'utf8')
+  const pkg2 = JSON.parse(readFileSync(join(process.cwd(), 'package.json'), 'utf8') as unknown as {
+    scripts: Record<string, string>
+  })
+
+  // ① 「几何有结论」= 就绪（掩码到位）**或** 失败（确认拿不到）
+  assert(/landDataReady: boolean/.test(mapStore) && /landDataFailed: boolean/.test(mapStore),
+    '地图状态里同时有「几何就绪」与「几何失败」两个标志')
+  assert(/const geoSettled = landDataReady \|\| landDataFailed/.test(mapView),
+    '几何有结论 = 就绪 或 失败（两者之一）')
+  assert(/const mapReady = geoSettled && !loading/.test(mapView),
+    '地图内容的挂载判据是「几何有结论 且 渲染数据到了」')
+
+  // ② 地图内容必须真的挂在 mapReady 后面（判据定义了不等于用了）
+  //    注意：`<MapContainer` 在注释里也出现过（解释「遮罩挡不住子组件挂载」那段），
+  //    所以要从闸门**之后**开始找，否则会命中注释 → 假红。
+  const iGate = mapView.search(/\{mapReady && \(/)
+  const iContainer = iGate >= 0 ? mapView.indexOf('<MapContainer', iGate) : -1
+  assert(iGate >= 0 && iContainer >= 0 && iGate < iContainer,
+    '地图内容（MapContainer）挂在 mapReady 后面——几何没结论时屏幕上不出现半张图')
+
+  // ③ 掩码失败也是「有结论」：地图要照常出来（不能被一个可选文件锁死）
+  assert(/catch\(\(\) => \{[\s\S]{0,300}setLandDataReady\(false\)[\s\S]{0,200}setLandDataFailed\(true\)/.test(mapView),
+    '掩码失败时置「失败」标志，地图照常出来（退化成直线，但游戏能玩）')
+
+  // ④ 两个标志都不许进存档（会话状态，刷新后重新加载即可）
+  const partMatch = mapStore.match(/partialize: \(state\) => \(\{([\s\S]*?)\}\),/)
+  assert(partMatch !== null, '找得到 partialize 块（守卫本身没写错）')
+  assert(!/landDataReady/.test(partMatch![1]) && !/landDataFailed/.test(partMatch![1]),
+    '几何就绪/失败标志都不许持久化（读档后必须重新判断）')
+
+  // ⑤ 船的几何身份里必须含「是否就绪」：掩码后到时几何要重建，
+  //    但**已走里程必须保留**（船位在旧直线上，按位置反推会让进度跳）
+  assert(/geomReadyRef/.test(sailing) && /prevReady !== geoReady/.test(sailing),
+    '船的航线几何按「几何是否就绪」重建（掩码后到时不再抱着那条直线）')
+  assert(/if \(prevRouteKey !== routeKey \|\| prevReady === null\)[\s\S]{0,160}traveledNmRef\.current = traveledNmAt\(/.test(sailing),
+    '只有改道/首次建几何才按船位反推已走里程（掩码后到的重建要保留进度）')
+
+  // ⑥ 3D 这条路径不经过 MapView 的 2D 分支，得自己等几何
+  assert(/loadLandData\(\)\.catch/.test(map3d),
+    '3D 装配时等航线几何有结论（NPC 商船不许建在退化直线上）')
+  assert(/geoReady \? 1 : 0/.test(map3d),
+    '3D 航线虚线的变更检测带上几何就绪状态（掩码后到时重算）')
+
+  // ⑦ e2e 要能读出「屏幕上走的是哪条路」：商船把航程挂到 DOM，候选航线有稳定选择器
+  assert(/data-leg-nm/.test(npc2d),
+    '商船图标把这条腿的航程挂到 DOM（e2e 要能读出屏幕上走的是不是避陆后的路）')
+  assert(/route-line/.test(routeLine),
+    '候选航线虚线有稳定选择器 route-line（e2e 要能只挑它，不被浅滩描边干扰）')
+  assert(/npc-ship-icon \[data-leg-nm\]/.test(geoAudit) && /\.route-line/.test(geoAudit),
+    '几何就绪巡检读的是稳定 DOM 锚点')
+  assert(/sea-mask\.bin/.test(geoAudit) && /MASK_HOLD_MS/.test(geoAudit),
+    '几何就绪巡检掐住掩码请求来复现「几何没结论」这一档（掐断是另一档）')
+  assert(/geodesic|大圆|greatCircle|haversine/.test(geoAudit),
+    '几何就绪巡检拿大圆直线当反向对照（证明这条断言有区分力）')
+
+  assert(pkg2.scripts['test:e2e:geometry']?.includes('geometry-ready.mjs'), '几何就绪巡检有独立命令')
+  assert(pkg2.scripts['test:e2e:seg7']?.includes('test:e2e:geometry'), '几何就绪巡检进了 seg7（不许变成孤儿巡检）')
+  assert(pkg2.scripts['test:e2e:all']?.includes('test:e2e:geometry'), 'all 也含几何就绪巡检')
+}
+
 // ---------------- 主屏常驻「下一站」：第一屏可见 + 单一来源 ----------------
 // 第 28 轮实测：进游戏第一屏 38 条可见文本 / 122 字 / 20 个按钮，没有一个字
 // 回答「我下一步该往哪开」；唯一的航路卡埋在「冒险笔记」面板里。

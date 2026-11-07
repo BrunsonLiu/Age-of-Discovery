@@ -55,6 +55,11 @@ export function RouteLine() {
    *
    * 与船实际行走用的是**同一个** buildRouteGeometry，
    * 所以玩家在图上看到的虚线，就是船要走的那条路。
+   *
+   * 【为什么「只按 availableRoutes/portMap 变化重算」就够了】
+   * 航线几何要靠海陆掩码做 A* 避陆，掩码没到位时算出来的是横穿陆地的直线。
+   * 这里能放心缓存，是因为 MapView 保证**地图内容在几何有结论之后才挂载**
+   * （见 MapView 的 mapReady 注释）：组件一挂载，算到的就已经是避陆后的真值。
    */
   const routeGeometries = useMemo(() => {
     const map = new Map<number, [number, number][]>()
@@ -100,20 +105,24 @@ export function RouteLine() {
                   opacity: 0.18,
                   lineCap: 'round',
                   lineJoin: 'round',
+                  className: 'route-line',
                 }}
               />
             )}
             <Polyline
               positions={points}
-              pathOptions={{
-                color: isSelected ? '#3d2810' : color,
-                weight: isSelected ? 3.5 : 2.5,
-                opacity: isSelected ? 0.95 : 0.7,
-                dashArray: isSelected ? '10 6' : '6 5',
-                lineCap: 'round',
-                lineJoin: 'round',
-                className: isSelected ? 'route-selected-animated' : '',
-              }}
+                pathOptions={{
+                  color: isSelected ? '#3d2810' : color,
+                  weight: isSelected ? 3.5 : 2.5,
+                  opacity: isSelected ? 0.95 : 0.7,
+                  dashArray: isSelected ? '10 6' : '6 5',
+                  lineCap: 'round',
+                  lineJoin: 'round',
+                  // route-line 是**稳定选择器**：e2e 要能只挑出候选航线
+                  // （.leaflet-overlay-pane path 里还有浅滩描边、等角网、国界…），
+                  // 才能验证「屏幕上画的这条线不许穿陆」。
+                  className: isSelected ? 'route-line route-selected-animated' : 'route-line',
+                }}
               eventHandlers={{
                 click: () => selectRoute(route),
               }}

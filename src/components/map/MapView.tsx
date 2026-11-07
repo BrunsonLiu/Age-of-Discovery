@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, Component, useMemo, lazy, Suspense } from 'react'
+import { useEffect, useState, useCallback, useRef, Component, useMemo, lazy, Suspense } from 'react'
 import { MapContainer, GeoJSON, useMap } from 'react-leaflet'
 import { useMapStore } from '@/store/useMapStore'
 import { useGameStore } from '@/store/useGameStore'
@@ -260,6 +260,32 @@ export default function MapView() {
   const renderMode = useMapStore(s => s.renderMode)
   const setRenderMode = useMapStore(s => s.setRenderMode)
   const setLandDataReady = useMapStore(s => s.setLandDataReady)
+  const setLandDataFailed = useMapStore(s => s.setLandDataFailed)
+  /**
+   * 航线几何有没有**结论**。
+   *
+   * 【为什么地图内容要等它】
+   * 航线弧长靠 A* 在海陆掩码上搜。掩码没到位时 `buildRouteGeometry` 找不到海路，
+   * 退化成一条**横穿陆地的大圆直线**（塞维利亚→埃尔米纳少报 49%）。
+   *
+   * 以前地图内容（候选航线虚线、NPC 商船）一挂载就算一次几何，
+   * 而挂载那一刻掩码常常还在路上——那条直线被 memo/ref 记住，**永远不会自己纠正**。
+   * 实测（本地 dev 探针）：
+   *   挂载那一刻算出来的商船腿： 439 / 4035 / 1971 / 137 海里
+   *   掩码到位后重算的真值：      781 / 4121 / 2158 / 140 海里   （第一条差 78%）
+   *
+   * 注意：`loading` 遮罩**挡不住子组件挂载**——它只是盖在上面的一个覆盖层，
+   * `<MapContainer>` 与它的子组件在 2D 分支里是**立刻**挂载的。
+   * 所以「在 loadData 里等掩码」这种改法对几何没有约束力（实测改完仍测到 439）。
+   * 真正管用的是**让地图内容在几何有结论之后才挂载**。
+   *
+   * 两个标志的区别：
+   *   landDataReady  = 掩码到位（几何是避陆后的真值）
+   *   landDataFailed = 掩码确认拿不到（几何只能是大圆直线——但游戏照常能玩）
+   * 地图内容等的是「两者之一」：**没结论不许画，有结论（哪怕是坏结论）才画**。
+   */
+  const landDataReady = useMapStore(s => s.landDataReady)
+  const landDataFailed = useMapStore(s => s.landDataFailed)
   // 海面纹理：暴风雨天换更暗的版本——底图也参与天候叙事
   const weatherKind = useGameStore(s => s.weather.kind)
   const seaTile = weatherKind === 'storm' ? 'sea-tile-storm.png' : 'sea-tile.png'
@@ -275,9 +301,35 @@ export default function MapView() {
   )
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState(false)
+  /**
+   * land.geojson 是否已经到手。
+   *
+   * 【为什么要有这个】
+   * 切视图时（3D → 2D）effect 会重跑、再次调 loadData()。
+   * 若那时又把 loading 拉起来，**整棵地图子树会卸载再挂载**——
+   * Leaflet 地图重建、视野回到默认，玩家看到的是"切回 2D 后画面闪一下"。
+   * 而 land.geojson 是**同一个已 resolve 的 Promise**（全局只请求一次），
+   * 根本不需要重新"加载中"。
+   */
+  const geoLoadedRef = useRef(false)
+
+  /**
+   * 地图内容能不能挂载。
+   *
+   * 两个条件都要满足：
+   *   ① 渲染数据到了（land.geojson）——否则画不出陆地；
+   *   ② 航线几何**有结论**（掩码到位，或确认拿不到）。
+   *
+   * ②是本轮加的，理由见上面 landDataReady 那段注释：
+   * 几何消费者在挂载那一刻就算几何，掩码没到位时算出来的是横穿陆地的直线，
+   * 而且被 memo 记住后不会自己纠正。
+   */
+  const geoSettled = landDataReady || landDataFailed
+  const mapReady = geoSettled && !loading
 
   const loadData = useCallback(async () => {
-    setLoading(true)
+    // 已经有 land.geojson 时**不要**再把 loading 拉起来（切视图回来会闪一下，理由见 geoLoadedRef）
+    if (!geoLoadedRef.current) setLoading(true)
     try {
       // 注意：这里不再加载 ocean.geojson。
       // 那份文件在仓库里就是截断的（354112B，JSON 解析直接失败），
@@ -293,8 +345,19 @@ export default function MapView() {
       // 两者原来挂在同一个 Promise.allSettled 上，意思是**国界没到，地图就是空白**——
       // 而国界只是一层细线装饰，陆地多边形才是这张图的骨架。
       // 现在陆地一到就画，国界随后淡入：首屏少等 626KB（约占加载数据的 20%）。
+      //
+      // 【第 34 轮：这里不再等海陆掩码——等它没用】
+      // 上一轮在这里加了 loadLandData()，以为「地图内容晚点挂载、几何就是真的」。
+      // 实测改完探针仍测到 439/4035/1971/137（退化直线），因为
+      // **loading 遮罩只是盖在上面的一个覆盖层，它不阻止子组件挂载**：
+      // `<MapContainer>` 及其子组件（RouteLine / NpcShips2D）在 2D 分支里立刻挂载。
+      //
+      // 真正管用的是**消费者侧**：地图内容在几何有结论之后才挂载（见下面的 mapReady）。
+      // 这里只管渲染数据（land.geojson），掩码是碰撞检测那条线的事，两边不互相等。
       const land = await fetchLandGeojsonForRender().catch(() => null)
-      setGeoData({ land, borders: null })
+      geoLoadedRef.current = !!land
+      // 国界不清空：切视图回来时它已经在手里了，清掉再重取只会让边界层闪一下
+      setGeoData(prev => ({ land, borders: prev.borders }))
       if (!land) {
         setLoadError(true)
         setLoading(false)
@@ -325,14 +388,21 @@ export default function MapView() {
     // 但那等于**允许界面报一个错的里程**——同一个问题在掮客卡上更贵：
     // 埃尔米纳→里斯本会报 2157 海里（真值 2903，差 35%）。
     // 船照样能开（退化路径不卡死玩家），所以失败只是"不报数字"，不是"不能玩"。
+    //
+    // 【第 34 轮：失败也是「有结论」，地图照常出来】
+    // 这里除了把就绪标志留在 false，还要置「失败」标志：
+    // 几何**有结论了**（结论是「只能走直线」），地图内容可以挂载——
+    // 否则玩家会永远卡在「绘制航海图...」，一个可选文件拿不到就把游戏锁死。
+    // 但里程/天数仍然一律不报（数据确实没有）。
     loadLandData().then(() => setLandDataReady(true)).catch(() => {
       // 掩码加载失败：碰撞检测被禁用，航线退化成直线 → 就绪标志保持 false，
       // 界面上所有里程/天数一律不报（宁可空着，也不报错数字）。
       setLandDataReady(false)
+      setLandDataFailed(true)
     })
     // 渲染数据只有 2D 视图需要；3D 视图自己取（且与碰撞检测共用同一个 Promise）
     if (renderMode === '2d') loadData()
-  }, [loadData, renderMode, setLandDataReady])
+  }, [loadData, renderMode, setLandDataReady, setLandDataFailed])
 
   return (
     <div className="relative" style={{ width: '100%', height: '100%' }}>
@@ -373,7 +443,7 @@ export default function MapView() {
         </Suspense>
       ) : (
         <>
-          {loading && (
+          {!mapReady && (
             <div className="absolute inset-0 z-10 flex items-center justify-center text-[#5a3e1a] font-serif" style={{ fontSize: 18, letterSpacing: 3, background: 'linear-gradient(180deg, #e8d4a8 0%, #d4b884 50%, #e8d4a8 100%)' }}>
               <div className="text-center">
                 <Sailboat size={36} className="mx-auto mb-4 text-gold-600" strokeWidth={1.2} style={{ animation: 'loadPulse 1.5s ease-in-out infinite' }} aria-hidden="true" />
@@ -388,6 +458,22 @@ export default function MapView() {
             </div>
           )}
 
+          {/*
+            【第 34 轮：地图内容等「几何有结论」才挂载】
+            这一层是本轮修复的落点。下面挂着的每一���几何消费者
+            （RouteLine 的候选航线虚线、NpcShips2D 的商船航线）都会在**挂载那一刻**
+            算一次航线几何——而掩码没到位时那几何是横穿陆地的大圆直线，
+            而且被 memo/ref 记住后**永远不会自己纠正**。
+
+            所以这里把整棵地图子树挂在 mapReady 后面：
+            mapReady = 渲染数据到了 **且** 几何有结论（就绪或确认失败）。
+            于是玩家永远看不到一条横穿陆地的航线，商船也不会沿着直线开一整局。
+
+            代价：掩码没到位时地图晚一点出现（生产环境掩码压完 48KB，
+            与 380KB 的 land.geojson 并行下载，通常反而先到 → 感知不到延迟）。
+            掩码确认失败时地图照常出现（几何退化成直线，但游戏能玩）。
+          */}
+          {mapReady && (
           <MapErrorBoundary>
             {/*
               海面单独成层，不放在 MapContainer 的 background 上。
@@ -516,6 +602,7 @@ export default function MapView() {
               <ShipAnimation />
             </MapContainer>
           </MapErrorBoundary>
+          )}
         </>
       )}
 

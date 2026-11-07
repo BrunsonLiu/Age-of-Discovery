@@ -9,7 +9,7 @@ import { useMapStore } from '@/store/useMapStore'
 import { useFxStore as useFx } from '@/store/useFxStore'
 import { ports } from '@/data/ports'
 import { routes } from '@/data/routes'
-import { findNearestOceanPoint, isOnLand, fetchLandGeojsonForRender } from '@/utils/landCheck'
+import { findNearestOceanPoint, isOnLand, fetchLandGeojsonForRender, loadLandData } from '@/utils/landCheck'
 import { getRouteGeometry, toLatLngList, type RouteGeometry } from '@/utils/routePath'
 import { calculateBearing } from '@/utils/navigation'
 import {
@@ -249,6 +249,17 @@ export default function Map3DView() {
         fetchLandGeojsonForRender(),
         loadTexture(`${base}data/painted-land.png`, false),
         loadTexture(`${base}data/painted-sea.png`, false),
+        /*
+         * 【第 34 轮：3D 也要等航线几何有结论】
+         * 下面建 NPC 商船时会调 getRouteGeometry，而掩码没到位时那几何是
+         * **横穿陆地的大圆直线**（塞维利亚→埃尔米纳 439 vs 真值 781 海里）。
+         * 2D 那边靠 MapView 的「几何有结论才挂载」解决了（见 MapView 的 mapReady），
+         * 3D 这条路径不经过 MapView 的 2D 分支，得自己等。
+         *
+         * loadLandData() 与 2D 共用同一个 Promise（掩码/geojson 都只请求一次），
+         * 掩码失败时它 reject——这里 catch 掉，让 3D 照常出来（退化成直线）。
+         */
+        loadLandData().catch(() => {}),
       ])
       if (disposed) return
 
@@ -2021,7 +2032,14 @@ export default function Map3DView() {
         if (origin && wp) {
           // sig 里带上危险等级：航线颜色由它决定，不含进来的话
           // "同一条航线被重新评估成更危险"时颜色不会跟着变。
-          const sig = `${origin[0].toFixed(3)},${origin[1].toFixed(3)}->${wp.latitude.toFixed(3)},${wp.longitude.toFixed(3)}|${state.currentRoute?.dangerLevel ?? 2}`
+          //
+          // 【第 34 轮：还要带上「几何是否已就绪」】
+          // 掩码到位前后算出的几何不一样（直线 vs 避陆弧线）。
+          // sig 不含它的话，掩码后到时 sig 没变 → 航线不会重算，
+          // 3D 里画的线就永远停在横穿陆地的那条上（2D 那边由 MapView 的
+          // 「几何有结论才挂载」挡住了，3D 这条路径要自己带）。
+          const geoReady = useMapStore.getState().landDataReady
+          const sig = `${origin[0].toFixed(3)},${origin[1].toFixed(3)}->${wp.latitude.toFixed(3)},${wp.longitude.toFixed(3)}|${state.currentRoute?.dangerLevel ?? 2}|${geoReady ? 1 : 0}`
           if (sig !== routeSig) {
             routeSig = sig
             const geom = getRouteGeometry([origin[0], origin[1]], [wp.latitude, wp.longitude])

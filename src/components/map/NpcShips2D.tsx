@@ -27,7 +27,16 @@ const NPC_SIZE = 46
 export default function NpcShips2D() {
   const markerRefs = useRef<(L.Marker | null)[]>([])
 
-  /** 每条腿的几何与初始相位，只算一次（航线几何是 A*，别每帧算） */
+  /**
+   * 每条腿的几何与初始相位，只算一次（航线几何是 A*，别每帧算）
+   *
+   * 【为什么挂载时算就一定是真值】
+   * 航线弧长靠 A* 在海陆掩码上搜；掩码没到位时算出来的是**横穿陆地的大圆直线**。
+   * 这里能放心「只算一次」，是因为 MapView 保证了
+   * **地图内容在几何有结论之后才挂载**（见 MapView 的 mapReady 注释）。
+   * 掩码到位前的那条直线几何根本不会进入这个组件——
+   * 它一挂载就已经是避陆后的真值（实测 439 → 781 海里，第一条差 78%）。
+   */
   const legs = useMemo(() => {
     const out: { geom: ReturnType<typeof getRouteGeometry>; phase0: number }[] = []
     for (let i = 0; i < NPC_LEGS.length; i++) {
@@ -45,9 +54,14 @@ export default function NpcShips2D() {
 
   /** 图标只建一次（每个商船一份，因为要各自旋转） */
   const icons = useMemo(
-    () => legs.map(() => L.divIcon({
+    () => legs.map((leg) => L.divIcon({
       className: 'npc-ship-icon',
-      html: `<div class="npc-ship-rot" style="transform-origin:50% 50%">`
+      html: `<div class="npc-ship-rot" style="transform-origin:50% 50%"`
+        // 把这条腿的**实际航程**挂在 DOM 上：e2e 要能读出
+        // 「屏幕上这艘船走的是不是避陆后的那条路」。
+        // 退化直线与大圆直线的里程差得很远（439 vs 781 海里），
+        // 所以这个数字一变，就说明有人把航线几何换回了直线。
+        + `" data-leg-nm="${Math.round(leg.geom.totalNm)}">`
         + `<img src="${shipSprite('caravel')}" alt="" draggable="false" `
         + `style="display:block;height:${NPC_SIZE}px;width:auto;opacity:0.92;`
         + `filter:drop-shadow(0 1px 3px rgba(0,0,0,0.45))" onerror="this.style.display='none'"/>`
