@@ -157,6 +157,7 @@ import {
 import { findSeaPath, loadSeaMask, isSeaMaskLoaded } from '../src/utils/seaRoute'
 import { seasonAt, SEASON_DAYS, ALL_SEASONS, inMonsoonZone } from '../src/utils/season'
 import { prevailingWindBearingAt, prevailingWindBearing, computeWindFavor } from '../src/utils/navigation'
+import { snowPhaseOf } from '../src/components/map3d/mapPeaks3d'
 import { OCEAN_CURRENTS, currentFlowPoints, windArrowSites } from '../src/data/mapLayers'
 import { ports } from '../src/data/ports'
 import { RELIC_PICKUP_NM, relicDistanceNm, relicInReach } from '../src/data/relics'
@@ -7586,5 +7587,52 @@ console.log('\n== 天数口径守卫 ==')
   assert(steady.length === 0, `季风区外的箭头两季一致（异常 ${steady.length} 个）`)
 }
 
+
+// ---------------- 雪线：既要看海拔，也要随季节升降 ----------------
+//
+// 2026-11-08：原来雪态是 `|lat| >= 48` 一刀切，于是：
+//   · 阿尔卑斯（46°N，很高）没有雪；西伯利亚平原（60°N，平地）有雪 —— 反了；
+//   · 乞力马扎罗在赤道却没有雪 —— 也反了。
+// 现在分三相：常年雪 / 只有寒季雪 / 无雪。中间那一相就是真实雪线在做的事
+// （夏季上移、冬季压下来），换季时山上会多一层/脱一层雪。
+//
+// 【为什么必须守"三相都不是空集"】退化成两相（全常年雪或全无雪），
+// 换季就不会有任何变化，而画面依旧正常——那种"静默失效"只能靠断言抓。
+{
+  const NO_ELEV = {}
+  // 高纬平地：常年雪
+  assert(snowPhaseOf(62, 20, NO_ELEV) === 'always', '高纬（62°N）常年有雪')
+  // 中纬：不给海拔时只到"寒季雪"一档（旧判据在这里是 48° 一刀切，46° 直接无雪）
+  assert(snowPhaseOf(46, 10, NO_ELEV) === 'cold', '中纬（46°N）不给高程时是"寒季雪"（不是一无所有）')
+  // 海拔的作用：同一个 46°N，高程够高就从"寒季雪"升成"常年雪"
+  assert(snowPhaseOf(46, 10, { elevAt: () => 0.9 }) === 'always',
+    '同一个纬度，高程 0.9 时升为常年雪——海拔是判据的一部分，不是装饰')
+  assert(snowPhaseOf(46, 10, { elevAt: () => 0.2 }) === 'cold',
+    '同一个纬度，高程 0.2 时退回寒季雪——低地不该跟高峰一样白')
+  // 中纬 + 高海拔（阿尔卑斯）：只有寒季雪
+  const highAlps = { elevAt: (la: number, ln: number) => (Math.abs(la - 46) < 3 && Math.abs(ln - 10) < 6 ? 0.82 : 0.2) }
+  assert(snowPhaseOf(46, 10, highAlps) === 'cold', '阿尔卑斯（46°N 且高程 0.82）只有寒季有雪')
+  // 赤道 + 极高（乞力马扎罗）：常年雪
+  const kilimanjaro = { elevAt: () => 0.9 }
+  assert(snowPhaseOf(-3, 37, kilimanjaro) === 'always', '赤道的高峰（乞力马扎罗）常年有雪——纬度不是唯一判据')
+  // 低纬低地：无雪
+  assert(snowPhaseOf(0, 20, { elevAt: () => 0.1 }) === 'never', '赤道低地没有雪')
+
+  // 三相在真实数据上都必须非空（否则换季看不出变化）
+  // 用一组覆盖全球的探针点代替真实符号，保证这条断言不依赖解码 PNG
+  let always = 0, cold = 0, never = 0
+  for (const [la, ln, e] of [
+    [70, 20, 0.1], [62, -40, 0.3], [58, 60, 0.2],
+    [46, 10, 0.82], [40, -105, 0.80], [-30, -70, 0.78],
+    [5, 20, 0.1], [0, 100, 0.2], [25, 80, 0.3],
+  ] as [number, number, number][]) {
+    const ph = snowPhaseOf(la, ln, { elevAt: () => e })
+    if (ph === 'always') always++
+    else if (ph === 'cold') cold++
+    else never++
+  }
+  assert(always > 0 && cold > 0 && never > 0,
+    `雪态三相都不是空集（常年 ${always} / 寒季 ${cold} / 无雪 ${never}）——退化两相就等于没有季节`)
+}
 console.log(`\n最终结果：${passed} 通过 / ${failed} 失败`)
 if (failed > 0) process.exit(1)

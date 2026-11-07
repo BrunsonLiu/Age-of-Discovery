@@ -957,10 +957,33 @@ export default function Map3DView() {  const mountRef = useRef<HTMLDivElement>(n
          * 改成相对高度后 39%，而法国平原/亚马逊/澳洲内陆/东欧平原都是 0%。
          */
         const strong = filterPeaksByElevation(symbols, elev)
-        peaks = buildMap3DPeaks(strong, PEAK_Y, PEAK_FACING)
+        /*
+         * 雪态要**同时看纬度与海拔**：只按纬度时阿尔卑斯（46°N 却很高）没雪、
+         * 西伯利亚平原（60°N 是平地）有雪，两边都反了。
+         * 高程采样器在这里本来就有（elev），顺手传给雪态判定。
+         */
+        peaks = buildMap3DPeaks(strong, PEAK_Y, PEAK_FACING, {
+          elevAt: elev ? (la, ln) => elev(la, ln) : undefined,
+        })
         for (const m of peaks.meshes) peakGroup.add(m)
+        // 寒季雪的两个组挂进同一个 peakGroup（add 会把它们从上面那轮里重新挂过来）
+        peakGroup.add(peaks.coldGroups.north, peaks.coldGroups.south)
         for (const m of peaks.materials) m.color.copy(peakBase)
         for (const mat of peaks.materials) peakMats.push(mat)
+        /*
+         * 建好就立刻按当前航季定一次雪态。
+         *
+         * 【为什么不能只靠帧循环里那次】山是**异步**建好的（要先解码高程图），
+         * 而帧循环只在"季相变化"时切换可见性；等到山建好时，
+         * 那次切换早就在 peaks 还是 null 的时候空转过去了 ——
+         * 实测三季的可见性全是 true，等于没做。
+         */
+        {
+          const si = seasonAt(useGameStore.getState().fleet.day).index
+          const coldNorth = si >= 2
+          peaks.coldGroups.north.visible = coldNorth
+          peaks.coldGroups.south.visible = !coldNorth
+        }
       })
 
       /*
@@ -1726,6 +1749,17 @@ export default function Map3DView() {  const mountRef = useRef<HTMLDivElement>(n
             seasonLandTint = season.landTint
             applySeaColor()
             lidMat.color.setRGB(seasonLandTint[0], seasonLandTint[1], seasonLandTint[2])
+            /*
+             * 雪线随季升起/落下：北半球的"寒季雪"在我们的秋(2)/冬(3)出现，
+             * 南半球的在春(0)/夏(1)——因为那时正是他们的冬天。
+             * 一个开关让全世界同时下雪是假的；分开之后，
+             * 换季时能看见"这一半山戴雪、那一半山脱雪"。
+             */
+            const coldNorth = season.index >= 2
+            if (peaks) {
+              peaks.coldGroups.north.visible = coldNorth
+              peaks.coldGroups.south.visible = !coldNorth
+            }
           }
         }
 
