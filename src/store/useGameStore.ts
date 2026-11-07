@@ -12,7 +12,7 @@ import { tasks } from '@/data/tasks'
 import { goods } from '@/data/goods'
 import { calculateDailyConsumption, dangerLevelFromDistance, computeWindFavor, effectiveFleetSpeed, prevailingWindBearing, calculateSailingDays, dailyDistanceNm, haversineNm } from '@/utils/navigation'
 import { getRouteGeometry } from '@/utils/routePath'
-import { routeFacts } from '@/utils/voyage'
+import { routeFacts, voyageDays } from '@/utils/voyage'
 import { getRandomEvents, consumeEventFlags } from '@/utils/eventEngine'
 import { STANCES, segmentCountFor, nextSegmentBoundary, hazardLabel, dailyFoodUse, dailyWaterUse, dailyWearRate, settleWear } from '@/utils/segment'
 import { repairCost, taskGold, supplyCost, supplyAmounts, INTERPRETER_FACTION_MUL } from '@/utils/crewPerks'
@@ -2584,8 +2584,14 @@ export const useGameStore = create<GameStore>()(
  *   买价   selectBuyPrice   （与 buyGood 同）
  *   卖价   selectSellPrice  （与 sellGood 同）
  *   可买量 min(空舱, 买得起的数量, 本港库存)
- *   天数   calculateSailingDays(真实航线, 真实风向系数)  （与 confirmDeparture 同）
+ *   天数   voyageDays(真实航线, 真实风向, 当前天候)  （与出航计划面板同）
  * 少一样都会出现"卡片说赚 1095、实际到账 700"。
+ *
+ * 【天数为什么必须含天候（第 33 轮）】
+ * 原来这里用 `calculateSailingDays`，那个函数**不含天候倍率**；
+ * 而出航计划面板的「约 N 天可达」含天候。于是同一趟航，卡片写「3 天」、
+ * 点下去的面板写「约 6 天可达」（暴风雨 sailMul 0.55）——玩家点一下就发现
+ * 两个数字打架。现在两边都走 utils/voyage.voyageDays。
  *
  * 【排序用直线距离，最终数字用真实航线】
  * 每港每货都算真实航线（要绕开陆地寻路）会让进港明显卡顿；
@@ -2605,6 +2611,7 @@ export interface BrokerDeal {
   unitProfit: number
   totalProfit: number
   nm: number
+  /** 显示用天数：与出航计划面板的「约 N 天可达」同口径（含天候） */
   days: number
 }
 
@@ -2684,7 +2691,18 @@ export function selectBestDeal(state: GameState): BrokerDeal | null {
     unitProfit: best.unit,
     totalProfit,
     nm,
-    days,
+    // 显示用的天数走 voyageDays（含天候），与出航计划面板的「约 N 天可达」同口径。
+    //
+    // 【门槛仍用上面那个不含天候的 days】门槛是**平衡参数**
+    // （MIN_DEAL_PROFIT_PER_DAY），改它会改变推荐哪些单子——那是设计决定，
+    // 不该顺手改。门槛与显示各司其职：门槛管"值不值得推"，显示管"这趟要几天"。
+    days: voyageDays({
+      distanceNm: nm,
+      windFavor,
+      fleet: state.fleet,
+      officers: state.officers,
+      weather: state.weather,
+    }),
   }
 }
 
@@ -2785,8 +2803,14 @@ export function selectReturnLeg(state: GameState): ReturnLeg | null {
   const geom = getRouteGeometry([a.latitude, a.longitude], [b.latitude, b.longitude])
   const nm = Math.round(geom.totalNm)
   const windFavor = computeWindFavor(a.latitude, a.longitude, b.latitude, b.longitude)
-  const route: Route = { id: -1, fromPortId: here, toPortId: back, distance: nm, dangerLevel: 2, windFavor }
-  const days = calculateSailingDays(route, state.fleet, state.officers)
+  // 与出航计划面板同口径（含天候）——回程提示的「N 天」和点开后的面板必须一样
+  const days = voyageDays({
+    distanceNm: nm,
+    windFavor,
+    fleet: state.fleet,
+    officers: state.officers,
+    weather: state.weather,
+  })
   return { toPortId: b.id, toPortName: b.nameCn, toLat: b.latitude, toLng: b.longitude, nm, days }
 }
 

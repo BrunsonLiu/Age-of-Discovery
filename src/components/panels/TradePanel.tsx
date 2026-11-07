@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Coins, Package, TrendingUp, TrendingDown, Sprout, HandCoins } from 'lucide-react'
 import { useGameStore, selectBuyPrice, selectSellPrice, selectPriceTone, selectBestDeal } from '@/store/useGameStore'
+import { useMapStore } from '@/store/useMapStore'
 import { portGoods, localSpecialties, localDemands } from '@/data/ports'
 import { goods } from '@/data/goods'
 import ParchmentCard from '@/components/ui/ParchmentCard'
@@ -147,6 +148,20 @@ export default function TradePanel() {
   const sellGood = useGameStore(s => s.sellGood)
   const setActivePanel = useGameStore(s => s.setActivePanel)
   const [tab, setTab] = useState<'buy' | 'sell'>('buy')
+  /*
+   * 航线几何就绪与否（第 33 轮）。
+   *
+   * 海陆掩码异步到位之前，selectBestDeal 算出的航程是**大圆直线**：
+   * 埃尔米纳 → 里斯本 报 2157 海里（横穿撒哈拉），就绪后才是 2903 海里。
+   * 天数是由航程算出来的，所以那一档的「N 天」也是错的。
+   *
+   * 这里与左下角掮客卡、主屏常驻条用同一条规则：**没就绪就不报**。
+   * 宁可少一个数字，也不显示少报 35% 的数字。
+   *
+   * 【为什么这行必须在提前 return 之前】下面有一句 `if (!portId) return null`，
+   * hook 写在它后面就是条件调用——React 会直接抛 "Rendered fewer hooks than expected"。
+   */
+  const landDataReady = useMapStore(s => s.landDataReady)
 
   const portId = fleet.currentPortId
   if (!portId) return null
@@ -161,6 +176,7 @@ export default function TradePanel() {
    * 少订阅一个对象，少一次全局重渲染。
    */
   const deal = selectBestDeal(useGameStore.getState())
+  const dealDays = landDataReady && deal ? deal.days : null
 
   /*
    * 推荐那件必须排第一。实测它在第三行时，面板滚动区只有 240px 高，
@@ -259,7 +275,7 @@ export default function TradePanel() {
                 </span>
               </p>
               <p className="text-gold-500 text-[12px] font-serif pl-4 tabular-nums">
-                约 {deal.totalProfit} 金 / {deal.days} 天 · 本港 {deal.buy} 金，那边 {deal.sell} 金
+                约 {deal.totalProfit} 金{dealDays != null ? ` / ${dealDays} 天` : ''} · 本港 {deal.buy} 金，那边 {deal.sell} 金
               </p>
             </div>
           )}

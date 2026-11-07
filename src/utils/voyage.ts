@@ -108,6 +108,18 @@ export interface RouteFacts {
  * `Math.round(geom.totalNm)`；主屏指引要显示同一个数，就不能在这里
  * 留下小数让两处各自取整（一个用 ceil 一个用 round 就会差 1 海里）。
  * 危险等级仍按取整前的值算——阈值是 500/1500/3000/5000，取整不会翻转档位。
+ *
+ * 【报数之前必须等航线几何就绪——第 33 轮实测】
+ * 海陆掩码（810KB）是异步加载的。在它到位之前，`buildRouteGeometry` 找不到海路，
+ * 会**退化成大圆弧**（见 routePath.ts 里那句「宁可穿陆也不要卡死玩家」）。
+ * 船照样能开，但那条直线会直接穿过陆地：
+ *   埃尔米纳 → 里斯本   掩码未到位：2157 海里（直线横穿撒哈拉）
+ *                  掩码已到位：2903 海里（绕开陆地）   —— 差 35%
+ *
+ * 所以：**船的移动不等掩码，报给玩家的里程与天数必须等。**
+ * 判据用 `useMapStore.landDataReady`（不是"掩码加载了没"）：
+ * 掩码到位之后还要 `invalidateRouteGeometryCache()`，
+ * 那一步没做完之前缓存里躺着的仍是旧的直线几何。
  */
 export function routeFacts(from: [number, number], to: [number, number]): RouteFacts {
   const geom = getRouteGeometry(from, to)

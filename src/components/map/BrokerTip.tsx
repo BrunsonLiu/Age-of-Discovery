@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Coins, X, Anchor, PackageOpen, ChevronDown, ChevronUp } from 'lucide-react'
 import { useGameStore, selectBestDeal, selectCargoSale, selectDealTalentBonus, selectReturnLeg } from '@/store/useGameStore'
+import { useMapStore } from '@/store/useMapStore'
 import { useIsMobile } from '@/hooks/useIsMobile'
 
 /**
@@ -20,7 +21,7 @@ import { useIsMobile } from '@/hooks/useIsMobile'
  *
  * 【数字必须等于实际到账】
  *   买价 selectBuyPrice · 卖价 selectSellPrice · 数量 min(空舱, 买得起, 本港库存)
- *   天数 calculateSailingDays(真实航线, 真实风向系数)
+ *   天数 voyageDays(真实航线, 真实风向系数, 当前天候)  ← 与出航计划面板同口径
  * 全部与 buyGood / sellGood 同源，单测直接做"卡片说 +670，实际到账 670"的对账。
  *
  * 【为什么不用 useGameStore(selectXxx) 直接订阅】
@@ -62,6 +63,26 @@ export default function BrokerTip({ placement = 'float' }: { placement?: 'float'
   const compact = isMobile && placement === 'stack' && !open
 
   const lastPortId = useGameStore(s => s.lastPortId)
+  /*
+   * 天候也要进依赖：卡上的「N 天」含天候倍率（暴风雨时天数翻倍）。
+   * 原来依赖里没有 weather，于是「在港休整一天」触发 advanceDay → advanceWeather
+   * 之后，卡片仍显示旧天候下的天数——玩家看到的天数和点开面板后对不上。
+   */
+  const weather = useGameStore(s => s.weather)
+  /*
+   * 航线几何就绪与否也要进依赖（第 33 轮）。
+   *
+   * 【为什么】海陆掩码是异步加载的，在它到位之前算出来的航程是**大圆直线**：
+   * 埃尔米纳 → 里斯本 掩码未到位报 2157 海里（横穿撒哈拉），
+   * 就绪后才是 2903 海里（绕开陆地），差 35%。
+   *
+   * 原来这里既不等就绪、也不在就绪后重算，于是卡上会**一直挂着那个少报 35% 的直线里程**——
+   * 玩家照着它备粮水，到海上才发现要多走三分之一的日子。
+   *
+   * 现在：几何没就绪就不报里程与天数（宁可少一个数字，也不报错数字），
+   * 就绪后 landDataReady 由 false 翻成 true，依赖变了 → 自动重算成真值。
+   */
+  const landDataReady = useMapStore(s => s.landDataReady)
 
   const { sale, deal, back, talentBonus } = useMemo(
     () => {
@@ -75,8 +96,17 @@ export default function BrokerTip({ placement = 'float' }: { placement?: 'float'
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [portId, isSailing, gold, fame, marketStock, cargo, lastPortId],
+    [portId, isSailing, gold, fame, marketStock, cargo, lastPortId, weather, landDataReady],
   )
+
+  /*
+   * 「N 天 · N 海里」这一段：几何没就绪时**整段不报**。
+   *
+   * 宁可少一个数字，也不显示少报 35% 的直线距离（详见 landDataReady 处的说明）。
+   * 主屏常驻条与这里用的是同一条规则（见 hooks/useVoyageNext）。
+   */
+  const legDeal = landDataReady && deal ? `${deal.days} 天 · ${deal.nm} 海里` : ''
+  const legBack = landDataReady && back ? `${back.days} 天 · ${back.nm} 海里` : ''
 
   if (isSailing || pendingVoyage || activePanel || gamePhase !== 'playing') return null
 
@@ -176,7 +206,8 @@ export default function BrokerTip({ placement = 'float' }: { placement?: 'float'
     ? `+${sale!.total} 金`
     : mode === 'buy'
       ? `+${deal!.totalProfit} 金`
-      : `${back!.days} 天`
+      // 几何没就绪时天数算不准（会是大圆直线的天数），宁可空着
+      : (landDataReady ? `${back!.days} 天` : '')
 
   if (compact) {
     return (
@@ -281,7 +312,7 @@ export default function BrokerTip({ placement = 'float' }: { placement?: 'float'
                 <span className="text-gold-400 text-[13px]">空船补货</span>
               </div>
               <div className="mt-1.5 font-serif text-[13px] text-gold-400">
-                {back!.days} 天 · {back!.nm} 海里 · 那里才有货可进
+                {legBack ? `${legBack} · ` : ''}那里才有货可进
               </div>
               <div className="mt-2 flex items-center justify-end gap-3">
                 <button
@@ -310,7 +341,7 @@ export default function BrokerTip({ placement = 'float' }: { placement?: 'float'
                 <span className="font-mono text-base text-safe-300 tabular-nums">{deal!.sell}</span>
               </div>
               <div className="mt-1.5 font-serif text-[13px] text-gold-400">
-                {deal!.toPortName} · {deal!.days} 天 · {deal!.nm} 海里 · 买 {deal!.qty} 件
+                {deal!.toPortName}{legDeal ? ` · ${legDeal}` : ''} · 买 {deal!.qty} 件
               </div>
               {/*
                 天赋的痕迹。这一行是整个开局选择唯一的"兑现时刻"：

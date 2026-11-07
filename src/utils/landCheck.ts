@@ -213,6 +213,20 @@ export function loadLandData(): Promise<void> {
         const m = await import('@/utils/routePath')
         m.invalidateRouteGeometryCache()
       } catch { /* 清缓存失败不影响功能，只是航路可能偏旧 */ }
+
+      /*
+       * 【第 33 轮：掩码没到位必须当作失败】
+       * loadSeaMask 内部自己 catch 了 fetch 的错误（只打一条 warn），
+       * 所以 Promise.all 照样 resolve —— 调用方（MapView）会把「几何已就绪」
+       * 置起来，界面开始报里程。可这时候掩码根本没有，
+       * getRouteGeometry 只能给一条**横穿陆地的直线**：
+       * 埃尔米纳 → 里斯本 报 2157 海里，真值是 2903 海里，差 35%。
+       *
+       * 所以这里自己判一次：掩码不到位就 reject，
+       * 让调用方把就绪标志留在 false —— 界面上所有里程/天数一律不报。
+       * （船照样能开：退化路径不卡死玩家，报数才是不能将就的那一环。）
+       */
+      if (!isSeaMaskLoaded()) throw new Error('海陆掩码加载失败，航线几何退化为直线')
     })
   return loadingPromise
 }

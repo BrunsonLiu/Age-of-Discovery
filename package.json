@@ -21,6 +21,7 @@
     "test:e2e:portsvc": "node test/e2e/port-services.mjs",
     "test:e2e:supply": "node test/e2e/supply-parity.mjs",
     "test:e2e:nexthint": "node test/e2e/next-port-hint.mjs",
+    "test:e2e:broker": "node test/e2e/broker-parity.mjs",
     "test:e2e:receipt": "node test/e2e/arrival-receipt.mjs",
     "test:e2e:notify": "node test/e2e/notification-overlap.mjs",
     "test:e2e:mobile": "node test/e2e/mobile-layout.mjs",
@@ -40,7 +41,7 @@
     "test:e2e:copy": "node test/e2e/copy-density-audit.mjs",
     "test:e2e:seg1": "npm run test:e2e && npm run test:e2e:scenes && npm run test:e2e:audio && npm run test:e2e:map",
     "test:e2e:seg2": "npm run test:e2e:map3d && npm run test:e2e:trade",
-    "test:e2e:seg7": "npm run test:e2e:supply && npm run test:e2e:nexthint && npm run test:e2e:receipt && npm run test:e2e:notify && npm run test:e2e:mobile",
+    "test:e2e:seg7": "npm run test:e2e:supply && npm run test:e2e:nexthint && npm run test:e2e:broker && npm run test:e2e:receipt && npm run test:e2e:notify && npm run test:e2e:mobile",
     "test:e2e:seg3": "npm run test:e2e:clickable && npm run test:e2e:clickable:1024 && npm run test:e2e:clickable:3d && npm run test:e2e:portsvc && npm run test:e2e:logbook",
     "test:e2e:seg4": "npm run test:e2e:layout && npm run test:e2e:harbor && npm run test:e2e:smalltext && npm run test:e2e:copy",
     "test:e2e:seg5": "npm run test:e2e:firstrun && npm run test:e2e:visitor && npm run test:e2e:font",
@@ -49,7 +50,7 @@
     "test:e2e:live": "node test/e2e/live-smoke.mjs",
     "test:e2e:release": "npm run test:e2e:full && npm run test:e2e:live",
     "test:e2e:full": "npm run test:e2e:seg1 && npm run test:e2e:seg2 && npm run test:e2e:seg3 && npm run test:e2e:seg4 && npm run test:e2e:seg5 && npm run test:e2e:seg6 && npm run test:e2e:seg7 && npm run test:e2e:prod",
-    "test:e2e:all": "npm run test:e2e && npm run test:e2e:scenes && npm run test:e2e:audio && npm run test:e2e:map && npm run test:e2e:map3d && npm run test:e2e:trade && npm run test:e2e:portsvc && npm run test:e2e:supply && npm run test:e2e:nexthint && npm run test:e2e:receipt && npm run test:e2e:notify && npm run test:e2e:mobile && npm run test:e2e:clickable && npm run test:e2e:clickable:1024 && npm run test:e2e:clickable:3d && npm run test:e2e:layout && npm run test:e2e:logbook && npm run test:e2e:harbor && npm run test:e2e:smalltext && npm run test:e2e:copy && npm run test:e2e:firstrun && npm run test:e2e:visitor && npm run test:e2e:font && npm run test:e2e:seg6"
+    "test:e2e:all": "npm run test:e2e && npm run test:e2e:scenes && npm run test:e2e:audio && npm run test:e2e:map && npm run test:e2e:map3d && npm run test:e2e:trade && npm run test:e2e:portsvc && npm run test:e2e:supply && npm run test:e2e:nexthint && npm run test:e2e:broker && npm run test:e2e:receipt && npm run test:e2e:notify && npm run test:e2e:mobile && npm run test:e2e:clickable && npm run test:e2e:clickable:1024 && npm run test:e2e:clickable:3d && npm run test:e2e:layout && npm run test:e2e:logbook && npm run test:e2e:harbor && npm run test:e2e:smalltext && npm run test:e2e:copy && npm run test:e2e:firstrun && npm run test:e2e:visitor && npm run test:e2e:font && npm run test:e2e:seg6"
   },
   "dependencies": {
     "clsx": "^2.1.1",

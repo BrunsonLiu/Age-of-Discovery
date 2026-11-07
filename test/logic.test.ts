@@ -3623,6 +3623,29 @@ console.log('== 51. 掮客推荐：卡片说的利润必须等于实际到账 ==
     assert(deal.unitProfit > 0, `单位利润应为正（实际 ${deal.unitProfit}）`)
     assert(deal.nm > 0 && deal.days >= 1, `航程与天数应为正（${deal.nm}nm / ${deal.days}天）`)
 
+    // —— 天数必须与出航计划面板同口径（第 33 轮）——
+    //
+    // 【为什么这条不能省】掮客卡与出航计划面板都在报「N 天」，玩家点一下卡
+    // 就会看到面板上的天数。原先两边口径不同：卡片用 calculateSailingDays
+    // （**不含天候倍率**），面板用「按部就班 × 天候」。于是暴风雨里卡片写
+    // 「3 天」、面板写「约 6 天可达」——差一倍，点一下就发现界面自己打自己。
+    //
+    // 现在两边都走 utils/voyage.voyageDays，所以这里要逐字相等。
+    const fromPort = ports.find(p => p.id === S().fleet.currentPortId!)!
+    const toPort = ports.find(p => p.id === deal.toPortId)!
+    const facts = routeFacts([fromPort.latitude, fromPort.longitude], [toPort.latitude, toPort.longitude])
+    assert(facts.distanceNm === deal.nm,
+      `掮客卡的航程必须是真实避陆弧长（卡 ${deal.nm}，航线 ${facts.distanceNm}）`)
+    const expectDays = voyageDays({
+      distanceNm: deal.nm,
+      windFavor: facts.windFavor,
+      fleet: S().fleet,
+      officers: S().officers,
+      weather: S().weather,
+    })
+    assert(deal.days === expectDays,
+      `掮客卡的天数必须与出航计划面板同口径（卡 ${deal.days}，期望 ${expectDays}）`)
+
     // 卡片价 == 面板取价（同一来源）
     assert(deal.buy === selectBuyPrice(S(), S().fleet.currentPortId!, deal.goodId), '卡片买价必须等于面板买价')
     assert(deal.sell === selectSellPrice(S(), deal.toPortId, deal.goodId), '卡片卖价必须等于目标港卖价')
@@ -3644,6 +3667,69 @@ console.log('== 51. 掮客推荐：卡片说的利润必须等于实际到账 ==
   // 不在港口也不该推荐
   useGameStore.setState({ fleet: { ...S().fleet, isSailing: false, currentPortId: null } })
   assert(selectBestDeal(S()) === null, '不在港口时不应给出推荐')
+}
+
+console.log('== 51b. 掮客卡的天数必须含天候（暴风雨里不得与面板差一倍） ==')
+{
+  /*
+   * 【为什么单开一段】
+   * 上面那条「天数 == voyageDays」在晴天有侥幸通过的可能——晴天天候倍率是 1，
+   * 旧口径（calculateSailingDays，不含天候）算出来恰好一样。
+   * 所以这里专门造一次暴风雨：天候倍率 0.55 × 0.85 = 0.4675，
+   * 旧口径必然对不上。这一段才是那条断言真正的**区分力**所在。
+   *
+   * 【为什么换到埃尔米纳做这一趟】
+   * 开局在塞维利亚时推荐的那一单只有 54 海里 / 1 天——暴风雨下 ceil(0.67) 还是 1，
+   * 新旧口径都是 1 天，测不出任何东西。必须挑一条**长途**：
+   * 埃尔米纳 → 里斯本 2157 海里 / 晴天 13 天 / 暴风雨约 28 天，差一倍多。
+   *
+   * 【顺便锁住「门槛不受天候影响」】
+   * 推荐门槛 MIN_DEAL_PROFIT_PER_DAY 用的是不含天候的天数，那是**平衡参数**，
+   * 改它会改变"推哪一单"——属于设计决定，不该顺手改。
+   * 所以天候只影响**显示天数**，不影响推不推这一单、也不影响推去哪一单。
+   */
+  useGameStore.getState().initGame('merchant', 'captain')
+  const S = () => useGameStore.getState()
+  // 埃尔米纳（9）——它的推荐单是长途，天气对天数才有放大效应
+  useGameStore.setState({
+    fleet: { ...S().fleet, currentPortId: 9 },
+    weather: { ...S().weather, kind: 'clear' },
+  })
+
+  const clearDeal = selectBestDeal(S())
+  assert(clearDeal !== null, '埃尔米纳应有推荐')
+  if (clearDeal) {
+    const clearDays = clearDeal.days
+    assert(clearDays >= 3,
+      `这条长途单晴天也该有几天（实际 ${clearDays} 天）——否则下面的天候断言没有区分力`)
+    const fromPort = ports.find(p => p.id === S().fleet.currentPortId!)!
+    const toPort = ports.find(p => p.id === clearDeal.toPortId)!
+    const facts = routeFacts([fromPort.latitude, fromPort.longitude], [toPort.latitude, toPort.longitude])
+
+    useGameStore.setState({ weather: { ...S().weather, kind: 'storm' } })
+    const stormDeal = selectBestDeal(S())
+    assert(stormDeal !== null, '暴风雨里仍应有推荐（门槛按不含天候的利润/天算，不该被天候挡住）')
+    if (stormDeal) {
+      assert(stormDeal.toPortId === clearDeal.toPortId,
+        `天候不该改变推荐去哪（晴天 ${clearDeal.toPortId}，暴风雨 ${stormDeal.toPortId}）`)
+      assert(stormDeal.days > clearDays,
+        `暴风雨里天数必须变多（晴天 ${clearDays}，暴风雨 ${stormDeal.days}）`)
+
+      // 旧写法：不含天候的 calculateSailingDays —— 显示天数若等于它，说明没含天候
+      const oldWay = calculateSailingDays({
+        id: -1, fromPortId: fromPort.id, toPortId: toPort.id,
+        distance: stormDeal.nm, dangerLevel: 2, windFavor: facts.windFavor,
+      }, S().fleet, S().officers)
+      assert(stormDeal.days !== oldWay,
+        `暴风雨里显示天数若等于旧口径（${oldWay} 天），说明没有含天候`)
+      assert(stormDeal.days === voyageDays({
+        distanceNm: stormDeal.nm, windFavor: facts.windFavor,
+        fleet: S().fleet, officers: S().officers, weather: S().weather,
+      }), '暴风雨里的显示天数仍必须走 voyageDays')
+    }
+    // 复原天候，别污染后面的用例
+    useGameStore.setState({ weather: { ...S().weather, kind: 'clear' } })
+  }
 }
 
 console.log('== 52. 航行节奏：方针只问一次、操舵只在第一段强制 ==')
@@ -3793,6 +3879,19 @@ console.log('== 54. 回程建议：卖完货不能让人卡在"无推荐"里 =='
   if (back) {
     assert(back.toPortId === 6, `回程应指向塞维利亚（实际 ${back.toPortId}）`)
     assert(back.nm > 0 && back.days >= 1, `回程航程应为正（${back.nm}nm / ${back.days}天）`)
+
+    // 回程提示也是一屏数字，点开的面板必须说同一个数（第 33 轮）
+    const a = ports.find(p => p.id === S().fleet.currentPortId!)!
+    const b = ports.find(p => p.id === back.toPortId)!
+    const facts = routeFacts([a.latitude, a.longitude], [b.latitude, b.longitude])
+    assert(facts.distanceNm === back.nm,
+      `回程航程必须是真实避陆弧长（提示 ${back.nm}，航线 ${facts.distanceNm}）`)
+    const expectDays = voyageDays({
+      distanceNm: back.nm, windFavor: facts.windFavor,
+      fleet: S().fleet, officers: S().officers, weather: S().weather,
+    })
+    assert(back.days === expectDays,
+      `回程天数必须与出航计划面板同口径（提示 ${back.days}，期望 ${expectDays}）`)
   }
 
   // 回到塞维利亚后，回程建议反过来指向加的斯（说明它是"来处"而不是写死的）
@@ -6557,6 +6656,76 @@ console.log('\n== 天数口径守卫 ==')
     '巡检量的是 advanceDay 真实扣减，抢行期望值来自同一套 dailyRates')
   assert(/altRoute/.test(audit) && /假绿/.test(audit),
     '「给抢行退路」这条断言不能用 /抢行/ 判（折叠摘要恒含此词，是假绿）')
+}
+
+// ---------------- 掮客卡：天数必须与出航计划面板逐字一致 ----------------
+// 第 33 轮实测：掮客卡的「N 天」用 calculateSailingDays（**不含天候倍率**），
+// 出航计划面板用「按部就班 × 天候」。暴风雨里卡片写「13 天」、面板写「约 28 天可达」。
+// 两处都是玩家会照着备粮水的数字，差一倍多就不能算「界面自洽」。
+{
+  const store = readFileSync(join(process.cwd(), 'src', 'store', 'useGameStore.ts'), 'utf8')
+  const tip = readFileSync(join(process.cwd(), 'src', 'components', 'map', 'BrokerTip.tsx'), 'utf8')
+  const audit = readFileSync(join(process.cwd(), 'test', 'e2e', 'broker-parity.mjs'), 'utf8')
+  const pkg = JSON.parse(readFileSync(join(process.cwd(), 'package.json'), 'utf8') as unknown as {
+    scripts: Record<string, string>
+  })
+
+  // selectBestDeal 返回的天数必须走 voyageDays（含天候）
+  // 只取 selectBestDeal 自己的函数体：整份文件里还有 selectReturnLeg 也用 voyageDays，
+  // 拿全文匹配等于两个函数互相顶替，守卫就没有区分力了。
+  const iBest = store.indexOf('export function selectBestDeal')
+  const iReturn = store.indexOf('export function selectReturnLeg')
+  const bestBody = iBest >= 0 && iReturn > iBest ? store.slice(iBest, iReturn) : ''
+  assert(bestBody.length > 0, '找得到 selectBestDeal 的函数体（守卫本身没写错）')
+  assert(/days: voyageDays\(\{/.test(bestBody),
+    '掮客卡的显示天数走 utils/voyage.voyageDays（含天候）')
+  assert(!/days: calculateSailingDays/.test(bestBody),
+    '掮客卡不许再显示不含天候的旧天数')
+  // 门槛仍用不含天候的天数——那是平衡参数，不该顺手改
+  assert(/MIN_DEAL_PROFIT_PER_DAY/.test(bestBody) && /totalProfit \/ Math\.max\(1, days\)/.test(bestBody),
+    '推荐门槛仍按不含天候的利润/天算（平衡参数，不跟着显示口径改）')
+  // 卡片的天数含天候 ⇒ 卡片的天数必须随天候重算
+  assert(/weather/.test(tip) && /\[portId, isSailing, gold, fame, marketStock, cargo, lastPortId, weather, landDataReady\]/.test(tip),
+    '掮客卡把天候算进依赖，天候变了要重算（否则卡上留着旧天数的航程）')
+
+  /*
+   * 【第 33 轮：几何没就绪时不许报里程与天数】
+   * 海陆掩码异步到位之前，buildRouteGeometry 会**退化成大圆直线**：
+   * 埃尔米纳 → 里斯本 报 2157 海里（横穿撒哈拉），就绪后绕开陆地才是 2903 海里。
+   * 而且那张卡不会自己纠正——它会一直挂着少报 35% 的直线里程。
+   *
+   * 规则：三处（掮客卡 / 交易面板 / 主屏常驻条）统一「没就绪就不报」。
+   */
+  const trade = readFileSync(join(process.cwd(), 'src', 'components', 'panels', 'TradePanel.tsx'), 'utf8')
+  const mapView = readFileSync(join(process.cwd(), 'src', 'components', 'map', 'MapView.tsx'), 'utf8')
+  const landCheck = readFileSync(join(process.cwd(), 'src', 'utils', 'landCheck.ts'), 'utf8')
+  assert(/landDataReady/.test(tip) && /const legDeal = landDataReady && deal/.test(tip),
+    '掮客卡在几何没就绪时不报里程与天数（宁可少一个数字，也不报错数字）')
+  assert(/landDataReady/.test(tip) && /landDataReady\]/.test(tip),
+    '掮客卡把 landDataReady 算进依赖，掩码到位后自动刷新成真实弧长')
+  assert(/landDataReady/.test(trade) && /dealDays = landDataReady && deal \? deal\.days : null/.test(trade),
+    '交易面板里的掮客行同样按就绪状态决定报不报天数')
+  /*
+   * hook 必须在提前 return 之前。
+   * 判据用「行首的语句」而不是 indexOf：注释里写着同一句 `if (!portId) return null`
+   * 时，indexOf 会命中注释那行，于是 hook 明明在前也被判成在后（假红）。
+   */
+  const hookIdx = trade.search(/const landDataReady = useMapStore\(/)
+  const retIdx = trade.search(/^\s*if \(!portId\) return null/m)
+  assert(hookIdx >= 0 && retIdx >= 0 && hookIdx < retIdx,
+    '交易面板的 useMapStore 必须在提前 return 之前（否则是条件调用，React 会直接抛错）')
+  assert(/isSeaMaskLoaded\(\)\) throw new Error/.test(landCheck),
+    '掩码没到位时 loadLandData 必须 reject（loadSeaMask 内部自己 catch 了，不能靠 Promise.all 报错）')
+  assert(/catch\(\(\) => \{[\s\S]{0,400}setLandDataReady\(false\)/.test(mapView),
+    '掩码失败时不就绪标志保持 false（置位等于允许界面报直线距离）')
+
+  assert(pkg.scripts['test:e2e:broker']?.includes('broker-parity.mjs'), '掮客对账有独立命令')
+  assert(pkg.scripts['test:e2e:seg7']?.includes('test:e2e:broker'), '掮客对账进了 seg7（不许变成孤儿巡检）')
+  assert(pkg.scripts['test:e2e:all']?.includes('test:e2e:broker'), 'all 也含掮客对账')
+  assert(/voyage-verdict-text/.test(audit) && /voyage-route-distance/.test(audit),
+    '掮客对账读的是稳定 DOM 锚点，不是从整屏文本里正则捞')
+  assert(/埃尔米纳|买进并起航/.test(audit),
+    '掮客对账真的点「买进并起航」把出航计划面板开出来比数字')
 }
 
 // ---------------- 主屏常驻「下一站」：第一屏可见 + 单一来源 ----------------
