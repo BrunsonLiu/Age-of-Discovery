@@ -44,17 +44,22 @@ npm run test:e2e:all      # 以上全部（不含 mobile:prod / live）
 
 `test:e2e:all` 一条命令串 19 个脚本 + `seg6` 的 6 个（共 25 个），实测在受限
 环境里跑到第 9 个就被 10 分钟上限 SIGTERM 掉（前 8 个日志 0 个 `✗`，**不是测试红**）。
-本机终端没有这个限制，可以直接 `npm run test:e2e:all`；受限环境按 6 段跑，
+本机终端没有这个限制，可以直接 `npm run test:e2e:all`；受限环境按 7 段跑，
 每段一条单独命令：
 
 ```bash
 npm run test:e2e:seg1   # 冒烟 / 场景三件套 / 音频 / 地图可辨性
-npm run test:e2e:seg2   # 2.5D 海图 / 贸易报价 / 补给数字对账 / 常驻下一站 / 到港回执 / 通知 / 移动端布局
-npm run test:e2e:seg3   # 三档可点性 / 航海日志
+npm run test:e2e:seg2   # 2.5D 海图 / 贸易报价      （3D 单项约 350~460s，独占一段）
+npm run test:e2e:seg3   # 三档可点性 / 港口服务按钮 / 航海日志
 npm run test:e2e:seg4   # 多视口布局 / 岸上 / 小字 / 文案密度
 npm run test:e2e:seg5   # 真实首局 / 参观模式 / 中文字体覆盖
 npm run test:e2e:seg6   # 首分钟三屏 / 彩蛋不打断 / 对比度 / 天气 / 纸纹 / 3D 漂流物
+npm run test:e2e:seg7   # 补给对账 / 常驻下一站 / 到港回执 / 通知 / 移动端布局
 ```
+
+**seg7 是第 31 轮补的**：`map3d-check` 单跑就占 350~460s，原来 seg2 里再塞
+5 个脚本后整段超过 10 分钟被 SIGTERM（实测 526s 仍只是前两项跑完）。拆开后
+seg2 约 357s、seg7 约 194s，都留了余量。**新增巡检时先估时长再决定放哪一段。**
 
 **seg6 是第 26 轮补进来的**：这 6 个脚本都自带失败退出、清存档、只需 dev server，
 却常年不在任何分段里，只靠手工跑；补进来当天就查出 `intro-check` 天赋页 2 段
@@ -77,6 +82,21 @@ npm run test:e2e:full   # 本机完整回归：seg1~seg6 + prod（前置同上�
 
 `test:e2e:all` 保留原来的单命令形式（本机无超时限制时可直接跑），
 但它**不含** `mobile-prod`；要把生产移动端一起跑用 `test:e2e:full`。
+
+### 负载下的假红：三个反复出现的模式（第 31 轮一次修了 6 处）
+
+机器跑了一整晚、dev server 长驻、几个脚本连着跑之后，**固定 `sleep` 的断言会成片假红**。
+当天一共踩到三类，修法都是「轮询到真条件」，而不是把 sleep 调大：
+
+| 模式 | 现象 | 正解 |
+|---|---|---|
+| **lazy chunk 还没挂上** | 点开面板 250~700ms 后读内容，读到 Suspense 占位：未见闻页、未读仍是 1、事件卡没按钮 | 轮询目标元素/状态出现，最多 6s（`arrival-receipt`、`mobile-layout` 抽屉与事件卡） |
+| **平滑移动没停稳** | `setCenter` 后立刻读 `center`，读到半路：5.091 vs 目标 5.083，被判「没落在该港」 | 先把地图挪远再点定位，轮询到落点稳定；容差按像素折算（0.05° ≈ zoom3 的 0.3px），不写 0.001° |
+| **重渲染后坐标过期** | 回执条/标签页因状态变化重渲染，之前算好的点击坐标点空；`elementHandle.click` 不走命中测试，静默失败 | 点之前重测 `getBoundingClientRect()`，点完轮询结果，失败重试一次 |
+
+另外两处同类：`scene-fallback-check` / `scene-img-failed-reset` 等 `onError` 触发的
+重渲染（原来 1s/1.2s 不够，冷启动必红一次）；`map3d-check` 切回 2D 等 Leaflet 重新挂载
+（原来 2.5s，负载高时不够）。
 
 ## 构建与字体维护
 

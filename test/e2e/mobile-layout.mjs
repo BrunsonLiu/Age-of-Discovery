@@ -240,9 +240,29 @@ console.log('\n=== 移动端布局（390×844）===')
   const tradeTab = await page.$('[data-testid="mobile-tab-bar"] button[aria-label="贸易"]')
   check(!!tradeTab, '标签栏里有「贸易」入口')
   if (tradeTab) {
-    await tradeTab.click()
-    await sleep(600)
-    const drawer = await page.$('[data-testid="mobile-drawer"]')
+    /*
+     * 抽屉是 React.lazy 的 TradePanel，接在其他 4 个脚本后面跑时（机器负载高）
+     * 600ms 常常不够；单个跑则 37/0。所以点完轮询 6s，等不到就用真实鼠标再点一次
+     * （elementHandle.click 不走命中测试，坐标过期时不会报错，只会静默点空）。
+     */
+    let drawer = null
+    for (let attempt = 0; attempt < 2 && !drawer; attempt++) {
+      if (attempt === 0) await tradeTab.click()
+      else {
+        const pt = await page.evaluate(() => {
+          const b = document.querySelector('[data-testid="mobile-tab-bar"] button[aria-label="贸易"]')
+          if (!b) return null
+          const r = b.getBoundingClientRect()
+          return [r.x + r.width / 2, r.y + r.height / 2]
+        })
+        if (pt) await page.mouse.click(pt[0], pt[1])
+      }
+      for (let w = 0; w < 6000; w += 200) {
+        drawer = await page.$('[data-testid="mobile-drawer"]')
+        if (drawer) break
+        await sleep(200)
+      }
+    }
     check(!!drawer, '点标签 → 底部抽屉升起')
     if (drawer) {
       const box = await drawer.boundingBox()
@@ -297,8 +317,13 @@ console.log('\n=== 移动端布局（390×844）===')
     window.__gameStore.setState({ currentEvent: ev, gamePhase: 'event' })
     void s
   })
-  await sleep(700)
-  const observe = await page.$$eval('button', els => els.map(e => e.textContent?.trim() ?? '').filter(t => t.includes('站在一边看')))
+  // EventCard 也是 lazy：负载高时 700ms 挂不上，轮询到按钮出现（最多 6s）
+  let observe = []
+  for (let w = 0; w < 6000; w += 200) {
+    observe = await page.$$eval('button', els => els.map(e => e.textContent?.trim() ?? '').filter(t => t.includes('站在一边看')))
+    if (observe.length) break
+    await sleep(200)
+  }
   check(observe.length === 1, '参观模式的事件卡有「站在一边看」的退路')
   await page.screenshot({ path: `${SHOTS}/mobile-event.png` })
 

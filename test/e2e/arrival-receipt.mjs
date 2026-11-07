@@ -163,11 +163,56 @@ const beforeClick = await page.evaluate(() => {
   const s = window.__gameStore.getState()
   return { sailing: s.fleet.isSailing, route: s.currentRoute }
 })
-// 注入旧写法（回执条不渲染）时 r1 会是 null；别在这里空指针崩溃，
-// 让下面的断言明确报红 ——「脚本崩了」不算巡检抓到旧写法。
-const clickPoint = r1?.point ?? [0, 0]
-await page.mouse.click(clickPoint[0], clickPoint[1])
-await sleep(450)
+/*
+ * 点回执：**每次点之前重新量坐标**，点完轮询「面板真的开了」。
+ *
+ * 原来用 readReceipt() 里算好的 r1.point 直接点，中间还夹着几次 await
+ * （动态 import 港名、读 state）；回执条会因为未读数/回执内容变化而重渲染，
+ * 坐标过期就点空——实测偶发红 4 条（同日第二次跑又全绿）。
+ * 注入旧写法（回执不渲染）时这里返回 false，下面的断言照样明确报红。
+ */
+async function clickReceipt(attempts = 3) {
+  for (let i = 0; i < attempts; i++) {
+    const pt = await page.evaluate(() => {
+      const el = document.querySelector('[data-testid="arrival-receipt"]')
+      if (!el) return null
+      const r = el.getBoundingClientRect()
+      const cs = getComputedStyle(el)
+      if (r.width < 10 || r.height < 8 || +cs.opacity < 0.5) return null
+      return [r.x + r.width / 2, r.y + r.height / 2]
+    })
+    if (!pt) return false
+    await page.mouse.click(pt[0], pt[1])
+    for (let w = 0; w < 1500; w += 150) {
+      const open = await page.evaluate(() => window.__gameStore.getState().activePanel === 'event')
+      if (open) return true
+      await sleep(150)
+    }
+  }
+  return false
+}
+
+const clicked = await clickReceipt()
+void clicked
+/*
+ * 面板是 React.lazy：点开瞬间 activePanel 立刻变成 'event'，但里面先挂
+ * Suspense 占位，dev 冷启动要现编 chunk。原来只 sleep(250) 就读文字，
+ * 于是偶发「未见闻页 + 未读仍为 1」（同一天还绿过两次），误判成功能坏了。
+ * 这里等到「见闻页真的挂上」为止：未读归零或正文出现标题，最多 6s。
+ * 真挂不上 → 超时 → 后面的断言照样红。
+ */
+let viewReady = false
+for (let waited = 0; waited < 6000; waited += 150) {
+  viewReady = await page.evaluate(() => {
+    const s = window.__gameStore.getState()
+    const unread = s.logbook.filter(e => !e.read).length
+    const txt = document.body.innerText || ''
+    return unread === 0 || /新的一页在最上面|靠岸 ·/.test(txt)
+  })
+  if (viewReady) break
+  await sleep(150)
+}
+if (!viewReady) console.log('  ⚠ 6s 内见闻页没挂上（下面判红）')
 const afterClick = await page.evaluate(() => {
   const s = window.__gameStore.getState()
   return {

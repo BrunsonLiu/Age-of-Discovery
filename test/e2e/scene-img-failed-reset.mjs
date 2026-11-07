@@ -80,15 +80,23 @@ await sleep(600)
 for (let i = 0; i < 6; i++) { await page.keyboard.press('Enter'); await sleep(350) }
 await sleep(800)
 
-/** 触发某个 sceneKey 对应的事件，并读回插图容器的真实渲染结果 */
+/**
+ * 触发某个 sceneKey 对应的事件，并读回插图容器的真实渲染结果。
+ *
+ * 【为什么必须轮询】原来固定 sleep(1000) 就读，dev 冷启动时 onError 触发的
+ * 重渲染经常晚于 1s —— 第一次跑必然假红、第二次跑又绿（本轮 seg1 就是这样
+ * 红了一条）。这里等到"稳定态"再返回：要么已回退成 SVG，要么图真的解码完成
+ * （naturalWidth>0）。真故障仍然会红：回退永远不发生 → 轮询超时 → 返回的仍是
+ * <img>，①号断言照样失败。
+ */
 const probe = async (sceneKey) => {
   await page.evaluate(async (k) => {
     const mod = await import('/Age-of-Discovery/src/data/events.ts')
     const e = mod.events.find(x => x.sceneKey === k)
     window.__gameStore.getState().setCurrentEvent(e)
   }, sceneKey)
-  await sleep(1000)
-  return page.evaluate(() => {
+
+  const read = () => page.evaluate(() => {
     const all = [...document.querySelectorAll('div')]
     const el = all.find(d => d.style && d.style.aspectRatio === '400 / 140')
     if (!el) return null
@@ -100,6 +108,16 @@ const probe = async (sceneKey) => {
       naturalW: img?.naturalWidth ?? null,
     }
   })
+
+  let last = null
+  for (let waited = 0; waited < 8000; waited += 200) {
+    last = await read()
+    const settled = last && ((last.hasSvg && !last.hasImg) || (last.hasImg && (last.naturalW ?? 0) > 0))
+    if (settled) return last
+    await sleep(200)
+  }
+  console.log(`   ⚠ ${sceneKey} 8s 内没到稳定态，按当前状态断言`)
+  return last
 }
 
 /** 关掉当前事件卡（EventCard 返回 null → 整棵子树卸载） */

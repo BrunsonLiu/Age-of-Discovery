@@ -1106,11 +1106,23 @@ check(idle && idle.backAlive && idle.calls > 0,
   `切回海图立刻恢复绘制，没有黑屏（末帧 ${idle?.calls} draw calls）`)
 
 await clickReal('[data-testid="map-mode-toggle"]')
-await sleep(2500)
-const back = await page.evaluate(() => ({
-  leaflet: !!document.querySelector('.leaflet-container'),
-  canvas3d: !!document.querySelector('.vintage-map-overlay--dimmed'),
-}))
+/*
+ * 切回 2D 要等"真的换回来了"：3D 层卸载 + Leaflet 重新挂载都是 React.lazy
+ * 的重新挂载，dev 冷启动或机器负载高时可能超过 2.5s。原来固定 sleep(2500)
+ * 就断言，实测在一台跑了一整晚的 dev server 上红了两条（seg2 526s 那次）。
+ * 轮询最多 12s；真回不来 → 超时 → 断言照样红。
+ */
+let back = null
+let backWaited = 0
+for (; backWaited < 12000; backWaited += 250) {
+  back = await page.evaluate(() => ({
+    leaflet: !!document.querySelector('.leaflet-container'),
+    canvas3d: !!document.querySelector('.vintage-map-overlay--dimmed'),
+  }))
+  if (back.leaflet && !back.canvas3d) break
+  await sleep(250)
+}
+if (backWaited > 0) console.log(`  · 切回 2D 用时约 ${backWaited}ms`)
 check(back.leaflet, '切回 2D 后 Leaflet 恢复')
 check(!back.canvas3d, '切回 2D 后 3D 层已卸载')
 await page.screenshot({ path: `${SHOTS}/map3d-切回2D.png` })

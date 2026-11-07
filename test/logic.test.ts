@@ -6547,7 +6547,7 @@ console.log('\n== 天数口径守卫 ==')
     '对账巡检有稳定 DOM 锚点，不靠从整屏文本里正则捞')
 
   assert(pkg.scripts['test:e2e:supply']?.includes('supply-parity.mjs'), '补给对账有独立命令')
-  assert(pkg.scripts['test:e2e:seg2']?.includes('test:e2e:supply'), '补给对账进了 seg2')
+  assert(pkg.scripts['test:e2e:seg7']?.includes('test:e2e:supply'), '补给对账进了 seg7（seg2 只剩 3D+报价，否则整段跑过 10 分钟被 SIGTERM）')
   assert(pkg.scripts['test:e2e:all']?.includes('test:e2e:supply'), 'all 也含补给对账')
   assert(!(pkg.scripts['test:e2e:seg5'] ?? '').includes('supply'),
     'seg5 没有误引用补给对账（分段之间不许自引用）')
@@ -6597,7 +6597,7 @@ console.log('\n== 天数口径守卫 ==')
     '靠岸邀请条下移一行，中屏上不与常驻指引横向叠在一起')
 
   assert(pkg.scripts['test:e2e:nexthint']?.includes('next-port-hint.mjs'), '常驻指引有独立巡检命令')
-  assert(pkg.scripts['test:e2e:seg2']?.includes('test:e2e:nexthint'), '巡检进了 seg2')
+  assert(pkg.scripts['test:e2e:seg7']?.includes('test:e2e:nexthint'), '巡检进了 seg7')
   assert(pkg.scripts['test:e2e:all']?.includes('test:e2e:nexthint'), 'all 也含常驻指引巡检')
   assert(!(pkg.scripts['test:e2e:seg5'] ?? '').includes('nexthint'),
     'seg5 没有误引用（分段之间不许自引用）')
@@ -6640,7 +6640,7 @@ console.log('\n== 天数口径守卫 ==')
   assert(/markLogbookRead\(\)/.test(views), '翻开见闻页把未读归零，回执才会自动收起')
 
   assert(pkg.scripts['test:e2e:receipt']?.includes('arrival-receipt.mjs'), '回执有独立巡检命令')
-  assert(pkg.scripts['test:e2e:seg2']?.includes('test:e2e:receipt'), '回执巡检进了 seg2')
+  assert(pkg.scripts['test:e2e:seg7']?.includes('test:e2e:receipt'), '回执巡检进了 seg7')
   assert(pkg.scripts['test:e2e:all']?.includes('test:e2e:receipt'), 'all 也含回执巡检')
   assert(!(pkg.scripts['test:e2e:seg5'] ?? '').includes('receipt'),
     'seg5 没有误引用（分段之间不许自引用）')
@@ -6690,7 +6690,10 @@ console.log('\n== 天数口径守卫 ==')
 
   const pkg = JSON.parse(readFileSync(join(process.cwd(), 'package.json'), 'utf8'))
   assert(pkg.scripts['test:e2e:portsvc']?.includes('port-services.mjs'), '服务按钮有独立巡检命令')
-  assert(pkg.scripts['test:e2e:seg2']?.includes('test:e2e:portsvc'), '服务按钮巡检进了 seg2')
+  assert(pkg.scripts['test:e2e:seg3']?.includes('test:e2e:portsvc'),
+    '服务按钮巡检进了 seg3（原在 seg2，加上它之后整段跑过 10 分钟被 SIGTERM，移到可点性主题更贴的 seg3）')
+  assert(!(pkg.scripts['test:e2e:seg2'] ?? '').includes('portsvc'),
+    'seg2 不再含它（避免两段重复跑、也避免再撑爆时限）')
   assert(pkg.scripts['test:e2e:all']?.includes('test:e2e:portsvc'), 'all 也含服务按钮巡检')
 }
 

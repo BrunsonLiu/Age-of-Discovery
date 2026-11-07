@@ -158,18 +158,34 @@ check(!!hint && hint.rect.bottom <= 156,
 check(!!hint && hint.rect.right < 560, `常驻条不过宽（right=${hint?.rect.right.toFixed(0)} < 560）`)
 
 console.log('=== 定位动作：只移图，不出航 ===')
-const before = await page.evaluate(() => ({
-  center: window.__mapStore.getState().center,
+const beforeFlags = await page.evaluate(() => ({
   sailing: window.__gameStore.getState().fleet.isSailing,
   route: window.__gameStore.getState().currentRoute,
   panel: window.__gameStore.getState().activePanel,
 }))
-if (hint?.locatePoint) await page.mouse.click(hint.locatePoint[0], hint.locatePoint[1])
-const moved = await page.waitForFunction((c) => {
-  const now = window.__mapStore?.getState?.().center
-  return !!now && (Math.abs(now[0] - c[0]) > 0.01 || Math.abs(now[1] - c[1]) > 0.01)
-}, { timeout: 8000, polling: 100 }, before.center).then(() => true).catch(() => false)
-check(moved, '真实鼠标点「定位」后地图中心真的移动了')
+
+/*
+ * 先把地图挪到别处，再点「定位」。
+ *
+ * 【为什么必须先挪走】原来直接点，靠"中心变化 >0.01"判断点击生效。可是开局
+ * 地图本来就停在目标港附近时，这一条必然假红（实测偶发：中心 5.091 已经
+ * 是埃尔米纳，判"没动"）。挪到伦敦再点，"从伦敦回到埃尔米纳"就没有歧义了。
+ */
+await page.evaluate(() => window.__mapStore.getState().setCenter([51.5, -0.12]))
+await page.waitForFunction(() => {
+  const c = window.__mapStore.getState().center
+  return c && Math.abs(c[0] - 51.5) < 0.2
+}, { timeout: 8000, polling: 100 })
+
+// 点击坐标每次重测：常驻条会随未读数/文案重渲染，旧坐标会点空
+const locatePt = await page.evaluate(() => {
+  const b = document.querySelector('[data-testid="next-port-locate"]')
+  if (!b) return null
+  const r = b.getBoundingClientRect()
+  return [r.x + r.width / 2, r.y + r.height / 2]
+})
+if (locatePt) await page.mouse.click(locatePt[0], locatePt[1])
+
 const after = await page.evaluate(() => ({
   center: window.__mapStore.getState().center,
   sailing: window.__gameStore.getState().fleet.isSailing,
@@ -187,8 +203,24 @@ const portCoord = await page.evaluate(async (name) => {
   const p = m.ports.find(x => x.nameCn === name)
   return p ? [p.latitude, p.longitude] : null
 }, targetName)
-check(!!portCoord && Math.abs(after.center[0] - portCoord[0]) < 0.001 && Math.abs(after.center[1] - portCoord[1]) < 0.001,
-  `中心落在「${targetName}」而不是别的点（${after.center.map(x => x.toFixed(2)).join(',')}）`)
+/*
+ * setCenter 是平滑移动：上面那条只等到"中心变了 >0.01"，此时地图还在滑，
+ * 直接读会读到半路（实测 5.09,-1.36，目标 5.083,-1.35，差 0.007 → 假红）。
+ * 这里等它真正停到目标港上（<0.001），最多 4s；停不下来就按当时的值判红。
+ */
+/*
+ * 容差 0.05°：飞行动画按像素取整后，落点会比目标偏 0.008°（zoom 3 下不到 0.1px），
+ * 原来的 0.001° 会把这丝毫偏差判成"没落在该港"。0.05° 仍然远小于两港间距。
+ */
+const near = (c, t, tol = 0.05) => !!c && !!t && Math.abs(c[0] - t[0]) < tol && Math.abs(c[1] - t[1]) < tol
+for (let waited = 0; waited < 5000; waited += 150) {
+  const now = await page.evaluate(() => window.__mapStore.getState().center)
+  if (now) after.center = now
+  if (near(after.center, portCoord)) break
+  await sleep(150)
+}
+check(near(after.center, portCoord),
+  `中心落在「${targetName}」而不是别的点（${after.center.map(x => x.toFixed(3)).join(',')}）`)
 
 console.log('=== 与面板里的航路卡同源 ===')
 const detailPoint = await page.evaluate(() => {

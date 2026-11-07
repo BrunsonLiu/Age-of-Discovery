@@ -164,13 +164,21 @@ for (const [svc, sel] of [['trade', '[data-testid="trade-panel"]'], ['shipyard',
     return { x: r.x + r.width / 2, y: r.y + r.height / 2 }
   }, svc)
   await page.mouse.click(pt.x, pt.y)
-  await sleep(800)
-  const ok = await page.evaluate((q) => {
-    const el = document.querySelector(q)
-    if (!el) return false
-    const r = el.getBoundingClientRect()
-    return r.width > 100 && r.height > 100 && r.left < innerWidth && r.right > 0
-  }, sel)
+  /*
+   * 面板是 React.lazy 的：dev 下首次打开要现编那个 chunk，可能超过 1s。
+   * 固定 sleep(800) 在全链里跑成过、也红过一次（seg2 里 12/1），所以改成
+   * 轮询「面板真的可见」最多 6s —— 真打不开照样超时判红。
+   */
+  let ok = false
+  for (let waited = 0; waited < 6000; waited += 200) {
+    ok = await page.evaluate((q) => {
+      const el = document.querySelector(q)
+      if (!el) return false
+      const r = el.getBoundingClientRect()
+      return r.width > 100 && r.height > 100 && r.left < innerWidth && r.right > 0
+    }, sel)
+    if (ok) { console.log(`    · ${svc} 面板出现用时约 ${waited}ms`); break }
+    await sleep(200)  }
   check(ok, `${svc} 按钮切到了对应面板（${sel}）`)
 }
 

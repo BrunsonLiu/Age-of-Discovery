@@ -76,6 +76,25 @@ const res = await page.evaluate(async () => {
 })
 await sleep(1200)
 
+/*
+ * 别用固定 sleep 等回退：dev 冷启动时 <img> 的 onError 触发的重渲染可能晚于
+ * 1200ms，第一次跑就因此假红（同一条命令第二次跑又绿了）。这里轮询到
+ * 「真的换成 SVG」为止，最多 8s；超时仍没换，后面的断言照样判红 ——
+ * 真故障不会被这条等待掩盖。
+ */
+let waited = 0
+let fellBack = false
+while (waited < 8000) {
+  fellBack = await page.evaluate(() => {
+    const el = [...document.querySelectorAll('div')].find(d => d.style && d.style.aspectRatio === '400 / 140')
+    return !!el && !!el.querySelector('svg') && !el.querySelector('img')
+  })
+  if (fellBack) break
+  await sleep(200)
+  waited += 200
+}
+console.log(fellBack ? `  回退用时约 ${waited}ms` : '  8s 内没有回退（下面判红）')
+
 const box = await page.evaluate(() => {
   const all = [...document.querySelectorAll('div')]
   const el = all.find(d => d.style && d.style.aspectRatio === '400 / 140')
@@ -90,7 +109,6 @@ const box = await page.evaluate(() => {
     imgNaturalW: el.querySelector('img')?.naturalWidth ?? null,
   }
 })
-
 console.log('事件', res.id, res.title)
 console.log('容器:', JSON.stringify(box, null, 0))
 
