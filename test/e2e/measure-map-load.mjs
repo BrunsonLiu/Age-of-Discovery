@@ -2,7 +2,7 @@
 import puppeteer from 'puppeteer-core'
 
 const EDGE = 'C://Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe'
-const URL = process.argv[2] || 'http://127.0.0.1:5174/Age-of-Discovery/'
+const URL = process.env.GAME_URL || process.argv[2] || 'http://localhost:5174/Age-of-Discovery/'
 
 const browser = await puppeteer.launch({ executablePath: EDGE, headless: true, args: ['--no-sandbox'] })
 const page = await browser.newPage()

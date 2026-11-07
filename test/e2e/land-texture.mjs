@@ -42,7 +42,7 @@ if (!existsSync(SHOT) || !argOf('shot')) {
   const b = await puppeteer.launch({ executablePath: EDGE, headless: true, args: ['--no-sandbox'] })
   const p = await b.newPage()
   await p.setViewport({ width: VW, height: VH })
-  await p.goto('http://127.0.0.1:5174/Age-of-Discovery/', { waitUntil: 'networkidle2', timeout: 60000 })
+  await p.goto(process.env.GAME_URL ?? 'http://localhost:5174/Age-of-Discovery/', { waitUntil: 'networkidle2', timeout: 60000 })
   await p.evaluate(() => { localStorage.clear(); sessionStorage.clear() })
   await p.reload({ waitUntil: 'networkidle2', timeout: 60000 })
   await sleep(2500)

@@ -28,7 +28,7 @@ const errors = []
 page.on('console', m => { if (m.type() === 'error') errors.push(m.text()) })
 page.on('pageerror', e => errors.push(String(e)))
 
-await page.goto('http://127.0.0.1:5174/Age-of-Discovery/', { waitUntil: 'networkidle2' })
+await page.goto(process.env.GAME_URL ?? 'http://localhost:5174/Age-of-Discovery/', { waitUntil: 'networkidle2' })
 await page.evaluate(() => window.__gameStore.getState().initGame('merchant'))
 await new Promise(r => setTimeout(r, 1500))
 

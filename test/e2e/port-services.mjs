@@ -10,7 +10,7 @@
  */
 import puppeteer from 'puppeteer-core'
 
-const BASE = 'http://127.0.0.1:5174/Age-of-Discovery/'
+const BASE = process.env.GAME_URL ?? 'http://localhost:5174/Age-of-Discovery/'
 const EDGE = 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'
 const sleep = ms => new Promise(r => setTimeout(r, ms))
 

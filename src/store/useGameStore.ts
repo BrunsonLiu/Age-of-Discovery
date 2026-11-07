@@ -12,6 +12,7 @@ import { tasks } from '@/data/tasks'
 import { goods } from '@/data/goods'
 import { calculateDailyConsumption, dangerLevelFromDistance, computeWindFavor, effectiveFleetSpeed, prevailingWindBearing, calculateSailingDays, dailyDistanceNm, haversineNm } from '@/utils/navigation'
 import { getRouteGeometry } from '@/utils/routePath'
+import { routeFacts } from '@/utils/voyage'
 import { getRandomEvents, consumeEventFlags } from '@/utils/eventEngine'
 import { STANCES, segmentCountFor, nextSegmentBoundary, hazardLabel, dailyFoodUse, dailyWaterUse, dailyWearRate, settleWear } from '@/utils/segment'
 import { repairCost, taskGold, supplyCost, supplyAmounts, INTERPRETER_FACTION_MUL } from '@/utils/crewPerks'
@@ -839,19 +840,21 @@ export const useGameStore = create<GameStore>()(
         // 实际按路径长度走，抵达时总会比预估多走一点——
         // 玩家看到的「还剩 3 天」和实际差半天，这种偏差日积月累就成了
         // 「数字在骗人」。现在预估与结算同源。
-        const geom = getRouteGeometry(
+        //
+        // 弧长与风向统一走 utils/voyage.routeFacts：主屏常驻的「下一站」
+        // 指引报的就是这个数，两处各算一遍必然对不上（实测塞维利亚→埃尔米纳
+        // 大圆 1956 海里 / 实际 2917 海里，差 49%）。
+        const { distanceNm, windFavor } = routeFacts(
           [originLat, originLng],
           [waypoint.latitude, waypoint.longitude],
         )
-        const distanceNm = geom.totalNm
         const dangerLevel = dangerLevelFromDistance(distanceNm)
-        const windFavor = computeWindFavor(originLat, originLng, waypoint.latitude, waypoint.longitude)
 
         const customRoute: Route = {
           id: -(Date.now()),
           fromPortId: state.fleet.currentPortId ?? 0,
           toPortId: waypoint.portId ?? 0,
-          distance: Math.round(distanceNm),
+          distance: distanceNm,
           dangerLevel,
           windFavor,
         }

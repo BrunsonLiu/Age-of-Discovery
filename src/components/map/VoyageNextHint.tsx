@@ -81,9 +81,11 @@ export default function VoyageNextHint({ placement = 'float' }: { placement?: 'f
    */
   const showReceipt = placement === 'stack' ? null : receiptHead
 
-  const distance = suggest && suggest.distanceNm > 0
-    ? `${suggest.distanceNm} 海里${days ? ` · 约 ${days} 天` : ''}`
-    : suggest ? '就在本港' : ''
+  const distance = suggest && suggest.distanceNm == null
+    ? ''
+    : suggest && suggest.distanceNm > 0
+      ? `${suggest.distanceNm} 海里${days ? ` · 约 ${days} 天` : ''}`
+      : suggest ? '就在本港' : ''
 
   const detailBtn = (
     <button
@@ -151,6 +153,10 @@ export default function VoyageNextHint({ placement = 'float' }: { placement?: 'f
      只分到 97px 可用宽，被 truncate 裁掉 7px（layout-audit 在 1024/1440
      两个视口都报「无文字被裁」失败）。同一行里还有 12px 的图标、
      「4789 海里 · 约 18 天」和「看航路」按钮，只能把整条放宽。 */
+  /*
+   * 【里程为空是正常状态】海陆掩码异步到位前算不出真实弧长（见 useVoyageNext），
+   * 这时只显示港名。宁可少一个数字，也不显示少报 49% 的直线距离。
+   */
   return (
     <div className="pointer-events-auto max-w-[400px]">
       <div
@@ -174,7 +180,10 @@ export default function VoyageNextHint({ placement = 'float' }: { placement?: 'f
           >
             <MapPin size={12} className="shrink-0" aria-hidden="true" />
             <span className="truncate">下一站：{suggest.nameCn}</span>
-            <span className="shrink-0 font-mono text-[12px] text-gold-300 tabular-nums">{distance}</span>
+            <span
+              className="shrink-0 font-mono text-[12px] text-gold-300 tabular-nums"
+              title="里程与天数按「按部就班」算，与出航计划面板同一口径"
+            >{distance}</span>
           </button>
         </div>
         {detailBtn}

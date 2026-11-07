@@ -3,7 +3,7 @@
 let puppeteer
 try { puppeteer = (await import('puppeteer-core')).default } catch { puppeteer = (await import('file:///C:/Users/Brunson/.workbuddy/binaries/node/workspace/node_modules/puppeteer-core/lib/puppeteer/puppeteer.js')).default }
 const EDGE = process.env.EDGE_PATH ?? 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'
-const BASE = process.env.GAME_URL ?? 'http://127.0.0.1:5174/Age-of-Discovery/'
+const BASE = process.env.GAME_URL ?? 'http://localhost:5174/Age-of-Discovery/'
 const sleep = ms => new Promise(r => setTimeout(r, ms))
 const argOf = (k) => { const h = process.argv.find(a => a.startsWith(`--${k}=`)); return h ? h.split('=')[1] : undefined }
 const VW = Number(argOf('vw') ?? 1440), VH = Number(argOf('vh') ?? 900)

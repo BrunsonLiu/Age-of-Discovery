@@ -17,7 +17,7 @@ const clickIn = (o, t) => p.evaluate((o, t) => {
   if (btn) btn.click()
 }, o, t)
 
-await p.goto('http://127.0.0.1:5174/Age-of-Discovery/', { waitUntil: 'networkidle2', timeout: 90000 })
+await p.goto(process.env.GAME_URL ?? 'http://localhost:5174/Age-of-Discovery/', { waitUntil: 'networkidle2', timeout: 90000 })
 await p.evaluate(() => { localStorage.clear(); sessionStorage.clear() })
 await p.reload({ waitUntil: 'networkidle2', timeout: 90000 })
 await sleep(2600)

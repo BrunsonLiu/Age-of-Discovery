@@ -95,24 +95,31 @@ export function nextMilestone(discovered: readonly number[]): VoyageMilestone | 
  * 这个函数在里程碑的目标港里挑**离玩家最近**的一个（还没去过的），
  * 于是提示可以写成"→ 埃尔米纳"，而不只是"往南"。
  *
+ * 【这里的距离是大圆距离，只用来排序】
+ * `gcDistanceNm` = haversine 大圆距离。**它不是玩家看到的航程**——
+ * 船实际走的是避陆弧线（见 utils/voyage.routeFacts），塞维利亚→埃尔米纳
+ * 大圆 1956 海里、实际 2917 海里，差 49%。
+ * 所以这个函数只负责「挑哪一个」，显示用的里程由调用方用航线弧长覆盖。
+ * 排序用大圆也够准：同一批候选港的绕行代价量级相近，不改变先后。
+ *
  * @param from 玩家当前坐标（纬度、经度）
  */
 export function suggestPortFor(
   milestone: VoyageMilestone,
   discovered: readonly number[],
   from: readonly [number, number] | null,
-): { id: number; nameCn: string; distanceNm: number } | null {
+): { id: number; nameCn: string; gcDistanceNm: number } | null {
   const got = new Set(discovered)
   const pool = ports.filter(p => milestone.atPorts.includes(p.id) && !got.has(p.id))
   if (pool.length === 0) return null
-  if (!from) return { id: pool[0].id, nameCn: pool[0].nameCn, distanceNm: 0 }
+  if (!from) return { id: pool[0].id, nameCn: pool[0].nameCn, gcDistanceNm: 0 }
   let best = pool[0]
   let bestD = Infinity
   for (const p of pool) {
     const d = haversineNm(from[0], from[1], p.latitude, p.longitude)
     if (d < bestD) { bestD = d; best = p }
   }
-  return { id: best.id, nameCn: best.nameCn, distanceNm: Math.round(bestD) }
+  return { id: best.id, nameCn: best.nameCn, gcDistanceNm: Math.round(bestD) }
 }
 
 /** 大圆距离（海里）。与 utils/navigation 的同名算法保持一致的口径。 */

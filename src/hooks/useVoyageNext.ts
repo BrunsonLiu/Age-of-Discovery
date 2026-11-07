@@ -1,16 +1,22 @@
 import { useMemo } from 'react'
 import { useGameStore } from '@/store/useGameStore'
+import { useMapStore } from '@/store/useMapStore'
 import { nextMilestone, suggestPortFor, voyageMilestones } from '@/data/voyageMilestones'
 import { ports } from '@/data/ports'
-import { computeWindFavor, dailyDistanceNm } from '@/utils/navigation'
-import { STANCES } from '@/utils/segment'
-import { WEATHER_INFO, weatherFavorFactor } from '@/utils/weather'
+import { routeFacts, voyageDays } from '@/utils/voyage'
 import type { VoyageMilestone } from '@/data/voyageMilestones'
 
 export interface VoyageNextInfo {
   target: VoyageMilestone | null
-  suggest: { id: number; nameCn: string; distanceNm: number } | null
-  /** 按部就班走到目标港约需几天；与航路卡用同一套口径 */
+  /**
+   * 下一步的目的港。
+   *
+   * `distanceNm` 是**实际航线弧长**（避陆后），与出航计划面板的「航程」同源；
+   * `null` 表示航线几何还没就绪（海陆掩码未加载），此时**不显示里程**，
+   * 而不是显示一个少报近一半的直线距离。
+   */
+  suggest: { id: number; nameCn: string; distanceNm: number | null } | null
+  /** 按部就班走到目标港约需几天；与出航计划面板的「约 N 天可达」同源 */
   days: number | null
   doneCount: number
 }
@@ -23,17 +29,30 @@ export interface VoyageNextInfo {
  * 另一张写「约 20 天」，玩家不知道该按哪张备水。这里让两个 UI 共用同一个
  * hook，天数、港名、海里数只能有一个值。
  *
- * 【天数为何要算全】日航程 = 船速 × 风向 × 方针 × 天候 × 24，不能用基础值。
- * 风向按「当前位置 → 目标港」的方位算，与生成航线时同源，所以这里写的天数
- * 和舰队面板里点开那条航线的天数对得上。
+ * 【里程与天数为什么必须与出航计划同源】这是第 33 轮修掉的硬伤：
+ * 常驻条原先用 haversine **大圆距离**报里程、用**当前方针**算天数，
+ * 而船实际走的是避陆弧线、天数按「按部就班」算。实测 20 条里程碑航线
+ * **全部**少报：塞维利亚→埃尔米纳主屏写「1956 海里 · 约 10 天」，
+ * 出航计划写「航程 2917 海里 · 约 15 天可达」——差 49%、差 5 天。
+ * 补给够不够又是按出航计划那个天数判的，于是主屏在骗玩家备货。
+ *
+ * 现在里程走 `routeFacts`（与 store.sailToWaypoint 同一个 A* 几何），
+ * 天数走 `voyageDays`（与出航计划面板的 steady 一份总账同一个函数），
+ * 军官（领航员 +15%）也一并算进去。
+ *
+ * 【为什么等「几何已就绪」】海陆掩码是异步加载的。掩码没到位时 A* 只能给
+ * 一条直线，算出来的弧长少报近一半。所以掩码到位前不给数字——
+ * 空着比给个错的强。
  */
 export function useVoyageNext(): VoyageNextInfo {
   const discoveredPorts = useGameStore(s => s.discoveredPorts)
   const fleet = useGameStore(s => s.fleet)
   const shipPosition = useGameStore(s => s.shipPosition)
-  // 方针与天候会改变日航程，订阅必须在任何 early return 之前
-  const stance = useGameStore(s => s.stance)
+  const officers = useGameStore(s => s.officers)
   const weather = useGameStore(s => s.weather)
+  const landDataReady = useMapStore(s => s.landDataReady)
+  // 注意这里**不订阅方针**：天数固定按「按部就班」算（与出航计划面板同口径），
+  // 方针要到每段起点才选，不该在这一层参与天数计算。
 
   const here = useMemo<[number, number] | null>(() => {
     if (fleet.isSailing && shipPosition && Number.isFinite(shipPosition[0]) && Number.isFinite(shipPosition[1])) {
@@ -44,21 +63,37 @@ export function useVoyageNext(): VoyageNextInfo {
   }, [fleet.isSailing, fleet.currentPortId, shipPosition])
 
   const target = useMemo(() => nextMilestone(discoveredPorts), [discoveredPorts])
-  const suggest = useMemo(
+  // 挑选目的港只按大圆距离排序（便宜，且同一批候选的绕行代价量级相近），
+  // 显示用的真实航程在下面用航线弧长重算。
+  const picked = useMemo(
     () => (target ? suggestPortFor(target, discoveredPorts, here) : null),
     [target, discoveredPorts, here],
   )
 
-  const weatherMul = WEATHER_INFO[weather.kind].sailMul * weatherFavorFactor(weather.kind)
-  const windFavor = here && suggest
-    ? computeWindFavor(here[0], here[1],
-        ports.find(p => p.id === suggest.id)?.latitude ?? here[0],
-        ports.find(p => p.id === suggest.id)?.longitude ?? here[1])
-    : 1
-  const perDay = dailyDistanceNm(fleet, [], windFavor, STANCES[stance].speedMul, weatherMul)
-  const days = suggest && suggest.distanceNm > 0
-    ? Math.max(1, Math.ceil(suggest.distanceNm / Math.max(1, perDay)))
-    : null
+  /** 真实航线弧长 + 这条航线的风向 */
+  const route = useMemo(() => {
+    if (!picked || !here || !landDataReady) return null
+    const p = ports.find(x => x.id === picked.id)
+    if (!p) return null
+    return routeFacts(here, [p.latitude, p.longitude])
+  }, [picked, here, landDataReady])
+
+  const suggest = useMemo(
+    () => (picked ? { id: picked.id, nameCn: picked.nameCn, distanceNm: route ? route.distanceNm : null } : null),
+    [picked, route],
+  )
+
+  const days = useMemo(() => {
+    if (!route || route.distanceNm <= 0) return null
+    return voyageDays({
+      distanceNm: route.distanceNm,
+      windFavor: route.windFavor,
+      fleet,
+      officers,
+      weather,
+    })
+  }, [route, fleet, officers, weather])
+
   const doneCount = voyageMilestones.filter(m => m.atPorts.some(id => discoveredPorts.includes(id))).length
 
   return { target, suggest, days, doneCount }

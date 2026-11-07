@@ -29,6 +29,22 @@ interface MapState {
    * 不写进 partialize，老存档读回来时 renderMode 保持初始值 '2d'。
    */
   renderMode: '2d' | '3d'
+  /**
+   * 海陆掩码与航线几何是否已就绪。
+   *
+   * 【为什么需要这个开关】航线弧长（避陆后的真实航程）要靠 A* 在海陆掩码上搜，
+   * 掩码是异步加载的。掩码没到位时算出来的「航线」是**一条直线**——
+   * 塞维利亚→埃尔米纳会少报 961 海里（49%）。掩码到位后缓存被清掉重算，
+   * 但 React 不知道这件事，组件不会自己重画。
+   *
+   * 所以这里给一个明确的「几何已就绪」信号：掩码到位并清完缓存后由
+   * MapView 置 true，需要真实航程的地方（主屏「下一站」指引）等它。
+   * 在此之前那些地方**不显示里程**，而不是显示一个错的。
+   *
+   * 【不持久化】与 renderMode 同理：这是「这一刻数据到位了没」的会话状态，
+   * 不写进存档（刷新后重新加载掩码即可）。
+   */
+  landDataReady: boolean
   setCenter: (center: [number, number]) => void
   setZoom: (zoom: number) => void
   toggleWindOverlay: () => void
@@ -36,6 +52,7 @@ interface MapState {
   togglePirateZones: () => void
   setSelectedPortId: (id: number | null) => void
   setRenderMode: (mode: '2d' | '3d') => void
+  setLandDataReady: (ready: boolean) => void
 }
 
 export const useMapStore = create<MapState>()(
@@ -59,6 +76,7 @@ export const useMapStore = create<MapState>()(
       selectedPortId: null,
       renderMode: '2d',
       viewMode: 'chart',
+      landDataReady: false,
       setViewMode: (mode) => set({ viewMode: mode }),
       setCenter: (center) => set({ center }),
       setZoom: (zoom) => set({ zoom }),
@@ -67,6 +85,7 @@ export const useMapStore = create<MapState>()(
       togglePirateZones: () => set((s) => ({ showPirateZones: !s.showPirateZones })),
       setSelectedPortId: (id) => set({ selectedPortId: id }),
       setRenderMode: (mode) => set({ renderMode: mode }),
+      setLandDataReady: (ready) => set({ landDataReady: ready }),
     }),
     {
       name: 'age-of-discovery-map',

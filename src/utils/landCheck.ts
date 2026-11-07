@@ -1,5 +1,5 @@
 import { ports } from '@/data/ports'
-import { loadSeaMask, loadPortChannels } from '@/utils/seaRoute'
+import { loadSeaMask, loadPortChannels, isSeaMaskLoaded } from '@/utils/seaRoute'
 
 interface Polygon {
   rings: [number, number][][]
@@ -181,25 +181,39 @@ function fetchLandGeojson(): Promise<void> {
 }
 
 export function loadLandData(): Promise<void> {
-  if (loaded) return Promise.resolve()
+  // 已有进行中的加载 → 复用同一个 Promise（绝不重复发请求）
   if (loadingPromise) return loadingPromise
+  // 全都到位了（geojson 已登记 + 海陆掩码已加载）→ 直接返回。
+  //
+  // 【为什么掩码也要查】`loaded` 只表示 land.geojson 到手了；
+  // A* 航路搜索要的是**海陆掩码**（sea-mask.bin）。掩码没到位时
+  // getRouteGeometry 只能给一条直线，于是「航程」会少报近一半。
+  // 所以这里的就绪判据必须是两个都到位。
+  if (loaded && isSeaMaskLoaded()) return Promise.resolve()
   loadingPromise = Promise.all([
     fetchLandGeojson(),
     // 海陆掩码（1 bit/格）供 A* 航路搜索使用
     loadSeaMask(import.meta.env.BASE_URL),
     // 港口航道（构建期挖好的内河/内湾通道）
     loadPortChannels(import.meta.env.BASE_URL),
-  ]).then(() => {
-    // 数据到位后，之前算出的航线几何全部作废——
-    // 那时掩码可能还没加载，航路退化成了直线。必须清缓存重算。
-    //
-    // 这里用动态 import 断开循环依赖：
-    // routePath 需要 seaRoute，而这里又要让 routePath 清缓存。
-    // 直接 import 会形成环，ESM 下会拿到未初始化的绑定。
-    import('@/utils/routePath')
-      .then(m => m.invalidateRouteGeometryCache())
-      .catch(() => { /* 清缓存失败不影响功能，只是航路可能偏旧 */ })
-  })
+  ])
+    .then(async () => {
+      // 数据到位后，之前算出的航线几何全部作废——
+      // 那时掩码可能还没加载，航路退化成了直线。必须清缓存重算。
+      //
+      // 这里用动态 import 断开循环依赖：
+      // routePath 需要 seaRoute，而这里又要让 routePath 清缓存。
+      // 直接 import 会形成环，ESM 下会拿到未初始化的绑定。
+      //
+      // 【为什么必须 await 完成再 resolve】调用方（MapView）拿到这个 Promise
+      // 的 resolve 之后就去置「几何已就绪」标志，让界面开始显示真实航程。
+      // 若这里不 await，清缓存会晚一步，界面先读到的是清缓存前算好的直线几何，
+      // 于是又回到「显示错的里程」这个坑。
+      try {
+        const m = await import('@/utils/routePath')
+        m.invalidateRouteGeometryCache()
+      } catch { /* 清缓存失败不影响功能，只是航路可能偏旧 */ }
+    })
   return loadingPromise
 }
 

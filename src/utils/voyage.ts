@@ -1,7 +1,8 @@
 import type { Fleet, OfficerId, WeatherState } from '@/types'
-import { calculateDailyConsumption, dailyDistanceNm } from '@/utils/navigation'
-import { dailyFoodUse, dailyWaterUse, STANCES, type StanceId } from '@/utils/segment'
+import { calculateDailyConsumption, computeWindFavor, dailyDistanceNm } from '@/utils/navigation'
+import { dailyFoodUse, dailyWaterUse, forecastSegment, STANCES, type StanceId } from '@/utils/segment'
 import { WEATHER_INFO, weatherFavorFactor } from '@/utils/weather'
+import { getRouteGeometry } from '@/utils/routePath'
 
 /**
  * 航程测算的公共口径。
@@ -74,6 +75,85 @@ export interface VoyageInput {
   windFavor: number
   stance: StanceId
   weather: WeatherState
+}
+
+/**
+ * 一趟航程的**路线事实**：走哪条线、实际多长、风顺不顺。
+ *
+ * 【为什么距离必须来自 getRouteGeometry，而不是大圆距离】
+ *
+ * 船走的是**避陆弧线**：塞维利亚在伊比利亚半岛内陆，大圆第一段就撞陆；
+ * 去好望角的大圆横穿撒哈拉。水手的做法是沿海岸绕行，A* 就是把这件事算出来
+ * （见 utils/routePath.ts）。
+ *
+ * 常驻「下一站」指引原先用 haversine 大圆距离报海里数，于是同一趟航主屏写
+ * 「1956 海里 · 约 10 天」、出航计划面板写「航程 2917 海里 · 约 15 天可达」——
+ * 两个数字差 49%。玩家照主屏备水备粮，到海上才发现差 5 天，
+ * 而补给判定又是按面板那个数字算的。**界面自己打自己。**
+ *
+ * 现在这条弧长由本函数一处算出：出航计划（store.sailToWaypoint）与
+ * 主屏指引（hooks/useVoyageNext）都调它，于是两屏必然同源。
+ */
+export interface RouteFacts {
+  /** 实际航线弧长（海里，避陆后）——玩家看到的「航程」 */
+  distanceNm: number
+  /** 这条航线的风力偏好（0.5~1.5） */
+  windFavor: number
+}
+
+/**
+ * 算出两点之间的航线事实。
+ *
+ * 【为什么取整在这里做】出航计划面板显示的「航程 N 海里」用的是
+ * `Math.round(geom.totalNm)`；主屏指引要显示同一个数，就不能在这里
+ * 留下小数让两处各自取整（一个用 ceil 一个用 round 就会差 1 海里）。
+ * 危险等级仍按取整前的值算——阈值是 500/1500/3000/5000，取整不会翻转档位。
+ */
+export function routeFacts(from: [number, number], to: [number, number]): RouteFacts {
+  const geom = getRouteGeometry(from, to)
+  return {
+    distanceNm: Math.round(geom.totalNm),
+    windFavor: computeWindFavor(from[0], from[1], to[0], to[1]),
+  }
+}
+
+/**
+ * 一趟航程「按部就班」要走几天 —— **全项目唯一的算法**。
+ *
+ * 【为什么必须是同一个函数】
+ * 「下一站」常驻条与出航计划面板都报「约 N 天」。两处若各算一遍，
+ * 玩家会在同一趟航上读到两个天数：主屏按**当前方针**算（抢行 ×1.7），
+ * 面板按**按部就班**算（×1.0）。实测塞维利亚→埃尔米纳：主屏「约 10 天」，
+ * 面板「约 15 天可达」——差 5 天，而补给够不够又是按面板那个天数判的。
+ *
+ * 口径固定为**按部就班**（STANCES.steady）：这正是出航计划结论句
+ * 「约 N 天可达」用的基准，也是玩家默认会走的节奏。方针要到每段起点才选，
+ * 不该在这一层参与天数计算。
+ *
+ * 军官（领航员 +15%）要算进来：出航计划面板用的是 `dailyDistanceNm(fleet, officers, …)`，
+ * 漏掉军官就会让主屏比实际慢 15%。
+ */
+export function voyageDays(input: {
+  /** 航线弧长（海里）——来自 routeFacts，不要用大圆距离 */
+  distanceNm: number
+  /** 航线的风力偏好 */
+  windFavor: number
+  fleet: Fleet
+  officers: OfficerId[]
+  weather: WeatherState
+}): number {
+  const weatherMul = WEATHER_INFO[input.weather.kind].sailMul * weatherFavorFactor(input.weather.kind)
+  // 方针固定 ×1（按部就班）：与出航计划面板的 steady 一份总账同口径
+  const baseNmPerDay = dailyDistanceNm(input.fleet, input.officers, input.windFavor, 1, weatherMul)
+  // 走 forecastSegment 而不是自己写 ceil：天数取整规则只留这一份实现
+  return forecastSegment({
+    segmentDistanceNm: input.distanceNm,
+    nmPerDay: baseNmPerDay,
+    dailyFood: 0,
+    dailyWater: 0,
+    dailyEventRate: 0,
+    stance: STANCES.steady,
+  }).days
 }
 
 /**

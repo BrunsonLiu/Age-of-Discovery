@@ -259,6 +259,7 @@ export default function MapView() {
   // 2D（Leaflet 矢量图）/ 3D（three.js 立体海图）两种视图，默认 2D
   const renderMode = useMapStore(s => s.renderMode)
   const setRenderMode = useMapStore(s => s.setRenderMode)
+  const setLandDataReady = useMapStore(s => s.setLandDataReady)
   // 海面纹理：暴风雨天换更暗的版本——底图也参与天候叙事
   const weatherKind = useGameStore(s => s.weather.kind)
   const seaTile = weatherKind === 'storm' ? 'sea-tile-storm.png' : 'sea-tile.png'
@@ -312,10 +313,19 @@ export default function MapView() {
 
   useEffect(() => {
     // 碰撞检测要的数据在两种视图下都得要（航线避让靠它）
-    loadLandData()
+    //
+    // loadLandData() resolve 时**航线几何缓存已经清完**（见 landCheck 里的
+    // await），所以这一刻起算出来的弧长才是避陆后的真实航程。
+    // 主屏常驻的「下一站」指引等这个标志才显示里程——在那之前它宁可空着，
+    // 也不显示一个少报 49% 的直线距离。
+    loadLandData().then(() => setLandDataReady(true)).catch(() => {
+      // 掩码加载失败：碰撞检测会被禁用，航线退化成直线。
+      // 这时仍然置位——提示里的里程会按直线给，但不会永远卡在空状态。
+      setLandDataReady(true)
+    })
     // 渲染数据只有 2D 视图需要；3D 视图自己取（且与碰撞检测共用同一个 Promise）
     if (renderMode === '2d') loadData()
-  }, [loadData, renderMode])
+  }, [loadData, renderMode, setLandDataReady])
 
   return (
     <div className="relative" style={{ width: '100%', height: '100%' }}>

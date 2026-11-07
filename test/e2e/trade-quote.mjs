@@ -14,7 +14,7 @@ try {
 }
 
 const EDGE = process.env.EDGE_PATH ?? 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'
-const BASE = process.env.GAME_URL ?? 'http://127.0.0.1:5174/Age-of-Discovery/'
+const BASE = process.env.GAME_URL ?? 'http://localhost:5174/Age-of-Discovery/'
 const SHOTS = process.env.SHOTS_DIR ?? '.workbuddy/shots'
 
 const browser = await puppeteer.launch({ executablePath: EDGE, headless: true, args: ['--no-sandbox'] })

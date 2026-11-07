@@ -7,11 +7,11 @@ import { checkAchievements, achievements } from '../src/data/achievements'
 import { GAME_BALANCE } from '../src/data/gameConfig'
 import { RIVALS } from '../src/data/rivals'
 import { OFFICERS } from '../src/data/officers'
-import { effectiveFleetSpeed, calculateSailingDays, dailyDistanceNm, daysForDistance, haversineNm, routeProgressOf } from '../src/utils/navigation'
+import { effectiveFleetSpeed, calculateDailyConsumption, calculateSailingDays, dailyDistanceNm, daysForDistance, haversineNm, routeProgressOf } from '../src/utils/navigation'
 import { WEATHER_INFO, weatherCell, weatherDuration, weatherFavorFactor } from '../src/utils/weather'
 import type { WeatherState } from '../src/types'
 import {
-  dailyRates, daysToDestination, formatSupplyDays, moraleLevel, supplyDaysRemaining, supplyLevel,
+  dailyRates, daysToDestination, formatSupplyDays, moraleLevel, routeFacts, supplyDaysRemaining, supplyLevel, voyageDays,
 } from '../src/utils/voyage'
 import {
   adjustedOutcomes, crewLossChance, expectedDeltas, outcomeHarm, riskGrade, summarizeChoice,
@@ -5602,9 +5602,11 @@ console.log('\n== 航路里程碑 ==')
   {
     const m = voyageMilestones.find(x => x.id === 'new_world')!
     // 从塞维利亚出发，加勒比七港里最近的是圣胡安（约 3200 海里）
+    // 注意这里返回的是**大圆距离**（gcDistanceNm）：它只用来排序，
+    // 玩家看到的航程是避陆后的弧长，由 utils/voyage.routeFacts 另算。
     const near = suggestPortFor(m, [6], [37.39, -5.98])
-    assert(near !== null && near.distanceNm > 1000,
-      `从塞维利亚出发会给出一个加勒比目的港（${near?.nameCn} ${near?.distanceNm} 海里）`)
+    assert(near !== null && near.gcDistanceNm > 1000,
+      `从塞维利亚出发会给出一个加勒比目的港（${near?.nameCn} ${near?.gcDistanceNm} 海里）`)
     // 已经去过的港要从候选里剔除
     const skip = suggestPortFor(m, [6, 5], [37.39, -5.98])
     assert(skip === null || skip.id !== 5, '已经到过的港口不会再被推荐')
@@ -6581,8 +6583,14 @@ console.log('\n== 天数口径守卫 ==')
   assert(/from '@\/hooks\/useVoyageNext'/.test(hint) && /from '@\/hooks\/useVoyageNext'/.test(card),
     '常驻条与面板卡共用同一个 hook，港名/海里/天数只能有一个值')
   assert(!/dailyDistanceNm\(/.test(card), '面板卡不许再自己算一遍日航程（会与常驻条分叉）')
-  assert(/dailyDistanceNm\(/.test(hook) && /STANCES\[stance\]\.speedMul/.test(hook),
-    'hook 的天数仍按船速×风向×方针×天候算全')
+  /*
+   * 天数口径（第 33 轮改）：原先是「船速×风向×**当前方针**×天候」，
+   * 那是主屏与出航计划面板对不上天的根源——面板写「按部就班 · 约 15 天可达」，
+   * 主屏按抢行报「约 10 天」，差 5 天。现在两处都走 utils/voyage.voyageDays，
+   * 固定按部就班（含军官、含当前天候）。
+   */
+  assert(/voyageDays/.test(hook) && !/STANCES\[stance\]\.speedMul/.test(hook),
+    'hook 的天数走 voyageDays（按部就班口径，不按当前方针算）')
   assert(/data-testid="next-port-locate"/.test(hint) && /data-testid="next-port-detail"/.test(hint),
     '常驻条两个入口都有稳定 DOM 锚点')
   assert(/data-testid="voyage-next-card"/.test(card), '面板卡有稳定锚点供同源对账')
@@ -6695,6 +6703,117 @@ console.log('\n== 天数口径守卫 ==')
   assert(!(pkg.scripts['test:e2e:seg2'] ?? '').includes('portsvc'),
     'seg2 不再含它（避免两段重复跑、也避免再撑爆时限）')
   assert(pkg.scripts['test:e2e:all']?.includes('test:e2e:portsvc'), 'all 也含服务按钮巡检')
+}
+
+/* ==========================================================================
+ * 航路指引与出航计划必须说同一个数字（第 33 轮）
+ *
+ * 背景：主屏常驻的「下一站」原先用 haversine **大圆距离**报里程、用**当前方针**
+ * 算天数；而船实际走的是避陆弧线、天数按「按部就班」算。实测 20 条里程碑
+ * 航线**全部**少报——塞维利亚→埃尔米纳主屏写「1956 海里 · 约 10 天」，
+ * 出航计划写「航程 2917 海里 · 约 15 天可达」，差 49%、差 5 天。
+ * 而「粮水够不够」又是按出航计划那个天数判的：主屏在骗玩家备货。
+ *
+ * 守卫：
+ *   ① voyageDays 必须等于出航计划面板那份 steady 总账的天数（同一口径）；
+ *   ② voyageDays 必须与玩家的**当前方针无关**（方针要到每段起点才选）；
+ *   ③ 领航员（+15%）必须算进来；
+ *   ④ routeFacts 的弧长必须等于 getRouteGeometry 的实际里程（不是大圆）；
+ *   ⑤ 源码层：useVoyageNext 不得再用大圆距离 / 不得漏军官；
+ *      VoyagePlanModal 与 store.sailToWaypoint 必须走同一个函数。
+ * ========================================================================== */
+{
+  const ship = { id: 1, name: 's', type: 'caravel' as const, speed: 8, durability: 100, maxDurability: 100, capacity: 50, usedCapacity: 0, crew: 30, maxCrew: 40 }
+  const fl: Fleet = { id: 1, name: 't', gold: 0, fame: 0, morale: 70, food: 100, water: 100, currentPortId: 6, isSailing: false, day: 1, ships: [ship], cargo: [], flagshipId: 1, trait: null, durabilityCarry: 0 }
+  const wx: WeatherState = { kind: 'clear', intensity: 0.5, windBearing: 0, changedAtDay: 0 }
+
+  // ① 与出航计划面板的 steady 总账同口径
+  {
+    const distanceNm = 2917
+    const windFavor = 0.9
+    const weatherMul = WEATHER_INFO[wx.kind].sailMul * weatherFavorFactor(wx.kind)
+    const baseNmPerDay = dailyDistanceNm(fl, [], windFavor, 1, weatherMul)
+    const led = stanceLedgers({
+      distanceNm, baseNmPerDay,
+      dailyFood: calculateDailyConsumption(fl).food,
+      dailyWater: calculateDailyConsumption(fl).water,
+      dailyEventProb: 0.25 * WEATHER_INFO[wx.kind].eventBias,
+      durabilityCarry: fl.durabilityCarry,
+    })
+    const steadyDays = led.find(l => l.stance.id === 'steady')!.days
+    const d = voyageDays({ distanceNm, windFavor, fleet: fl, officers: [], weather: wx })
+    assert(d === steadyDays,
+      `voyageDays 与出航计划面板的 steady 天数一致（${d} vs ${steadyDays}）`)
+    assert(d > 0 && d === Math.ceil(distanceNm / baseNmPerDay),
+      `天数就是「距离 ÷ 按部就班日航程」（${distanceNm} ÷ ${baseNmPerDay.toFixed(1)} = ${d}）`)
+  }
+
+  // ② 与当前方针无关：抢行的账本更快，但指引报的是「按部就班」
+  {
+    const distanceNm = 2917
+    const windFavor = 0.9
+    const weatherMul = WEATHER_INFO[wx.kind].sailMul * weatherFavorFactor(wx.kind)
+    const baseNmPerDay = dailyDistanceNm(fl, [], windFavor, 1, weatherMul)
+    const led = stanceLedgers({
+      distanceNm, baseNmPerDay,
+      dailyFood: 1, dailyWater: 1, dailyEventProb: 0.25, durabilityCarry: 0,
+    })
+    const rush = led.find(l => l.stance.id === 'rush')!.days
+    const d = voyageDays({ distanceNm, windFavor, fleet: fl, officers: [], weather: wx })
+    assert(rush < d,
+      `抢行确实更快（${rush} 天 < 按部就班 ${d} 天）——所以指引若按当前方针算就会偏`)
+  }
+
+  // ③ 领航员（pilot +15%）必须算进来
+  {
+    const distanceNm = 2917
+    const windFavor = 0.9
+    const plain = voyageDays({ distanceNm, windFavor, fleet: fl, officers: [], weather: wx })
+    const withPilot = voyageDays({ distanceNm, windFavor, fleet: fl, officers: ['pilot'], weather: wx })
+    assert(withPilot <= plain,
+      `领航员让航程更快或持平（${withPilot} ≤ ${plain}）`)
+    assert(withPilot < plain,
+      `领航员确实更快（${withPilot} < ${plain}）——漏掉军官就会把主屏天数报多 15%`)
+  }
+
+  // ④ routeFacts 的弧长 = getRouteGeometry 的实际里程（避陆后的弧，不是大圆）
+  {
+    const from: [number, number] = [37.3886, -5.9823]   // 塞维利亚
+    const to: [number, number] = [5.0833, -1.35]       // 埃尔米纳
+    const facts = routeFacts(from, to)
+    const geom = getRouteGeometry(from, to)
+    assert(facts.distanceNm === Math.round(geom.totalNm),
+      `routeFacts 的里程就是几何里程（${facts.distanceNm} = ${Math.round(geom.totalNm)}）`)
+    assert(facts.distanceNm > 0 && facts.windFavor > 0, 'routeFacts 给出里程与风向')
+    // 大圆距离（旧的算法）必须比弧长短——否则就没有「绕开陆地」这回事了，
+    // 这条断言在无掩码的 node 环境里也会成立（直线=大圆），但它守住了
+    // 「routeFacts 不能被换成 haversine」这件事（换成大圆就会相等）。
+    const gc = haversineNm(from[0], from[1], to[0], to[1])
+    assert(facts.distanceNm >= Math.round(gc),
+      `弧长不短于大圆距离（${facts.distanceNm} ≥ ${Math.round(gc)}）`)
+  }
+
+  // ⑤ 源码层：两处不许各算一遍
+  {
+    const hookSrc = readFileSync(join(process.cwd(), 'src', 'hooks', 'useVoyageNext.ts'), 'utf8')
+    const planSrc = readFileSync(join(process.cwd(), 'src', 'components', 'map', 'VoyagePlanModal.tsx'), 'utf8')
+    const storeSrc = readFileSync(join(process.cwd(), 'src', 'store', 'useGameStore.ts'), 'utf8')
+
+    assert(/from '@\/utils\/voyage'/.test(hookSrc) && /routeFacts/.test(hookSrc),
+      'useVoyageNext 的里程走 utils/voyage.routeFacts（不是大圆）')
+    assert(!/haversineNm/.test(hookSrc), 'useVoyageNext 不再出现 haversine（大圆距离不能当航程）')
+    assert(/voyageDays/.test(hookSrc), 'useVoyageNext 的天数走 utils/voyage.voyageDays')
+    assert(!/dailyDistanceNm\(\s*fleet,\s*\[\]/.test(hookSrc),
+      'useVoyageNext 不再漏掉军官（dailyDistanceNm(fleet, []) 会少算领航员的 15%）')
+    assert(/landDataReady/.test(hookSrc),
+      'useVoyageNext 等航线几何就绪再报里程（掩码没到位时只能给直线）')
+
+    assert(/voyageDays/.test(planSrc), '出航计划面板的天数走同一个 voyageDays')
+    assert(/from '@\/utils\/voyage'/.test(planSrc), '出航计划面板从 utils/voyage 取 voyageDays')
+
+    assert(/routeFacts/.test(storeSrc), 'store.sailToWaypoint 的里程走同一个 routeFacts')
+    assert(/routeFacts\(/.test(storeSrc), 'routeFacts 真的被调用了（不是只 import）')
+  }
 }
 
 console.log(`\n最终结果：${passed} 通过 / ${failed} 失败`)

@@ -69,7 +69,12 @@ export default function VoyageNextCard() {
             <span className="truncate">下一站：{suggest.nameCn}</span>
           </span>
           <span className="flex items-center gap-1 text-gold-400 font-serif text-[12px] shrink-0">
-            {suggest.distanceNm > 0 ? `${suggest.distanceNm} 海里${days ? ` · 约 ${days} 天` : ''}` : '就在本港'}
+            {/* 里程为空 = 航线几何还没就绪（见 useVoyageNext）：宁可空着也不给错的 */}
+            {suggest.distanceNm == null
+              ? ''
+              : suggest.distanceNm > 0
+                ? `${suggest.distanceNm} 海里${days ? ` · 约 ${days} 天` : ''}`
+                : '就在本港'}
             <ChevronRight size={12} aria-hidden="true" />
           </span>
         </button>

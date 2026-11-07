@@ -10,7 +10,7 @@
 // 断言：打开面板 → 连续点击里面所有会改状态的按钮 → 全程遮罩必须为 0。
 import puppeteer from 'puppeteer-core'
 
-const BASE = process.env.BASE || 'http://127.0.0.1:5174/Age-of-Discovery/'
+const BASE = process.env.BASE || 'http://localhost:5174/Age-of-Discovery/'
 const EDGE = 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'
 const sleep = ms => new Promise(r => setTimeout(r, ms))
 

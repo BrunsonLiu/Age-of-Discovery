@@ -20,7 +20,7 @@ try {
 }
 
 const EDGE = process.env.EDGE_PATH ?? 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'
-const BASE = process.env.GAME_URL ?? 'http://127.0.0.1:5174/Age-of-Discovery/'
+const BASE = process.env.GAME_URL ?? 'http://localhost:5174/Age-of-Discovery/'
 const sleep = ms => new Promise(r => setTimeout(r, ms))
 
 const browser = await puppeteer.launch({ executablePath: EDGE, headless: true, args: ['--no-sandbox'] })
@@ -115,6 +115,14 @@ console.log('=== 桌面 · 进游戏第一屏 ===')
 const appeared = await waitHint()
 check(appeared, '进游戏后常驻「下一站」出现（不依赖点开任何面板）')
 
+// 等航线几何就绪：海陆掩码异步加载，之前算不出真实弧长（只显示港名）。
+// 掩码没到位就报里程 = 报一条少 49% 的直线距离，所以这里必须等。
+const geoReady = await page.waitForFunction(() => {
+  const el = document.querySelector('[data-testid="next-port-hint"]')
+  return !!el && /海里/.test(el.textContent || '')
+}, { timeout: 20000, polling: 150 }).then(() => true).catch(() => false)
+check(geoReady, '航线几何就绪后常驻条才给出里程（掩码未到位时宁可空着）')
+
 const activeAtFirst = await page.evaluate(() => window.__gameStore.getState().activePanel)
 check(activeAtFirst === null, `此时没有打开任何面板（activePanel=${String(activeAtFirst)}）`)
 
@@ -146,7 +154,7 @@ check(!!hint && /下一站：\S+/.test(hint.text), `给出具体港口而不是�
 const nm = hint ? hint.text.match(/(\d+) 海里/) : null
 const dy = hint ? hint.text.match(/约 (\d+) 天/) : null
 check(!!nm && Number(nm[1]) > 0, `给出海里数（${nm?.[1] ?? '无'}）`)
-check(!!dy && Number(dy[1]) > 0, `给出按当前方针/天候算的天数（${dy?.[1] ?? '无'}）`)
+check(!!dy && Number(dy[1]) > 0, `给出按部就班口径的天数（${dy?.[1] ?? '无'}）——与出航计划面板同一口径`)
 check(!!hint && hint.locateHit, '「定位」按钮中心点真实命中自己（未被罗盘/顶栏/地图层遮挡）')
 check(!!hint && hint.detailHit, '「看航路」按钮中心点真实命中自己')
 // 这块空地的边界：顶栏 h-12=48、罗盘 left-3+96=108、天候徽章从 156 起
@@ -255,6 +263,123 @@ check(hiddenInPanel, '面板打开时收起常驻条，避免同一张卡并排�
 await page.evaluate(() => window.__gameStore.getState().setActivePanel(null))
 const backAgain = await waitHint()
 check(backAgain, '关掉面板后常驻条回来（不是一次性提示）')
+
+/*
+ * ==========================================================================
+ * 与**出航计划面板**同口径（第 33 轮）
+ *
+ * 常驻条与面板卡同源还不够——玩家真正起航时看的是出航计划面板。
+ * 第 33 轮实测 20 条里程碑航线**全部**对不上：
+ *   常驻条用 haversine 大圆距离报里程、用**当前方针**算天数；
+ *   出航计划用避陆弧长报航程、按**按部就班**算天数。
+ * 塞维利亚→埃尔米纳：常驻条「1956 海里 · 约 10 天」，
+ * 出航计划「航程 2917 海里 · 约 15 天可达」——差 49%、差 5 天，
+ * 而「粮水够不够」又是按出航计划那个天数判的。
+ *
+ * 这里真的开出航计划面板，把两处的里程与天数逐字对账。
+ * ========================================================================== */
+console.log('=== 与出航计划面板同口径 ===')
+
+const readHintNumbers = () => page.evaluate(() => {
+  const el = document.querySelector('[data-testid="next-port-hint"]')
+  const t = (el?.textContent || '').replace(/\s+/g, ' ')
+  const nm = t.match(/(\d+) 海里/)
+  const dy = t.match(/约 (\d+) 天/)
+  const name = t.match(/下一站：([\u4e00-\u9fff]+)/)
+  return { nm: nm ? Number(nm[1]) : null, dy: dy ? Number(dy[1]) : null, name: name ? name[1] : null }
+})
+
+/** 真的开出航计划面板，读它的「航程」与结论句里的天数 */
+const openPlanAndRead = async (portName) => {
+  const coord = await page.evaluate(async (name) => {
+    const m = await import('/Age-of-Discovery/src/data/ports.ts').catch(() => import('/src/data/ports.ts'))
+    const p = m.ports.find(x => x.nameCn === name)
+    return p ? { lat: p.latitude, lng: p.longitude, id: p.id } : null
+  }, portName)
+  if (!coord) return null
+  await page.evaluate((c, nm) => {
+    const st = window.__gameStore.getState()
+    st.sailToWaypoint({ latitude: c.lat, longitude: c.lng, name: nm, portId: c.id })
+  }, coord, portName)
+  const shown = await page.waitForFunction(
+    () => !!document.querySelector('[data-testid="voyage-verdict-text"]'),
+    { timeout: 12000, polling: 100 },
+  ).then(() => true).catch(() => false)
+  if (!shown) return null
+  const out = await page.evaluate(() => {
+    const verdict = (document.querySelector('[data-testid="voyage-verdict-text"]')?.textContent || '').replace(/\s+/g, ' ').trim()
+    const distEl = document.querySelector('[data-testid="voyage-route-distance"]')
+    const nm = (distEl?.textContent || '').match(/(\d+) 海里/)
+    // 结论句有两种形态：
+    //   够： 「补给充足 · 约 19 天可达」
+    //   不够：「粮食不够——按部就班只够 12 天，这趟要 19 天」
+    const dy = verdict.match(/约 (\d+) 天/) || verdict.match(/这趟要 (\d+) 天/)
+    return { verdict, nm: nm ? Number(nm[1]) : null, dy: dy ? Number(dy[1]) : null }
+  })
+  await page.evaluate(() => window.__gameStore.getState().cancelVoyage())
+  await sleep(200)
+  return out
+}
+
+// 第一轮：默认（无军官）
+{
+  const h = await readHintNumbers()
+  check(!!h && h.nm !== null && h.dy !== null,
+    `常驻条给出里程与天数（${h?.nm} 海里 · 约 ${h?.dy} 天 → ${h?.name}）`)
+  const plan = await openPlanAndRead(h.name)
+  check(!!plan, `出航计划面板真的打开了（目标：${h?.name}）`)
+  check(!!plan && !!h && plan.nm === h.nm,
+    `里程同源（常驻 ${h?.nm} / 计划 ${plan?.nm}）`)
+  check(!!plan && !!h && plan.dy === h.dy,
+    `天数同源（常驻 ${h?.dy} / 计划 ${plan?.dy}）`)
+  // 反向检查：不能是"大圆距离 + 当前方针"那套旧算法
+  const gc = await page.evaluate(async (name) => {
+    const m = await import('/Age-of-Discovery/src/data/ports.ts').catch(() => import('/src/data/ports.ts'))
+    const nav = await import('/Age-of-Discovery/src/utils/navigation.ts').catch(() => import('/src/utils/navigation.ts'))
+    const st = window.__gameStore.getState()
+    const here = m.ports.find(p => p.id === st.fleet.currentPortId)
+    const there = m.ports.find(p => p.nameCn === name)
+    if (!here || !there) return null
+    return Math.round(nav.haversineNm(here.latitude, here.longitude, there.latitude, there.longitude))
+  }, h.name)
+  check(!!gc && !!h && h.nm !== gc,
+    `常驻条报的不是大圆距离（${h?.nm} ≠ 大圆 ${gc}）——避陆弧长才是玩家要走的那条`)
+}
+
+// 第二轮：带上领航员（+15% 航速）——天数必须同步变快，两处仍相等
+{
+  await page.evaluate(() => {
+    const st = window.__gameStore.getState()
+    window.__gameStore.setState({ officers: ['pilot'] })
+  })
+  await sleep(400)
+  const h = await readHintNumbers()
+  const plan = await openPlanAndRead(h.name)
+  check(!!plan && !!h && plan.nm === h.nm && plan.dy === h.dy,
+    `带领航员时两处仍同源（${h?.nm} 海里 / ${h?.dy} 天 vs ${plan?.nm} / ${plan?.dy}）`)
+  await page.evaluate(() => {
+    const st = window.__gameStore.getState()
+    window.__gameStore.setState({ officers: [] })
+  })
+  await sleep(300)
+}
+
+// 第三轮：切到「抢行」——天数不许跟着变
+// 方针要到每段起点才选，而「粮水够不够」的判定用的是「按部就班」这个基准。
+// 常驻条若按当前方针算，就会跟出航计划面板差出好几天（实测 17 vs 19）。
+{
+  const before = await readHintNumbers()
+  await page.evaluate(() => window.__gameStore.setState({ stance: 'rush' }))
+  await sleep(500)
+  const after = await readHintNumbers()
+  check(after.nm === before.nm && after.dy === before.dy,
+    `切到抢行后常驻条的天数不变（${before.dy} → ${after.dy}）——判定基准是「按部就班」`)
+  const plan = await openPlanAndRead(after.name)
+  check(!!plan && !!after && plan.dy === after.dy,
+    `抢行状态下出航计划仍报同一个天数（常驻 ${after.dy} / 计划 ${plan?.dy}）`)
+  await page.evaluate(() => window.__gameStore.setState({ stance: 'steady' }))
+  await sleep(300)
+}
 
 console.log('=== 岸上视角与 3D ===')
 await page.evaluate(() => window.__mapStore.setState({ viewMode: 'harbor' }))

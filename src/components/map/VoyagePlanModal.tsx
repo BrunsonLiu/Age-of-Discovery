@@ -4,7 +4,7 @@ import { useGameStore } from '@/store/useGameStore'
 import { UI_ASSETS } from '@/data/uiAssets'
 import { GAME_BALANCE } from '@/data/gameConfig'
 import { calculateDailyConsumption, prevailingWindBearing, dailyDistanceNm } from '@/utils/navigation'
-import { dailyRates } from '@/utils/voyage'
+import { dailyRates, voyageDays } from '@/utils/voyage'
 import { ports } from '@/data/ports'
 import { shipSprite } from '@/data/shipSprites'
 import { onUiCommand } from '@/utils/uiBus'
@@ -172,7 +172,6 @@ export default function VoyagePlanModal() {
   const foodOk = fleet.food >= needFood
   const waterOk = fleet.water >= needWater
   const rushOk = fleet.food >= rushLedger.food && fleet.water >= rushLedger.water
-
   /**
    * 两套日耗都必须走 dailyRates（与顶栏、store.advanceDay 同源）。
    * 港内是「船员上岸自给」的 1/4 口径，起航后才按方针倍率扣。
@@ -197,7 +196,16 @@ export default function VoyagePlanModal() {
   // 「最快方针需 12 粮 / 18 水」和「12 / 500」两组数字。
   // 那是一次心算，而玩家此刻只想得到一个"能走/不能走"。
   // 系统明明有全部数据，没理由让玩家自己除。
-  const steadyDays = steadyLedger.days
+  // 天数与主屏常驻的「下一站」指引**同源**（utils/voyage.voyageDays）：
+  // 两处各算一遍必然对不上——实测塞维利亚→埃尔米纳主屏写「约 10 天」、
+  // 面板写「约 15 天可达」，差 5 天，而补给够不够又是按面板这个天数判的。
+  const steadyDays = voyageDays({
+    distanceNm: route.distance,
+    windFavor: route.windFavor,
+    fleet,
+    officers,
+    weather,
+  })
   // 「只够几天」也按起航后按部就班的日耗算，不拿港内口径或基础值混用
   const foodDays = seaRates.foodPerDay > 0 ? Math.floor(fleet.food / seaRates.foodPerDay) : 99
   const waterDays = seaRates.waterPerDay > 0 ? Math.floor(fleet.water / seaRates.waterPerDay) : 99
@@ -288,7 +296,7 @@ export default function VoyagePlanModal() {
           <div className="grid grid-cols-3 gap-2 text-center bg-ocean-800/40 rounded px-2 py-1.5">
             <div>
               <div className="text-gold-600 text-xs font-serif">航程</div>
-              <div className="text-gold-200 text-xs font-serif tabular-nums">{route.distance} 海里</div>
+              <div data-testid="voyage-route-distance" className="text-gold-200 text-xs font-serif tabular-nums">{route.distance} 海里</div>
             </div>
             <div>
               <div className="text-gold-600 text-xs font-serif">危险</div>
