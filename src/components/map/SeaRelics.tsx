@@ -1,8 +1,8 @@
 import { Marker } from 'react-leaflet'
 import L from 'leaflet'
-import { useMemo } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { useGameStore } from '@/store/useGameStore'
-import { RELICS } from '@/data/relics'
+import { RELICS, relicInReach } from '@/data/relics'
 import { relicMarkerHtml } from '@/utils/relicGlyph'
 
 /**
@@ -19,6 +19,17 @@ import { relicMarkerHtml } from '@/utils/relicGlyph'
  * 【为什么放在 Marker 而不是绝对定位】
  * 与漂流物同理：遗物长期存在，玩家随时可能拖动地图，
  * 交给 Leaflet 的 Marker，位置天然跟着底图走。
+ *
+ * 【「够得着」必须跟着船走】
+ * 遗物有拾取半径（RELIC_PICKUP_NM）：隔着半个大洋点它，**不结算**，
+ * 只回一句「还在 843 海里外」。
+ * 那么悬浮提示就不能一直写「拾起：X」——屏幕上说的与实际发生的不一致，
+ * 比没有提示更糟（这是本项目的硬规矩）。
+ *
+ * 【为什么不用 store 订阅来做这件事】
+ * 船在航行时每帧都在动；订阅 shipPosition 会让这一层每帧重渲染
+ * （8 个 Marker + Leaflet 摆位）。这里改成自己跑一个 rAF 循环：
+ * 位置没变就不算，状态没翻转就不写 DOM（项目规矩：只在变化时写 DOM）。
  */
 export default function SeaRelics() {
   const collected = useGameStore(s => s.collectedRelics)
@@ -43,6 +54,32 @@ export default function SeaRelics() {
     return m
   }, [])
 
+  /** Leaflet Marker 实例：改 title / class 要拿到它的 DOM */
+  const markers = useRef(new Map<string, L.Marker>())
+
+  useEffect(() => {
+    let raf = 0
+    let lastKey = ''
+    const tick = () => {
+      raf = requestAnimationFrame(tick)
+      const pos = useGameStore.getState().shipPosition
+      // 位置没动就不重算（船停着时一帧都不碰 DOM）
+      const key = pos ? `${pos[0].toFixed(3)},${pos[1].toFixed(3)}` : 'none'
+      if (key === lastKey) return
+      lastKey = key
+      for (const r of RELICS) {
+        const el = markers.current.get(r.id)?.getElement()
+        if (!el) continue
+        const near = relicInReach(pos?.[0], pos?.[1], r)
+        const title = near ? `拾起：${r.name}` : `太远了 · ${r.name}`
+        if (el.getAttribute('title') !== title) el.setAttribute('title', title)
+        el.classList.toggle('relic-near', near)
+      }
+    }
+    raf = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(raf)
+  }, [])
+
   const got = new Set(collected)
 
   return (
@@ -55,7 +92,9 @@ export default function SeaRelics() {
           // 拾取是"主动伸手"，所以用 pointer 光标明确它是可点的
           interactive
           eventHandlers={{ click: () => collect(r.id) }}
-          title={`拾起：${r.name}`}
+          // 初值只写名字：「拾起 / 太远了」由上面的循环按船位改写
+          title={r.name}
+          ref={m => { if (m) markers.current.set(r.id, m); else markers.current.delete(r.id) }}
           // 压在玩家船（zIndexOffset=1000）之下，也压在漂流物之下：
           // 漂流物是"顺手捞的"，遗物是"专程去的"，后者不该被前者挤掉。
           zIndexOffset={-120}

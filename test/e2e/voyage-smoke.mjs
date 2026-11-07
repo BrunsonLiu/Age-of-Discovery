@@ -405,34 +405,69 @@ await sleep(600)
 await page.keyboard.press('Enter')   // 炮弹上膛（Enter）
 await sleep(700)
 check(await page.evaluate(() => !!document.querySelector('[data-testid=cannon-dots]')), '炮战界面加载')
+
+/*
+ * 炮战每轮改成**按轮次计数器推进**，不用固定 sleep 猜时间。
+ *
+ * 2026-11-07 实测事故：这段原本每轮固定 sleep(900) 等轮间 resolve
+ * （0.55s），但无头浏览器在 CPU 满载时 rAF 被节流，状态机推进会变慢——
+ * 900ms 走不完 aim→incoming→resolve，于是 Space / ArrowDown 按在错误的相位上，
+ * 三轮打完还停在瞄准阶段，「进入操作评分」就超时了。
+ * 实测：CPU 满载 → 32 通过/1 失败；负载解除 → 33 通过/0 失败。
+ * 那是环境的抖动，不是被测代码的回归——但测试本来就该扛得住这种抖动。
+ *
+ * 现在改成读 DOM 上的轮次号（data-testid=cannon-volley）：
+ * 等「轮次号 +1」或「出现操作评分」才继续，不猜时间。
+ */
+const volleyNow = () => page.evaluate(() => {
+  const el = document.querySelector('[data-testid=cannon-volley]')
+  return el ? parseInt(el.textContent || '0', 10) : null
+})
+const cannonDone = () => page.evaluate(() =>
+  [...document.querySelectorAll('[role=dialog]')].some(d => /操作评分/.test(d.textContent || '')))
+
 for (let v = 1; v <= 3; v++) {
-  await sleep(500)
+  // 等这一轮的瞄准标扫到敌舰正中（超时放宽到 20s：负载下 rAF 会被节流）
   const aimT0 = Date.now()
-  while (Date.now() - aimT0 < 6000) {
+  let aimed = false
+  while (Date.now() - aimT0 < 20000) {
     const aim = await page.evaluate(() => {
       const el = document.querySelector('[data-testid=cannon-aim-marker]')
       return el ? parseFloat(el.style.left) : null
     })
-    if (aim !== null && Math.abs(aim - 50) < 3) break
+    if (aim !== null && Math.abs(aim - 50) < 3) { aimed = true; break }
     await sleep(40)
   }
+  check(aimed, `第 ${v} 轮瞄准标扫到敌舰正中`)
   await page.keyboard.press('Space')
-  await sleep(700)
+  // 等来袭弹逼近（同样放宽超时）
   const incT0 = Date.now()
-  while (Date.now() - incT0 < 6000) {
+  let incoming = false
+  while (Date.now() - incT0 < 20000) {
     const inc = await page.evaluate(() => {
       const el = document.querySelector('[data-testid=cannon-incoming-marker]')
       return el ? parseFloat(el.style.left) : null
     })
-    if (inc !== null && inc <= 52) break
+    if (inc !== null && inc <= 52) { incoming = true; break }
     await sleep(40)
   }
+  check(incoming, `第 ${v} 轮来袭弹逼近`)
   await page.keyboard.press('ArrowDown')
-  await sleep(900)
+  // 等这一轮**真的走完**（轮次号 +1，或直接出评分）
+  const v0 = await volleyNow()
+  const waitT0 = Date.now()
+  let advanced = false
+  while (Date.now() - waitT0 < 20000) {
+    const vn = await volleyNow()
+    if (await cannonDone()) { advanced = true; break }
+    if (vn !== null && v0 !== null && vn > v0) { advanced = true; break }
+    await sleep(60)
+  }
+  check(advanced, `第 ${v} 轮结束（轮次推进或已进入评分）`)
 }
 const cdone = await page.waitForFunction(() =>
   [...document.querySelectorAll('[role=dialog]')].some(d => /操作评分/.test(d.textContent || '')),
-  { timeout: 8000, polling: 150 }).then(() => true).catch(() => false)
+  { timeout: 20000, polling: 150 }).then(() => true).catch(() => false)
 check(cdone, '三轮齐射后进入操作评分')
 await page.screenshot({ path: `${SHOTS}/voyage-cannon-done.png` })
 await page.keyboard.press('Enter')   // ⛵ 看结果（Enter）

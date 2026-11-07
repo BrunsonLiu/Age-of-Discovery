@@ -72,6 +72,13 @@ export interface SeaStaticItem {
   html: string
   /** 悬浮提示 */
   title: string
+  /**
+   * 够不够得着（船在不在拾取半径内）。
+   *
+   * 2D 与 3D 用的是同一个判据（data/relics 的 relicInReach），
+   * 所以「这边说够得着、那边说够不着」这种事不会发生。
+   */
+  near?: boolean
   /** 点击动作 */
   onClick: () => void
 }
@@ -83,6 +90,10 @@ interface Node {
   staticId?: string
   /** 上一次真正写进 DOM 的值。undefined = 还没写过（第一帧必须写一次） */
   shown?: boolean
+  /** 上一次写进 DOM 的提示文字（只在变了才写） */
+  shownTitle?: string
+  /** 上一次写进 DOM 的「够得着」状态 */
+  shownNear?: boolean
   left: number
   top: number
 }
@@ -185,7 +196,18 @@ export function createSeaLayer3d(
         if (!node) {
           node = makeNode(s.id, s.html, s.title, s.onClick, 'relic-icon relic3d-icon', 'data-relic-id')
           node.staticId = s.id
+          node.shownTitle = s.title
           nodes.set(s.id, node)
+        }
+        // 「够得着 / 够不着」变了才改写提示（每帧都写就是每帧重排一次 DOM）
+        if (node.shownTitle !== s.title) {
+          node.shownTitle = s.title
+          node.el.title = s.title
+          node.el.setAttribute('aria-label', s.title)
+        }
+        if (node.shownNear !== !!s.near) {
+          node.shownNear = !!s.near
+          node.el.classList.toggle('relic-near', node.shownNear)
         }
 
         tmpV.set(lonToWorldX(s.lng), DEBRIS_Y, latToWorldZ(s.lat))

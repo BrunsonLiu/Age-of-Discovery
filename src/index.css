@@ -1275,6 +1275,29 @@ body {
 .relic-icon:hover .relic-ring { opacity: 0.95; }
 
 /*
+ * 够得着（船在拾取半径内）时：铜环亮起来 + 一圈柔光。
+ *
+ * 【为什么不用脉冲光圈】漂流物用的是"脉冲光圈"，那表示"它会漂走"。
+ * 遗物恰恰相反——它哪儿也不去，就在原地等你路过。
+ * 所以近处只做"更亮 + 柔光"，不用会扩散的圈：
+ * 那会把一件不漂的东西说成会漂的东西。
+ *
+ * 【为什么用 currentColor】史实遗物是旧铜色、神话遗物是冷银白，
+ * 光晕必须跟着各自的颜色走，写死一个颜色就会有一半遗物发光不对。
+ */
+.relic-icon.relic-near .relic-ring {
+  opacity: 0.95;
+  animation: relic-breathe 3.2s ease-in-out infinite;
+}
+@keyframes relic-breathe {
+  0%, 100% { filter: drop-shadow(0 0 2px currentColor); }
+  50% { filter: drop-shadow(0 0 7px currentColor); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .relic-icon.relic-near .relic-ring { animation: none; filter: drop-shadow(0 0 4px currentColor); }
+}
+
+/*
  * 2.5D 视图里的漂流物。
  *
  * 与 2D 的 Leaflet divIcon 是同一段 HTML，区别只在**谁来定位**：

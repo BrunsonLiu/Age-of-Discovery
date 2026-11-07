@@ -157,20 +157,21 @@ const before = await page.evaluate((t) => {
 check(before.onMap > 0, `遗物在地图上有实物标记（实测 ${before.onMap} 个 data-relic-id）`)
 check(before.hasTarget, `目标遗物「${target.name}」在屏幕上`)
 
-// 真实鼠标点击（带命中测试——被遮挡就不算点到了）
-const hit = await page.evaluate((id) => {
+/**
+ * 真实鼠标点击的位置（带命中测试——被遮挡就不算点到了）。
+ *
+ * 【为什么两头都找 data-relic-id】2D 与 3D 的锚点位置不同：
+ *   2D：data-relic-id 在内层剪影 .relic-glyph 上（剪影 pointer-events:none，
+ *       所以命中的是外层 .leaflet-marker-icon 容器）；
+ *   3D：data-relic-id 直接在外层 .relic3d-icon 上。
+ * 于是两头都要找：向上 closest（3D）、向下 querySelector（2D 的外层容器）。
+ */
+const hitAt = async (id) => page.evaluate((id) => {
   const el = document.querySelector(`[data-relic-id="${id}"]`)
   if (!el) return null
   const r = el.getBoundingClientRect()
   const cx = r.x + r.width / 2, cy = r.y + r.height / 2
   const top = document.elementFromPoint(cx, cy)
-  /*
-   * 「这次点击落在哪一件遗物上」——2D 与 3D 的锚点位置不同：
-   *   2D：data-relic-id 在内层剪影 .relic-glyph 上（剪影 pointer-events:none，
-   *       所以命中的是外层 .leaflet-marker-icon 容器）；
-   *   3D：data-relic-id 直接在外层 .relic3d-icon 上。
-   * 于是两头都要找：向上 closest（3D）、向下 querySelector（2D 的外层容器）。
-   */
   const hitId = top?.closest?.('[data-relic-id]')?.dataset?.relicId
     ?? top?.querySelector?.('[data-relic-id]')?.dataset?.relicId
     ?? null
@@ -186,13 +187,79 @@ const hit = await page.evaluate((id) => {
     hitTag: top ? `${top.tagName}.${(top.className || '').toString().slice(0, 40)}` : null,
     chain: chain.join(' < '),
   }
-}, target.id)
+}, id)
+
+const hit = await hitAt(target.id)
 check(!!hit, '找得到那件遗物的图标')
 check(!!hit && hit.inViewport, '遗物完整落在视口内')
 check(!!hit && hit.hitsSelf, `遗物真的能被点到（未被遮挡）——实测命中 ${hit?.hitTag}（hitId=${hit?.hitId}）｜层链 ${hit?.chain}`)
-if (hit && hit.hitsSelf) await page.mouse.click(hit.x, hit.y)
 
-await sleep(600)
+// ---- 1a：隔着半个大洋点它 → **不结算**，只回执 + 设为目的地 ----
+//
+// 2026-11-07 实测事故：拾取没有距离校验，玩家在塞维利亚就能拾走
+// 亚速尔外海的白骨——"它一直在那儿等着有人路过"就成了一句空话。
+if (hit && hit.hitsSelf) await page.mouse.click(hit.x, hit.y)
+await sleep(800)
+
+const far = await page.evaluate((t) => {
+  const st = window.__gameStore.getState()
+  const notes = (st.notifications || []).map(n => `${n.title}|${n.message || ''}`)
+  return {
+    relics: st.collectedRelics ? st.collectedRelics.length : 0,
+    gold: st.fleet.gold,
+    fame: st.fleet.fame,
+    farNote: notes.find(x => /太远了/.test(x)) || '',
+    waypoint: st.waypoint ? [st.waypoint.latitude, st.waypoint.longitude] : null,
+    pending: !!st.pendingVoyage,
+  }
+}, target)
+
+check(far.relics === before.relics,
+  `隔着半个大洋点它不结算（拾取数没变：${before.relics} → ${far.relics}）`)
+check(far.fame === before.fame && far.gold === before.gold,
+  `够不着时一个数都不动（名号 ${before.fame}→${far.fame}、金币 ${before.gold}→${far.gold}）`)
+check(/太远了/.test(far.farNote) && /海里/.test(far.farNote),
+  `回执说清差多远（${far.farNote.slice(0, 64) || '没有回执'}）`)
+check(!!far.waypoint
+  && Math.abs(far.waypoint[0] - target.lat) < 0.01
+  && Math.abs(far.waypoint[1] - target.lng) < 0.01,
+  `超距时把它设为目的地（提示必须可行动；航点 ${JSON.stringify(far.waypoint)}）`)
+
+// 出航计划弹层盖住地图（"已把航向对准它"会真的排出一条航线），先关掉
+await page.evaluate(() => {
+  const b = [...document.querySelectorAll('button')].find(x => /再想想/.test(x.textContent || ''))
+  if (b) b.click()
+})
+await sleep(500)
+
+// ---- 1b：把船挪过去 → 提示变成「拾起：X」→ 真的拾起来 ----
+//
+// 船不能正好压在遗物图标上：船的 zIndex 比遗物高，
+// 叠在一起时 elementFromPoint 命中的是船，点击落不到遗物身上。
+// 挪开 0.12°（约 7 海里，仍在 150 海里拾取半径内）并放大到看得清。
+await page.evaluate((t) => {
+  window.__gameStore.getState().setShipPosition([t.lat + 0.12, t.lng])
+  window.__mapStore.setState({ center: [t.lat, t.lng], zoom: 10 })
+}, target)
+await sleep(1000)
+
+const nearState = await page.evaluate((t) => {
+  const glyph = document.querySelector(`[data-relic-id="${t.id}"]`)
+  const el = glyph?.closest?.('.relic-icon')
+  return {
+    title: el?.getAttribute('title') || '',
+    near: !!el?.classList?.contains('relic-near'),
+  }
+}, target)
+check(/^拾起：/.test(nearState.title),
+  `够得着了，提示改成「拾起：X」（实测「${nearState.title}」）`)
+check(nearState.near, '够得着时图标会亮起来（铜环发光，肉眼能看见差别）')
+
+const hit2 = await hitAt(target.id)
+check(!!hit2 && hit2.hitsSelf,
+  `挪过去之后还点得到（实测命中 ${hit2?.hitTag}｜层链 ${hit2?.chain}）`)
+if (hit2 && hit2.hitsSelf) await page.mouse.click(hit2.x, hit2.y)
+await sleep(800)
 
 console.log('=== 第 2 轮：拾起来给的是名号与士气，不是钱 ===')
 const after = await page.evaluate((id) => {

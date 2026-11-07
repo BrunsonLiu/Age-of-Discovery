@@ -5,7 +5,7 @@ import { useMapStore } from '@/store/useMapStore'
 import { ports } from '@/data/ports'
 import { achievements } from '@/data/achievements'
 import { DEBRIS_INFO } from '@/data/debris'
-import { RELICS } from '@/data/relics'
+import { RELICS, relicDistanceNm } from '@/data/relics'
 import { REGION_CN, countEchoes, echoDayFor } from '@/data/logbook'
 import { logbookArt } from '@/data/logbookArt'
 import { clueCenter } from '@/utils/harbor'
@@ -218,6 +218,7 @@ export function AtlasView() {
   const earned = useGameStore(s => s.achievements)
   const collected = useGameStore(s => s.collectedDebris)
   const collectedRelics = useGameStore(s => s.collectedRelics)
+  const shipPosition = useGameStore(s => s.shipPosition)
   const stats = useGameStore(s => s.stats)
   const logbook = useGameStore(s => s.logbook)
   const setActivePanel = useGameStore(s => s.setActivePanel)
@@ -311,7 +312,19 @@ export function AtlasView() {
             icon={<Compass size={13} />}
             onClick={() => {
               if (!gotRelics.has(r.id)) {
-                setDetail('那件东西还在原处等你——路过那片海的时候，认准它。')
+                /*
+                 * 没拾到的：告诉玩家它**还在原处、离你多远**，
+                 * 并把海图挪过去——但**不关掉册子**，
+                 * 否则这句距离提示刚写出来就跟着面板一起没了。
+                 * 拾取有半径（RELIC_PICKUP_NM），所以"还差多少海里"是玩家
+                 * 能不能去、值不值得去的那个数，必须给。
+                 */
+                const pos = shipPosition
+                const nm = pos ? Math.round(relicDistanceNm(pos[0], pos[1], r)) : null
+                setDetail(nm != null
+                  ? `它还在原处。离你 ${nm.toLocaleString('zh-CN')} 海里。`
+                  : '它还在原处等着——路过那片海的时候，认准它。')
+                setCenter([r.lat, r.lng])
                 return
               }
               setCenter([r.lat, r.lng])

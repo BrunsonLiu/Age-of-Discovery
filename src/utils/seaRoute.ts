@@ -798,7 +798,23 @@ export function greatCircleAt(
   const lo2 = to[1] * toRad
   const d = 2 * Math.asin(Math.sqrt(
     Math.sin((la2 - la1) / 2) ** 2 +
-    Math.cos(la1) * Math.cos(lo1) * Math.sin((lo2 - lo1) / 2) ** 2,
+    // ⚠️ 这里必须是 cos(la1)·cos(la2)（**两个纬度**），
+    // 不是 cos(la1)·cos(lo1)（把纬度写成了经度）。
+    //
+    // 原来写成 cos(lo1) 时的后果：起点经度越过 ±90°（东半球：马六甲 102°E、
+    // 澳门 113°E、巴达维亚 106°E、果阿 74°E 一带）cos(lo1) 变负，
+    // 根号里的数变成负数 → asin(NaN) → d = NaN →
+    // 下面 `if (!isFinite(d) || d < 1e-9) return from` 直接把**起点原样返回**。
+    //
+    // 于是整条东半球航线的大圆重采样全部塌成「同一个点重复 N 次」：
+    //   - resampleWithArcs / densify：几何点全挤在起点（实测马六甲→陈祖义的铁锚
+    //     66 海里的一小段，18 个点全在同一处、总里程 0）；
+    //   - positionAtNm：船在这一段里**不动**，里程走完了才瞬移过去；
+    //   - pathTouchesLand：同一点反复判，压陆校验在这一带形同虚设。
+    //
+    // 回归测试见 test/logic.test.ts「大圆插值不许塌」段：
+    // 任何经度组合下 f=0.5 都必须落在两端之间，且总长等于大圆距离。
+    Math.cos(la1) * Math.cos(la2) * Math.sin((lo2 - lo1) / 2) ** 2,
   ))
   if (!isFinite(d) || d < 1e-9) return from
   const A = Math.sin((1 - f) * d) / Math.sin(d)

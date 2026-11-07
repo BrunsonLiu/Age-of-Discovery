@@ -36,7 +36,7 @@ import {
 } from '@/utils/weather'
 import { advanceDebris } from '@/utils/seaDebris'
 import { debrisGain, DEBRIS_INFO, type DebrisSpot } from '@/data/debris'
-import { findRelic } from '@/data/relics'
+import { findRelic, relicDistanceNm, RELIC_PICKUP_NM } from '@/data/relics'
 import { newlyReached } from '@/data/voyageMilestones'
 import { appendLogbook, findClueFor, makeArrivalEntry, makeEchoEntry, makeTitleEntry, markAllRead } from '@/data/logbook'
 import { SAVE_KEY, SAVE_VERSION } from '@/utils/saveFile'
@@ -2329,18 +2329,65 @@ export const useGameStore = create<GameStore>()(
        *
        * 【只拾一次】遗物是永久的世界物件，不是会漂走的漂流物。
        * 重复点击不结算任何东西（否则玩家会站在原地反复点同一件）。
+       *
+       * 【必须真的开过去】超了 `RELIC_PICKUP_NM` 就**不结算**：
+       * 遗物是"半埋在海里的旧物，它一直在那儿等着有人路过"——
+       * 在塞维利亚点一下就能捞走亚速尔外海的白骨，这句话就成空话了。
+       * 超距时只回一句「还在多少海里外」，并把它**设为目的地**：
+       * 与"点地图上的那个点"走同一条链路（sailToWaypoint / changeCourse），
+       * 于是玩家点它 = 想过去，系统就给一条真能走过去的航线。
        */
-      collectRelic: (id) => set((state) => {
-        if (state.collectedRelics.includes(id)) return state
+      collectRelic: (id) => {
+        const state = get()
+        if (state.collectedRelics.includes(id)) return
         const relic = findRelic(id)
-        if (!relic) return state
+        if (!relic) return
+
+        const pos = state.shipPosition
+        const distNm = pos ? relicDistanceNm(pos[0], pos[1], relic) : Infinity
+
+        // ---- 太远：不结算，只回执 + 设为目的地 ----
+        if (!pos || distNm > RELIC_PICKUP_NM) {
+          const nm = Number.isFinite(distNm) ? Math.round(distNm).toLocaleString('zh-CN') : '—'
+          // 手上已经有一份待确认的航程计划：别把两件事搅在一起
+          // （真机上这一刻基本到不了——计划弹层盖着地图，点不到遗物），
+          // 但话必须说准：不能嘴上说"已把航向对准它"却什么也没做。
+          const busy = !!state.pendingVoyage
+          set(s => ({
+            notifications: [...s.notifications, {
+              id: `relic-far-${id}-${Date.now()}`,
+              type: 'discovery' as const,
+              title: `太远了 · ${relic.name}`,
+              message: !pos
+                ? '船还没下水，先定个航向。'
+                : busy
+                  ? `还在 ${nm} 海里外。先把手上的航程计划定下来，再去捞它。`
+                  : `还在 ${nm} 海里外。已把航向对准它——开过去就能捞起来。`,
+              timestamp: Date.now(),
+            }],
+          }))
+          if (!pos || busy) return
+          const waypoint: Waypoint = {
+            latitude: relic.lat,
+            longitude: relic.lng,
+            name: relic.name,
+          }
+          if (state.fleet.isSailing) {
+            state.changeCourse(waypoint)
+          } else {
+            state.setWaypoint(waypoint)
+            state.sailToWaypoint(waypoint)
+          }
+          return
+        }
+
         const g = relic.gain
         useFxStore.getState().fx(
           { kind: 'float', tone: 'gold', text: relic.name, sub: `名号 +${g.fame} · 士气 +${g.morale}` },
           'port',
         )
         useFxStore.getState().cue('splash')
-        return withAchievements(state, {
+        set((state) => withAchievements(state, {
           // 图鉴里点亮这一格：拾过什么，册子替你记着
           collectedRelics: [...state.collectedRelics, id],
           fleet: {
@@ -2359,8 +2406,8 @@ export const useGameStore = create<GameStore>()(
             message: relic.note,
             timestamp: Date.now(),
           }],
-        })
-      }),
+        }))
+      },
       addNotification: (notification) => set((state) => ({ notifications: [...state.notifications, { ...notification, timestamp: Date.now() }] })),
       removeNotification: (id) => set((state) => ({ notifications: state.notifications.filter(n => n.id !== id) })),
       nextTutorialStep: () => set((state) => ({ tutorialStep: state.tutorialStep + 1 })),

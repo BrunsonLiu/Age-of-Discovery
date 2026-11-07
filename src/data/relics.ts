@@ -11,8 +11,8 @@
  * 但他的船照样从旁边开过去，海面上什么都没有。
  *
  * 遗物把同一段史实换成一件**看得见、点得到的东西**：
- * 麦哲伦海峡里浮着一枚断链的铜浮标，巴哈马外海泡着一只四爪铁锚，
- * 亚速尔外海斜插着一根比船桅还长的白骨。
+ * 好望角外海斜插着半截折断的桅杆，巴哈马外海泡着一只四爪铁锚，
+ * 莫桑比克海峡的沙里立着半截葡人的界碑，厄加勒斯角外海浮着一根比船桅还长的白骨。
  * 史实不再是"读过"，而是"你路过它、你伸手、你带走了它"。
  *
  * 【为什么收益里没有金币】
@@ -21,17 +21,50 @@
  * 前者是"别人怎么说你"，后两者是"你的船还能撑多久"。
  * 钱要挣，名号要挣回来。
  *
- * 【坐标必须真的在海上】
- * 每件遗物都钉在真实发生过事情的地方（迪亚士折桅的好望角外海、
- * 哥伦布第一次抛锚的巴哈马、郑和擒陈祖义的马六甲……）。
- * 坐标由 `public/data/sea-mask.bin` 逐个校验过——落在陆地上就是错的，
- * 单测 `relics.test` 段会拿真掩码把每一条都点一遍。
+ * 【坐标必须真的在海上，而且真的开得到，而且真的会路过】
+ * 三道关，缺一件就是"摆在世界另一头的摆设"：
+ *
+ *   ① **在海上**：`public/data/sea-mask.bin` 逐个校验过，落在陆地上就是错的。
+ *   ② **开得到**：从最近的港口 A\* 过去有路、且这条路不压陆。
+ *      麦哲伦海峡在 0.1° 掩码里是断的（东西向水道被陆地切成好几段），
+ *      A\* 搜不出穿过去的路——钉在那儿的遗物等于永远拿不到，所以不用那个坐标。
+ *   ③ **会路过**（最关键的一条，2026-11-07 补）：
+ *      它必须落在玩家**真的会走的主航线**的拾取半径以内。
+ *      ②只保证"不是死物件"，不保证玩家会遇到它——实测 8 件里曾有 2 件不合格：
+ *        圣萨尔瓦多的铁锚  离最近主航线 153 海里（半径 150，差 3 海里）
+ *        海妖的肋骨        离最近主航线 877 海里（在亚速尔外海，玩家根本不走那边）
+ *      现在 8 件离主航线 4~127 海里，全部在半径内。
+ *
+ * 三条都由单测拿真掩码 + 真 A\* 守着（test/logic.test.ts）。
+ * 挪坐标之前先看那几条断言——它们是"这东西到底有没有人碰得到"的唯一凭据。
+ *
+ * 【拾取半径：必须真的开过去】
+ * 遗物不是"点一下就到手"的菜单项。它**一直在那儿，等着有人路过**——
+ * 所以拾取有半径（`RELIC_PICKUP_NM`），超了就不结算，
+ * 只告诉你「还在多少海里外」并把航向对准它。
  */
+
+import { haversineNm } from '@/utils/navigation'
 
 export type RelicLore = 'history' | 'myth'
 
 /** 遗物的视觉类别（决定画哪个图形，不是玩法分类） */
-export type RelicKind = 'mast' | 'anchor' | 'wheel' | 'compass' | 'bone' | 'lyre'
+export type RelicKind = 'mast' | 'anchor' | 'wheel' | 'compass' | 'bone' | 'lyre' | 'pillar'
+
+/**
+ * 拾取半径（海里）。
+ *
+ * 【为什么有半径】遗物不是点一下就到手的菜单项——
+ * 它是"半埋在海里的旧物"，**一直在那儿等着有人路过**。
+ * 没有半径，玩家在塞维利亚就能拾走亚速尔外海的白骨，
+ * 那句"它一直在那儿等你"就成了空话。
+ *
+ * 【为什么是 150】一次航段的量级：
+ *   - 最短的一趟（近港之间）约 100~200 海里；
+ *   - 一件东西放在 150 海里内 = 路过时抬头就能看见、伸手就能捞。
+ * 再小就变成"必须精确停在它上面"；再大就变成"顺路经过半个大洋就算路过"。
+ */
+export const RELIC_PICKUP_NM = 150
 
 export interface Relic {
   id: string
@@ -75,21 +108,21 @@ export const RELICS: Relic[] = [
     gain: { fame: 3, food: 0, water: 8, morale: 4 },
   },
   {
-    id: 'magellan_beacon',
-    name: '海峡的引航浮标',
-    lat: -53.5,
-    lng: -70.5,
-    kind: 'mast',
+    id: 'mozambique_padrao',
+    name: '达·伽马的界碑',
+    lat: -19.5,
+    lng: 40.5,
+    kind: 'pillar',
     lore: 'history',
-    hint: '一枚铜制浮标，锚链断在一半。',
-    note: '1520年10月，麦哲伦的船队找到了贯通南美与火地地峡的那条窄水——人类第一次从这条海峡穿过去。',
-    gain: { fame: 4, food: 4, water: 0, morale: 6 },
+    hint: '半截石柱斜插在沙里，柱面刻着看不懂的纹样。',
+    note: '1498年，达·伽马绕过好望角后没有急着横渡印度洋，而是沿非洲东岸北上，沿途立下这种刻着葡王纹章的石柱。返航时他留下副手埃里亚·德·阿尔梅达独自往东去，自己带着香料回了里斯本。阿尔梅达此后再没有回来。',
+    gain: { fame: 5, food: 0, water: 4, morale: 6 },
   },
   {
     id: 'san_salvador_anchor',
     name: '圣萨尔瓦多的铁锚',
-    lat: -24.05,
-    lng: -74.45,
+    lat: 24.5,
+    lng: -75.3,
     kind: 'anchor',
     lore: 'history',
     hint: '一只四爪铁锚，锚爪上缠着已经发黑的麻绳。',
@@ -132,23 +165,26 @@ export const RELICS: Relic[] = [
   {
     id: 'kraken_rib',
     name: '海妖的肋骨',
-    lat: -37.8,
-    lng: -25.5,
+    // 厄加勒斯角外海：绕过好望角的船必经之处，水深、离岸远、风浪大。
+    // （旧位置在亚速尔外海 -37.8,-25.5——玩家根本不走那边，
+    //   实测离最近主航线 877 海里，等于一件永远碰不到的摆设。）
+    lat: -36.0,
+    lng: 22.0,
     kind: 'bone',
     lore: 'myth',
     hint: '一根比船桅还长的白骨，从水里斜插出来。',
-    note: '1634年，一条自称在亚速尔附近见过海怪的船留下了这个说法。没有人能证明它，也没有人能推翻它。',
+    note: '1488年迪亚士把这一带叫「风暴角」，随船的神父在航海日志里写：水里有东西跟着船走了三天，比桅杆还长。没有人能证明它，也没有人能推翻它。',
     gain: { fame: 6, food: 0, water: 0, morale: 10 },
   },
   {
     id: 'siren_lyre',
     name: '塞壬的七弦琴',
-    lat: 37.5,
-    lng: 16.0,
+    lat: 34.5,
+    lng: -9.5,
     kind: 'lyre',
     lore: 'myth',
     hint: '半张七弦琴，弦断了一半，琴身是海螺磨的。',
-    note: '《奥德赛》里她们的歌让水手把耳朵塞进蜡里。可真正的塞壬从来没有现身过——她们只是让人听见了自己想听的东西。',
+    note: '《奥德赛》里她们的歌让水手把耳朵塞进蜡里。古代海图把塞壬画在赫拉克勒斯之柱的里面——柱子以外的世界没人敢去；但她的歌会从海峡口飘出来。这半张琴是在柱外的洋面上捞到的，弦断了一半。真正的塞壬从来没有现身过：她只是让人听见了自己想听的东西。',
     gain: { fame: 6, food: 0, water: 0, morale: 10 },
   },
 ]
@@ -161,4 +197,25 @@ export const RELIC_COUNT = RELICS.length
 /** 按 id 找到遗物；找不到返回 null（存档里可能有旧版本删掉的 id） */
 export function findRelic(id: string): Relic | null {
   return RELIC_MAP.get(id) ?? null
+}
+
+/**
+ * 船到这件遗物还有多远（海里）。
+ *
+ * 用的是**业务口径**的距离函数（utils/navigation 的 haversineNm），
+ * 不用航线几何的弧长——这里问的是"直线还有多远"，
+ * 回给玩家的那句话「还在 843 海里外」得是玩家自己心里那个距离。
+ */
+export function relicDistanceNm(fromLat: number, fromLng: number, relic: Relic): number {
+  return haversineNm(fromLat, fromLng, relic.lat, relic.lng)
+}
+
+/** 这件遗物现在够不够得着（船在不在拾取半径内） */
+export function relicInReach(
+  fromLat: number | null | undefined,
+  fromLng: number | null | undefined,
+  relic: Relic,
+): boolean {
+  if (fromLat == null || fromLng == null) return false
+  return relicDistanceNm(fromLat, fromLng, relic) <= RELIC_PICKUP_NM
 }

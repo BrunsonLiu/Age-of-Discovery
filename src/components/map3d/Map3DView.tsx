@@ -20,7 +20,7 @@ import { buildGrainCanvas } from '@/utils/landGrain'
 import { birdPose } from '@/utils/portLife'
 import { buildCloudShadowCanvas, cloudBlobs } from '@/utils/cloudShadow'
 import { NPC_LEGS, NPC_SPEED_NM, npcLegAt, npcPose } from '@/utils/npcShips'
-import { RELICS } from '@/data/relics'
+import { RELICS, relicInReach } from '@/data/relics'
 import { relicMarkerHtml } from '@/utils/relicGlyph'
 import { skyAt } from '@/utils/skyClock'
 import {
@@ -233,11 +233,41 @@ const RELIC_ITEMS: SeaStaticItem[] = RELICS.map(r => ({
   lng: r.lng,
   html: relicMarkerHtml(r.kind, r.lore, r.id),
   title: `拾起：${r.name}`,
+  near: false,
   onClick: () => useGameStore.getState().collectRelic(r.id),
 }))
 
+/**
+ * 「够得着 / 够不着」要跟着船走。
+ *
+ * 遗物有拾取半径：隔着半个大洋点它**不结算**，只回一句「还在多少海里外」。
+ * 那提示就不能一直写「拾起：X」——屏幕上说的与实际发生的不一致，
+ * 比没有提示更糟（项目硬规矩）。2D 与 3D 用同一个判据
+ * （data/relics 的 relicInReach），所以两边不会各说各话。
+ *
+ * 【为什么在这里改写而不是每帧重建】帧循环每秒 60 次，
+ * 每帧重建 8 遍字符串 + 8 个闭包纯属浪费。
+ * 这里只在**状态翻转**的那一帧改 title，别的帧一个字都不动。
+ */
+const RELIC_NEAR = new Map<string, boolean>()
+const RELIC_BY_ID = new Map(RELICS.map(r => [r.id, r]))
+
+function syncRelicReach(): void {
+  const pos = useGameStore.getState().shipPosition
+  for (const item of RELIC_ITEMS) {
+    const r = RELIC_BY_ID.get(item.id)
+    if (!r) continue
+    const near = relicInReach(pos?.[0], pos?.[1], r)
+    if (RELIC_NEAR.get(item.id) === near) continue
+    RELIC_NEAR.set(item.id, near)
+    item.near = near
+    item.title = near ? `拾起：${r.name}` : `太远了 · ${r.name}`
+  }
+}
+
 /** 当前还没被拾走的遗物（拾走一件就少一件） */
 function getRelicItems(): SeaStaticItem[] {
+  syncRelicReach()
   const got = useGameStore.getState().collectedRelics
   if (!got || got.length === 0) return RELIC_ITEMS
   const set = new Set(got)

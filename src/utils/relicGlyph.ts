@@ -47,6 +47,12 @@ export function relicGlyph(kind: RelicKind): string {
       // 七弦琴：U 形框 + 弦
       return `<svg viewBox="0 0 24 24"><path d="M6.6 4.4 L9.4 4.4 Q9.8 15.4 12 17.6 Q14.2 15.4 14.6 4.4 L17.4 4.4 Q16.6 17.4 12 20.4 Q7.4 17.4 6.6 4.4 Z" ${base}/>` +
         `<path d="M9.8 6 L10.4 15.4 M12 5.4 L12 16.4 M14.2 6 L13.6 15.4" ${detail}/></svg>`
+    case 'pillar':
+      // 界碑：斜插在沙里的半截石柱 + 柱头 + 柱面的十字纹
+      return `<svg viewBox="0 0 24 24"><path d="M6.6 21.6 L9.5 21.1 L14.5 5.2 L12.0 4.7 Z" ${base}/>` +
+        `<path d="M11.2 5.9 L16.3 6.9 L15.9 9.6 L10.8 8.6 Z" ${base}/>` +
+        `<path d="M10.3 12.6 L12.9 13.2 M11.2 11.0 L11.9 15.6" ${detail}/>` +
+        `<path d="M5.4 21.3 L9.6 20.8 L10.0 23.0 L5.8 23.5 Z" ${base}/></svg>`
   }
 }
 

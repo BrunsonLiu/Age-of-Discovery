@@ -152,9 +152,11 @@ import { join } from 'node:path'
 import { createHash } from 'node:crypto'
 import type { EventOutcome, Fleet, GameEvent, MiniGameId, Route } from '../src/types'
 import {
-  greatCircleNm, greatCirclePoint, buildRouteGeometry, positionAtNm, traveledNmAt,
+  greatCircleNm, greatCirclePoint, buildRouteGeometry, positionAtNm, traveledNmAt, pathTouchesLand,
 } from '../src/utils/routePath'
-import { findSeaPath } from '../src/utils/seaRoute'
+import { findSeaPath, loadSeaMask, isSeaMaskLoaded } from '../src/utils/seaRoute'
+import { ports } from '../src/data/ports'
+import { RELIC_PICKUP_NM, relicDistanceNm, relicInReach } from '../src/data/relics'
 import { advanceAlongRoute } from '../src/utils/sailStep'
 import { decidePixelRatio, PIXEL_RATIO_STEP, SLOW_FRAME_MS, MIN_SAMPLES } from '../src/utils/adaptiveResolution'
 import { isTapGesture, TAP_SLOP_MOUSE, TAP_SLOP_TOUCH } from '../src/utils/tapGesture'
@@ -7121,7 +7123,7 @@ console.log('\n== 天数口径守卫 ==')
   }
 
   // ② 拾取动作里不许出现金币
-  const iRelic = storeSrc2.indexOf('collectRelic: (id) => set')
+  const iRelic = storeSrc2.indexOf('collectRelic: (id) => {')
   const iAfterRelic = storeSrc2.indexOf('addNotification:', iRelic)
   const relicBody = iRelic >= 0 && iAfterRelic > iRelic ? storeSrc2.slice(iRelic, iAfterRelic) : ''
   assert(relicBody.length > 0, '找得到 collectRelic 的函数体（守卫本身没写错）')
@@ -7129,6 +7131,25 @@ console.log('\n== 天数口径守卫 ==')
     '拾取遗物不给金币（钱重要，但本作卖的是航路与名号，不是账本）')
   assert(/collectedRelics/.test(relicBody) && /fame/.test(relicBody) && /morale/.test(relicBody),
     '拾取遗物给名号与士气，并记进 collectedRelics')
+
+  // ②-2 **必须真的开过去**：超距不结算，只回执 + 设为目的地
+  //
+  // 2026-11-07 实测事故：遗物本来在世界另一头也能直接「拾起」
+  // （collectRelic 没有任何距离校验），于是"它一直在那儿等着有人路过"
+  // 这句设定成了空话，玩家在塞维利亚就能捞走亚速尔外海的白骨。
+  assert(/RELIC_PICKUP_NM/.test(relicBody),
+    '拾取有半径把关（超距不结算）')
+  assert(/relicDistanceNm/.test(relicBody),
+    '距离用 relicDistanceNm 算（与图鉴里显示的「离你多少海里」同一个口径）')
+  assert(/太远了/.test(relicBody),
+    '超距时给「太远了」的回执（玩家知道自己差多少）')
+  assert(/changeCourse|sailToWaypoint/.test(relicBody),
+    '超距时把它设为目的地（提示必须可行动，不能只是"你不够不着"）')
+  // 超距那一支**不能**结算收益：收益的加法都在半径判断之后
+  const iGate = relicBody.indexOf('RELIC_PICKUP_NM')
+  const iGain = relicBody.indexOf('fame: state.fleet.fame + g.fame')
+  assert(iGate >= 0 && iGain > iGate,
+    '半径判断在收益结算之前（超距时一个数都不加）')
 
   // ③ 2D 与 3D 读同一份数据、拾完一起消失
   assert(/from '@\/data\/relics'/.test(seaRelicsSrc) && /RELICS/.test(seaRelicsSrc),
@@ -7171,6 +7192,236 @@ console.log('\n== 天数口径守卫 ==')
       '遗物巡检真的在断言「金币一个都不动」（否则改坏代码它不会红）')
     assert(/elementFromPoint/.test(relicAudit) && /mouse\.click/.test(relicAudit),
       '遗物巡检走真实鼠标点击 + 命中测试（不靠 el.click() 绕过遮挡）')
+  }
+}
+
+// ---------------- 大圆插值不许塌（东半球航线几何塌陷的根因） ----------------
+//
+// 2026-11-07 实测事故：utils/seaRoute.ts 的 greatCircleAt 把 haversine 的
+// cos(la2) 写成了 cos(lo1)（**纬度写成了经度**）。
+//
+// 【这个 bug 的真实影响面，比"东半球塌陷"大得多】
+// 新旧两版跑同一批真实航线（拿真掩码喂进 fetch，A* 走的是掩码），
+// 对比 buildRouteGeometry 的输出：
+//
+//   路线              旧版里程/压陆比例      新版里程/压陆比例
+//   阿姆斯特丹→果阿    4005nm / 84.5%       10953nm /  0.0%
+//   埃尔米纳→蒙巴萨    2677nm / 84.6%        5348nm /  0.0%
+//   果阿→澳门          2197nm / 95.3%        3777nm /  0.0%
+//   蒙巴萨→澳门        4587nm / 55.5%        5691nm /  0.0%
+//   塞维利亚→开普敦     4754nm / 44.3%        5315nm /  0.0%
+//
+// 也就是说旧版把「绕好望角 / 绕印度洋」的航程算成了**横穿大陆的直线**：
+// 里程少一半以上，航线压陆 44%~95%。玩家看到的是一条从欧洲直接插进印度的
+// 线，船真的开过去——开普敦→巴达维亚的船会从非洲肚子里穿过去。
+//
+// 【为什么第一版守卫抓不住它（这条是本轮踩的坑）】
+// 初版守卫测两件事：
+//   ① f=0.5 的中点离两端各约 d/2；② 10 段折线长度 ≈ d。
+// 两件都测不出来：
+//   ① slerp 在 f=0.5 时 A=B，最终方向与 d **无关**——就算 d 算错一半，
+//      中点照样落在两端之间；
+//   ② 长段上 2% 的相对容差把误差吃干净了（实测旧版偏差 1~11 nm，
+//      而容差是 27~90 nm）。
+// 真正有区分力的是**逐点弧长**：
+//      greatCircleNm(from, greatCircleAt(from,to,f)) ≈ f × d
+// 这个式子对 d 敏感，且用绝对容差（不是相对）。
+// 现在守卫就是这么写的。
+//
+// 【口径分裂是笔误的铁证】
+// 同一个文件里 greatCircleNm 用的是 cos(lat1)·cos(lat2)（对），
+// greatCircleAt 用的是 cos(la1)·cos(lo1)（错）——两个函数本该同源。
+{
+  const cases: [string, [number, number], [number, number]][] = [
+    ['塞维利亚→近海', [37.39, -5.98], [36.0, -8.0]],
+    ['拿骚→塞维利亚', [25.05, -77.36], [37.39, -5.98]],
+    ['塞维利亚→开普敦', [37.39, -5.98], [-33.92, 18.42]],
+    ['马六甲→澳门（东半球）', [2.19, 102.25], [22.20, 113.54]],
+    ['巴达维亚→澳门（东半球）', [-6.21, 106.85], [22.20, 113.54]],
+    ['果阿→桑给巴尔（东半球）', [15.30, 74.12], [-6.17, 39.20]],
+    // 短段：旧版在这一段整段塌成 0（18 个点全在同一处）
+    ['马六甲→陈祖义铁锚（短段）', [2.19, 102.25], [2.0, 101.3]],
+  ]
+  for (const [label, from, to] of cases) {
+    const d = greatCircleNm(from[0], from[1], to[0], to[1])
+    // 绝对容差 1 海里（不是相对容差——相对容差在长段上会把误差吃掉）
+    const tol = Math.max(1, d * 0.001)
+
+    // ① 逐点弧长：插出来的点必须正好在弧上 f 处
+    //    （这条对 d 敏感；f=0.5 的中点测不出来，因为那时 A=B，方向与 d 无关）
+    for (const f of [0.1, 0.25, 0.4, 0.6, 0.75, 0.9]) {
+      const p = greatCirclePoint(from, to, f)
+      const actual = greatCircleNm(from[0], from[1], p[0], p[1])
+      assert(Math.abs(actual - f * d) < tol,
+        `插值点精确落在弧上 f=${f} 处（${label}：实际 ${actual.toFixed(1)} nm vs 应为 ${(f * d).toFixed(1)} nm，容差 ${tol.toFixed(1)}）`)
+    }
+
+    // ② 折线长度必须等于大圆距离：塌了就等于 0
+    let sum = 0
+    let prev = from
+    for (let k = 1; k <= 10; k++) {
+      const p = greatCirclePoint(from, to, k / 10)
+      sum += greatCircleNm(prev[0], prev[1], p[0], p[1])
+      prev = p
+    }
+    assert(Math.abs(sum - d) < tol,
+      `采样折线长度等于大圆距离（${label}：${sum.toFixed(0)} vs ${d.toFixed(0)} nm）`)
+
+    // ③ 两端必须精确落位
+    const p0 = greatCirclePoint(from, to, 0)
+    const p1 = greatCirclePoint(from, to, 1)
+    assert(greatCircleNm(from[0], from[1], p0[0], p0[1]) < 0.01, `f=0 精确落在起点（${label}）`)
+    assert(greatCircleNm(to[0], to[1], p1[0], p1[1]) < 0.01, `f=1 精确落在终点（${label}）`)
+  }
+
+  // ④ 口径不许分裂：greatCircleAt 与 greatCircleNm 必须用同一个 haversine
+  //    （旧版一个用 cos(lat1)·cos(lat2)、另一个用 cos(la1)·cos(lo1)——笔误的铁证）
+  const seaRouteSrc = readFileSync(join(process.cwd(), 'src', 'utils', 'seaRoute.ts'), 'utf8')
+  const gcAtBody = seaRouteSrc.slice(
+    seaRouteSrc.indexOf('export function greatCircleAt'),
+    seaRouteSrc.indexOf('export function greatCircleAt') + 2000,
+  )
+  assert(/Math\.cos\(la1\)\s*\*\s*Math\.cos\(la2\)/.test(gcAtBody),
+    'greatCircleAt 的 haversine 用 cos(la1)·cos(la2)（两个纬度），不许写成 cos(la1)·cos(lo1)（经度）')
+  assert(!/Math\.cos\(la1\)\s*\*\s*Math\.cos\(lo1\)\s*\*\s*Math\.sin/.test(gcAtBody),
+    'greatCircleAt 里不许出现 cos(la1)·cos(lo1)·sin（那是把纬度写成经度的那个笔误）')
+}
+
+// ---------------- 每件遗物都必须开得到（不是摆在世界另一头的死物件） ----------------
+//
+// 2026-11-07 实测事故：麦哲伦海峡那件遗物钉在 (-53.5,-70.5)，
+// 而 0.1° 的海陆掩码里那条水道是**断的**（东西向被陆地切成好几段），
+// A* 根本穿不过去——玩家点它，A* 搜不到路（实测 found=false、展开 17 万节点）。
+// 于是"它一直在那儿等着有人路过"成了空话：谁也到不了。
+//
+// 守两件事：
+//   ① 每件遗物从**最近的港口** A* 过去有路，而且那条路不压陆；
+//   ② 拾取半径是个真数字（不是 0，也不是无穷大），边界语义正确。
+{
+  // 把真掩码喂进 fetch（node 里没有 http server；掩码不加载的话
+  // A* 会把整张海图当成全是海，下面这条守卫就成了假绿）
+  const maskBuf = readFileSync(join(process.cwd(), 'public', 'data', 'sea-mask.bin'))
+  const origFetch = globalThis.fetch
+  globalThis.fetch = (async (input: any) => {
+    const url = String(input)
+    if (url.includes('sea-mask.bin')) {
+      const b = maskBuf.buffer.slice(maskBuf.byteOffset, maskBuf.byteOffset + maskBuf.byteLength)
+      return { ok: true, status: 200, arrayBuffer: async () => b } as any
+    }
+    return origFetch(input)
+  }) as any
+  await loadSeaMask('')
+  assert(isSeaMaskLoaded(), '真掩码喂进 fetch 之后 seaRoute 认得海陆（否则可达性判断是假的）')
+
+  assert(RELIC_PICKUP_NM > 40 && RELIC_PICKUP_NM < 600,
+    `拾取半径是个真数字（${RELIC_PICKUP_NM} 海里：再小要精确停在它上面，再大就成了顺路经过半个大洋）`)
+
+  // 半径的边界语义（用赤道上的探针：1° 经度 = 60 海里）
+  {
+    const probe = { ...RELICS[0], lat: 0, lng: 0 }
+    const d = relicDistanceNm(0, -RELIC_PICKUP_NM / 60, probe)
+    assert(Math.abs(d - RELIC_PICKUP_NM) < 1,
+      `relicDistanceNm 量的是直线海里（${d.toFixed(1)} ≈ ${RELIC_PICKUP_NM}）`)
+    assert(relicInReach(0, -(RELIC_PICKUP_NM - 1.2) / 60, probe), '在半径内算够得着')
+    assert(!relicInReach(0, -(RELIC_PICKUP_NM + 1.2) / 60, probe), '出了半径算够不着')
+    assert(!relicInReach(null, null, probe), '船还没下水时什么都够不着')
+  }
+
+  for (const r of RELICS) {
+    let near = { d: Infinity, p: ports[0] }
+    for (const p of ports) {
+      const d = haversineNm(r.lat, r.lng, p.latitude, p.longitude)
+      if (d < near.d) near = { d, p }
+    }
+    const from: [number, number] = [near.p.latitude, near.p.longitude]
+    const sea = findSeaPath(from, [r.lat, r.lng])
+    assert(sea.found,
+      `遗物「${r.name}」从${near.p.nameCn}开得过去（A* 有路；离最近的港 ${near.d.toFixed(0)} 海里）`)
+    if (sea.found) {
+      const geom = buildRouteGeometry(from, [r.lat, r.lng])
+      assert(!pathTouchesLand(geom.points.map(p => [p.lat, p.lng] as [number, number])),
+        `通往遗物「${r.name}」的那条航线不压陆（实测 ${geom.totalNm.toFixed(0)} 海里）`)
+    }
+  }
+}
+
+// ---------------- 主要港口之间的航线不许穿陆 ----------------
+//
+// 2026-11-07 实测事故（比 greatCircleAt 那个 bug 更靠后的症状）：
+// 大圆插值写错经纬之后，**所有东半球航线**都变成了横穿大陆的直线——
+// 旧版阿姆斯特丹→果阿实测 4005 海里 / 压陆 84.5%（正确是 10953 海里 / 压陆 0%）。
+// 玩家看到的是一条从欧洲直接插进印度的线，船真的会开过去。
+//
+// 这条守卫是**端到端**的：不测单个函数，而是拿真掩码跑真实的
+// buildRouteGeometry，断言「玩家天天走的主航线」一条都不压陆。
+// 上游任何一环（掩码 / A* / 简化 / 重采样 / 加密）坏了它都会红。
+{
+  const maskBuf = readFileSync(join(process.cwd(), 'public', 'data', 'sea-mask.bin'))
+  const origFetch = globalThis.fetch
+  globalThis.fetch = (async (input: any) => {
+    const url = String(input)
+    if (url.includes('sea-mask.bin')) {
+      const b = maskBuf.buffer.slice(maskBuf.byteOffset, maskBuf.byteOffset + maskBuf.byteLength)
+      return { ok: true, status: 200, arrayBuffer: async () => b } as any
+    }
+    return origFetch(input)
+  }) as any
+  await loadSeaMask('')
+  assert(isSeaMaskLoaded(), '主航线压陆守卫跑在真掩码上（否则 A* 把全世界当海）')
+
+  const byName = (n: string) => ports.find(p => p.nameCn === n)!
+  const MAIN_ROUTES: [string, string][] = [
+    ['塞维利亚', '哈瓦那'],
+    ['塞维利亚', '开普敦'],
+    ['塞维利亚', '巴达维亚'],
+    ['塞维利亚', '韦拉克鲁斯'],
+    ['伦敦', '巴达维亚'],
+    ['伦敦', '开普敦'],
+    ['阿姆斯特丹', '果阿'],
+    ['开普敦', '巴达维亚'],
+    ['开普敦', '韦拉克鲁斯'],
+    ['埃尔米纳', '蒙巴萨'],
+    ['果阿', '桑给巴尔'],
+    ['马六甲', '澳门'],
+    ['澳门', '巴达维亚'],
+    ['拿骚', '塞维利亚'],
+    ['里斯本', '哈瓦那'],
+  ]
+  for (const [a, b] of MAIN_ROUTES) {
+    const pa = byName(a), pb = byName(b)
+    const geom = buildRouteGeometry([pa.latitude, pa.longitude], [pb.latitude, pb.longitude])
+    const pts = geom.points.map(p => [p.lat, p.lng] as [number, number])
+    assert(!pathTouchesLand(pts),
+      `主航线 ${a}→${b} 不穿陆（实测 ${geom.totalNm.toFixed(0)} 海里）`)
+    // 绕非洲的航线必须真的绕：直线距离与实际航程的差额不能小得离谱
+    const straight = haversineNm(pa.latitude, pa.longitude, pb.latitude, pb.longitude)
+    assert(geom.totalNm >= straight * 0.98,
+      `主航线 ${a}→${b} 的里程不短于直线距离（航程 ${geom.totalNm.toFixed(0)} nm ≥ 直线 ${straight.toFixed(0)} nm）`)
+  }
+
+  // ---- 每件遗物都必须落在玩家真的会经过的水域里 ----
+  //
+  // 2026-11-07 实测事故：修好航线几何之后重测，8 件里有 2 件是**碰不到的摆设**：
+  //   圣萨尔瓦多的铁锚  离最近主航线 153 海里（拾取半径 150 —— 差 3 海里）
+  //   海妖的肋骨        离最近主航线 877 海里（在亚速尔外海，玩家根本不走那边）
+  // 「A* 开得过去」和「路过时够得着」是两件事：
+  // 前者保证不是死物件，后者保证玩家真的会遇到它。
+  // 少了这一条，坐标随手一挪就成了谁也发现不了的装饰。
+  {
+    const routePts: { lat: number; lng: number }[] = []
+    for (const [a, b] of MAIN_ROUTES) {
+      const pa = byName(a), pb = byName(b)
+      routePts.push(...buildRouteGeometry([pa.latitude, pa.longitude], [pb.latitude, pb.longitude]).points)
+    }
+    for (const r of RELICS) {
+      let best = { d: Infinity, label: '' }
+      for (const pt of routePts) {
+        const d = greatCircleNm(r.lat, r.lng, pt.lat, pt.lng)
+        if (d < best.d) best = { d, label: '' }
+      }
+      assert(best.d <= RELIC_PICKUP_NM,
+        `遗物「${r.name}」在玩家真的会经过的水域里（离最近主航线 ${best.d.toFixed(0)} nm ≤ 拾取半径 ${RELIC_PICKUP_NM} nm）`)
+    }
   }
 }
 
