@@ -32,6 +32,7 @@ import { buildMap3DBorders } from './mapBorders3d'
 import { buildMap3DCoastline } from './mapCoastline3d'
 import { buildMap3DPeaks, type PeakFacing } from './mapPeaks3d'
 import { createRhumb3d } from './mapRhumb3d'
+import { loadReliefNormalMap } from '@/utils/reliefNormalMap'
 import { buildTerrainSymbols, filterPeaksByElevation } from '@/utils/terrainDecor'
 import { loadElevationSampler } from '@/utils/elevation'
 import { buildMap3DGraticule, GRATICULE_OPACITY_NEAR } from './mapGraticule3d'
@@ -303,10 +304,13 @@ export default function Map3DView() {  const mountRef = useRef<HTMLDivElement>(n
       // 等于**上下翻了两次**，南北颠倒：南极那片黑（海面贴图在陆地像素处
       // 原本就没写入）被翻到了北极，在画面上方糊出一大块黑楔形。
       // 实测：翻回来后画面上 1/4 区域的极暗像素占比 8.9% → 0.5%。
-      const [geojson, landTex, seaTex] = await Promise.all([
+      const [geojson, landTex, seaTex, reliefTex] = await Promise.all([
         fetchLandGeojsonForRender(),
         loadTexture(`${base}data/painted-land.png`, false),
         loadTexture(`${base}data/painted-sea.png`, false),
+        // 地形法线：由 2048×1024 的高程图算出来，让平坦的陆地顶面
+        // 也能被方向光照出山脊的明暗（失败返回 null，退回无起伏的旧样子）
+        loadReliefNormalMap(`${base}data/elev-map.png`, { strength: 6 }),
         /*
          * 【第 34 轮：3D 也要等航线几何有结论】
          * 下面建 NPC 商船时会调 getRouteGeometry，而掩码没到位时那几何是
@@ -680,6 +684,43 @@ export default function Map3DView() {  const mountRef = useRef<HTMLDivElement>(n
       const lidMat = new THREE.MeshStandardMaterial({
         map: landTex, roughness: 0.88, metalness: 0.02,
       })
+      /*
+       * 地形法线：让平坦的陆地顶面被方向光照出山脊明暗。
+       *
+       * 陆地顶面**没有内部顶点**（几何只有海岸线上的点），所以位移做不出内陆的山。
+       * 一块纯平板配一盏方向光 = 一整片均匀亮度，实测南美/非洲/西伯利亚
+       * 的地面颜色几乎一样，"融化塑料"就是这么来的。
+       * 山的形状其实早就画在 painted-land 里了，只是它不参与光照；
+       * 补一张法线图之后，同一盏光就会在迎光面提亮、背光面压暗。
+       *
+       * 用 normalMap 槽位而不是再塞 bumpMap：bumpMap 已经被纸纹颗粒占着
+       * （repeat 22×，近景 1:1 像素），换掉就是拿颗粒换地形。两张各管一头。
+       */
+      if (reliefTex) {
+        lidMat.normalMap = reliefTex
+        /*
+         * 0.6 而不是 1。
+         *
+         * 实测 0.85 时安第斯与喜马拉雅读作**撕裂的碎片**：迎光面接近纯白、
+         * 背光面接近深褐，两三个像素之内就跳完，没有过渡。
+         * 那是 DEM 在陡坡处的梯度被整体放大造成的——高程图 2048 宽，
+         * 一个像素 0.176° ≈ 19km，安第斯真实宽度就是几个像素，
+         * 于是"坡"在图上是一道硬边。
+         *
+         * 压到 0.6 之后脊线还在（能认出安第斯、喜马拉雅、阿尔卑斯、
+         * 东非大裂谷），但明暗之间有了中间调，读作"山"而不是"裂口"。
+         * 平原本来就没有梯度，压这一档对它们没有任何影响。
+         */
+        lidMat.normalScale.set(0.6, 0.6)
+        /*
+         * **不放进 disposables**：这张图是 `loadReliefNormalMap` 按 url 缓存的，
+         * 2D/3D 来回切视图时会复用同一个 THREE.Texture。
+         * 卸载时释放掉，下一次挂载拿到的就是一张已经 dispose 过的纹理
+         * （three 会重新上传，但那份 2048×1024 的解析结果白算了，还得重算一遍）。
+         * 缓存住、只在页面卸载时随上下文一起走，才是它该有的生命周期。
+         */
+        lidMat.userData.reliefMounted = true
+      }
       /*
        * 陆地的高频细节：bumpMap（不是自绘着色器）。
        *
