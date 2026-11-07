@@ -121,11 +121,12 @@ export interface RouteFacts {
  * 掩码到位之后还要 `invalidateRouteGeometryCache()`，
  * 那一步没做完之前缓存里躺着的仍是旧的直线几何。
  */
-export function routeFacts(from: [number, number], to: [number, number]): RouteFacts {
+export function routeFacts(from: [number, number], to: [number, number], day?: number): RouteFacts {
   const geom = getRouteGeometry(from, to)
   return {
     distanceNm: Math.round(geom.totalNm),
-    windFavor: computeWindFavor(from[0], from[1], to[0], to[1]),
+    // day 给了就含季风（印度洋半年反向）；不给保持纯纬度带规则
+    windFavor: computeWindFavor(from[0], from[1], to[0], to[1], day),
   }
 }
 

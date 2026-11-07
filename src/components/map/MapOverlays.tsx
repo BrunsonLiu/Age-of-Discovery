@@ -2,8 +2,9 @@ import { useMemo } from 'react'
 import { Polyline, Marker } from 'react-leaflet'
 import L from 'leaflet'
 import { useMapStore } from '@/store/useMapStore'
+import { useGameStore } from '@/store/useGameStore'
 import {
-  OCEAN_CURRENTS, PIRATE_ZONES, WIND_BAND_LATS,
+  OCEAN_CURRENTS, currentFlowPoints, PIRATE_ZONES, WIND_BAND_LATS,
   pirateZonePolygon, windArrowSites,
 } from '@/data/mapLayers'
 
@@ -35,7 +36,9 @@ function createWindArrowIcon(angleDeg: number) {
 }
 
 function WindLayer() {
-  const arrows = useMemo(() => windArrowSites(), [])
+  // 风向随航季变（印度洋半年掉头）：day 变了箭头必须重算
+  const day = useGameStore(s => s.fleet.day)
+  const arrows = useMemo(() => windArrowSites(day), [day])
 
   return (
     <>
@@ -73,12 +76,19 @@ function WindBands() {
 }
 
 function CurrentLayer() {
+  /*
+   * 季风漂流半年掉头：2D 画的是折线，点序不显示方向，
+   * 但**换个说法**——这条线在东北季风期是往西南走的，
+   * 3D 那边虚线会跟着倒流。这里保持一致的数据口径，
+   * 免得两个视图对"水流向哪儿"各说一套。
+   */
+  const gameDay = useGameStore(s => s.fleet.day)
   return (
     <>
       {OCEAN_CURRENTS.map((current, i) => (
         <Polyline
           key={`current-${i}`}
-          positions={current.points}
+          positions={currentFlowPoints(current, gameDay)}
           pathOptions={{
             color: current.warm ? '#d4784a' : '#5a8ab5',
             weight: 3,

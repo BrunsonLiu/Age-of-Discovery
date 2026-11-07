@@ -15,15 +15,27 @@
  * 只有渲染层（Leaflet / three.js）负责转到各自的世界坐标。
  */
 
-import { prevailingWindBearing } from '@/utils/navigation'
+import { prevailingWindBearingAt } from '@/utils/navigation'
+import { seasonAt } from '@/utils/season'
 
 /** 主要洋流（史实简化）：暖流红色、寒流蓝色 */
 export interface OceanCurrent {
   name: string
-  /** 折线节点，[lat, lng] */
+  /** 折线节点，[lat, lng]。**点序就是流向**（3D 的虚线沿点序流动） */
   points: [number, number][]
   /** 暖流（红）还是寒流（蓝） */
   warm: boolean
+  /**
+   * 是否随季风反向。
+   *
+   * 【为什么这一条单独标出来】印度洋的季风漂流是**半年一次掉头**的真实洋流：
+   * 西南季风期往东北走，东北季风期往西南走。别的洋流（湾流、本格拉……）
+   * 常年一个方向，标了就是错的。
+   * 渲染端拿 `currentFlowPoints()` 取点序，反向时把数组倒过来——
+   * 3D 的虚线是沿点序推进的，倒过来就是"水往回流"，
+   * 不需要为季节写第二套渲染。
+   */
+  monsoonReverses?: boolean
 }
 
 export const OCEAN_CURRENTS: OceanCurrent[] = [
@@ -33,7 +45,8 @@ export const OCEAN_CURRENTS: OceanCurrent[] = [
   { name: '本格拉寒流', warm: false, points: [[-30, 12], [-22, 10], [-12, 8], [-2, 6]] },
   { name: '阿古拉斯暖流', warm: true, points: [[-36, 20], [-28, 26], [-20, 32], [-12, 40]] },
   { name: '南赤道流', warm: true, points: [[-8, 30], [-10, 55], [-12, 75], [-14, 90]] },
-  { name: '季风漂流', warm: true, points: [[8, 60], [10, 72], [13, 82], [15, 92]] },
+  // 季风漂流：唯一会掉头的洋流（见 monsoonReverses）
+  { name: '季风漂流', warm: true, monsoonReverses: true, points: [[8, 60], [10, 72], [13, 82], [15, 92]] },
 ]
 
 /** 海盗威胁区域（史实据点周边海域） */
@@ -65,8 +78,12 @@ export const WIND_BAND_LATS = [30, -30]
  * 两边各算一次，就可能出现"2D 有 135 个箭头、3D 只有 120 个"——
  * 底栏的图层开关在两个视图里都可见可点，指向的必须是同一件事。
  *
- * 风向来自 `prevailingWindBearing`——与航行速度计算同源，
+ * 风向来自 `prevailingWindBearingAt`——与航行速度计算同源，
  * 玩家看到的箭头方向就是顺风方向。
+ *
+ * 【为什么要传 day】印度洋的箭头必须跟着季风半年掉一次头。
+ * 不传 day 时退回纯纬度带规则（旧行为），2D/3D 都走这一个函数，
+ * 于是"海上箭头指哪儿"在两个视图里永远一致。
  */
 export interface WindArrowSite {
   lat: number
@@ -75,11 +92,12 @@ export interface WindArrowSite {
   bearing: number
 }
 
-export function windArrowSites(): WindArrowSite[] {
+export function windArrowSites(day?: number): WindArrowSite[] {
   const list: WindArrowSite[] = []
   for (let lat = -60; lat <= 60; lat += WIND_GRID_STEP) {
     for (let lng = -100; lng <= 120; lng += WIND_GRID_STEP) {
-      list.push({ lat, lng, bearing: prevailingWindBearing(lat) })
+      // 季风区内按季风给，区外是纬度带规则（见 season.ts 的 monsoonBearing）
+      list.push({ lat, lng, bearing: prevailingWindBearingAt(lat, lng, day ?? 0) })
     }
   }
   return list
@@ -147,4 +165,20 @@ export function pirateZonePolygon(zone: PirateZone, steps = 36): [number, number
     pts.push([zone.center[0] + dLat, zone.center[1] + dLng])
   }
   return pts
+}
+
+/**
+ * 洋流的**当前流向点序**。
+ *
+ * 会随季风掉头的那条（季风漂流）在东北季风期把点序倒过来——
+ * 3D 的虚线沿点序推进、2D 的画的是同一条折线，
+ * 于是两个视图的流向会跟着季节一起反过来，不需要两套渲染。
+ *
+ * `day` 缺省时按"第一个航季"处理（春/夏 → 西南季风），
+ * 这样不关心季节的调用方行为不变。
+ */
+export function currentFlowPoints(cur: OceanCurrent, day?: number): [number, number][] {
+  if (!cur.monsoonReverses) return cur.points
+  const flip = day === undefined ? false : seasonAt(day).monsoon === -1
+  return flip ? [...cur.points].reverse() : cur.points
 }

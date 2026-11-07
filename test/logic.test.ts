@@ -155,6 +155,9 @@ import {
   greatCircleNm, greatCirclePoint, buildRouteGeometry, positionAtNm, traveledNmAt, pathTouchesLand,
 } from '../src/utils/routePath'
 import { findSeaPath, loadSeaMask, isSeaMaskLoaded } from '../src/utils/seaRoute'
+import { seasonAt, SEASON_DAYS, ALL_SEASONS, inMonsoonZone } from '../src/utils/season'
+import { prevailingWindBearingAt, prevailingWindBearing, computeWindFavor } from '../src/utils/navigation'
+import { OCEAN_CURRENTS, currentFlowPoints, windArrowSites } from '../src/data/mapLayers'
 import { ports } from '../src/data/ports'
 import { RELIC_PICKUP_NM, relicDistanceNm, relicInReach } from '../src/data/relics'
 import { advanceAlongRoute } from '../src/utils/sailStep'
@@ -7464,6 +7467,123 @@ console.log('\n== 天数口径守卫 ==')
   const btnClass = brokerSrc.match(/const btnClass =\s*'([^']*)'/)
   assert(btnClass && /pointer-events-auto/.test(btnClass[1]),
     '掮客浮条的共用按钮样式（btnClass）也带 pointer-events-auto')
+}
+
+
+// ---------------- 航季与季风（季节必须改变航行，而不只是换个颜色） ----------------
+//
+// 2026-11-08：用户要「融入季节、不要只用文字」。做的是两件事：
+//   ① 四季的色调真的作用在海面/陆地上（看得到）；
+//   ② 印度洋季风半年反向——这是真实的航海硬约束，不是设定说明。
+//
+// 【为什么必须守"天数真的变了"】
+// 一个只改颜色的"季节"是装饰；季风要成立，就必须让同一条航线
+// 在两季走出不同的天数。实测果阿→桑给巴尔 夏 28 天 / 秋 14 天。
+// 若哪天有人把 monsoonBearing 的返回值改成恒定，颜色还在、机制没了，
+// 这条断言会红。
+{
+  // ---- ① 周期：30 天一个航季，四个一循环 ----
+  assert(seasonAt(1).id === 'spring' && seasonAt(31).id === 'summer'
+    && seasonAt(61).id === 'autumn' && seasonAt(91).id === 'winter',
+    `航季每 ${SEASON_DAYS} 天轮换（1/31/61/91 → 春/夏/秋/冬）`)
+  assert(seasonAt(121).id === 'spring', '四个航季之后回到春（120 天一轮）')
+
+  // ---- ② 四季色调必须真的不同，且都在合理范围 ----
+  const dots = new Set(ALL_SEASONS.map(s => s.dot))
+  assert(dots.size === 4, `四季各有自己的显示色（实测 ${dots.size} 种）`)
+  for (const s of ALL_SEASONS) {
+    for (const c of s.seaTint) {
+      assert(c > 0.8 && c < 1.3,
+        `${s.name}季的海色乘数在合理范围（${c}：太大就不是"偏色"而是"换游戏"）`)
+    }
+  }
+  // 相邻两季的海色必须真的不一样：全都相等就等于没做季节
+  for (let i = 0; i < ALL_SEASONS.length; i++) {
+    const a = ALL_SEASONS[i].seaTint
+    const b = ALL_SEASONS[(i + 1) % ALL_SEASONS.length].seaTint
+    const diff = Math.abs(a[0] - b[0]) + Math.abs(a[1] - b[1]) + Math.abs(a[2] - b[2])
+    assert(diff > 0.06,
+      `${ALL_SEASONS[i].name}→${ALL_SEASONS[(i + 1) % ALL_SEASONS.length].name} 海色有可见差异（Σ|Δ| = ${diff.toFixed(2)}）`)
+  }
+
+  // ---- ③ 季风只在季风区生效，区外保持旧规则 ----
+  const GOA: [number, number] = [15.30, 74.12]
+  const ZANZ: [number, number] = [-6.17, 39.20]
+  const SEV: [number, number] = [37.39, -5.98]
+  const HAV: [number, number] = [23.11, -82.37]
+  const SUMMER = 45, AUTUMN = 75   // 夏（西南季风）/ 秋（东北季风）
+
+  assert(inMonsoonZone(GOA[0], GOA[1]) && inMonsoonZone(ZANZ[0], ZANZ[1]),
+    '果阿与桑给巴尔都在季风区内')
+  assert(!inMonsoonZone(SEV[0], SEV[1]) && !inMonsoonZone(HAV[0], HAV[1]),
+    '塞维利亚与哈瓦那都在季风区外（大西洋不受季风支配）')
+
+  assert(prevailingWindBearingAt(GOA[0], GOA[1], SUMMER) === 90
+    && prevailingWindBearingAt(GOA[0], GOA[1], AUTUMN) === 270,
+    '印度洋的风向半年反向（夏 90 / 秋 270）——这是季风，不是信风')
+  // 区外：季节不改变风向
+  assert(prevailingWindBearingAt(SEV[0], SEV[1], SUMMER) === prevailingWindBearing(SEV[0])
+    && prevailingWindBearingAt(SEV[0], SEV[1], AUTUMN) === prevailingWindBearing(SEV[0]),
+    '季风区外的风向与季节无关（大西洋不该跟着印度洋一起翻）')
+
+  // ---- ④ 机制：同一条航线两季的天数必须明显不同 ----
+  const fleet = {
+    ships: [{ id: 1, name: 'x', type: 'caravel', capacity: 60, usedCapacity: 0, durability: 100, crew: 40, speed: 6 }],
+    officers: [], morale: 80, fame: 0, gold: 500, day: 1, food: 100, water: 100,
+    trait: 'merchant', currentPortId: 6, isSailing: false,
+  } as unknown as Parameters<typeof calculateSailingDays>[1]
+  const dist = 2614  // 果阿→桑给巴尔的真实航程
+  const daysOf = (day: number) => {
+    const wf = computeWindFavor(GOA[0], GOA[1], ZANZ[0], ZANZ[1], day)
+    return calculateSailingDays(
+      { id: -1, fromPortId: 11, toPortId: 17, distance: dist, dangerLevel: 1, windFavor: wf },
+      fleet,
+    )
+  }
+  const dSummer = daysOf(SUMMER), dAutumn = daysOf(AUTUMN)
+  // 「快」= 天数少。秋季（东北季风，西行顺）往西走，所以秋季天数必须明显更少
+  assert(dSummer >= dAutumn * 1.5,
+    `果阿→桑给巴尔 秋季比夏季快至少 1.5 倍（实测 夏 ${dSummer} 天 → 秋 ${dAutumn} 天）——季风是真的机制，不是颜色`)
+
+  // 反向航线的快慢必须倒过来（否则就不是"风变了"，而是"整体变快了"）
+  const daysOfRev = (day: number) => {
+    const wf = computeWindFavor(ZANZ[0], ZANZ[1], GOA[0], GOA[1], day)
+    return calculateSailingDays(
+      { id: -1, fromPortId: 17, toPortId: 11, distance: dist, dangerLevel: 1, windFavor: wf },
+      fleet,
+    )
+  }
+  assert(daysOfRev(SUMMER) <= dAutumn,
+    `反向航线（桑给巴尔→果阿）夏季不比秋季慢（实测 ${daysOfRev(SUMMER)} / ${daysOfRev(AUTUMN)} 天）`)
+  // 大西洋对照：两季完全一样
+  const atlantic = (day: number) => computeWindFavor(SEV[0], SEV[1], HAV[0], HAV[1], day)
+  assert(atlantic(SUMMER) === atlantic(AUTUMN),
+    `大西洋航线不受季风影响（夏 ${atlantic(SUMMER)} / 秋 ${atlantic(AUTUMN)} 必须相同）`)
+
+  // ---- ⑤ 洋流：只有季风漂流掉头 ----
+  const drift = OCEAN_CURRENTS.find(c => c.monsoonReverses)
+  assert(!!drift, '有一条洋流标了「随季风掉头」（季风漂流）')
+  const gulf = OCEAN_CURRENTS.find(c => c.name === '湾流')!
+  assert(currentFlowPoints(gulf, SUMMER) === gulf.points
+    && currentFlowPoints(gulf, AUTUMN) === gulf.points,
+    '湾流常年一个方向，不随季节掉头')
+  if (drift) {
+    const a = currentFlowPoints(drift, SUMMER)
+    const b = currentFlowPoints(drift, AUTUMN)
+    assert(a.length === b.length && a[0][0] === b[b.length - 1][0] && a[0][1] === b[b.length - 1][1],
+      '季风漂流在东北季风期点序反向（3D 的虚线沿点序流动，反向即"水往回流"）')
+  }
+
+  // ---- ⑥ 风箭头：季风区内外都得跟着同一份口径 ----
+  const arrowsSummer = windArrowSites(SUMMER)
+  const arrowsAutumn = windArrowSites(AUTUMN)
+  assert(arrowsSummer.length === arrowsAutumn.length && arrowsSummer.length > 100,
+    `风箭头站点数两季一致（${arrowsSummer.length} 个）`)
+  const inZone = (s: { lat: number; lng: number }) => inMonsoonZone(s.lat, s.lng)
+  const flipped = arrowsSummer.filter((s, i) => inZone(s) && arrowsAutumn[i].bearing !== s.bearing)
+  const steady = arrowsSummer.filter((s, i) => !inZone(s) && arrowsAutumn[i].bearing !== s.bearing)
+  assert(flipped.length > 0, `季风区内的箭头在秋季反了向（${flipped.length} 个）`)
+  assert(steady.length === 0, `季风区外的箭头两季一致（异常 ${steady.length} 个）`)
 }
 
 console.log(`\n最终结果：${passed} 通过 / ${failed} 失败`)

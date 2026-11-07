@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, useRef, Component, useMemo, lazy, Sus
 import { MapContainer, GeoJSON, useMap } from 'react-leaflet'
 import { useMapStore } from '@/store/useMapStore'
 import { useGameStore } from '@/store/useGameStore'
+import { seasonSeaCss } from '@/utils/season'
 import { setMapHandle } from '@/utils/mapHandle'
 import { useIsMobile } from '@/hooks/useIsMobile'
 import { ports } from '@/data/ports'
@@ -289,6 +290,14 @@ export default function MapView() {
   const landDataFailed = useMapStore(s => s.landDataFailed)
   // 海面纹理：暴风雨天换更暗的版本——底图也参与天候叙事
   const weatherKind = useGameStore(s => s.weather.kind)
+  /*
+   * 航季：海面底色随季节偏冷暖。
+   *
+   * 【为什么只改底色】2D 的海是「底色定色相 + 贴图给明暗（luminosity）」，
+   * 底色一改整片海的色相就跟着走，不需要动贴图、也不会破坏对比度。
+   * 3D 那边乘的是同一份 seaTint（见 utils/season），所以切视图颜色一致。
+   */
+  const gameDay = useGameStore(s => s.fleet.day)
   const seaTile = weatherKind === 'storm' ? 'sea-tile-storm.png' : 'sea-tile.png'
   const seaBg = `${import.meta.env.BASE_URL}assets/sea/${seaTile}`
   const [geoData, setGeoData] = useState<{
@@ -488,7 +497,7 @@ export default function MapView() {
             <div
               className="absolute inset-0 pointer-events-none"
               style={{
-                backgroundColor: '#2f4d70',
+                backgroundColor: seasonSeaCss(gameDay),
                 // 再压一档：luminosity 只换色相、不改明度，纹理的 Y 约 83 偏亮，
                 // 直接用会得到"晴朗天空蓝"。降明度 + 轻微去饱和，
                 // 才落到参考图那种沉静的古海图深蓝。

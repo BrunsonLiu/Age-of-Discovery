@@ -4,6 +4,7 @@ import { WEATHER_INFO, weatherForecast } from '@/utils/weather'
 import { prevailingWindBearing } from '@/utils/navigation'
 import { ports } from '@/data/ports'
 import WeatherIcon from '@/components/ui/WeatherIcon'
+import { seasonAt, SEASON_DAYS } from '@/utils/season'
 
 /**
  * 天候徽章（常驻罗盘下方）：
@@ -16,6 +17,15 @@ export default function WeatherBadge() {
   const shipPosition = useGameStore(s => s.shipPosition)
   const [open, setOpen] = useState(false)
   const info = WEATHER_INFO[weather.kind]
+  /*
+   * 航季徽标。
+   *
+   * 【为什么必须显示】季风是这一版新加的**真机制**：印度洋半年反向，
+   * 同一条果阿→桑给巴尔 夏季 28 天、秋季 14 天（实测）。
+   * 不告诉玩家"现在是什么季"，那条航线突然慢一倍就只是个 bug。
+   * 圆点给颜色（看），文字只做确认（读）——颜色本身随季节变。
+   */
+  const season = seasonAt(fleet.day)
 
   // 预报基准位置：航行中用船位，港内用港口
   const lat = fleet.isSailing
@@ -55,6 +65,13 @@ export default function WeatherBadge() {
         {/* 12px 是中文 UI 下限；gold-400 在这块深棕铜牌上实测 4.41:1 < 4.5:1，
             提一档到 gold-300。对比度审计 --harbor 抓到的就是这一行。 */}
         <span className="text-gold-300 font-serif text-[12px] tabular-nums">{weather.windSpeed}节</span>
+        <span
+          className="inline-flex items-center gap-1"
+          title={`第 ${fleet.day} 天 · ${season.name}（每 ${SEASON_DAYS} 天一个航季）`}
+        >
+          <span className="w-1.5 h-1.5 rounded-full" style={{ background: season.dot }} aria-hidden="true" />
+          <span className="text-gold-200 font-serif text-[12px]">{season.name}</span>
+        </span>
         {speedPct !== 0 && (
           <span className={`font-serif text-xs tabular-nums ${speedPct < 0 ? 'text-red-300' : 'text-emerald-300'}`}>
             航速{speedPct > 0 ? '+' : ''}{speedPct}%
@@ -76,6 +93,18 @@ export default function WeatherBadge() {
           }}
         >
           <p className="text-gold-400 font-serif text-xs leading-relaxed">{info.hint}</p>
+          {/*
+            季风：这条不是"设定说明"，是这一季的航行事实。
+            印度洋在西南季风期东行顺、东北季风期西行顺（实测天数差 2 倍）。
+          */}
+          <div className="flex items-center gap-2 text-xs font-serif">
+            <span className="w-1.5 h-1.5 rounded-full" style={{ background: season.dot }} aria-hidden="true" />
+            <span className="text-gold-200">{season.name}季</span>
+            <span className="text-gold-500">·</span>
+            <span className="text-gold-300">
+              印度洋{season.monsoon > 0 ? '西南季风（东行顺）' : '东北季风（西行顺）'}
+            </span>
+          </div>
           <div className="border-t border-gold-700/20 pt-1.5">
             <p className="text-gold-400 font-serif text-xs mb-1.5 tracking-wide">未来三天</p>
             {forecast.map((w, i) => {

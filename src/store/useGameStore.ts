@@ -856,6 +856,8 @@ export const useGameStore = create<GameStore>()(
         const { distanceNm, windFavor } = routeFacts(
           [originLat, originLng],
           [waypoint.latitude, waypoint.longitude],
+          // 带当前游戏日：印度洋的风半年反向，这一趟顺不顺要看季风
+          state.fleet.day,
         )
         const dangerLevel = dangerLevelFromDistance(distanceNm)
 
@@ -1193,7 +1195,7 @@ export const useGameStore = create<GameStore>()(
         )
         const distanceNm = geom.totalNm
         const dangerLevel = dangerLevelFromDistance(distanceNm)
-        const windFavor = computeWindFavor(currentPos[0], currentPos[1], waypoint.latitude, waypoint.longitude)
+        const windFavor = computeWindFavor(currentPos[0], currentPos[1], waypoint.latitude, waypoint.longitude, state.fleet.day)
 
         const customRoute: Route = {
           id: -(Date.now()),
@@ -1281,7 +1283,7 @@ export const useGameStore = create<GameStore>()(
         const toPort = ports.find(p => p.id === actualRoute.toPortId)
         // 预定义航线也走真实风带计算，保证预估与实际一致
         const windFavor = fromPort && toPort
-          ? computeWindFavor(fromPort.latitude, fromPort.longitude, toPort.latitude, toPort.longitude)
+          ? computeWindFavor(fromPort.latitude, fromPort.longitude, toPort.latitude, toPort.longitude, state.fleet.day)
           : actualRoute.windFavor
         return {
           currentRoute: { ...actualRoute, windFavor },
@@ -2771,7 +2773,7 @@ export function selectBestDeal(state: GameState): BrokerDeal | null {
   // 真实航程 + 真实风向系数（与 sailToWaypoint / confirmDeparture 同一套）
   const geom = getRouteGeometry([fromPort.latitude, fromPort.longitude], [toPort.latitude, toPort.longitude])
   const nm = Math.round(geom.totalNm)
-  const windFavor = computeWindFavor(fromPort.latitude, fromPort.longitude, toPort.latitude, toPort.longitude)
+  const windFavor = computeWindFavor(fromPort.latitude, fromPort.longitude, toPort.latitude, toPort.longitude, state.fleet.day)
   const route: Route = {
     id: -1, fromPortId, toPortId: toPort.id, distance: nm, dangerLevel: 2, windFavor,
   }
@@ -2904,7 +2906,7 @@ export function selectReturnLeg(state: GameState): ReturnLeg | null {
 
   const geom = getRouteGeometry([a.latitude, a.longitude], [b.latitude, b.longitude])
   const nm = Math.round(geom.totalNm)
-  const windFavor = computeWindFavor(a.latitude, a.longitude, b.latitude, b.longitude)
+  const windFavor = computeWindFavor(a.latitude, a.longitude, b.latitude, b.longitude, state.fleet.day)
   // 与出航计划面板同口径（含天候）——回程提示的「N 天」和点开后的面板必须一样
   const days = voyageDays({
     distanceNm: nm,

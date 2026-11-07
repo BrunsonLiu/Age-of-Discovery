@@ -33,6 +33,7 @@ import { buildMap3DCoastline } from './mapCoastline3d'
 import { buildMap3DPeaks, type PeakFacing } from './mapPeaks3d'
 import { createRhumb3d } from './mapRhumb3d'
 import { loadReliefNormalMap } from '@/utils/reliefNormalMap'
+import { seasonAt } from '@/utils/season'
 import { buildTerrainSymbols, filterPeaksByElevation } from '@/utils/terrainDecor'
 import { loadElevationSampler } from '@/utils/elevation'
 import { buildMap3DGraticule, GRATICULE_OPACITY_NEAR } from './mapGraticule3d'
@@ -664,7 +665,27 @@ export default function Map3DView() {  const mountRef = useRef<HTMLDivElement>(n
       const outerBaseColor = new THREE.Color()
       /** 海盗事件把海面染红时的加项（emissive 的等价物，不受光材质只能加到颜色上） */
       let pirateR = 0, pirateG = 0, pirateB = 0
-      const setSeaColor = (r: number, g: number, b: number) => {
+      /*
+       * ---- 航季色调 ----
+       *
+       * 【为什么乘在 setSeaColor 里面，而不是让每个调用方自己乘】
+       * 海色有三个来源：天气（晴/雾/阴/雨/风暴）、海盗染红、初始化。
+       * 逐个乘一遍，只要漏一处就会出现"晴天是夏天的颜色、阴天变回春天的颜色"。
+       * 这里让 setSeaColor 收**中立色**（天气算完、不含季节），
+       * 由它统一乘季节，于是季节对所有路径自动生效。
+       *
+       * 【为什么重新写入要保留中立色】海盗那段原来写
+       * `setSeaColor(seaMat.color.r, ...)`（把已经乘过季节的颜色再喂回来），
+       * 加了季节之后那会变成**连乘两次**。所以留一份 seaNeutral。
+       */
+      let seasonSeaTint: [number, number, number] = [1, 1, 1]
+      let seaNeutral: [number, number, number] = [SEA_BASE_R, SEA_BASE_G, SEA_BASE_B]
+      let seasonLandTint: [number, number, number] = [1, 1, 1]
+
+      const applySeaColor = () => {
+        const r = seaNeutral[0] * seasonSeaTint[0]
+        const g = seaNeutral[1] * seasonSeaTint[1]
+        const b = seaNeutral[2] * seasonSeaTint[2]
         seaMat.color.setRGB(r, g, b)
         const k = SEA_BASE_R > 0 ? r / SEA_BASE_R : 1
         const or = OUTER_BASE[0] * k + pirateR
@@ -676,6 +697,10 @@ export default function Map3DView() {  const mountRef = useRef<HTMLDivElement>(n
         // 只要差一级，内沿（alpha 从 0 走到 1 的地方）就会重新长出一条细线的
         // 影子——那正是这次要消灭的东西。
         fadeMat.color.setRGB(or, og, ob)
+      }
+      const setSeaColor = (r: number, g: number, b: number) => {
+        seaNeutral = [r, g, b]
+        applySeaColor()
       }
       setSeaColor(SEA_BASE_R, SEA_BASE_G, SEA_BASE_B)
 
@@ -1288,7 +1313,7 @@ export default function Map3DView() {  const mountRef = useRef<HTMLDivElement>(n
       // 玩家按下去就什么都不会发生：这是"承诺不兑现"。
       //
       // 数据来自 @/data/mapLayers，与 2D 完全同一份。
-      const layers = buildMap3DLayers()
+      const layers = buildMap3DLayers(useGameStore.getState().fleet.day)
       scene.add(layers.currents, layers.pirates, layers.winds)
       for (const m of layers.lineMaterials) m.resolution.set(width, height)
 
@@ -1613,6 +1638,8 @@ export default function Map3DView() {  const mountRef = useRef<HTMLDivElement>(n
       let lastWeatherKind: string | null = null
       /** 天气倍率（只在天气变化时更新，光照每帧用） */
       let weatherDim = 1
+      /** 上一次已应用的航季序号（-1 = 还没应用过） */
+      let lastSeasonIndex = -1
       /*
        * 日相不在这里推进。
        *
@@ -1680,6 +1707,27 @@ export default function Map3DView() {  const mountRef = useRef<HTMLDivElement>(n
         const tt = tNow / 1000
         const state = useGameStore.getState()
         const fleet = state.fleet
+
+        /*
+         * ---- 航季：换季时整体重刷一次颜色 ----
+         *
+         * 海色只在"天气变化"时被写入（那是刻意的：不每帧 setRGB）。
+         * 但换季也必须触发一次重刷，否则会出现"天气一变才发现变季了"——
+         * 玩家在晴天连开两趟，海一直是上一个季节的颜色。
+         *
+         * 陆地用同一个色调做乘数：土地虽以贴图为主，季节只调冷暖，
+         * 但少了这一项，海变了、地没变，画面会读成"海被染了色"而不是"换季"。
+         */
+        {
+          const season = seasonAt(fleet.day)
+          if (season.index !== lastSeasonIndex) {
+            lastSeasonIndex = season.index
+            seasonSeaTint = season.seaTint
+            seasonLandTint = season.landTint
+            applySeaColor()
+            lidMat.color.setRGB(seasonLandTint[0], seasonLandTint[1], seasonLandTint[2])
+          }
+        }
 
         // 船位：港内取所在港口，航行中取船位
         let shipLat: number | null = null, shipLng: number | null = null
@@ -1851,7 +1899,7 @@ export default function Map3DView() {  const mountRef = useRef<HTMLDivElement>(n
             pirateR = pirateActive ? 0.020 : 0
             pirateG = pirateActive ? 0.004 : 0
             pirateB = pirateActive ? 0.002 : 0
-            setSeaColor(seaMat.color.r, seaMat.color.g, seaMat.color.b)
+            setSeaColor(seaNeutral[0], seaNeutral[1], seaNeutral[2])
           }
         }
 

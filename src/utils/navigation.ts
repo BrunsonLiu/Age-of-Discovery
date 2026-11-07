@@ -1,4 +1,5 @@
 import type { Route, Fleet, OfficerId } from '@/types'
+import { monsoonBearing } from '@/utils/season'
 
 /** 领航员速度加成 */
 const PILOT_SPEED_BONUS = 1.15
@@ -22,18 +23,40 @@ export function calculateBearing(
  * - 低纬度（|lat| < 30°）：信风带，稳定吹向西（东风）
  * - 中纬度（|lat| >= 30°）：西风带，稳定吹向东（西风）
  * 返回风吹去的罗盘方位角。
+ *
+ * ⚠️ 这个函数**不知道经度、也不知道季节**，所以它在印度洋上是错的：
+ * 印度洋受季风支配，半年一个方向。要那层真实感，用
+ * `prevailingWindBearingAt(lat, lng, day)`——按位置与航季给风。
+ * 这里保留旧签名，是因为航海钟表盘、天气图标那些地方只需要"大致风带"，
+ * 把一个 4 参函数硬塞进去只会让那些地方跟着变复杂。
  */
 export function prevailingWindBearing(lat: number): number {
   return Math.abs(lat) < 30 ? 90 : 270
 }
 
 /**
+ * 带位置与航季的风向：季风区内按季风给，区外回落到纬度带规则。
+ *
+ * 【为什么必须把 day 显式传进来】风向决定航程天数，而天数决定补给够不够。
+ * 若改成"从某个全局读当前日"，同一条航线在预估与实际结算时可能读到不同的日
+ * （航行跨过换季），那就成了"屏幕上说的和实际发生的不一样"。
+ * 显式传参让调用方自己决定用哪一天，也让单测能钉死某一季。
+ */
+export function prevailingWindBearingAt(lat: number, lng: number, day: number): number {
+  return monsoonBearing(lat, lng, day) ?? prevailingWindBearing(lat)
+}
+
+/**
  * 风向有利度：1.0 = 顺风（全速），0.5 = 逆风（半速）。
  * 对相同航向而言，同一纬度带上往返会有快慢差异——
  * 低纬度向东快、向西慢；中纬度相反。
+ *
+ * `day` 可选：不给就是纯纬度带规则（旧行为），给了就含季风。
  */
-export function windFavorForBearing(lat: number, bearing: number): number {
-  const wind = prevailingWindBearing(lat)
+export function windFavorForBearing(lat: number, bearing: number, day?: number, lng?: number): number {
+  const wind = day !== undefined && lng !== undefined
+    ? prevailingWindBearingAt(lat, lng, day)
+    : prevailingWindBearing(lat)
   // 夹角 0° = 正顺风，180° = 正逆风
   const diff = Math.abs(bearing - wind)
   const angle = diff > 180 ? 360 - diff : diff
@@ -42,16 +65,30 @@ export function windFavorForBearing(lat: number, bearing: number): number {
   return Math.round((1 + cos * 0.4) * 100) / 100
 }
 
-/** 综合风有利度：取航线起点纬度带的顺风程度（预估与实际共用此值） */
+/**
+ * 综合风有利度：取航线中点纬度带的顺风程度（预估与实际共用此值）。
+ *
+ * 【第 38 轮：加季风】
+ * `day` 给了就按那一天的风算；中点经纬度决定它在不在季风区。
+ * 不给 day 保持旧行为——单测与不关心季节的调用方不受影响。
+ *
+ * 【为什么风向只在**计划时**算一次】风有利度写进 Route 里，之后不再变。
+ * 这不是偷懒：季风是 30 天一轮的，一趟 15 天的航程跨过换季的情况本来就少，
+ * 而且"出发时看的风"是船长能做的唯一决策依据。
+ * 若航行中途不断重算，进度条与"还剩几天"会来回跳，
+ * 那是比"季节不那么精确"严重得多的问题。
+ */
 export function computeWindFavor(
   fromLat: number,
   fromLng: number,
   toLat: number,
-  toLng: number
+  toLng: number,
+  day?: number,
 ): number {
   const bearing = calculateBearing(fromLat, fromLng, toLat, toLng)
   const midLat = (fromLat + toLat) / 2
-  return windFavorForBearing(midLat, bearing)
+  const midLng = (fromLng + toLng) / 2
+  return windFavorForBearing(midLat, bearing, day, midLng)
 }
 
 export function calculateSailingDays(route: Route, fleet: Fleet, officers: OfficerId[] = []): number {

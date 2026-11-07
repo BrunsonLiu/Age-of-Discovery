@@ -4,7 +4,7 @@ import { LineGeometry } from 'three/examples/jsm/lines/LineGeometry.js'
 import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js'
 import { lonToWorldX, latToWorldZ } from '@/utils/mapProjection'
 import {
-  OCEAN_CURRENTS, PIRATE_ZONES, WIND_BAND_LATS,
+  OCEAN_CURRENTS, currentFlowPoints, PIRATE_ZONES, WIND_BAND_LATS,
   pirateZonePolygon, windArrowSites,
 } from '@/data/mapLayers'
 
@@ -120,12 +120,13 @@ function makeLine(
  * 而洋流在 2D 里是带虚线样式的（dashArray '1 10'）。
  * Line2 才能同时拿到「可调线宽」和「虚线」。
  */
-function buildCurrents(lineMaterials: LineMaterial[]): THREE.Group {
+function buildCurrents(lineMaterials: LineMaterial[], day?: number): THREE.Group {
   const g = new THREE.Group()
   g.name = 'map3d-currents'
   for (const cur of OCEAN_CURRENTS) {
     const line = makeLine(
-      cur.points,
+      // 点序 = 流向；会随季风掉头的那条在这里就换向
+      currentFlowPoints(cur, day),
       cur.warm ? CURRENT_WARM : CURRENT_COLD,
       { linewidth: 2.4, opacity: 0.95, dashSize: 0.14, gapSize: 0.2, y: LAYER_Y_CURRENT },
       lineMaterials,
@@ -208,7 +209,7 @@ function buildPirates(lineMaterials: LineMaterial[]): THREE.Group {
  * prevailingWindBearing 只有 90（东）与 270（西）两个取值，
  * 而东西向恰好**不被斜视压缩**（南北向才会被压扁）。
  */
-function buildWinds(lineMaterials: LineMaterial[]): THREE.Group {
+function buildWinds(lineMaterials: LineMaterial[], day?: number): THREE.Group {
   const g = new THREE.Group()
   g.name = 'map3d-winds'
 
@@ -235,7 +236,7 @@ function buildWinds(lineMaterials: LineMaterial[]): THREE.Group {
     side: THREE.DoubleSide,
   })
 
-  const sites = windArrowSites()
+  const sites = windArrowSites(day)
   const arrows = new THREE.InstancedMesh(arrowGeo, windMat, sites.length)
   arrows.renderOrder = 5
 
@@ -270,11 +271,15 @@ function buildWinds(lineMaterials: LineMaterial[]): THREE.Group {
 }
 
 /** 构建全部叠加图层 */
-export function buildMap3DLayers(): Map3DLayers {
+/**
+ * @param day 游戏日——只用于「会随季风掉头的洋流」（季风漂流）。
+ *            不给则按西南季风处理（不关心季节的调用方行为不变）。
+ */
+export function buildMap3DLayers(day?: number): Map3DLayers {
   const lineMaterials: LineMaterial[] = []
-  const currents = buildCurrents(lineMaterials)
+  const currents = buildCurrents(lineMaterials, day)
   const pirates = buildPirates(lineMaterials)
-  const winds = buildWinds(lineMaterials)
+  const winds = buildWinds(lineMaterials, day)
 
   const disposables: { dispose(): void }[] = [...lineMaterials]
   // 清理各组里的非 Line2 资源（填充几何/材质、箭头几何/材质）

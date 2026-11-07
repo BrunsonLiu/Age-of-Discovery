@@ -70,13 +70,13 @@ export function useVoyageNext(): VoyageNextInfo {
     [target, discoveredPorts, here],
   )
 
-  /** 真实航线弧长 + 这条航线的风向 */
+  /** 真实航线弧长 + 这条航线的风向（含季风：印度洋半年反向） */
   const route = useMemo(() => {
     if (!picked || !here || !landDataReady) return null
     const p = ports.find(x => x.id === picked.id)
     if (!p) return null
-    return routeFacts(here, [p.latitude, p.longitude])
-  }, [picked, here, landDataReady])
+    return routeFacts(here, [p.latitude, p.longitude], fleet.day)
+  }, [picked, here, landDataReady, fleet.day])
 
   const suggest = useMemo(
     () => (picked ? { id: picked.id, nameCn: picked.nameCn, distanceNm: route ? route.distanceNm : null } : null),
