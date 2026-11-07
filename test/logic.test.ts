@@ -28,7 +28,7 @@ import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { birdPose, flagYaw, smokePose } from '../src/utils/portLife'
 import { DIALOGUE_RULES, dialogueBudget, pickDialogue, unreachableScripts, type DialogueContext } from '../src/utils/dialogueTriggers'
 import { traitEffect } from '../src/utils/outcomeAdjust'
-import { RELICS } from '../src/data/relics'
+import { RELICS, RELIC_COUNT, RELIC_PICKUP_NM, relicDistanceNm, relicInReach, relicInSeason, findRelic } from '../src/data/relics'
 import { groupJournal, journalHeadline } from '../src/utils/captainLog'
 import { rollSeaOmen, OMEN_CHANCE, OMEN_COOLDOWN_DAYS } from '../src/utils/seaOmen'
 import { voyageMilestones, nextMilestone, newlyReached, suggestPortFor } from '../src/data/voyageMilestones'
@@ -7633,6 +7633,48 @@ console.log('\n== 天数口径守卫 ==')
   }
   assert(always > 0 && cold > 0 && never > 0,
     `雪态三相都不是空集（常年 ${always} / 寒季 ${cold} / 无雪 ${never}）——退化两相就等于没有季节`)
+}
+
+// ---------------- 神话按时令出现（不是"藏起来"，是那一季根本不在） ----------------
+//
+// 2026-11-08：把神话绑到季节上，且**不写一段说明**——
+// 塞壬的七弦琴只在夏天（风平浪静才听得见），海妖的肋骨只在秋天（风暴把海底翻上来）。
+// 其他三季它不是躲在某处，而是海面上没有它。
+//
+// 【为什么必须守"看不见的不许被拾走"】2D/3D 层按季节过滤了，
+// 但换季瞬间 DOM 可能还留着旧标记；若拾取闸门不判季节，
+// 玩家就能点在旧帧上把"秋天才有"的东西捞走——那句话当场变成假的。
+{
+  const SUMMER = 45, AUTUMN = 75, WINTER = 105
+  const gated = RELICS.filter(r => r.seasons && r.seasons.length > 0)
+  const always = RELICS.filter(r => !r.seasons || r.seasons.length === 0)
+  assert(gated.length > 0 && gated.length < RELICS.length,
+    `按时令出现的遗物只是少数（${gated.length}/${RELICS.length}：其余常年都在）`)
+  assert(always.every(r => relicInSeason(r, SUMMER) && relicInSeason(r, AUTUMN)),
+    '没标 seasons 的遗物四季都在（多数东西不该随季节消失）')
+
+  const kraken = RELICS.find(r => r.id === 'kraken_rib')!
+  const siren = RELICS.find(r => r.id === 'siren_lyre')!
+  assert(relicInSeason(kraken, AUTUMN) && !relicInSeason(kraken, SUMMER) && !relicInSeason(kraken, WINTER),
+    '海妖的肋骨只在秋季出现（风暴季把海底的东西翻上来）')
+  assert(relicInSeason(siren, SUMMER) && !relicInSeason(siren, AUTUMN),
+    '塞壬的七弦琴只在夏季出现（风平浪静才听得见她的歌）')
+
+  // 图鉴的满分不因为季节而变：格子一直有 8 个，只是标「此季不在」
+  assert(RELIC_COUNT === RELICS.length && RELIC_COUNT >= 8,
+    `图鉴仍是全部 ${RELIC_COUNT} 格（按时令出现的也在册子里，只是标"此季不在"）`)
+
+  // 三处必须共用同一个判据，别各判一次
+  const sea2d = readFileSync(join(process.cwd(), 'src', 'components', 'map', 'SeaRelics.tsx'), 'utf8')
+  assert(/relicInSeason\(r, day\)/.test(sea2d), '2D 海面层按季节过滤遗物')
+  const view3d = readFileSync(join(process.cwd(), 'src', 'components', 'map3d', 'Map3DView.tsx'), 'utf8')
+  assert(/relicInSeason\(r, day\)/.test(view3d), '3D 海面层按季节过滤遗物（与 2D 同一份判据）')
+  const store = readFileSync(join(process.cwd(), 'src', 'store', 'useGameStore.ts'), 'utf8')
+  const iRelic = store.indexOf('collectRelic: (id) => {')
+  const iAfter = store.indexOf('addNotification:', iRelic)
+  const body = iRelic >= 0 && iAfter > iRelic ? store.slice(iRelic, iAfter) : ''
+  assert(/relicInSeason\(relic, state\.fleet\.day\)/.test(body),
+    '拾取闸门也判季节：看不见的东西不许被拾走（换季瞬间的旧 DOM 也不行）')
 }
 console.log(`\n最终结果：${passed} 通过 / ${failed} 失败`)
 if (failed > 0) process.exit(1)

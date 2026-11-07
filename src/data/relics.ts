@@ -45,6 +45,7 @@
  */
 
 import { haversineNm } from '@/utils/navigation'
+import { seasonAt, type SeasonId } from '@/utils/season'
 
 export type RelicLore = 'history' | 'myth'
 
@@ -93,6 +94,16 @@ export interface Relic {
     water: number
     morale: number
   }
+  /**
+   * 只在哪些航季出现（不给 = 四季都在）。
+   *
+   * 【为什么有的遗物要按时令出现】这是把神话与季节绑起来、且**不靠文字**的做法：
+   * 塞壬的七弦琴只在风平浪静的夏天听得见（风浪大时她的歌被盖住），
+   * 海妖的肋骨只在秋天的风暴里被浪翻上来。
+   * 其他三季它不是"藏在某处"，而是**根本不在那儿**——
+   * 玩家换季再来才看得见，这件事本身就是叙事，不需要一段说明。
+   */
+  seasons?: SeasonId[]
 }
 
 export const RELICS: Relic[] = [
@@ -175,6 +186,8 @@ export const RELICS: Relic[] = [
     hint: '一根比船桅还长的白骨，从水里斜插出来。',
     note: '1488年迪亚士把这一带叫「风暴角」，随船的神父在航海日志里写：水里有东西跟着船走了三天，比桅杆还长。没有人能证明它，也没有人能推翻它。',
     gain: { fame: 6, food: 0, water: 0, morale: 10 },
+    // 风暴季才把海底的东西翻上来——秋天的海面才会露出它
+    seasons: ['autumn'],
   },
   {
     id: 'siren_lyre',
@@ -186,6 +199,8 @@ export const RELICS: Relic[] = [
     hint: '半张七弦琴，弦断了一半，琴身是海螺磨的。',
     note: '《奥德赛》里她们的歌让水手把耳朵塞进蜡里。古代海图把塞壬画在赫拉克勒斯之柱的里面——柱子以外的世界没人敢去；但她的歌会从海峡口飘出来。这半张琴是在柱外的洋面上捞到的，弦断了一半。真正的塞壬从来没有现身过：她只是让人听见了自己想听的东西。',
     gain: { fame: 6, food: 0, water: 0, morale: 10 },
+    // 风平浪静才听得见她的歌；风浪大的季节，海面上一无所有
+    seasons: ['summer'],
   },
 ]
 
@@ -218,4 +233,16 @@ export function relicInReach(
 ): boolean {
   if (fromLat == null || fromLng == null) return false
   return relicDistanceNm(fromLat, fromLng, relic) <= RELIC_PICKUP_NM
+}
+
+/**
+ * 这件遗物在指定游戏日**是否出现在海面上**。
+ *
+ * 没写 `seasons` 的一律都在（大多数遗物如此）；写了的只在列出的航季出现。
+ * 2D 层、3D 层、拾取闸门、图鉴都走这一个函数——
+ * 四处各判一次必然出现"图上看得见但点不动"或反过来。
+ */
+export function relicInSeason(relic: Relic, day: number): boolean {
+  if (!relic.seasons || relic.seasons.length === 0) return true
+  return relic.seasons.includes(seasonAt(day).id)
 }

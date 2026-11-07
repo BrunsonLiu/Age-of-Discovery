@@ -5,7 +5,8 @@ import { useMapStore } from '@/store/useMapStore'
 import { ports } from '@/data/ports'
 import { achievements } from '@/data/achievements'
 import { DEBRIS_INFO } from '@/data/debris'
-import { RELICS, relicDistanceNm } from '@/data/relics'
+import { RELICS, relicDistanceNm, relicInSeason } from '@/data/relics'
+import { ALL_SEASONS } from '@/utils/season'
 import { REGION_CN, countEchoes, echoDayFor } from '@/data/logbook'
 import { logbookArt } from '@/data/logbookArt'
 import { clueCenter } from '@/utils/harbor'
@@ -229,6 +230,8 @@ export function AtlasView() {
   const gotAchievements = new Set(earned)
   const gotDebris = new Set(collected)
   const gotRelics = new Set(collectedRelics)
+  // 航季：图鉴要如实标「此季在 / 此季不在」
+  const day = useGameStore(s => s.fleet.day)
   const debrisKinds = Object.keys(DEBRIS_INFO) as DebrisKind[]
 
   const litCount = discoveredPorts.length + earned.length + collected.length + gotRelics.size
@@ -307,11 +310,24 @@ export function AtlasView() {
           <AtlasCell
             key={r.id}
             label={r.name}
-            sub={r.lore === 'history' ? '史迹' : '传说'}
+            /*
+             * 不在此季的遗物：格子里写「此季不在」。
+             * 这不是提示语，是事实——海面上此刻真的没有它（换季才回来）。
+             */
+            sub={r.seasons && r.seasons.length > 0
+              ? `${r.lore === 'history' ? '史迹' : '传说'} · ${relicInSeason(r, day) ? '此季在' : '此季不在'}`
+              : (r.lore === 'history' ? '史迹' : '传说')}
             found={gotRelics.has(r.id)}
             icon={<Compass size={13} />}
             onClick={() => {
               if (!gotRelics.has(r.id)) {
+                if (!relicInSeason(r, day)) {
+                  // 换季才有它：说清"什么时候回来"，比一句"还没路过"诚实
+                  const names = (r.seasons ?? []).map(id => ALL_SEASONS.find(x => x.id === id)?.name ?? '').join('、')
+                  setDetail(`这一季的海面上没有它。${names}才会出现——那时再来这片海。`)
+                  setCenter([r.lat, r.lng])
+                  return
+                }
                 /*
                  * 没拾到的：告诉玩家它**还在原处、离你多远**，
                  * 并把海图挪过去——但**不关掉册子**，

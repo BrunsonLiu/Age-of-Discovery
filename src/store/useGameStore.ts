@@ -36,7 +36,7 @@ import {
 } from '@/utils/weather'
 import { advanceDebris } from '@/utils/seaDebris'
 import { debrisGain, DEBRIS_INFO, type DebrisSpot } from '@/data/debris'
-import { findRelic, relicDistanceNm, RELIC_PICKUP_NM } from '@/data/relics'
+import { findRelic, relicDistanceNm, relicInSeason, RELIC_PICKUP_NM } from '@/data/relics'
 import { newlyReached } from '@/data/voyageMilestones'
 import { appendLogbook, findClueFor, makeArrivalEntry, makeEchoEntry, makeTitleEntry, markAllRead } from '@/data/logbook'
 import { SAVE_KEY, SAVE_VERSION } from '@/utils/saveFile'
@@ -2344,6 +2344,15 @@ export const useGameStore = create<GameStore>()(
         if (state.collectedRelics.includes(id)) return
         const relic = findRelic(id)
         if (!relic) return
+        /*
+         * 不在此季的遗物，海面上根本没有它。
+         *
+         * 【为什么闸门要放在这里】2D/3D 层已经按季节过滤了，
+         * 但换季的一瞬间 DOM 可能还留着上一个季的标记（还没重渲染），
+         * 或者玩家在旧帧上点到了它。**看不见的东西不许被拾走**——
+         * 否则"秋天才有海妖的肋骨"这句话就是假的。
+         */
+        if (!relicInSeason(relic, state.fleet.day)) return
 
         const pos = state.shipPosition
         const distNm = pos ? relicDistanceNm(pos[0], pos[1], relic) : Infinity

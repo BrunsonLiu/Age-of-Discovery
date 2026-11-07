@@ -1,6 +1,7 @@
 import type { GameEvent, GameState, EventOutcome, FactionId, NotorietyAxis } from '@/types'
 import { ports } from '@/data/ports'
 import { biasProbabilities } from '@/utils/miniGame'
+import { seasonAt } from '@/utils/season'
 
 export function checkEventTrigger(
   event: GameEvent,
@@ -120,6 +121,21 @@ export function checkEventTrigger(
    */
   if ((gameState.officers ?? []).includes('surgeon') && event.type === 'disease') {
     probability *= 0.5
+  }
+  /*
+   * 航季：秋季的风暴、海难、火山都更多。
+   *
+   * 【为什么只这三类】它们都直接由天候驱动。好望角的风暴季有史实
+   * （迪亚士就是在那里折的桅）。货价、招募、传闻跟季节没有因果，
+   * 乘上去就是编造。
+   *
+   * 倍率来自 season.stormBias（春 1.0 / 夏 1.15 / 秋 1.35 / 冬 1.1）。
+   * 和上面两条 perk 一样，只乘概率、不改 rand() 的消耗次数，
+   * 所以不会把后面的事件序列整体错位。
+   */
+  const WEATHER_DRIVEN = new Set(['storm', 'accident', 'volcano'])
+  if (WEATHER_DRIVEN.has(event.type)) {
+    probability *= seasonAt(fleet.day).stormBias
   }
 
   // 「遇事率」由航段方针统一控制（STANCES[stance].eventRateMul），

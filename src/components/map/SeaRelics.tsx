@@ -2,7 +2,7 @@ import { Marker } from 'react-leaflet'
 import L from 'leaflet'
 import { useEffect, useMemo, useRef } from 'react'
 import { useGameStore } from '@/store/useGameStore'
-import { RELICS, relicInReach } from '@/data/relics'
+import { RELICS, relicInReach, relicInSeason } from '@/data/relics'
 import { relicMarkerHtml } from '@/utils/relicGlyph'
 
 /**
@@ -34,6 +34,12 @@ import { relicMarkerHtml } from '@/utils/relicGlyph'
 export default function SeaRelics() {
   const collected = useGameStore(s => s.collectedRelics)
   const collect = useGameStore(s => s.collectRelic)
+  /*
+   * 航季：有些遗物只在特定季节出现在海面上（见 data/relics 的 seasons）。
+   * 必须订阅 day —— 不订阅的话换季之后图上的东西不会变，
+   * 玩家会以为"这东西一直在这儿"。
+   */
+  const day = useGameStore(s => s.fleet.day)
 
   // divIcon 每次渲染都重建会很贵（每个 marker 一个 DOM），按 id 缓存
   const icons = useMemo(() => {
@@ -84,7 +90,7 @@ export default function SeaRelics() {
 
   return (
     <>
-      {RELICS.filter(r => !got.has(r.id)).map(r => (
+      {RELICS.filter(r => !got.has(r.id) && relicInSeason(r, day)).map(r => (
         <Marker
           key={r.id}
           position={[r.lat, r.lng]}

@@ -20,7 +20,7 @@ import { buildGrainCanvas } from '@/utils/landGrain'
 import { birdPose } from '@/utils/portLife'
 import { buildCloudShadowCanvas, cloudBlobs } from '@/utils/cloudShadow'
 import { NPC_LEGS, NPC_SPEED_NM, npcLegAt, npcPose } from '@/utils/npcShips'
-import { RELICS, relicInReach } from '@/data/relics'
+import { RELICS, relicInReach, relicInSeason } from '@/data/relics'
 import { relicMarkerHtml } from '@/utils/relicGlyph'
 import { skyAt } from '@/utils/skyClock'
 import {
@@ -271,10 +271,12 @@ function syncRelicReach(): void {
 /** 当前还没被拾走的遗物（拾走一件就少一件） */
 function getRelicItems(): SeaStaticItem[] {
   syncRelicReach()
-  const got = useGameStore.getState().collectedRelics
-  if (!got || got.length === 0) return RELIC_ITEMS
-  const set = new Set(got)
-  return RELIC_ITEMS.filter(r => !set.has(r.id))
+  const st = useGameStore.getState()
+  const got = st.collectedRelics
+  const day = st.fleet.day
+  // 两道过滤：拾过的消失；不在此季的也**不在海面上**（与 2D 同一份判据）
+  const allowed = new Set(RELICS.filter(r => relicInSeason(r, day)).map(r => r.id))
+  return RELIC_ITEMS.filter(r => (!got || !got.includes(r.id)) && allowed.has(r.id))
 }
 
 export default function Map3DView() {  const mountRef = useRef<HTMLDivElement>(null)
