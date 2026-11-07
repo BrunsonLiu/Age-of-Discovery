@@ -505,6 +505,13 @@ export interface GameState {
   claimedVictories: string[]
   /** 图鉴：已打捞过的漂流物种类 */
   collectedDebris: string[]
+  /**
+   * 图鉴：已拾起的海上遗物（id，见 data/relics.ts）。
+   *
+   * 遗物是**永久**的世界物件（不像漂流物会漂走），
+   * 所以这里记的是"这一局捡到过哪些"，刷新后还在。
+   */
+  collectedRelics: string[]
 }
 
 /**

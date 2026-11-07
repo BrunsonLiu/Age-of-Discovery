@@ -6,12 +6,18 @@ import { DEBRIS_INFO, type DebrisKind } from '@/data/debris'
 import { debrisMarkerHtml } from '@/utils/debrisGlyph'
 
 /**
- * 2.5D 立体海图上的漂流物层。
+ * 2.5D 立体海图上的**海上物件层**：漂流物 + 海上遗物。
  *
- * 【为什么也要有】2D 里海面上漂着可点的木桶/货箱，切到 2.5D 就全没了 ——
+ * 【为什么两者要共用一层】
+ * 2D 里海面上漂着可点的木桶/货箱，切到 2.5D 就全没了 ——
  * 玩家会以为"这边的海图少了点什么"，或者更糟：以为东西还在只是自己点不到。
- * 两个视图读的是**同一份 `debrisSpots`**，同一段图标 HTML，同一个
- * `collectDebris(id)`，所以不存在"这边捞过那边还有"的分歧。
+ * 两个视图读的是**同一份 `debrisSpots`**（遗物则是同一份 `RELICS`），
+ * 同一段图标 HTML，同一个 collect 动作，所以不存在"这边捞过那边还有"的分歧。
+ *
+ * 【两类物件的区别】
+ *   漂流物：随机生成、会漂走、三天后消失 → 每帧从 store 取，走了就删节点。
+ *   海上遗物：**位置固定、永久存在**，拾走才消失 → 由调用方每帧给一份
+ *            "当前还剩哪些"（已拾走的自然不在里面）。
  *
  * 【为什么是 DOM 而不是 three.js 的 Sprite / 小网格】
  * 1. 与标签层（`mapLabels3d.ts`）同一套办法：把世界坐标 `.project(camera)`
@@ -33,12 +39,12 @@ import { debrisMarkerHtml } from '@/utils/debrisGlyph'
 const HIT = 44
 /**
  * 贴海面的高度。海面平面在 `-(PLATE_THICKNESS + 0.004)` = -0.089，
- * 海名标签在 -0.0862；漂流物取 -0.085，比海面高一点点，
+ * 海名标签在 -0.0862；物件取 -0.085，比海面高一点点，
  * 免得在斜俯视下被读成"沉在水底"。
  */
 const DEBRIS_Y = -0.085
 
-/** 两个漂流物至少要隔开这么远，44px 的热区才不会互相盖住 */
+/** 两个物件至少要隔开这么远，44px 的热区才不会互相盖住 */
 const MIN_GAP = 50
 
 /**
@@ -51,9 +57,30 @@ const MIN_GAP = 50
  */
 const MAX_OFFSET = MIN_GAP * 1.5
 
+/**
+ * 固定位置的海上物件（海上遗物）。
+ *
+ * 与漂流物的差别：位置是**钉死**的（每件遗物都在真实发生过事情的地方），
+ * 所以不需要"每帧重新生成"；但"已拾走就不再显示"这条要由调用方负责——
+ * 它每帧给一份"当前还剩哪些"。
+ */
+export interface SeaStaticItem {
+  id: string
+  lat: number
+  lng: number
+  /** 图标 HTML（与 2D 用同一段，见 utils/relicGlyph） */
+  html: string
+  /** 悬浮提示 */
+  title: string
+  /** 点击动作 */
+  onClick: () => void
+}
+
 interface Node {
   el: HTMLButtonElement
-  kind: DebrisKind
+  /** 漂流物用 kind 判「漂走了没有」；固定物件用 staticId 判「还在不在」 */
+  kind?: DebrisKind
+  staticId?: string
   /** 上一次真正写进 DOM 的值。undefined = 还没写过（第一帧必须写一次） */
   shown?: boolean
   left: number
@@ -69,43 +96,59 @@ interface Item {
   visible: boolean
 }
 
-export interface DebrisLayer3d {
+export interface SeaLayer3d {
   update(camera: THREE.PerspectiveCamera, width: number, height: number, tmpV: THREE.Vector3): void
   destroy(): void
 }
 
-export function createDebrisLayer3d(mount: HTMLElement): DebrisLayer3d {
+export function createSeaLayer3d(
+  mount: HTMLElement,
+  /** 每帧问一次"当前还剩哪些固定物件"（已拾走的自然不在里面） */
+  getStaticItems: () => SeaStaticItem[] = () => [],
+): SeaLayer3d {
   const nodes = new Map<string, Node>()
   /** 复用的反投影向量，避免每帧 new 一个 Vector3 */
   const rayDir = new THREE.Vector3()
 
-  const make = (id: string, kind: DebrisKind): Node => {
+  const makeNode = (
+    id: string,
+    html: string,
+    title: string,
+    onClick: () => void,
+    className: string,
+    dataAttr: string,
+  ): Node => {
     const el = document.createElement('button')
     el.type = 'button'
-    el.className = 'debris-icon debris3d-icon'
-    el.innerHTML = debrisMarkerHtml(kind)
-    el.title = `打捞：${DEBRIS_INFO[kind].label}`
-    el.setAttribute('aria-label', el.title)
-    el.dataset.debrisId = id
+    el.className = className
+    el.innerHTML = html
+    el.title = title
+    el.setAttribute('aria-label', title)
+    el.setAttribute(dataAttr, id)
     const stop = (e: Event) => e.stopPropagation()
     el.addEventListener('pointerdown', stop)
     el.addEventListener('click', (e) => {
       e.stopPropagation()
       // 用 id 而不是"离船最近"：玩家点的是看见的那一个
-      useGameStore.getState().collectDebris(id)
+      onClick()
     })
     mount.appendChild(el)
-    return { el, kind, left: NaN, top: NaN }
+    return { el, left: NaN, top: NaN }
   }
 
   return {
     update(camera, width, height, tmpV) {
       const spots = useGameStore.getState().debrisSpots
+      const statics = getStaticItems()
       const kindById = new Map(spots.map(s => [s.id, s.kind]))
+      const staticById = new Map(statics.map(s => [s.id, s]))
 
-      // 先删走漂走的（含刚被打捞的）
+      // 先删走漂走的（含刚被打捞的）与已拾走的遗物
       for (const [id, node] of nodes) {
-        if (kindById.get(id) === node.kind) continue
+        const alive = node.staticId !== undefined
+          ? staticById.has(id)
+          : kindById.get(id) === node.kind
+        if (alive) continue
         node.el.remove()
         nodes.delete(id)
       }
@@ -115,7 +158,15 @@ export function createDebrisLayer3d(mount: HTMLElement): DebrisLayer3d {
       for (const spot of spots) {
         let node = nodes.get(spot.id)
         if (!node) {
-          node = make(spot.id, spot.kind)
+          node = makeNode(
+            spot.id,
+            debrisMarkerHtml(spot.kind),
+            `打捞：${DEBRIS_INFO[spot.kind].label}`,
+            () => useGameStore.getState().collectDebris(spot.id),
+            'debris-icon debris3d-icon',
+            'data-debris-id',
+          )
+          node.kind = spot.kind
           nodes.set(spot.id, node)
         }
 
@@ -127,6 +178,23 @@ export function createDebrisLayer3d(mount: HTMLElement): DebrisLayer3d {
         const ay = ((-tmpV.y + 1) / 2) * height
         const onScreen = ax > -HIT && ax < width + HIT && ay > -HIT && ay < height + HIT
         items.push({ id: spot.id, node, ax, ay, visible: !behind && onScreen })
+      }
+
+      for (const s of statics) {
+        let node = nodes.get(s.id)
+        if (!node) {
+          node = makeNode(s.id, s.html, s.title, s.onClick, 'relic-icon relic3d-icon', 'data-relic-id')
+          node.staticId = s.id
+          nodes.set(s.id, node)
+        }
+
+        tmpV.set(lonToWorldX(s.lng), DEBRIS_Y, latToWorldZ(s.lat))
+        tmpV.project(camera)
+        const behind = tmpV.z >= 1
+        const ax = ((tmpV.x + 1) / 2) * width
+        const ay = ((-tmpV.y + 1) / 2) * height
+        const onScreen = ax > -HIT && ax < width + HIT && ay > -HIT && ay < height + HIT
+        items.push({ id: s.id, node, ax, ay, visible: !behind && onScreen })
       }
 
       /*

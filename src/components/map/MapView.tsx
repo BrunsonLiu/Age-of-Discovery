@@ -8,6 +8,7 @@ import { ports } from '@/data/ports'
 import { PortMarker } from './PortMarker'
 import TerrainDecor from './TerrainDecor'
 import SeaDebris from './SeaDebris'
+import SeaRelics from './SeaRelics'
 import MiniMap from './MiniMap'
 import { buildMajorLand, featureArea } from '@/utils/terrainDecor'
 import { RouteLine } from './RouteLine'
@@ -597,6 +598,8 @@ export default function MapView() {
               <PortMarker />
               {/* 海面漂流物：可点的木桶/货箱/零钱/瓶中信（见 data/debris） */}
               <SeaDebris />
+              {/* 海上遗物：半埋在海里的历史/神话实物（见 data/relics） */}
+              <SeaRelics />
               {/* NPC 商船放在玩家船之前：同屏时玩家船压在它们上面 */}
               <NpcShips2D />
               <ShipAnimation />

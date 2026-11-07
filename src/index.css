@@ -1225,6 +1225,56 @@ body {
 .debris-icon { cursor: pointer; }
 
 /*
+ * ==========================================================================
+ * 海上遗物（2026-11-07）
+ *
+ * 与漂流物的视觉差别是**刻意的**：漂流物是漂在水面上的日常物件，
+ * 套一圈脉冲光晕（"这里有个能捞的东西"）；
+ * 遗物是半埋在海里的旧物，套一圈**静止的铜环**（"这里有过事"）。
+ * 光晕会呼吸，像随时会被浪带走；铜环不动，才像嵌在海底的东西。
+ *
+ * 颜色随 lore 变：史实旧铜 #e0b76a、神话冷银 #d7e0ee（由内联 style 给 currentColor）。
+ * ========================================================================== */
+.relic-icon {
+  background: transparent !important;
+  border: none !important;
+  cursor: pointer;
+}
+.relic-ring {
+  /*
+   * 固定 30px 并绝对居中，而不是 inset:2px——
+   * 容器 44×44（热区）而环只有 30px，两者必须各自写死，
+   * 否则 inset 会跟着容器缩放，环的直径会凭空变大。
+   */
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 30px;
+  height: 30px;
+  margin: -15px 0 0 -15px;
+  border-radius: 9999px;
+  border: 1.5px solid currentColor;
+  opacity: 0.62;
+  box-shadow: 0 0 0 3px rgba(10, 16, 24, 0.28);
+  pointer-events: none;
+}
+.relic-glyph {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+.relic-glyph svg {
+  width: 24px;
+  height: 24px;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.85));
+}
+.relic-icon:hover .relic-glyph svg { transform: scale(1.12); }
+.relic-icon:hover .relic-ring { opacity: 0.95; }
+
+/*
  * 2.5D 视图里的漂流物。
  *
  * 与 2D 的 Leaflet divIcon 是同一段 HTML，区别只在**谁来定位**：
@@ -1247,5 +1297,29 @@ body {
 }
 .debris3d-icon:focus-visible {
   outline: 2px solid #f0dfb4;
+  outline-offset: 2px;
+}
+
+/*
+ * 2.5D 视图里的海上遗物（与 2D 的 Leaflet divIcon 是同一段 HTML，
+ * 区别只在谁来定位：3D 由相机投影每帧写 left/top，见 seaLayer3d.ts）。
+ *
+ * 与 .debris3d-icon 完全同构 —— 热区 44px、z-index 2、第一帧投影后才显示。
+ * 单独一份类名而不是共用，是因为 debris-3d.mjs 巡检按 `.debris3d-icon`
+ * 挑漂流物；混在一起会让那个计数把遗物也算进去。
+ */
+.relic3d-icon {
+  position: absolute;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  z-index: 2;
+  display: none;              /* 第一帧投影后才显示（相机背后的点不显示） */
+  pointer-events: auto;
+  appearance: none;
+  -webkit-appearance: none;
+}
+.relic3d-icon:focus-visible {
+  outline: 2px solid #e0b76a;
   outline-offset: 2px;
 }

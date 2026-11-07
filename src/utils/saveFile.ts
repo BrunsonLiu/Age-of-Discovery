@@ -34,7 +34,7 @@ export const SAVE_FIELDS = [
   'stats', 'achievements', 'pendingVoyage', 'routeIntel', 'rivals', 'rivalNews',
   'officers', 'factionRep', 'crewRoster', 'notoriety', 'pendingHelm',
   'helmAdvance', 'weather', 'dialogueSeen', 'gameMode',
-  'logbook', 'claimedVictories', 'collectedDebris',
+  'logbook', 'claimedVictories', 'collectedDebris', 'collectedRelics',
 ] as const
 
 export interface SaveFile {

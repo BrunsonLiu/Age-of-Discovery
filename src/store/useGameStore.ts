@@ -36,6 +36,7 @@ import {
 } from '@/utils/weather'
 import { advanceDebris } from '@/utils/seaDebris'
 import { debrisGain, DEBRIS_INFO, type DebrisSpot } from '@/data/debris'
+import { findRelic } from '@/data/relics'
 import { newlyReached } from '@/data/voyageMilestones'
 import { appendLogbook, findClueFor, makeArrivalEntry, makeEchoEntry, makeTitleEntry, markAllRead } from '@/data/logbook'
 import { SAVE_KEY, SAVE_VERSION } from '@/utils/saveFile'
@@ -243,6 +244,7 @@ const initialGameState: GameState = {
   logbook: [],
   claimedVictories: [],
   collectedDebris: [],
+  collectedRelics: [],
 }
 
 interface GameStore extends GameState {
@@ -274,6 +276,13 @@ interface GameStore extends GameState {
   messDay: number
   /** 打捞一个漂流物：结算小收益并从海面移除 */
   collectDebris: (id: string) => void
+  /**
+   * 拾起一件海上遗物：结算名号/补给/士气，并把它记进图鉴。
+   *
+   * 遗物是**永久**的世界物件（不像漂流物会漂走），
+   * 同一件遗物只能拾一次——重复拾取不结算任何东西。
+   */
+  collectRelic: (id: string) => void
   addNotification: (notification: Omit<GameStore['notifications'][0], 'timestamp'>) => void
   removeNotification: (id: string) => void
   setWaypoint: (waypoint: Waypoint | null) => void
@@ -2307,6 +2316,51 @@ export const useGameStore = create<GameStore>()(
           }],
         })
       }),
+      /**
+       * 拾起一件海上遗物。
+       *
+       * 【为什么收益里没有金币】2026-11-07 用户定的方向：钱重要，但本作卖的是
+       * 航路、名号与见闻，不是账本。遗物给的是**名号**（声望）、补给与士气——
+       * 前者是"别人怎么说你"，后两者是"你的船还能撑多久"。
+       *
+       * 【为什么历史与神话的收益结构不同】史实让人知道自己在哪（名号），
+       * 神话让人还敢往前走（士气）。所以神话遗物的士气给得更多、
+       * 补给更少——那是两种不同的"带回船上的东西"。
+       *
+       * 【只拾一次】遗物是永久的世界物件，不是会漂走的漂流物。
+       * 重复点击不结算任何东西（否则玩家会站在原地反复点同一件）。
+       */
+      collectRelic: (id) => set((state) => {
+        if (state.collectedRelics.includes(id)) return state
+        const relic = findRelic(id)
+        if (!relic) return state
+        const g = relic.gain
+        useFxStore.getState().fx(
+          { kind: 'float', tone: 'gold', text: relic.name, sub: `名号 +${g.fame} · 士气 +${g.morale}` },
+          'port',
+        )
+        useFxStore.getState().cue('splash')
+        return withAchievements(state, {
+          // 图鉴里点亮这一格：拾过什么，册子替你记着
+          collectedRelics: [...state.collectedRelics, id],
+          fleet: {
+            ...state.fleet,
+            fame: state.fleet.fame + g.fame,
+            // 粮水/士气都不夹取：承诺 +6 就得真给 +6（见上面打捞那段注释），
+            // 显示层自己有 Math.min(100, …) 的夹取。
+            food: state.fleet.food + g.food,
+            water: state.fleet.water + g.water,
+            morale: state.fleet.morale + g.morale,
+          },
+          notifications: [...state.notifications, {
+            id: `relic-${id}-${Date.now()}`,
+            type: 'discovery' as const,
+            title: `拾起 · ${relic.name}`,
+            message: relic.note,
+            timestamp: Date.now(),
+          }],
+        })
+      }),
       addNotification: (notification) => set((state) => ({ notifications: [...state.notifications, { ...notification, timestamp: Date.now() }] })),
       removeNotification: (id) => set((state) => ({ notifications: state.notifications.filter(n => n.id !== id) })),
       nextTutorialStep: () => set((state) => ({ tutorialStep: state.tutorialStep + 1 })),
@@ -2551,6 +2605,7 @@ export const useGameStore = create<GameStore>()(
         logbook: state.logbook,
         claimedVictories: state.claimedVictories,
         collectedDebris: state.collectedDebris,
+        collectedRelics: state.collectedRelics,
       }),
       // 存档软锁修复：存档里若停在事件阶段但事件未持久化，重开时落回 playing
       merge: (persisted, current) => {

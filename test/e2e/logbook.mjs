@@ -75,7 +75,27 @@ for (const label of ['见闻', '图鉴', '记事']) {
 }
 
 await page.evaluate(() => [...document.querySelectorAll('[role=tab]')].find(b => b.textContent.includes('图鉴'))?.click())
-check(await until(() => document.body.innerText.includes('/ 40 格')), '图鉴显示 20 港 + 16 成就 + 4 漂流物 = 40 格')
+/*
+ * 图鉴总格数**从数据层算**，不写死数字。
+ *
+ * 【为什么】写死 40 的那版，加一件海上遗物就假红——
+ * 而数字本身没错，错的是断言。新增内容时图鉴格子数本来就该跟着变，
+ * 写死等于把"内容变了"当成"布局坏了"。
+ * 于是这里直接 import 应用自己的四个数据模块，自己算总数：
+ * 港口 + 成就 + 漂流物 + 海上遗物。
+ */
+const atlasTotal = await page.evaluate(async () => {
+  const imp = (p) => import(`/Age-of-Discovery/src/${p}`).catch(() => import(`/src/${p}`))
+  const [portsMod, achMod, debrisMod, relicMod] = await Promise.all([
+    imp('data/ports.ts'), imp('data/achievements.ts'), imp('data/debris.ts'), imp('data/relics.ts'),
+  ])
+  return portsMod.ports.length + achMod.achievements.length
+    + Object.keys(debrisMod.DEBRIS_INFO).length + relicMod.RELICS.length
+})
+check(await until((n) => document.body.innerText.includes(`/ ${n} 格`), 6000, atlasTotal),
+  `图鉴总格数 = 港口 + 成就 + 漂流物 + 海上遗物 = ${atlasTotal} 格（数字从数据层算，不写死）`)
+// 海上遗物必须真的在图鉴里占一节（不是只算进总数）
+check(await until(() => document.body.innerText.includes('海上遗物')), '图鉴里有一节「海上遗物」')
 // 点一个未点亮的格子必须有回执（不能"点了没反应"）
 await page.evaluate(() => {
   const b = [...document.querySelectorAll('button')].find(x => /还没见过/.test(x.getAttribute('aria-label') || ''))

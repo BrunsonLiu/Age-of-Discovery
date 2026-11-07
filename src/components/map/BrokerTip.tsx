@@ -143,7 +143,25 @@ export default function BrokerTip({ placement = 'float' }: { placement?: 'float'
   } as const
 
   const btnClass =
-    'press flex items-center gap-1.5 rounded border border-gold-500/70 bg-gold-600/30 px-3 py-2 font-serif text-[13px] text-gold-100 hover:bg-gold-600/45'
+    'press pointer-events-auto flex items-center gap-1.5 rounded border border-gold-500/70 bg-gold-600/30 px-3 py-2 font-serif text-[13px] text-gold-100 hover:bg-gold-600/45'
+
+  /*
+   * 浮条整体不接点击，只有按钮接。
+   *
+   * 【为什么】这张卡是**压在海图上的 HUD**，不是页面本身。
+   * 整张卡 pointer-events-auto 的时候，它盖住的地图区域就变成了死区——
+   * 2026-11-07 实测：3D 视图里一件海上遗物正好投影到左下角，
+   * 它的点击被掮客卡的标题行「掮客递来一单」吃掉，巡检报「被遮挡 1」。
+   *
+   * ��条卡自己的文字（标题、货名、金额）**点了没有任何反应**，
+   * 让它吃掉点击只会挡住玩家真正想点的东西（地图上的实物）。
+   * 所以规则与通知浮窗一致（见 components/ui/NotificationToast.tsx：
+   * 「通知是纯展示，绝不能挡住玩家的点击」）：
+   *   浮条 = pointer-events-none，**只有按钮** = pointer-events-auto。
+   *
+   * 代价：点浮条的文字会落到地图上（可能误触"选地点"）。
+   * 换来的是：地图上任何被浮条盖住的东西都还点得到。
+   */
 
   /*
    * 主操作与一行摘要。
@@ -211,8 +229,8 @@ export default function BrokerTip({ placement = 'float' }: { placement?: 'float'
 
   if (compact) {
     return (
-      <div className={`${wrapper} pointer-events-auto`}>
-        <div className="mx-auto rounded-lg overflow-hidden" style={cardStyle} data-broker-compact="1">
+      <div className={`${wrapper} pointer-events-none`}>
+        <div className="mx-auto rounded-lg overflow-hidden pointer-events-none" style={cardStyle} data-broker-compact="1">
           <div className="flex items-center gap-2 pl-3 pr-1 py-1.5">
             <span className="min-w-0 flex-1 flex items-baseline gap-1.5">
               <span className="font-serif text-[13px] text-gold-200 truncate">{summaryMain}</span>
@@ -228,7 +246,7 @@ export default function BrokerTip({ placement = 'float' }: { placement?: 'float'
               type="button"
               aria-label="展开这一单的细节"
               onClick={() => setOpen(true)}
-              className="press p-1.5 text-gold-500 hover:text-gold-300 shrink-0"
+              className="press pointer-events-auto p-1.5 text-gold-500 hover:text-gold-300 shrink-0"
             >
               <ChevronDown size={15} aria-hidden="true" />
             </button>
@@ -236,7 +254,7 @@ export default function BrokerTip({ placement = 'float' }: { placement?: 'float'
               type="button"
               aria-label="不必了"
               onClick={() => setDismissed(key)}
-              className="press p-1.5 text-gold-600 hover:text-gold-300 shrink-0"
+              className="press pointer-events-auto p-1.5 text-gold-600 hover:text-gold-300 shrink-0"
             >
               <X size={15} aria-hidden="true" />
             </button>
@@ -247,8 +265,8 @@ export default function BrokerTip({ placement = 'float' }: { placement?: 'float'
   }
 
   return (
-    <div className={`${wrapper} pointer-events-auto`}>
-      <div className="mx-auto rounded-lg overflow-hidden" style={cardStyle} data-broker-compact="0">
+    <div className={`${wrapper} pointer-events-none`}>
+      <div className="mx-auto rounded-lg overflow-hidden pointer-events-none" style={cardStyle} data-broker-compact="0">
         <div className="flex items-center justify-between pl-3 pr-1.5 pt-1.5">
           <span className="font-serif text-[13px] tracking-wide text-gold-400">
             {mode === 'sell' ? '货已到港' : mode === 'buy' ? '掮客递来一单' : '这里没有适合你的货'}
@@ -259,7 +277,7 @@ export default function BrokerTip({ placement = 'float' }: { placement?: 'float'
                 type="button"
                 aria-label="收起这一单"
                 onClick={() => setOpen(false)}
-                className="press p-1.5 text-gold-500 hover:text-gold-300"
+                className="press pointer-events-auto p-1.5 text-gold-500 hover:text-gold-300"
               >
                 <ChevronUp size={15} aria-hidden="true" />
               </button>
@@ -268,7 +286,7 @@ export default function BrokerTip({ placement = 'float' }: { placement?: 'float'
               type="button"
               aria-label="不必了"
               onClick={() => setDismissed(key)}
-              className="press p-1.5 text-gold-600 hover:text-gold-300"
+              className="press pointer-events-auto p-1.5 text-gold-600 hover:text-gold-300"
             >
               <X size={15} aria-hidden="true" />
             </button>

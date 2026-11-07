@@ -20,6 +20,8 @@ import { buildGrainCanvas } from '@/utils/landGrain'
 import { birdPose } from '@/utils/portLife'
 import { buildCloudShadowCanvas, cloudBlobs } from '@/utils/cloudShadow'
 import { NPC_LEGS, NPC_SPEED_NM, npcLegAt, npcPose } from '@/utils/npcShips'
+import { RELICS } from '@/data/relics'
+import { relicMarkerHtml } from '@/utils/relicGlyph'
 import { skyAt } from '@/utils/skyClock'
 import {
   animatePortLife, createBirdTexture, createPortModelKit, createShipModelKit,
@@ -41,7 +43,7 @@ import {
   createAreaLabels, createPortLabel, measureLabels, placeLabels, remeasureWhenFontsReady,
   type ScreenLabel,
 } from './mapLabels3d'
-import { createDebrisLayer3d } from './debrisLayer3d'
+import { createSeaLayer3d, type SeaStaticItem } from './seaLayer3d'
 import type { Waypoint } from '@/types'
 
 /**
@@ -216,8 +218,33 @@ function coolLine(c: THREE.Color, nightK: number): void {
 }
 const SUN_COLOR_NIGHT = new THREE.Color(0x8fa8d8)
 
-export default function Map3DView() {
-  const mountRef = useRef<HTMLDivElement>(null)
+/**
+ * 海上遗物在 3D 里的图层数据：**一次建好，逐帧复用**。
+ *
+ * 【为什么不每帧重建】图标 HTML 里是一段 SVG 字符串，
+ * 每帧重建 8 遍字符串 + 8 个闭包纯属浪费（帧循环每秒 60 次）。
+ *
+ * 【与 2D 读同一份数据】2D 那边也是 `data/relics.ts` 里那 8 件，
+ * 拾走之后 2D 与 3D 一起消失——不存在"这边拾过那边还在"的分歧。
+ */
+const RELIC_ITEMS: SeaStaticItem[] = RELICS.map(r => ({
+  id: r.id,
+  lat: r.lat,
+  lng: r.lng,
+  html: relicMarkerHtml(r.kind, r.lore, r.id),
+  title: `拾起：${r.name}`,
+  onClick: () => useGameStore.getState().collectRelic(r.id),
+}))
+
+/** 当前还没被拾走的遗物（拾走一件就少一件） */
+function getRelicItems(): SeaStaticItem[] {
+  const got = useGameStore.getState().collectedRelics
+  if (!got || got.length === 0) return RELIC_ITEMS
+  const set = new Set(got)
+  return RELIC_ITEMS.filter(r => !set.has(r.id))
+}
+
+export default function Map3DView() {  const mountRef = useRef<HTMLDivElement>(null)
   const [phase, setPhase] = useState<'loading' | 'ready' | 'error'>('loading')
   /** 操作提示要按设备改写（手机没有滚轮）；手势本身两条路径都支持 */
   const isMobile = useIsMobile()
@@ -987,7 +1014,7 @@ export default function Map3DView() {
       // 【为什么 3D 也要有】2D 海面上漂着可点的木桶，切到 2.5D 突然全没了，
       // 玩家不会想到"这是渲染层的差别"，只会觉得这边少了东西、或者自己点不到。
       // 投影方式复用标签层：世界坐标 → 屏幕像素 → 绝对定位 DOM。
-      const debrisLayer = createDebrisLayer3d(mount)
+      const seaLayer = createSeaLayer3d(mount, getRelicItems)
 
       // ---- 玩家船 ----
       const ship = makeShipModel(shipKit)
@@ -2110,7 +2137,7 @@ export default function Map3DView() {
         // 逻辑写在帧循环里会越来越臃肿。见 mapLabels3d.ts。
         placeLabels(allLabels, camera, width, height, tmpV)
         // 漂流物与标签共用同一台相机、同一个临时向量（不另分配）
-        debrisLayer.update(camera, width, height, tmpV)
+        seaLayer.update(camera, width, height, tmpV)
 
         renderer!.render(scene, camera)
       }
@@ -2129,7 +2156,7 @@ export default function Map3DView() {
         el.removeEventListener('wheel', onWheel)
         for (const po of portObjects) po.label.el.remove()
         for (const l of areaLabels) l.el.remove()
-        debrisLayer.destroy()
+        seaLayer.destroy()
         scene.traverse((o) => {
           if (o instanceof THREE.Mesh) o.geometry.dispose()
         })

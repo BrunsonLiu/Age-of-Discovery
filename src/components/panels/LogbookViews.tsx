@@ -5,6 +5,7 @@ import { useMapStore } from '@/store/useMapStore'
 import { ports } from '@/data/ports'
 import { achievements } from '@/data/achievements'
 import { DEBRIS_INFO } from '@/data/debris'
+import { RELICS } from '@/data/relics'
 import { REGION_CN, countEchoes, echoDayFor } from '@/data/logbook'
 import { logbookArt } from '@/data/logbookArt'
 import { clueCenter } from '@/utils/harbor'
@@ -216,6 +217,7 @@ export function AtlasView() {
   const discoveredPorts = useGameStore(s => s.discoveredPorts)
   const earned = useGameStore(s => s.achievements)
   const collected = useGameStore(s => s.collectedDebris)
+  const collectedRelics = useGameStore(s => s.collectedRelics)
   const stats = useGameStore(s => s.stats)
   const logbook = useGameStore(s => s.logbook)
   const setActivePanel = useGameStore(s => s.setActivePanel)
@@ -225,10 +227,11 @@ export function AtlasView() {
   const gotPorts = new Set(discoveredPorts)
   const gotAchievements = new Set(earned)
   const gotDebris = new Set(collected)
+  const gotRelics = new Set(collectedRelics)
   const debrisKinds = Object.keys(DEBRIS_INFO) as DebrisKind[]
 
-  const litCount = discoveredPorts.length + earned.length + collected.length
-  const totalCount = ports.length + achievements.length + debrisKinds.length
+  const litCount = discoveredPorts.length + earned.length + collected.length + gotRelics.size
+  const totalCount = ports.length + achievements.length + debrisKinds.length + RELICS.length
 
   return (
     <div className="space-y-2">
@@ -288,6 +291,32 @@ export function AtlasView() {
             found={gotDebris.has(kind)}
             icon={<Package size={13} />}
             onClick={() => setDetail(gotDebris.has(kind) ? DEBRIS_INFO[kind].hint : '海面上还会漂来东西，看见捞起来就是。')}
+          />
+        ))}
+      </div>
+
+      {/*
+        海上遗物：历史与神话在册子里的位置。
+        点开写的是那件东西的来历（note），不是一段通用说明——
+        没拾到的格子只说一句"还没路过那里"，不剧透、也不催促。
+      */}
+      <SectionTitle right={`${gotRelics.size}/${RELICS.length}`}>海上遗物</SectionTitle>
+      <div className="grid grid-cols-2 gap-1.5">
+        {RELICS.map(r => (
+          <AtlasCell
+            key={r.id}
+            label={r.name}
+            sub={r.lore === 'history' ? '史迹' : '传说'}
+            found={gotRelics.has(r.id)}
+            icon={<Compass size={13} />}
+            onClick={() => {
+              if (!gotRelics.has(r.id)) {
+                setDetail('那件东西还在原处等你——路过那片海的时候，认准它。')
+                return
+              }
+              setCenter([r.lat, r.lng])
+              setActivePanel(null)
+            }}
           />
         ))}
       </div>

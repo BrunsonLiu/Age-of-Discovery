@@ -28,6 +28,7 @@ import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { birdPose, flagYaw, smokePose } from '../src/utils/portLife'
 import { DIALOGUE_RULES, dialogueBudget, pickDialogue, unreachableScripts, type DialogueContext } from '../src/utils/dialogueTriggers'
 import { traitEffect } from '../src/utils/outcomeAdjust'
+import { RELICS } from '../src/data/relics'
 import { groupJournal, journalHeadline } from '../src/utils/captainLog'
 import { rollSeaOmen, OMEN_CHANCE, OMEN_COOLDOWN_DAYS } from '../src/utils/seaOmen'
 import { voyageMilestones, nextMilestone, newlyReached, suggestPortFor } from '../src/data/voyageMilestones'
@@ -6218,7 +6219,7 @@ console.log('\n== 天数口径守卫 ==')
       '极远视角会按相机距离压低经纬网透明度')
     assert(/\(camState\.dist - 12\)/.test(viewSrc), '衰减读的是真实相机距离，不是常量')
     // 3D 漂流物疏散的安全边界：钳住偏移 + 反投影查海陆，别把图标画到岸上
-    const debrisSrc = readFileSync(join(process.cwd(), 'src', 'components', 'map3d', 'debrisLayer3d.ts'), 'utf8')
+    const debrisSrc = readFileSync(join(process.cwd(), 'src', 'components', 'map3d', 'seaLayer3d.ts'), 'utf8')
     assert(/const MAX_OFFSET = MIN_GAP \* 1\.5/.test(debrisSrc),
       '疏散偏移有兜底上限，且不能小到破坏「两两间距 ≥ MIN_GAP」的收敛结果')
     assert(/isOnLand\(/.test(debrisSrc) && /isLandLoaded\(/.test(debrisSrc), '疏散后会反投影查海陆')
@@ -7062,6 +7063,150 @@ console.log('\n== 天数口径守卫 ==')
     assert(/routeFacts/.test(storeSrc), 'store.sailToWaypoint 的里程走同一个 routeFacts')
     assert(/routeFacts\(/.test(storeSrc), 'routeFacts 真的被调用了（不是只 import）')
   }
+}
+
+// ---------------- 海上遗物：历史与神话作为地图上的实物 ----------------
+// 2026-11-07 用户定的方向：**不要再扩展金钱/经济玩法**；
+// 神话与历史可以融入更多，但**不要只是一味地增加文字**。
+// 于是史实必须以「地图上看得见、点得到的东西」落地，而不是日志里的一段话。
+//
+// 守四件事：
+//   ① 每件遗物都真的在**海上**（拿真实 sea-mask.bin 判定，不靠人眼）；
+//   ② 收益里**没有金币**（方向的第一条约束）；
+//   ③ 2D 与 3D 读**同一份**数据、拾完一起消失；
+//   ④ 拾过的记进存档与图鉴（不然刷新就没了）。
+{
+  const relicsSrc = readFileSync(join(process.cwd(), 'src', 'data', 'relics.ts'), 'utf8')
+  const seaRelicsSrc = readFileSync(join(process.cwd(), 'src', 'components', 'map', 'SeaRelics.tsx'), 'utf8')
+  const glyphSrc = readFileSync(join(process.cwd(), 'src', 'utils', 'relicGlyph.ts'), 'utf8')
+  const sea3dSrc = readFileSync(join(process.cwd(), 'src', 'components', 'map3d', 'seaLayer3d.ts'), 'utf8')
+  const map3dSrc = readFileSync(join(process.cwd(), 'src', 'components', 'map3d', 'Map3DView.tsx'), 'utf8')
+  const mapViewSrc = readFileSync(join(process.cwd(), 'src', 'components', 'map', 'MapView.tsx'), 'utf8')
+  const storeSrc2 = readFileSync(join(process.cwd(), 'src', 'store', 'useGameStore.ts'), 'utf8')
+  const saveSrc = readFileSync(join(process.cwd(), 'src', 'utils', 'saveFile.ts'), 'utf8')
+  const typesSrc = readFileSync(join(process.cwd(), 'src', 'types', 'index.ts'), 'utf8')
+  const atlasSrc = readFileSync(join(process.cwd(), 'src', 'components', 'panels', 'LogbookViews.tsx'), 'utf8')
+
+  // ① 坐标必须在海上：拿真实的海陆掩码逐个点一遍
+  //    掩码口径必须与 utils/seaRoute.ts 完全一致（0.1°/格、1 bit/格），
+  //    否则这条断言就是拿另一套海陆定义在比。
+  const MASK_STEP = 0.1
+  const MASK_W = 3600
+  const MASK_H = 1800
+  const mask = new Uint8Array(readFileSync(join(process.cwd(), 'public', 'data', 'sea-mask.bin')))
+  const maskIsLand = (lat: number, lng: number): boolean => {
+    const gy = Math.min(MASK_H - 1, Math.max(0, Math.floor((lat + 90) / MASK_STEP)))
+    let gx = Math.floor((lng + 180) / MASK_STEP)
+    gx = ((gx % MASK_W) + MASK_W) % MASK_W
+    const i = gy * MASK_W + gx
+    return ((mask[i >> 3] >> (i & 7)) & 1) === 1
+  }
+  assert(RELICS.length >= 6, `遗物数量够撑起「路过才遇得到」（${RELICS.length} 件）`)
+  // 位置必须是**钉死**的：它一直在那儿等着有人路过，不是每天随机冒出来的东西
+  assert(!/Math\.random|Date\.now/.test(relicsSrc),
+    '遗物位置是钉死的（不随机生成、不随时间漂走——它一直在那儿等你路过）')
+  for (const r of RELICS) {
+    assert(!maskIsLand(r.lat, r.lng),
+      `遗物「${r.name}」落在海上（真实掩码判定，不能搁在陆地上）`)
+  }
+  const coordKeys = RELICS.map(r => `${r.lat.toFixed(2)},${r.lng.toFixed(2)}`)
+  assert(new Set(coordKeys).size === RELICS.length,
+    '遗物坐标互不重复（两件叠在一起就等于少了一件）')
+  assert(RELICS.some(r => r.lore === 'history') && RELICS.some(r => r.lore === 'myth'),
+    '遗物里历史与神话都有（不能只剩史实）')
+  for (const r of RELICS) {
+    assert(!('gold' in r.gain), `遗物「${r.name}」的收益里没有金币（方向约束）`)
+    assert(r.gain.fame > 0, `遗物「${r.name}」给名号（声望），不然就是白捡`)
+    assert(r.note.length > 10, `遗物「${r.name}」有一句来历（拾起时才给，不是开场白）`)
+  }
+
+  // ② 拾取动作里不许出现金币
+  const iRelic = storeSrc2.indexOf('collectRelic: (id) => set')
+  const iAfterRelic = storeSrc2.indexOf('addNotification:', iRelic)
+  const relicBody = iRelic >= 0 && iAfterRelic > iRelic ? storeSrc2.slice(iRelic, iAfterRelic) : ''
+  assert(relicBody.length > 0, '找得到 collectRelic 的函数体（守卫本身没写错）')
+  assert(!/gold:\s*state\.fleet\.gold|gold:\s*[\w.]+\.gold|\.gold\s*\+/.test(relicBody),
+    '拾取遗物不给金币（钱重要，但本作卖的是航路与名号，不是账本）')
+  assert(/collectedRelics/.test(relicBody) && /fame/.test(relicBody) && /morale/.test(relicBody),
+    '拾取遗物给名号与士气，并记进 collectedRelics')
+
+  // ③ 2D 与 3D 读同一份数据、拾完一起消失
+  assert(/from '@\/data\/relics'/.test(seaRelicsSrc) && /RELICS/.test(seaRelicsSrc),
+    '2D 的遗物从 data/relics 取')
+  assert(/from '@\/data\/relics'/.test(map3dSrc) && /RELIC_ITEMS/.test(map3dSrc),
+    '3D 的遗物从同一份 data/relics 取')
+  assert(/collectRelic/.test(seaRelicsSrc) && /collectRelic/.test(map3dSrc),
+    '2D 与 3D 用同一个拾取动作（不存在"这边拾过那边还在"）')
+  assert(/SeaStaticItem/.test(sea3dSrc) && /relic3d-icon/.test(sea3dSrc),
+    '3D 的海上物件层同时承载漂流物与遗物（同一套疏散/反投影逻辑）')
+  assert(/<SeaRelics \/>/.test(mapViewSrc), '2D 地图上挂着遗物层')
+
+  // ④ 拾过的记进存档与图鉴
+  assert(/collectedRelics: string\[\]/.test(typesSrc), 'collectedRelics 有类型声明')
+  assert(/collectedRelics: state\.collectedRelics/.test(storeSrc2), 'collectedRelics 进 partialize（刷新不丢）')
+  assert(/'collectedRelics'/.test(saveSrc), 'collectedRelics 进存档白名单（导出/导入不丢）')
+  assert(/collectedRelics/.test(atlasSrc) && /海上遗物/.test(atlasSrc),
+    '图鉴里有一节「海上遗物」（拾过的东西有个地方放）')
+  assert(/relicMarkerHtml/.test(glyphSrc) && /relicColor/.test(glyphSrc),
+    '遗物有独立的视觉（史实旧铜 / 神话冷银，不与漂流物混成一类）')
+
+  // ⑤ 端到端巡检不许变成孤儿
+  // 第 26 轮实测：6 个自带失败退出的 e2e 脚本常年不在 seg/full/all 里，只靠手工跑，
+  // 当时 intro-check 与 no-dialogue-interrupt 就是红的。遗物这一层同样不许只靠手工跑。
+  {
+    const pkg = JSON.parse(readFileSync(join(process.cwd(), 'package.json'), 'utf8')) as {
+      scripts: Record<string, string>
+    }
+    assert(readdirSync(join(process.cwd(), 'test', 'e2e')).includes('relics.mjs'),
+      'relics.mjs 文件还在（别把巡检删了）')
+    assert((pkg.scripts['test:e2e:relics'] ?? '').includes('relics.mjs'),
+      '遗物巡检有独立命令')
+    assert((pkg.scripts['test:e2e:seg6'] ?? '').includes('relics.mjs'),
+      '遗物巡检进了 seg6（与 debris-3d 同属 3D 海面层，不能只靠手工跑）')
+    assert((pkg.scripts['test:e2e:all'] ?? '').includes('test:e2e:relics'),
+      'all 也含遗物巡检')
+    // 巡检本身必须真的断言了「不给金币」——不然改坏代码时它不会红
+    const relicAudit = readFileSync(join(process.cwd(), 'test', 'e2e', 'relics.mjs'), 'utf8')
+    assert(/金币一个都不动/.test(relicAudit) && /after\.gold === before\.gold/.test(relicAudit),
+      '遗物巡检真的在断言「金币一个都不动」（否则改坏代码它不会红）')
+    assert(/elementFromPoint/.test(relicAudit) && /mouse\.click/.test(relicAudit),
+      '遗物巡检走真实鼠标点击 + 命中测试（不靠 el.click() 绕过遮挡）')
+  }
+}
+
+// ---------------- 压在海图上的浮条不许整张卡吃点击 ----------------
+// 2026-11-07 实测事故：海上遗物加入 3D 视图后，clickable-audit 报
+// 「被遮挡 1」——那件遗物正好投影到左下角，被**掮客推荐浮条**的标题行
+// 「掮客递来一单」吃掉了点击。掮客浮条整张卡是 pointer-events-auto，
+// 于是它盖住的地图区域全变成死区。
+//
+// 修法与项目既有约定一致（components/ui/NotificationToast.tsx：
+// 「通知是纯展示，绝不能挡住玩家的点击」）：
+//   浮条 = pointer-events-none，**只有按钮** = pointer-events-auto。
+{
+  const brokerSrc = readFileSync(join(process.cwd(), 'src', 'components', 'map', 'BrokerTip.tsx'), 'utf8')
+  const wrappers = [...brokerSrc.matchAll(/className=\{`\$\{wrapper\} ([^`]*)`\}/g)]
+  assert(wrappers.length >= 2, '找得到掮客浮条的外层容器（紧凑版 + 展开版）')
+  for (const m of wrappers) {
+    assert(/pointer-events-none/.test(m[1]),
+      '掮客浮条外层是 pointer-events-none（它压在海图上，不许整张卡吃点击）')
+  }
+  assert(/mx-auto rounded-lg overflow-hidden pointer-events-none/.test(brokerSrc),
+    '掮客浮条的卡片本体也不接点击（只有按钮接）')
+  // 每个按钮都必须把点击接回来——浮条整体 none 之后，忘了 auto 就等于按钮点不动
+  const chunks = brokerSrc.split('<button').slice(1)
+  assert(chunks.length >= 8, `掮客浮条里有 ${chunks.length} 个按钮`)
+  const missing = chunks.filter(c => {
+    const m = c.match(/className=(?:"([^"]*)"|\{`([^`]*)`\}|\{([^}]*)\})/)
+    const cls = m ? (m[1] ?? m[2] ?? m[3] ?? '') : ''
+    return !/pointer-events-auto/.test(cls) && !/btnClass/.test(cls)
+  })
+  assert(missing.length === 0,
+    `掮客浮条里有 ${missing.length} 个按钮没接回点击（浮条整体 none，按钮必须 pointer-events-auto）`)
+  // 按钮共用样式的地方，那条样式本身也要带 pointer-events-auto
+  const btnClass = brokerSrc.match(/const btnClass =\s*'([^']*)'/)
+  assert(btnClass && /pointer-events-auto/.test(btnClass[1]),
+    '掮客浮条的共用按钮样式（btnClass）也带 pointer-events-auto')
 }
 
 console.log(`\n最终结果：${passed} 通过 / ${failed} 失败`)
