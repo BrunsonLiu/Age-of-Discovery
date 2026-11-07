@@ -31,6 +31,7 @@ import { buildMap3DLayers } from './mapLayers3d'
 import { buildMap3DBorders } from './mapBorders3d'
 import { buildMap3DCoastline } from './mapCoastline3d'
 import { buildMap3DPeaks, type PeakFacing } from './mapPeaks3d'
+import { createRhumb3d } from './mapRhumb3d'
 import { buildTerrainSymbols, filterPeaksByElevation } from '@/utils/terrainDecor'
 import { loadElevationSampler } from '@/utils/elevation'
 import { buildMap3DGraticule, GRATICULE_OPACITY_NEAR } from './mapGraticule3d'
@@ -406,6 +407,20 @@ export default function Map3DView() {  const mountRef = useRef<HTMLDivElement>(n
       sea.position.set(MAP_WORLD_SIZE / 2, -PLATE_THICKNESS - 0.004, 0)
       sea.receiveShadow = true
       scene.add(sea)
+
+      /*
+       * ---- 恒向线网 + 罗经花（2D 的身份特征，3D 之前完全没有）----
+       *
+       * 2D 的海面上有：经纬网、恒向线、罗经花、纸纹 四层。
+       * 3D 之前只有经纬网一层，于是那片海读作"低模世界地图"——
+       * 切视图不像"换了个视角看同一张海图"，像换了个游戏。
+       *
+       * 这里补上后两层：线与花都复用 utils/rhumbLines 的同一份几何与常数，
+       * 两个视图的射线角度逐度一致（另算一套必然切视图时"线歪了"）。
+       * 压到陆地上的那半截靠深度测试被陆地顶盖挡掉，与 2D 的 pane 层叠同效。
+       */
+      const rhumb = createRhumb3d(-PLATE_THICKNESS - 0.004)
+      scene.add(rhumb.group)
 
       /*
        * 外圈几何：**中间挖掉世界范围的方环**，不是一整块大平面。
@@ -2015,6 +2030,8 @@ export default function Map3DView() {  const mountRef = useRef<HTMLDivElement>(n
           if (PEAK_FACING === 'upright') peakGroup.rotation.y = camState.az
           // 山符号在屏幕上大致定尺寸：只在缩放变化时重算实例矩阵
           peaks?.setScale(camState.dist)
+          // 罗经花同理：远看是一粒米、近看是一片天，都读不出"一朵花"
+          rhumb.setScale(camState.dist)
 
           const tSec = tNow / 1000
           const detail = camState.dist < 22
@@ -2198,6 +2215,7 @@ export default function Map3DView() {  const mountRef = useRef<HTMLDivElement>(n
         graticule.dispose()
         // 山是异步补建的：切视图时它可能还没建好（peaks 为 null），也可能已建好
         peaks?.dispose()
+        rhumb.dispose()
         renderer?.dispose()
         if (renderer && renderer.domElement.parentNode === mount) {
           mount.removeChild(renderer.domElement)
