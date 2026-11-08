@@ -7907,5 +7907,68 @@ console.log('\n== 天数口径守卫 ==')
   layersSpring.dispose()
 }
 
+
+// ---------------- 驶入一片坏水要有一次回执（不是每天一条） ----------------
+//
+// 现象会让航程变长、天候事件变多，但两件事都是"慢慢发生"的：
+// 玩家看到的只是这两天走得慢，原因藏在天气面板里。因果必须在发生的那一刻说一次。
+// 但也不能每天说——一路穿过风暴带会连弹五条，通知容器同屏只留两条。
+{
+  const breezeShip = {
+    id: 1, name: '测试船', type: 'caravel', capacity: 60, usedCapacity: 0,
+    durability: 100, crew: 40, maxCrew: 40, speed: 6,
+  }
+  const fleetP: Fleet = {
+    id: 1, name: '测试舰队', gold: 500, fame: 0, morale: 60, food: 100, water: 100,
+    currentPortId: null, isSailing: true, day: 35, ships: [breezeShip as never],
+    cargo: [], flagshipId: 1, trait: null, durabilityCarry: 0,
+  }
+  const routeP: Route = { id: -77, fromPortId: 6, toPortId: 7, distance: 1000, dangerLevel: 2, windFavor: 1 }
+
+  const enterCount = () => useGameStore.getState().notifications.filter(n => n.title.startsWith('驶入')).length
+
+  useGameStore.setState({
+    fleet: fleetP,
+    currentRoute: routeP,
+    waypoint: { latitude: 27, longitude: -55, portId: 7 },
+    // 马尾藻的无风带圆心（夏季）
+    shipPosition: [27, -55],
+    segmentCount: 0, segmentIndex: 0, pendingSegment: null, pendingHelm: null, helmAdvance: null,
+    // 参观模式：不吃不喝不判负，把变量压到最少
+    gameMode: 'visitor',
+    gamePhase: 'playing',
+    lastEventDay: 999999,
+    lastPhenomenonId: null,
+    notifications: [],
+  })
+
+  useGameStore.getState().advanceDay()
+  assert(enterCount() === 1,
+    `驶入无风带时给一次回执（实测 ${enterCount()} 条）——否则"这两天怎么慢了两成"没有解释`)
+  const first = useGameStore.getState().notifications.find(n => n.title.startsWith('驶入'))!
+  assert(first.title.includes('马尾藻'), `回执说的是那一片水（${first.title}）`)
+  assert(first.message.length > 10, '回执带着这片水的来历（不是干巴巴一句"你进入了区域"）')
+  assert(useGameStore.getState().lastPhenomenonId === 'sargasso_calm',
+    '结算时记下了船在哪片水里（下次要靠它判"是不是换了一片"）')
+
+  // 同一天气、同一片水：第二天不该再弹
+  useGameStore.getState().advanceDay()
+  assert(enterCount() === 1, `同一片水里连着走几天只提示一次（实测 ${enterCount()} 条）`)
+
+  // 驶出：不提示，但要把记录清掉
+  useGameStore.setState({ shipPosition: [0, -120] })
+  useGameStore.getState().advanceDay()
+  assert(enterCount() === 1, '驶出时不弹提示（离开不是事件）')
+  assert(useGameStore.getState().lastPhenomenonId === null, '驶出后记录清空（再进来才要再提示一次）')
+
+  // 再驶入：还要提示
+  useGameStore.setState({ shipPosition: [27, -55] })
+  useGameStore.getState().advanceDay()
+  assert(enterCount() === 2, `再次驶入再提示一次（实测 ${enterCount()} 条）`)
+
+  // 收尾：别把这份状态留给后面的用例
+  useGameStore.setState({ shipPosition: null, lastPhenomenonId: null, notifications: [] })
+}
+
 console.log(`\n最终结果：${passed} 通过 / ${failed} 失败`)
 if (failed > 0) process.exit(1)

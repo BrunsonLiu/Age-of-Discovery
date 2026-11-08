@@ -37,7 +37,7 @@ import {
 import { advanceDebris } from '@/utils/seaDebris'
 import { debrisGain, DEBRIS_INFO, type DebrisSpot } from '@/data/debris'
 import { findRelic, relicDistanceNm, relicInSeason, RELIC_PICKUP_NM } from '@/data/relics'
-import { phenomenonEventBias } from '@/data/seaPhenomena'
+import { phenomenonAt, phenomenonEventBias } from '@/data/seaPhenomena'
 import { newlyReached } from '@/data/voyageMilestones'
 import { appendLogbook, findClueFor, makeArrivalEntry, makeEchoEntry, makeTitleEntry, markAllRead } from '@/data/logbook'
 import { SAVE_KEY, SAVE_VERSION } from '@/utils/saveFile'
@@ -264,6 +264,14 @@ interface GameStore extends GameState {
    * 放在组件里就得自己复刻一套冷却与概率，两处迟早不一致。
    */
   seaOmen: { kind: string; text: string; day: number } | null
+  /**
+   * 上一次日结算时船所在的海上现象 id（瞬态，不进存档）。
+   *
+   * 只用来判"这一刻是不是刚驶入一片新的坏水"——驶入时给一次回执，
+   * 否则玩家只会觉得"这两天怎么慢了两成"，而原因藏在天气面板里。
+   * 与 seaOmen 一样是瞬态：刷新后重来一次也无妨（那时船已经在那里了）。
+   */
+  lastPhenomenonId: string | null
   /** 上一次异闻发生在第几天（冷却用） */
   lastOmenDay: number
   /**
@@ -689,7 +697,7 @@ export function advanceRivals(rivals: Rival[], day: number): { rivals: Rival[]; 
 
 type StoreNotification = GameStore['notifications'][number]
 /** 状态补丁：GameState 的局部 + 仅存在于 store 层的字段 */
-type StatePatch = Partial<GameState> & Partial<Pick<GameStore, 'notifications' | 'seenHistoricalEvents' | 'lastEventDay' | 'simSpeed' | 'shipPosition' | 'seaOmen' | 'lastOmenDay' | 'debrisSpots' | 'messDay'>>
+type StatePatch = Partial<GameState> & Partial<Pick<GameStore, 'notifications' | 'seenHistoricalEvents' | 'lastEventDay' | 'simSpeed' | 'shipPosition' | 'seaOmen' | 'lastOmenDay' | 'debrisSpots' | 'messDay' | 'lastPhenomenonId'>>
 
 /**
  * 成就检查 + 兑现（横幅 + 通知 + 入账）。
@@ -823,6 +831,7 @@ export const useGameStore = create<GameStore>()(
       shipPosition: null,
       lastEventDay: 0,
       seaOmen: null,
+      lastPhenomenonId: null,
       lastOmenDay: -99,
       debrisSpots: [],
       messDay: -1,
@@ -1318,6 +1327,8 @@ export const useGameStore = create<GameStore>()(
         let newEventFlags = state.eventFlags
         // 海上异闻（纯氛围）：这一天有没有"看见点什么"
         let newSeaOmen: GameStore['seaOmen'] = state.seaOmen ?? null
+        /** 结算后船所在的现象 id（写回 store，用来判"下一次是不是换了一片水"） */
+        let newPhenomenonId: string | null = state.lastPhenomenonId ?? null
         let newLastOmenDay = state.lastOmenDay ?? -99
         // 海面漂流物：每天可能漂来一个、旧的自然漂走（见 utils/seaDebris）
         let newDebris = state.debrisSpots ?? []
@@ -1466,6 +1477,27 @@ export const useGameStore = create<GameStore>()(
            */
           const seaPos = state.shipPosition
           const seaEventMul = seaPos ? phenomenonEventBias(seaPos[0], seaPos[1], newFleet.day) : 1
+          /*
+           * 驶入一片新的坏水时给一次回执。
+           *
+           * 【为什么要有这一下】那片水会让航程变长、天候事件变多，但两件事都是
+           * "慢慢发生"的：玩家看到的只是这两天走得慢。原因藏在天气面板里，
+           * 不打开就永远不知道。**因果必须在发生的那一刻说出来一次。**
+           *
+           * 只在"换了一片"时提示（id 变了），不是每天提示——否则一路穿过风暴带
+           * 会连弹五条，通知容器同屏只留两条，剩下三条反而在排队。
+           */
+          const nowPhenom = seaPos ? phenomenonAt(seaPos[0], seaPos[1], newFleet.day) : null
+          newPhenomenonId = nowPhenom?.id ?? null
+          if (nowPhenom && nowPhenom.id !== state.lastPhenomenonId) {
+            newNotifications = [...newNotifications, {
+              id: `phenom-${nowPhenom.id}-${newDay}`,
+              type: 'warning' as const,
+              title: `驶入 · ${nowPhenom.name}`,
+              message: nowPhenom.note,
+              timestamp: Date.now(),
+            }]
+          }
           const eventBias = WEATHER_INFO[newWeather.kind].eventBias * profile.eventRateMul * modeEventMul * seaEventMul
           const triggeredEvent = eventBias !== 1
             ? getRandomEvents({ ...state, fleet: newFleet, routeProgress: state.routeProgress }, events, newDay - lastEventDay, eventBias)
@@ -1657,6 +1689,7 @@ export const useGameStore = create<GameStore>()(
           weather: newWeather,
           seaOmen: newSeaOmen,
           lastOmenDay: newLastOmenDay,
+          lastPhenomenonId: newPhenomenonId,
           debrisSpots: newDebris,
           logbook: newLogbook,
           claimedVictories: claims.length > 0
