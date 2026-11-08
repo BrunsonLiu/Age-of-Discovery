@@ -1768,7 +1768,8 @@ export default function Map3DView() {  const mountRef = useRef<HTMLDivElement>(n
              * 【为什么放这里而不是每帧调】换季只发生一次，
              * setDay 内部同一天重复调用是空操作；放在这里就少一条每帧分支。
              */
-            layers.phenomena.setDay(fleet.day)
+            // 洋流点序 / 风箭头朝向 / 现象可见性，一次推进到新的一季
+            layers.setDay(fleet.day)
           }
         }
 

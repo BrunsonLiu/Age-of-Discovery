@@ -47,7 +47,14 @@ export default function WeatherBadge() {
    * 不写这一行，玩家只会看到"同一趟怎么慢了两成"，然后当成 bug。
    * 这是**因果**，不是气氛——所以它挂在预报面板里，而不是飘个提示。
    */
-  const phenomenon = lat != null && lng != null ? phenomenonAt(lat, lng, fleet.day) : null
+  /*
+   * 只在**航行中**显示：港内也拿港口坐标去判会得出"你正处在风暴带里、
+   * 航速 -22%"——可船根本没在走。实测秋季停在开普敦（-33.9,18.4）
+   * 离风暴带圆心 215 海里，落在圈内，那一行就冒出来骗人了。
+   */
+  const phenomenon = fleet.isSailing && lat != null && lng != null
+    ? phenomenonAt(lat, lng, fleet.day)
+    : null
 
   const speedPct = Math.round((info.sailMul - 1) * 100)
   // 风向箭头：风吹去的方位 → 旋转角（罗盘 0°=上）

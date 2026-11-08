@@ -163,6 +163,8 @@ import { findSeaPath, loadSeaMask, isSeaMaskLoaded, isLandAt } from '../src/util
 import { seasonAt, SEASON_DAYS, ALL_SEASONS, inMonsoonZone } from '../src/utils/season'
 import { prevailingWindBearingAt, prevailingWindBearing, computeWindFavor } from '../src/utils/navigation'
 import { snowPhaseOf } from '../src/components/map3d/mapPeaks3d'
+import { buildMap3DLayers } from '../src/components/map3d/mapLayers3d'
+import * as THREE from 'three'
 import { OCEAN_CURRENTS, currentFlowPoints, windArrowSites } from '../src/data/mapLayers'
 import { ports } from '../src/data/ports'
 import { RELIC_PICKUP_NM, relicDistanceNm, relicInReach } from '../src/data/relics'
@@ -7827,9 +7829,82 @@ console.log('\n== 天数口径守卫 ==')
     assert(/SEA_PHENOMENA/.test(three) && /phenomenonRing\(/.test(three),
       '3D 用的是同一批现象与同一条界线（不是各画一个形状）')
     const badge = readFileSync(join(process.cwd(), 'src', 'components', 'ui', 'WeatherBadge.tsx'), 'utf8')
-    assert(/phenomenonAt\(lat, lng, fleet\.day\)/.test(badge),
-      '船在这片水里时天气面板要说出来（否则"这趟怎么慢了两成"会被当成 bug）')
+    assert(/const phenomenon = fleet\.isSailing && lat != null && lng != null\s*\?\s*phenomenonAt\(lat, lng, fleet\.day\)/.test(badge),
+      '船在这片水里时天气面板要说出来，且只在航行中（港内拿港口坐标判会谎报"航速 -22%"）')
   }
+}
+
+
+// ---------------- 3D 图层换季：洋流点序与风箭头必须跟着变 ----------------
+//
+// 2026-11-08：3D 的洋流与风箭头原先只在**挂载时**按当天算一次。
+// 玩家在 3D 里过了一个换季，航线天数已经按新季风算（印度洋半年反向），
+// 画面上却还是上一季的风与水流——"屏幕上的东西不等于实际发生的变化"，
+// 这是本项目最不能留的一类问题，而且它不会报错、截图也看不出来。
+//
+// 【为什么这里能直接在 node 里建 3D 图层】只建几何与实例矩阵，不渲染，
+// 不需要 WebGL。建完读 geometry 的顶点、InstancedMesh 的矩阵就能判定。
+{
+  const layersSpring = buildMap3DLayers(5)    // 春：西南季风
+  const gulfIdx = OCEAN_CURRENTS.findIndex(c => c.name === '湾流')
+  const driftIdx = OCEAN_CURRENTS.findIndex(c => !!c.monsoonReverses)
+  assert(gulfIdx >= 0 && driftIdx >= 0, '洋流数据里有湾流与季风漂流')
+
+  /** 取第 i 条洋流线的第一个顶点（世界坐标） */
+  const firstPointOf = (grp: THREE.Group, i: number) => {
+    const line = grp.children[i] as unknown as {
+      geometry?: { attributes?: { instanceStart?: { data?: { array: ArrayLike<number> } } } }
+    }
+    const arr = line.geometry?.attributes?.instanceStart?.data?.array
+    return arr ? [arr[0], arr[1], arr[2]] : null
+  }
+
+  const driftSpring = firstPointOf(layersSpring.currents, driftIdx)
+  const gulfSpring = firstPointOf(layersSpring.currents, gulfIdx)
+  assert(!!driftSpring && !!gulfSpring, '读得到洋流线的顶点（否则下面两条是空断言）')
+
+  // 风箭头：整份实例矩阵
+  const windMesh = layersSpring.winds.children.find(
+    c => (c as unknown as { isInstancedMesh?: boolean }).isInstancedMesh,
+  ) as unknown as { instanceMatrix?: { array: ArrayLike<number> } } | undefined
+  const windSpring = windMesh?.instanceMatrix?.array
+  assert(!!windSpring && windSpring.length > 0, '风带层里有一个 InstancedMesh（箭头）')
+  const windSnapshot = windSpring ? Array.from(windSpring) : []
+
+  // 换到秋（东北季风）
+  layersSpring.setDay(65)
+
+  const driftAutumn = firstPointOf(layersSpring.currents, driftIdx)
+  const gulfAutumn = firstPointOf(layersSpring.currents, gulfIdx)
+  const windAutumn = windMesh?.instanceMatrix?.array
+  const windChanged = !!windAutumn && Array.from(windAutumn).some((v, i) => v !== windSnapshot[i])
+
+  const driftMoved = !!driftAutumn && !!driftSpring
+    && (driftAutumn[0] !== driftSpring[0] || driftAutumn[2] !== driftSpring[2])
+  const gulfMoved = !!gulfAutumn && !!gulfSpring
+    && (gulfAutumn[0] !== gulfSpring[0] || gulfAutumn[2] !== gulfSpring[2])
+
+  assert(driftMoved,
+    '换季后季风漂流换了点序（3D 虚线沿点序流动，倒过来就是"水往回流"）')
+  assert(!gulfMoved, '湾流常年一个方向，换季不该动它')
+  assert(windChanged,
+    '换季后风箭头被重写（印度洋半年反向：不重写就是屏幕和实际不一致）')
+
+  // 回到春：必须逐位还原（不是"越改越偏"）
+  layersSpring.setDay(5)
+  const driftBack = firstPointOf(layersSpring.currents, driftIdx)
+  const windBack = windMesh?.instanceMatrix?.array
+  assert(!!driftBack && driftBack[0] === driftSpring![0] && driftBack[2] === driftSpring![2],
+    '换回春季，洋流点序逐位还原')
+  assert(!!windBack && Array.from(windBack).every((v, i) => v === windSnapshot[i]),
+    '换回春季，风箭头矩阵逐位还原')
+
+  // 同一天重复调用是空操作（帧循环里每次换季只该算一次）
+  layersSpring.setDay(5)
+  const driftAgain = firstPointOf(layersSpring.currents, driftIdx)
+  assert(!!driftAgain && driftAgain[0] === driftSpring![0], '同一天重复 setDay 不改动任何东西')
+
+  layersSpring.dispose()
 }
 
 console.log(`\n最终结果：${passed} 通过 / ${failed} 失败`)

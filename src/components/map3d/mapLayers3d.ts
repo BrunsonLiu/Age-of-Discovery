@@ -8,6 +8,7 @@ import {
   pirateZonePolygon, windArrowSites,
 } from '@/data/mapLayers'
 import { SEA_PHENOMENA, phenomenonRing, type SeaPhenomenon } from '@/data/seaPhenomena'
+import type { OceanCurrent } from '@/data/mapLayers'
 import { ALL_SEASONS, seasonAt } from '@/utils/season'
 
 /**
@@ -81,6 +82,8 @@ export interface Map3DLayers {
    * 它不是可选的参考图层，是这一季的海本身。
    */
   phenomena: PhenomenaLayer
+  /** 换季：洋流点序 / 风箭头朝向 / 现象可见性一起更新（同一天重复调用是空操作） */
+  setDay(day: number): void
   /** 所有需要随窗口尺寸更新 resolution 的线材质 */
   lineMaterials: LineMaterial[]
   dispose(): void
@@ -129,9 +132,13 @@ function makeLine(
  * 而洋流在 2D 里是带虚线样式的（dashArray '1 10'）。
  * Line2 才能同时拿到「可调线宽」和「虚线」。
  */
-function buildCurrents(lineMaterials: LineMaterial[], day?: number): THREE.Group {
+function buildCurrents(
+  lineMaterials: LineMaterial[],
+  day?: number,
+): { group: THREE.Group; setDay: (d: number) => void } {
   const g = new THREE.Group()
   g.name = 'map3d-currents'
+  const items: { cur: OceanCurrent; reverses: boolean; line: Line2 }[] = []
   for (const cur of OCEAN_CURRENTS) {
     const line = makeLine(
       // 点序 = 流向；会随季风掉头的那条在这里就换向
@@ -142,8 +149,40 @@ function buildCurrents(lineMaterials: LineMaterial[], day?: number): THREE.Group
     )
     line.renderOrder = 5
     g.add(line)
+    items.push({ cur, reverses: !!cur.monsoonReverses, line })
   }
-  return g
+  /*
+   * 换季时就地换点序。
+   *
+   * 【为什么不重建这一层】帧循环为了让洋流"流起来"，在挂载时把这一层的
+   * LineMaterial 收进了 currentMats（见 Map3DView）。重建就等于换掉材质，
+   * 那份引用当场失效——箭头不动了，而且很难看出来是为什么。
+   * `LineGeometry.setPositions` 可以原地重写顶点，材质与引用都不动。
+   *
+   * 只有季风漂流会掉头；湾流之类的常年一个方向，重算它纯属浪费。
+   */
+  let lastDay = -1
+  return {
+    group: g,
+    setDay(d: number) {
+      if (d === lastDay) return
+      lastDay = d
+      for (const it of items) {
+        if (!it.reverses) continue
+        /*
+         * 点序一律从 `currentFlowPoints` 重新取，**不要自己 reverse**。
+         *
+         * 【踩过】第一版写的是「无条件把点序倒过来」，看起来对——
+         * 春→秋确实倒了，但秋→春又倒了一次，于是永远停在倒序上。
+         * 判据必须只有一处：季节决定要不要倒，由 currentFlowPoints 说了算。
+         * 守卫（test/logic.test.ts）就是拿「春→秋→春必须逐位还原」钉住的。
+         */
+        const pts = currentFlowPoints(it.cur, d)
+        it.line.geometry.setPositions(toWorldPoints(pts, LAYER_Y_CURRENT))
+        it.line.computeLineDistances()
+      }
+    },
+  }
 }
 
 /**
@@ -218,7 +257,10 @@ function buildPirates(lineMaterials: LineMaterial[]): THREE.Group {
  * prevailingWindBearing 只有 90（东）与 270（西）两个取值，
  * 而东西向恰好**不被斜视压缩**（南北向才会被压扁）。
  */
-function buildWinds(lineMaterials: LineMaterial[], day?: number): THREE.Group {
+function buildWinds(
+  lineMaterials: LineMaterial[],
+  day?: number,
+): { group: THREE.Group; setDay: (d: number) => void } {
   const g = new THREE.Group()
   g.name = 'map3d-winds'
 
@@ -249,16 +291,30 @@ function buildWinds(lineMaterials: LineMaterial[], day?: number): THREE.Group {
   const arrows = new THREE.InstancedMesh(arrowGeo, windMat, sites.length)
   arrows.renderOrder = 5
 
+  /*
+   * 换季时重写实例矩阵。
+   *
+   * 【为什么必须有一条】风箭头是"顺风方向"的可视化，而印度洋的风半年反向
+   * （见 utils/season）。原来只在挂载时算一次：玩家在 3D 里过了一个换季，
+   * 航线天数已经按新季风算了，箭头却还指着上一季的方向——**屏幕和实际不一致**。
+   *
+   * 站点数量不随季节变（网格是固定的），所以不用重建 InstancedMesh，
+   * 只重写矩阵即可。
+   */
   const dummy = new THREE.Object3D()
-  sites.forEach((s, i) => {
-    // 罗盘方位角：0=北（-Z），90=东（+X）
-    const rotY = Math.PI / 2 - (s.bearing * Math.PI) / 180
-    dummy.position.set(lonToWorldX(s.lng), LAYER_Y_WIND, latToWorldZ(s.lat))
-    dummy.rotation.set(0, rotY, 0)
-    dummy.updateMatrix()
-    arrows.setMatrixAt(i, dummy.matrix)
-  })
-  arrows.instanceMatrix.needsUpdate = true
+  const applyDay = (d: number) => {
+    const list = windArrowSites(d)
+    list.forEach((s, i) => {
+      // 罗盘方位角：0=北（-Z），90=东（+X）
+      const rotY = Math.PI / 2 - (s.bearing * Math.PI) / 180
+      dummy.position.set(lonToWorldX(s.lng), LAYER_Y_WIND, latToWorldZ(s.lat))
+      dummy.rotation.set(0, rotY, 0)
+      dummy.updateMatrix()
+      arrows.setMatrixAt(i, dummy.matrix)
+    })
+    arrows.instanceMatrix.needsUpdate = true
+  }
+  applyDay(day ?? 1)
   g.add(arrows)
   g.userData.arrowGeo = arrowGeo
   g.userData.arrowMat = windMat
@@ -276,7 +332,7 @@ function buildWinds(lineMaterials: LineMaterial[], day?: number): THREE.Group {
     line.renderOrder = 4
     g.add(line)
   }
-  return g
+  return { group: g, setDay: applyDay }
 }
 
 /**
@@ -356,10 +412,12 @@ function buildPhenomena(lineMaterials: LineMaterial[]): PhenomenaLayer {
  */
 export function buildMap3DLayers(day?: number): Map3DLayers {
   const lineMaterials: LineMaterial[] = []
-  const currents = buildCurrents(lineMaterials, day)
+  const currentsL = buildCurrents(lineMaterials, day)
   const pirates = buildPirates(lineMaterials)
-  const winds = buildWinds(lineMaterials, day)
+  const windsL = buildWinds(lineMaterials, day)
   const phenomena = buildPhenomena(lineMaterials)
+  const currents = currentsL.group
+  const winds = windsL.group
   phenomena.setDay(day ?? 1)
 
   const disposables: { dispose(): void }[] = [...lineMaterials]
@@ -377,6 +435,19 @@ export function buildMap3DLayers(day?: number): Map3DLayers {
     pirates,
     winds,
     phenomena,
+    /*
+     * 换季：把三块「跟季节有关的东西」一起推到新的一季。
+     * 洋流（季风漂流掉头）、风箭头（印度洋半年反向）、海上现象（换一片水）。
+     *
+     * 【为什么必须是一家】这三块原先各算各的，其中两块只在挂载时算一次——
+     * 3D 里过了一个换季，天数已经按新季风算了，画面上却还是上一季的风与水流。
+     * 这是"屏幕数字不等于实际发生的变化"，本项目最不能留的一类问题。
+     */
+    setDay(d: number) {
+      currentsL.setDay(d)
+      windsL.setDay(d)
+      phenomena.setDay(d)
+    },
     lineMaterials,
     dispose() {
       for (const d of disposables) d.dispose()
