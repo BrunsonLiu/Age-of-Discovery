@@ -144,10 +144,15 @@ check(rushUsed.food > steadyUsed.food,
   `抢行确实比按部就班费粮（${steadyUsed.food} → ${rushUsed.food}），判据有区分力`)
 
 // ---- ⑤ 三档总账：抢行更省粮，才存在「判定线分叉」这个测得到的区间 ----
-// 前面 measure() 起过航，pendingVoyage 已被清掉，这里重开一次计划再算账
-await setup(); await sleep(350)
-await openPlan(); await sleep(450)
-const ledgers = await page.evaluate(async () => {
+//
+// 【为什么目的地是挑出来的，不是写死的】(2026-11-09)
+// 原来固定开往皇家港：30 人船、5 节，抢行 3 天 × 5 = 15 粮、按部就班 6 天 × 3 = 18 粮，
+// 于是"判定线用最省的抢行、结论句用按部就班"这个 bug 测得到。
+// 洋流进航程之后，这条航线按部就班变成 5 天 → 也是 15 粮，**分叉区间消失了**：
+// 两档总耗粮相同，再怎么设粮数也测不出"说够、照默认走却断粮"。
+// 这不是回归，是那条航线的三档恰好重合了；所以改成**按航程短到长挨个试**，
+// 取第一条抢行总耗粮确实更少的航线。没有分叉就明说失败，不静默跳过。
+const readLedgers = () => page.evaluate(async () => {
   const mod = p => import(new URL(p, document.baseURI).pathname)
   const [seg, nav, wx] = await Promise.all([
     mod('src/utils/segment.ts'), mod('src/utils/navigation.ts'), mod('src/utils/weather.ts'),
@@ -165,17 +170,38 @@ const ledgers = await page.evaluate(async () => {
     durabilityCarry: g.fleet.durabilityCarry,
   }).map(x => ({ stance: x.stance.id, days: x.days, food: x.food, water: x.water }))
 })
-check(!!ledgers && ledgers.length === 3, '算出了三档总账（防「根本没进计划」的假绿）')
-if (ledgers) {
-  const rush = ledgers.find(l => l.stance === 'rush')
-  const steady = ledgers.find(l => l.stance === 'steady')
-  check(rush.food < steady.food,
-    `这条航线抢行总耗粮 ${rush.food} < 按部就班 ${steady.food}，分叉区间存在`)
+
+/** 开往指定港口（按 id 取坐标，不在测试里写死经纬度） */
+const openPlanPort = (portId) => page.evaluate(async (pid) => {
+  const { ports } = await import(new URL('src/data/ports.ts', document.baseURI).pathname)
+  const p = ports.find(x => x.id === pid)
+  if (!p) return false
+  window.__gameStore.getState().sailToWaypoint({
+    latitude: p.latitude, longitude: p.longitude, portId: p.id, name: p.nameCn,
+  })
+  return true
+}, portId)
+
+let chosen = null
+for (const pid of [2, 5, 14, 4, 13, 7]) {
+  await setup(); await sleep(320)
+  const opened = await openPlanPort(pid)
+  if (!opened) continue
+  await sleep(420)
+  const led = await readLedgers()
+  if (!led || led.length !== 3) continue
+  const r = led.find(l => l.stance === 'rush')
+  const st = led.find(l => l.stance === 'steady')
+  if (r.food < st.food) { chosen = { pid, rush: r, steady: st }; break }
+}
+check(!!chosen, '找到一条三档能拉开的航线（抢行总耗粮 < 按部就班）——没有分叉就没有可测的区间')
+if (chosen) {
+  const { rush, steady, pid } = chosen
 
   // 粮刚好够抢行、不够按部就班：旧实现会说「补给偏紧」，玩家照默认走法断粮
   const between = Math.max(rush.food, steady.food - 1)
-  await setup(between, 999); await sleep(350)
-  await openPlan(); await sleep(550)
+  await setup(between, 999); await sleep(320)
+  await openPlanPort(pid); await sleep(550)
   const tight = await readRates()
   check(/不够/.test(tight.verdict),
     `粮=${between}（抢行够 ${rush.food}、按部就班要 ${steady.food}）必须报「不够」，实际：「${tight.verdict}」`)
@@ -185,8 +211,8 @@ if (ledgers) {
     `不够时给可行动的第二条路，且写清抢行全程只要 ${rush.food} 粮 / ${rush.water} 水`)
 
   // 刚好够按部就班：不该再报「不够」
-  await setup(steady.food, 999); await sleep(350)
-  await openPlan(); await sleep(550)
+  await setup(steady.food, 999); await sleep(320)
+  await openPlanPort(pid); await sleep(550)
   const enough = await readRates()
   check(!/不够/.test(enough.verdict),
     `粮=${steady.food}（按部就班刚好够）不该报「不够」，实际：「${enough.verdict}」`)

@@ -164,6 +164,7 @@ import { seasonAt, SEASON_DAYS, ALL_SEASONS, inMonsoonZone } from '../src/utils/
 import { prevailingWindBearingAt, prevailingWindBearing, computeWindFavor } from '../src/utils/navigation'
 import { snowPhaseOf } from '../src/components/map3d/mapPeaks3d'
 import { buildMap3DLayers } from '../src/components/map3d/mapLayers3d'
+import { routeCurrentFactor, currentAt } from '../src/utils/seaCurrents'
 import * as THREE from 'three'
 import { OCEAN_CURRENTS, currentFlowPoints, windArrowSites } from '../src/data/mapLayers'
 import { ports } from '../src/data/ports'
@@ -8066,6 +8067,84 @@ console.log('\n== 天数口径守卫 ==')
     const passCount = (storeSrc3.match(/state\.knownPassages/g) ?? []).length
     assert(passCount >= 6,
       `store 里至少有 6 处用到 knownPassages（实测 ${passCount} 处：记账 + 四处航程 + 存档）`)
+  }
+}
+
+
+// ---------------- 洋流：顺流推你一把，逆流顶你回来 ----------------
+//
+// 2026-11-09：洋流以前只是地图上的虚线，不参与任何计算。而大航海最实在的
+// 地理知识就是"顺着流走"：湾流把船从加勒比推回欧洲，阿古拉斯沿岸流把船
+// 从印度洋那边顶回来（所以回欧洲的人宁可走外海绕开它）。
+//
+// 【修了一处数据错误】北赤道流、南赤道流都向西流，阿古拉斯沿南非东南岸向西南流，
+// 而它们原来的点序是反的。以前没人读方向，所以看不出来；一旦方向进入计算，
+// 顺流与逆流就整个颠倒——所以下面第一条就钉方向。
+{
+  // ---- ① 方向：点序就是流向，三条修过的必须指向真实方向 ----
+  const bearingOf = (name: string) => {
+    const c = OCEAN_CURRENTS.find(x => x.name === name)!
+    const [a, b] = [c.points[0], c.points[c.points.length - 1]]
+    return calculateBearing(a[0], a[1], b[0], b[1])
+  }
+  const nec = bearingOf('北赤道流')
+  const sec = bearingOf('南赤道流')
+  const agu = bearingOf('阿古拉斯暖流')
+  assert(nec > 250 && nec < 290, `北赤道流向西（实测方位 ${nec.toFixed(0)}°）——信风推的，不是向东`)
+  assert(sec > 250 && sec < 290, `南赤道流向西（实测 ${sec.toFixed(0)}°）`)
+  assert(agu > 180 && agu < 260, `阿古拉斯沿南非东南岸向西南（实测 ${agu.toFixed(0)}°）`)
+
+  // ---- ② 符号：顺流 > 1、逆流 < 1、横穿 ≈ 1 ----
+  {
+    const west = Array.from({ length: 20 }, (_, i) => ({ lat: 15, lng: -25 - i * 1.5 }))
+    const east = [...west].reverse()
+    const fw = routeCurrentFactor(west, 5)
+    const fe = routeCurrentFactor(east, 5)
+    assert(fw > 1.02, `沿北赤道流向西是顺流（乘数 ${fw}）`)
+    assert(fe < 0.98, `反向向东是逆流（乘数 ${fe}）`)
+    assert(Math.abs(fw - 1) < 0.2 && Math.abs(fe - 1) < 0.2,
+      `洋流的影响在合理范围（${fw} / ${fe}）——再大就成了气候不是洋流`)
+
+    const ne = Array.from({ length: 20 }, (_, i) => ({ lat: 30 + i * 0.7, lng: -72 + i * 1.2 }))
+    const sw = [...ne].reverse()
+    const fn = routeCurrentFactor(ne, 5)
+    const fs = routeCurrentFactor(sw, 5)
+    assert(fn > 1.04, `顺湾流往东北更快（乘数 ${fn}）`)
+    assert(fs < 0.96, `逆湾流往西南更慢（乘数 ${fs}）`)
+
+    // 横穿洋流既不快也不慢（补舵抵掉横向位移）
+    const south = Array.from({ length: 20 }, (_, i) => ({ lat: 30 - i * 0.8, lng: -60 }))
+    const fc = routeCurrentFactor(south, 5)
+    assert(Math.abs(fc - 1) < 0.01, `横穿洋流对里程几乎无影响（乘数 ${fc}）——方向对了才可能这样`)
+  }
+
+  // ---- ③ 只在有流的海域生效 ----
+  assert(currentAt(0, -140, 5) === null, '太平洋中部没有洋流数据，乘数应为 1')
+  assert(routeCurrentFactor([{ lat: 0, lng: -140 }, { lat: 1, lng: -139 }], 5) === 1,
+    '没有洋流的海域乘数恒为 1（不假装全世界都有流）')
+  assert(!!currentAt(37, -65, 5), '百慕大一带在湾流带里')
+
+  // ---- ④ 季风漂流：换季掉头，同一条直线两季一顺一逆 ----
+  {
+    const along = Array.from({ length: 16 }, (_, i) => ({ lat: 8 + i * 0.45, lng: 60 + i * 2.1 }))
+    const fSpring = routeCurrentFactor(along, 5)    // 西南季风：向东
+    const fAutumn = routeCurrentFactor(along, 65)   // 东北季风：向西
+    assert(fSpring > fAutumn,
+      `季风漂流换季后同一条航线由顺转逆（春 ${fSpring} / 秋 ${fAutumn}）`)
+  }
+
+  // ---- ⑤ 接在唯一的航程链上（否则就是又一份"算了但没人用"） ----
+  {
+    const src = readFileSync(join(process.cwd(), 'src', 'utils', 'voyage.ts'), 'utf8')
+    assert(/routeCurrentFactor\(pts, day\)/.test(src),
+      'windFavorForRoute 里真的乘了洋流因子——天数只有这一条链')
+    // 同一条航线：有洋流与无洋流算出来必须不是一个数
+    const havA: [number, number] = [24, -78]
+    const havB: [number, number] = [37.5, -6]
+    const wf = windFavorForRoute(havA, havB, 5)
+    const base = computeWindFavor(havA[0], havA[1], havB[0], havB[1], 5)
+    assert(Math.abs(wf - base) > 1e-6,
+      `穿湾流的航线与"只有风"的算法得出了不同的系数（${wf.toFixed(3)} vs ${base.toFixed(3)}）`)
   }
 }
 

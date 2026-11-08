@@ -4,6 +4,7 @@ import { dailyFoodUse, dailyWaterUse, forecastSegment, STANCES, type StanceId } 
 import { WEATHER_INFO, weatherFavorFactor } from '@/utils/weather'
 import { getRouteGeometry } from '@/utils/routePath'
 import { routePhenomenonFactor } from '@/data/seaPhenomena'
+import { routeCurrentFactor } from '@/utils/seaCurrents'
 
 /**
  * 航程测算的公共口径。
@@ -166,7 +167,13 @@ export function windFavorForRoute(
 ): number {
   const base = computeWindFavor(from[0], from[1], to[0], to[1], day)
   const pts = points ?? getRouteGeometry(from, to).points
-  return base * routePhenomenonFactor(pts, day, knownPassages)
+  /*
+   * 两个乘数叠在同一条链上：
+   *   · 季节现象（风暴带/无风带…）：这一季这片水不好走；
+   *   · 洋流：顺流推你一把、逆流顶你回来。
+   * 两者都乘进 windFavor，所以面板报的天数与船每天的实际推进仍然同源。
+   */
+  return base * routePhenomenonFactor(pts, day, knownPassages) * routeCurrentFactor(pts, day)
 }
 
 /**

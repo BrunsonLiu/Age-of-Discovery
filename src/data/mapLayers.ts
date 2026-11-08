@@ -21,6 +21,13 @@ import { seasonAt } from '@/utils/season'
 /** 主要洋流（史实简化）：暖流红色、寒流蓝色 */
 export interface OceanCurrent {
   name: string
+  /**
+   * 流速（节）。
+   *
+   * 真实量级：湾流 2 节、阿古拉斯 2~2.5 节、赤道流 1~1.5 节。
+   * 这个数**直接进航程计算**（见 utils/seaCurrents），不再是装饰。
+   */
+  knots: number
   /** 折线节点，[lat, lng]。**点序就是流向**（3D 的虚线沿点序流动） */
   points: [number, number][]
   /** 暖流（红）还是寒流（蓝） */
@@ -39,14 +46,21 @@ export interface OceanCurrent {
 }
 
 export const OCEAN_CURRENTS: OceanCurrent[] = [
-  { name: '湾流', warm: true, points: [[24, -80], [30, -75], [37, -65], [43, -50], [48, -35]] },
-  { name: '北赤道流', warm: true, points: [[12, -60], [15, -45], [18, -30], [20, -18]] },
-  { name: '加那利寒流', warm: false, points: [[45, -20], [35, -14], [25, -12], [14, -16]] },
-  { name: '本格拉寒流', warm: false, points: [[-30, 12], [-22, 10], [-12, 8], [-2, 6]] },
-  { name: '阿古拉斯暖流', warm: true, points: [[-36, 20], [-28, 26], [-20, 32], [-12, 40]] },
-  { name: '南赤道流', warm: true, points: [[-8, 30], [-10, 55], [-12, 75], [-14, 90]] },
+  // 湾流：佛罗里达外海往东北，2 节。点序 = 流向，下同。
+  { name: '湾流', knots: 2.0, warm: true, points: [[24, -80], [30, -75], [37, -65], [43, -50], [48, -35]] },
+  /*
+   * 【2026-11-09 修方向】北赤道流与南赤道流**都向西流**（信风推的），
+   * 原来这两条的点序是从西往东，方向反了。以前没人用量方向，所以看不出来；
+   * 一旦洋流进航程计算，"逆流"和"顺流"就整个颠倒。
+   */
+  { name: '北赤道流', knots: 1.2, warm: true, points: [[20, -18], [18, -30], [15, -45], [12, -60]] },
+  { name: '加那利寒流', knots: 1.0, warm: false, points: [[45, -20], [35, -14], [25, -12], [14, -16]] },
+  { name: '本格拉寒流', knots: 1.0, warm: false, points: [[-30, 12], [-22, 10], [-12, 8], [-2, 6]] },
+  // 阿古拉斯：沿南非东南岸向**西南**冲（2.2 节）。原先点序是东北向，也反了。
+  { name: '阿古拉斯暖流', knots: 2.2, warm: true, points: [[-28, 32], [-32, 26], [-36, 20]] },
+  { name: '南赤道流', knots: 1.2, warm: true, points: [[-14, 90], [-12, 75], [-10, 55], [-8, 30]] },
   // 季风漂流：唯一会掉头的洋流（见 monsoonReverses）
-  { name: '季风漂流', warm: true, monsoonReverses: true, points: [[8, 60], [10, 72], [13, 82], [15, 92]] },
+  { name: '季风漂流', knots: 1.4, warm: true, monsoonReverses: true, points: [[8, 60], [10, 72], [13, 82], [15, 92]] },
 ]
 
 /** 海盗威胁区域（史实据点周边海域） */
