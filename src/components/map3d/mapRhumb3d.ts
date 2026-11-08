@@ -196,8 +196,23 @@ export function createRhumb3d(seaY: number): Map3DRhumb {
        * 所以按相机距离淡出：dist≤18（近景）满强度，dist≥34（全球）只剩 22%。
        */
       if (dist !== lastDist) {
-        const t = Math.min(1, Math.max(0, (dist - 18) / 16))
-        const nextGain = 1 - t * 0.78
+        const far = Math.min(1, Math.max(0, (dist - 18) / 16))
+        /*
+         * 近景也要淡。
+         *
+         * 【为什么】罗经花是按 2D 的五个中心点摆的，世界里直径 0.9 单位。
+         * 拉到 dist≈10（一屏只装下半个地中海）时，那一朵在屏幕上直径三百多像素，
+         * 上面还盖着整片恒向线——实测读作"贴了一张圆形贴纸在海面上"，
+         * 而且它比港口、船、岛屿都显眼，把视线从真正的细节上拽走。
+         *
+         * 海图的规矩也是这样：恒向线网是**区域详图**的东西，
+         * 你看的是三度见方的一小块海面时，没有人会在这上面画一朵占满整页的罗经花。
+         *
+         * 曲线：dist≥10 满强度；dist 5 时只剩 35%（不完全消失——
+         * 它是这张海图的身份，淡到"能看见但不抢戏"）。
+         */
+        const near = dist >= 10 ? 1 : Math.min(1, Math.max(0.35, 0.35 + ((dist - 5) / 5) * 0.65))
+        const nextGain = (1 - far * 0.78) * near
         if (Math.abs(nextGain - distGain) > 0.03) {
           distGain = nextGain
           applyOpacity()

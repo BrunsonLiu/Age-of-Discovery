@@ -124,6 +124,23 @@ function buildPeakTexture(snow: boolean, variant = 0): { texture: THREE.Texture 
     g.fillStyle = faded ? 'rgba(58,40,18,0.10)' : 'rgba(58,40,18,0.16)'
     g.fill()
 
+    /*
+     * 左上受光面。
+     *
+     * 【为什么必须有】原来只有右下那块暗面：在斜俯视下整座山读作
+     * "一张对折的纸"——因为人眼要**一亮一暗**才认得出立体。
+     * 主光在西偏南（见 Map3DView 的 DirectionalLight），所以亮面在左上，
+     * 用暖白薄薄铺一层（0.14），比加深暗面更有效：符号本来就小，
+     * 再加深只会糊成一团墨点，提亮才能让脊线"站起来"。
+     */
+    g.beginPath()
+    g.moveTo(cx - hw, by)
+    g.lineTo(cx, apexY)
+    g.lineTo(cx + hw * 0.1, by)
+    g.closePath()
+    g.fillStyle = faded ? 'rgba(255,244,214,0.06)' : 'rgba(255,244,214,0.14)'
+    g.fill()
+
     if (snow) {
       // 雪帽：顶部 30%
       const k = 0.3
@@ -141,6 +158,33 @@ function buildPeakTexture(snow: boolean, variant = 0): { texture: THREE.Texture 
 
   // 底边 y=56（留 8px 给描边溢出）。主峰 + 两侧更小更淡的肩峰
   const v = VARIANTS[Math.max(0, Math.min(VARIANTS.length - 1, variant))]
+
+  /*
+   * 落地投影：让这组山"压在纸面上"，而不是浮着。
+   *
+   * 【为什么是椭圆而不是三角的投影】符号在屏幕上只有 11~15px 宽，
+   * 一个正确的几何投影在这点尺寸下只会读作"多了一团脏"；
+   * 一团柔和的椭圆阴影反而能把符号钉住。这是地图符号的常规画法
+   * （古海图上的山也带一层晕），不是写实投影。
+   *
+   * 方向：主光在西偏南上方 → 影子落向东北，即贴图里 +x、贴近底边（y 略大）。
+   * 与安第斯那一轮核对过的受光方向一致（西侧亮、东侧暗）。
+   */
+  {
+    g.save()
+    g.translate(v.main + 7, 57)
+    g.scale(1, 0.2)
+    const rg = g.createRadialGradient(0, 0, 0, 0, 0, 46)
+    rg.addColorStop(0, 'rgba(44,30,14,0.30)')
+    rg.addColorStop(0.5, 'rgba(44,30,14,0.14)')
+    rg.addColorStop(1, 'rgba(44,30,14,0)')
+    g.fillStyle = rg
+    g.beginPath()
+    g.arc(0, 0, 46, 0, Math.PI * 2)
+    g.fill()
+    g.restore()
+  }
+
   peak(v.left, 56, Math.round(v.hw * 0.75), Math.round(v.hh * 0.77), true)
   peak(v.right, 56, Math.round(v.hw * 0.65), Math.round(v.hh * 0.68), true)
   peak(v.main, 56, v.hw, v.hh, false)

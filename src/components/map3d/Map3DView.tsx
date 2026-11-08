@@ -32,6 +32,7 @@ import { buildMap3DBorders } from './mapBorders3d'
 import { buildMap3DCoastline } from './mapCoastline3d'
 import { buildMap3DPeaks, type PeakFacing } from './mapPeaks3d'
 import { createRhumb3d } from './mapRhumb3d'
+import { createShipWake } from './shipWake'
 import { loadReliefNormalMap } from '@/utils/reliefNormalMap'
 import { seasonAt } from '@/utils/season'
 import { buildTerrainSymbols, filterPeaksByElevation } from '@/utils/terrainDecor'
@@ -1153,6 +1154,10 @@ export default function Map3DView() {  const mountRef = useRef<HTMLDivElement>(n
       const seaLayer = createSeaLayer3d(mount, getRelicItems)
 
       // ---- 玩家船 ----
+      // 船尾尾迹：航行时才出现（见 shipWake.ts）
+      const wake = createShipWake()
+      scene.add(wake.mesh)
+
       const ship = makeShipModel(shipKit)
       // 起个名字，供 e2e 找到它（验证停泊时不会把港口模型盖住）
       ship.name = 'map3d-ship'
@@ -1665,6 +1670,8 @@ export default function Map3DView() {  const mountRef = useRef<HTMLDivElement>(n
       let weatherDim = 1
       /** 上一次已应用的航季序号（-1 = 还没应用过） */
       let lastSeasonIndex = -1
+      /** 上一次写进材质的地势法线强度（避免每帧改属性） */
+      let lastReliefK = -1
       /*
        * 日相不在这里推进。
        *
@@ -1851,6 +1858,21 @@ export default function Map3DView() {  const mountRef = useRef<HTMLDivElement>(n
             dYaw = Math.atan2(Math.sin(dYaw), Math.cos(dYaw))
             ship.rotation.y += dYaw * Math.min(1, dt * 7)
           }
+          /*
+           * 尾迹从**船尾**起，不是船心。
+           *
+           * 船的朝向是 rotation.y（艏向），船尾在 -艏向方向约半个船长处：
+           * 船长 0.92×scale，半长 0.46×scale。不减去它，尾迹会从船肚子底下冒出来，
+           * 近景（dist=3）下一眼看穿。
+           */
+          {
+            const halfLen = 0.46 * ship.scale.x
+            const heading = ship.rotation.y
+            const sternX = sx - Math.sin(heading) * halfLen
+            const sternZ = sz - Math.cos(heading) * halfLen
+            wake.update(sternX, sternZ, fleet.isSailing, heading)
+          }
+
           // 相机焦点：停泊时对准港口本身，航行时才跟船。
           //
           // 【为什么停泊要对准港口】停泊时船被挪到港口旁边 0.6 世界单位
@@ -2166,6 +2188,39 @@ export default function Map3DView() {  const mountRef = useRef<HTMLDivElement>(n
           // 罗经花同理：远看是一粒米、近看是一片天，都读不出"一朵花"
           rhumb.setScale(camState.dist)
 
+          /*
+           * ---- 地势法线随距离淡出 ----
+           *
+           * 【为什么必须淡出】那张法线来自 2048×1024 的 DEM，一像素约 0.176°≈19 公里。
+           * 拉到近景（dist≈8，一屏只装得下法国那么大）时，一个纹素被放大到几十个
+           * 屏幕像素——实测整片中欧糊成一团脏褐斑，读作"贴图脏了"，而不是"有山"。
+           *
+           * 远看时它是画面上最有说服力的一层（安第斯/喜马拉雅/东非大裂谷的脊线），
+           * 近看时它是最难看的一层。所以按距离收：dist≥14 满强度，dist≤7 只剩 15%
+           * （不给 0：留一点大尺度明暗，否则近景的陆地完全平），
+           * 近景的细节交给纸纹 bumpMap（repeat 22×，近景正好 1:1）。
+           *
+           * 【为什么不是换一张更细的法线图】DEM 就这个分辨率，换图等于造假地形；
+           * 而且更高频的法线在远景会变成噪点。收强度是唯一诚实的做法。
+           */
+          if (lidMat.normalMap) {
+            const k = Math.min(1, Math.max(0.15, (camState.dist - 7) / 7))
+            // 只在明显变化时写，避免每帧改材质属性
+            if (Math.abs(k - lastReliefK) > 0.02) {
+              lastReliefK = k
+              lidMat.normalScale.set(0.6 * k, 0.6 * k)
+              /*
+               * 地势收起多少，纸纹就补多少。
+               *
+               * 近景下 DEM 已经没用了（一片糊），而陆地又不能是一块塑料——
+               * 这时该顶上来的是纸纹颗粒（bumpMap，repeat 22×）。
+               * 实测 bumpScale 恒为 4 时，dist≈11 的巴黎周边只有一层平色。
+               * 收到 0.15×0.6 的同时把颗粒提到 4→8 左右，陆地才重新像纸。
+               */
+              lidMat.bumpScale = GRAIN_BUMP * (1 + 1.2 * (1 - k))
+            }
+          }
+
           const tSec = tNow / 1000
           const detail = camState.dist < 22
           let bi = 0
@@ -2349,6 +2404,7 @@ export default function Map3DView() {  const mountRef = useRef<HTMLDivElement>(n
         // 山是异步补建的：切视图时它可能还没建好（peaks 为 null），也可能已建好
         peaks?.dispose()
         rhumb.dispose()
+        wake.dispose()
         renderer?.dispose()
         if (renderer && renderer.domElement.parentNode === mount) {
           mount.removeChild(renderer.domElement)
