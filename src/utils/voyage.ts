@@ -3,6 +3,7 @@ import { calculateDailyConsumption, computeWindFavor, dailyDistanceNm } from '@/
 import { dailyFoodUse, dailyWaterUse, forecastSegment, STANCES, type StanceId } from '@/utils/segment'
 import { WEATHER_INFO, weatherFavorFactor } from '@/utils/weather'
 import { getRouteGeometry } from '@/utils/routePath'
+import { routePhenomenonFactor } from '@/data/seaPhenomena'
 
 /**
  * 航程测算的公共口径。
@@ -121,13 +122,43 @@ export interface RouteFacts {
  * 掩码到位之后还要 `invalidateRouteGeometryCache()`，
  * 那一步没做完之前缓存里躺着的仍是旧的直线几何。
  */
-export function routeFacts(from: [number, number], to: [number, number], day?: number): RouteFacts {
+export function routeFacts(from: [number, number], to: [number, number], day: number): RouteFacts {
   const geom = getRouteGeometry(from, to)
   return {
     distanceNm: Math.round(geom.totalNm),
-    // day 给了就含季风（印度洋半年反向）；不给保持纯纬度带规则
-    windFavor: computeWindFavor(from[0], from[1], to[0], to[1], day),
+    windFavor: windFavorForRoute(from, to, day, geom.points),
   }
+}
+
+/**
+ * 一条航线的风力系数 —— **含季节性海上现象**。
+ *
+ * 【为什么单独开一个函数，而不是在 computeWindFavor 里算】
+ * `computeWindFavor` 只知道两个点，不知道船**实际走哪条弧线**。
+ * 季节现象是海上一片一片的区域（见 data/seaPhenomena），
+ * 而绕好望角的航线与那条直线大圆根本不是同一条线——
+ * 拿直线去判"有没有穿过风暴带"会得出相反的结论
+ * （好望角那条真正的航线贴着海岸走，直线却从南大西洋正中穿过）。
+ *
+ * 【为什么必须传 day、不设默认值】
+ * 默认值会让"某个调用方忘了传"变成**静默失效**：季节现象不生效，
+ * 而界面上一切正常。宁可编译报错。
+ *
+ * 【为什么这个乘数要乘进 windFavor，而不是另开一个字段】
+ * 天数只有一条链：`windFavor → dailyDistanceNm → daysForDistance`。
+ * 多一个字段就要在"预估天数"与"船每天实际推进"两处各乘一次，
+ * 而这正是本项目最忌讳的分叉（界面报 6 天、船走了 9 天）。
+ */
+export function windFavorForRoute(
+  from: [number, number],
+  to: [number, number],
+  day: number,
+  /** 已经算好的航线点（不给就自己取，走缓存） */
+  points?: { lat: number; lng: number }[],
+): number {
+  const base = computeWindFavor(from[0], from[1], to[0], to[1], day)
+  const pts = points ?? getRouteGeometry(from, to).points
+  return base * routePhenomenonFactor(pts, day)
 }
 
 /**

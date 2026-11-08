@@ -7,6 +7,8 @@ import {
   OCEAN_CURRENTS, currentFlowPoints, PIRATE_ZONES, WIND_BAND_LATS,
   pirateZonePolygon, windArrowSites,
 } from '@/data/mapLayers'
+import { SEA_PHENOMENA, phenomenonRing, type SeaPhenomenon } from '@/data/seaPhenomena'
+import { ALL_SEASONS, seasonAt } from '@/utils/season'
 
 /**
  * 2.5D 海图的叠加图层：洋流 / 海盗区 / 风带。
@@ -54,6 +56,8 @@ const LAYER_Y_FILL = -0.0880
 const LAYER_Y_CURRENT = -0.0872
 const LAYER_Y_PIRATE = -0.0868
 const LAYER_Y_WIND = -0.0862
+/** 季节现象（风暴带/无风带…）：压在海盗区之上、风箭头之下 */
+const LAYER_Y_PHENOM = -0.0864
 
 /** 洋流颜色：暖流红、寒流蓝（与 2D 一致） */
 const CURRENT_WARM = 0xd4784a
@@ -72,6 +76,11 @@ export interface Map3DLayers {
   pirates: THREE.Group
   /** 风带图层组 */
   winds: THREE.Group
+  /**
+   * 季节性海上现象。与上面三组不同：**没有底栏开关**——
+   * 它不是可选的参考图层，是这一季的海本身。
+   */
+  phenomena: PhenomenaLayer
   /** 所有需要随窗口尺寸更新 resolution 的线材质 */
   lineMaterials: LineMaterial[]
   dispose(): void
@@ -270,6 +279,76 @@ function buildWinds(lineMaterials: LineMaterial[], day?: number): THREE.Group {
   return g
 }
 
+/**
+ * 季节性海上现象的 3D 表现：一圈虚线界线。
+ *
+ * 【为什么四季全建好、只切 visible】
+ * 换季不重建几何：一次换季要重跑 A* 之外的所有线，还会把
+ * `lineMaterials`（窗口 resize 要刷 resolution 的那个数组）越滚越长。
+ * 四条现象一共四百来个点，全建好也就几十 KB。
+ *
+ * 【为什么两个圈】
+ * 单圈读作"一个圆圈符号"；外圈略粗 + 内圈更淡的两重圈，
+ * 读起来才像"一片水域"——2D 那边是"描边 + 淡填充"，
+ * 3D 没有半透明填充可用（海面已经在混合，再叠一层会脏），
+ * 于是用两重线替代填充，视觉结果是同一种东西。
+ */
+export interface PhenomenaLayer {
+  group: THREE.Group
+  /** 换季时切可见性（同一天重复调用是空操作） */
+  setDay(day: number): void
+}
+
+function phenomColor(p: SeaPhenomenon): number {
+  return parseInt(p.color.replace('#', ''), 16)
+}
+
+function buildPhenomena(lineMaterials: LineMaterial[]): PhenomenaLayer {
+  const group = new THREE.Group()
+  group.name = 'map3d-phenomena'
+  const bySeason = new Map<string, THREE.Group>()
+
+  for (const season of ALL_SEASONS) {
+    const g = new THREE.Group()
+    g.name = `map3d-phenom-${season.id}`
+    g.visible = false
+    for (const p of SEA_PHENOMENA.filter(x => x.season === season.id)) {
+      const color = phenomColor(p)
+      const outer = makeLine(
+        phenomenonRing(p, 64),
+        color,
+        // 远景下（dist 15 = 大半个世界）这个圈只有三十几像素：
+        // 2.0px / 0.5 透明度在那样的尺度上几乎看不见，实测截图只剩几个点
+        { linewidth: 2.4, opacity: 0.62, dashSize: 0.14, gapSize: 0.12, y: LAYER_Y_PHENOM },
+        lineMaterials,
+      )
+      outer.renderOrder = 4
+      g.add(outer)
+      const inner = makeLine(
+        phenomenonRing({ ...p, radiusDeg: p.radiusDeg * 0.88 }, 64),
+        color,
+        { linewidth: 1.2, opacity: 0.22, dashSize: 0.1, gapSize: 0.22, y: LAYER_Y_PHENOM },
+        lineMaterials,
+      )
+      inner.renderOrder = 4
+      g.add(inner)
+    }
+    bySeason.set(season.id, g)
+    group.add(g)
+  }
+
+  let lastDay = -1
+  return {
+    group,
+    setDay(day: number) {
+      if (day === lastDay) return
+      lastDay = day
+      const active = seasonAt(day).id
+      for (const [sid, g] of bySeason) g.visible = sid === active
+    },
+  }
+}
+
 /** 构建全部叠加图层 */
 /**
  * @param day 游戏日——只用于「会随季风掉头的洋流」（季风漂流）。
@@ -280,10 +359,12 @@ export function buildMap3DLayers(day?: number): Map3DLayers {
   const currents = buildCurrents(lineMaterials, day)
   const pirates = buildPirates(lineMaterials)
   const winds = buildWinds(lineMaterials, day)
+  const phenomena = buildPhenomena(lineMaterials)
+  phenomena.setDay(day ?? 1)
 
   const disposables: { dispose(): void }[] = [...lineMaterials]
   // 清理各组里的非 Line2 资源（填充几何/材质、箭头几何/材质）
-  for (const grp of [currents, pirates, winds]) {
+  for (const grp of [currents, pirates, winds, phenomena.group]) {
     grp.traverse(o => {
       const any = o as unknown as { geometry?: { dispose(): void }; material?: { dispose(): void } }
       if (any.geometry) disposables.push(any.geometry)
@@ -295,6 +376,7 @@ export function buildMap3DLayers(day?: number): Map3DLayers {
     currents,
     pirates,
     winds,
+    phenomena,
     lineMaterials,
     dispose() {
       for (const d of disposables) d.dispose()

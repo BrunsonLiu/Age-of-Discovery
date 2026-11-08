@@ -12,7 +12,12 @@ import { WEATHER_INFO, weatherCell, weatherDuration, weatherFavorFactor } from '
 import type { WeatherState } from '../src/types'
 import {
   dailyRates, daysToDestination, formatSupplyDays, moraleLevel, routeFacts, supplyDaysRemaining, supplyLevel, voyageDays,
+  windFavorForRoute,
 } from '../src/utils/voyage'
+import {
+  SEA_PHENOMENA, activePhenomena, phenomenonAt, phenomenonRing,
+  routePhenomenonFactor, phenomenonEventBias, inPhenomenon,
+} from '../src/data/seaPhenomena'
 import {
   adjustedOutcomes, crewLossChance, expectedDeltas, outcomeHarm, riskGrade, summarizeChoice,
   CHIP_MIN_EV, type AdjustedOutcome, type ChoiceSummary,
@@ -154,7 +159,7 @@ import type { EventOutcome, Fleet, GameEvent, MiniGameId, Route } from '../src/t
 import {
   greatCircleNm, greatCirclePoint, buildRouteGeometry, positionAtNm, traveledNmAt, pathTouchesLand,
 } from '../src/utils/routePath'
-import { findSeaPath, loadSeaMask, isSeaMaskLoaded } from '../src/utils/seaRoute'
+import { findSeaPath, loadSeaMask, isSeaMaskLoaded, isLandAt } from '../src/utils/seaRoute'
 import { seasonAt, SEASON_DAYS, ALL_SEASONS, inMonsoonZone } from '../src/utils/season'
 import { prevailingWindBearingAt, prevailingWindBearing, computeWindFavor } from '../src/utils/navigation'
 import { snowPhaseOf } from '../src/components/map3d/mapPeaks3d'
@@ -3640,7 +3645,7 @@ console.log('== 51. 掮客推荐：卡片说的利润必须等于实际到账 ==
     // 现在两边都走 utils/voyage.voyageDays，所以这里要逐字相等。
     const fromPort = ports.find(p => p.id === S().fleet.currentPortId!)!
     const toPort = ports.find(p => p.id === deal.toPortId)!
-    const facts = routeFacts([fromPort.latitude, fromPort.longitude], [toPort.latitude, toPort.longitude])
+    const facts = routeFacts([fromPort.latitude, fromPort.longitude], [toPort.latitude, toPort.longitude], S().fleet.day)
     assert(facts.distanceNm === deal.nm,
       `掮客卡的航程必须是真实避陆弧长（卡 ${deal.nm}，航线 ${facts.distanceNm}）`)
     const expectDays = voyageDays({
@@ -3711,7 +3716,7 @@ console.log('== 51b. 掮客卡的天数必须含天候（暴风雨里不得与�
       `这条长途单晴天也该有几天（实际 ${clearDays} 天）——否则下面的天候断言没有区分力`)
     const fromPort = ports.find(p => p.id === S().fleet.currentPortId!)!
     const toPort = ports.find(p => p.id === clearDeal.toPortId)!
-    const facts = routeFacts([fromPort.latitude, fromPort.longitude], [toPort.latitude, toPort.longitude])
+    const facts = routeFacts([fromPort.latitude, fromPort.longitude], [toPort.latitude, toPort.longitude], S().fleet.day)
 
     useGameStore.setState({ weather: { ...S().weather, kind: 'storm' } })
     const stormDeal = selectBestDeal(S())
@@ -3890,7 +3895,7 @@ console.log('== 54. 回程建议：卖完货不能让人卡在"无推荐"里 =='
     // 回程提示也是一屏数字，点开的面板必须说同一个数（第 33 轮）
     const a = ports.find(p => p.id === S().fleet.currentPortId!)!
     const b = ports.find(p => p.id === back.toPortId)!
-    const facts = routeFacts([a.latitude, a.longitude], [b.latitude, b.longitude])
+    const facts = routeFacts([a.latitude, a.longitude], [b.latitude, b.longitude], S().fleet.day)
     assert(facts.distanceNm === back.nm,
       `回程航程必须是真实避陆弧长（提示 ${back.nm}，航线 ${facts.distanceNm}）`)
     const expectDays = voyageDays({
@@ -7676,5 +7681,156 @@ console.log('\n== 天数口径守卫 ==')
   assert(/relicInSeason\(relic, state\.fleet\.day\)/.test(body),
     '拾取闸门也判季节：看不见的东西不许被拾走（换季瞬间的旧 DOM 也不行）')
 }
+
+// ---------------- 季节性海上现象：这一季的这片水必须真的在主航线上 ----------------
+//
+// 2026-11-08 用户方向：「融入季节，不要只用文字」。
+// 这一层不是给季节配一句说明，而是**一片按时令出现在地图上的水**：
+// 开进去天数真的变多、出事真的更频繁、船在风暴带里时天气面板会说出来。
+//
+// 选址是最容易做假的一步：随便找一个漂亮的海域画个圈，玩家一辈子开不到那里，
+// 那就是"装饰"而不是机制（海上遗物那一轮已经踩过一次：两件遗物离任何航线
+// 150 海里以上）。所以下面三条必须一起守：
+//   ① 圆心在海上（真掩码）；
+//   ② 界线的每一段到圆心都是同一个距离（真圆，2D/3D 才画得一样）；
+//   ③ **主航线真的穿过它**（真 A*，至少 150 海里在圈内）。
+{
+  const maskBuf = readFileSync(join(process.cwd(), 'public', 'data', 'sea-mask.bin'))
+  const origFetch2 = globalThis.fetch
+  globalThis.fetch = (async (input: any) => {
+    const url = String(input)
+    if (url.includes('sea-mask.bin')) {
+      const b = maskBuf.buffer.slice(maskBuf.byteOffset, maskBuf.byteOffset + maskBuf.byteLength)
+      return { ok: true, status: 200, arrayBuffer: async () => b } as any
+    }
+    return origFetch2(input)
+  }) as any
+  await loadSeaMask('')
+
+  // ---- ① 四季各一条，一年走完一圈 ----
+  const seasons = new Set(SEA_PHENOMENA.map(p => p.season))
+  assert(SEA_PHENOMENA.length === 4 && seasons.size === 4,
+    `四季各有一条海上现象（共 ${SEA_PHENOMENA.length} 条 / ${seasons.size} 个航季）`)
+  const names = new Set(SEA_PHENOMENA.map(p => p.name))
+  assert(names.size === SEA_PHENOMENA.length, '四条的名字不重复（地图上要靠名字分辨）')
+
+  for (const p of SEA_PHENOMENA) {
+    // ---- ② 圆心必须在海上 ----
+    assert(!isLandAt(p.lat, p.lng),
+      `「${p.name}」的圆心在海里（${p.lat}, ${p.lng}）——画在陆地上就不是海况了`)
+
+    // ---- ③ 界线是真圆 ----
+    const ring = phenomenonRing(p)
+    const want = p.radiusDeg * 60
+    const ds = ring.map(([la, ln]) => haversineNm(p.lat, p.lng, la, ln))
+    const lo = Math.min(...ds), hi = Math.max(...ds)
+    assert(Math.abs(lo - want) < want * 0.03 && Math.abs(hi - want) < want * 0.03,
+      `「${p.name}」的界线是正圆（期望 ${want.toFixed(0)} 海里，实测 ${lo.toFixed(0)}~${hi.toFixed(0)}）`)
+    // 2D 与 3D 读同一段点：环必须闭合（首尾同点）
+    assert(ring[0][0] === ring[ring.length - 1][0] && ring[0][1] === ring[ring.length - 1][1],
+      `「${p.name}」的界线闭合（2D 折线与 3D 线读的是同一段点）`)
+
+    // 季节性：只有本季会出现
+    const dayIn = ['spring', 'summer', 'autumn', 'winter'].indexOf(p.season) * SEASON_DAYS + 5
+    const dayOut = ((dayIn / SEASON_DAYS + 1) | 0) * SEASON_DAYS + 5
+    assert(phenomenonAt(p.lat, p.lng, dayIn)?.id === p.id,
+      `「${p.name}」在${p.season}的圆心处确实在（day ${dayIn}）`)
+    assert(phenomenonAt(p.lat, p.lng, dayOut) === null,
+      `「${p.name}」换到别的航季就不在了（day ${dayOut}）`)
+    assert(!inPhenomenon(p, p.lat + p.radiusDeg * 2, p.lng),
+      `「${p.name}」的边界之外不算在里面`)
+  }
+
+  // ---- ④ 主航线必须真的穿过（否则就是"画在没人去的大洋上"）----
+  {
+    const byName = (n: string) => ports.find(p => p.nameCn === n)!
+    const MAIN: [string, string][] = [
+      ['塞维利亚', '巴达维亚'], ['伦敦', '开普敦'], ['塞维利亚', '开普敦'],
+      ['里斯本', '圣胡安'], ['拿骚', '里斯本'], ['塞维利亚', '哈瓦那'],
+      ['伦敦', '巴达维亚'], ['阿姆斯特丹', '果阿'], ['开普敦', '巴达维亚'],
+      ['塞维利亚', '韦拉克鲁斯'], ['里斯本', '哈瓦那'], ['拿骚', '塞维利亚'],
+    ]
+    const geoms = MAIN.map(([a, b]) => {
+      const pa = byName(a), pb = byName(b)
+      return { label: `${a}→${b}`, geom: buildRouteGeometry([pa.latitude, pa.longitude], [pb.latitude, pb.longitude]) }
+    })
+    for (const p of SEA_PHENOMENA) {
+      let best = { nm: 0, label: '—' }
+      for (const g of geoms) {
+        let nm = 0
+        for (let i = 1; i < g.geom.points.length; i++) {
+          const a = g.geom.points[i - 1], b = g.geom.points[i]
+          const seg = haversineNm(a.lat, a.lng, b.lat, b.lng)
+          if (inPhenomenon(p, (a.lat + b.lat) / 2, (a.lng + b.lng) / 2)) nm += seg
+        }
+        if (nm > best.nm) best = { nm, label: g.label }
+      }
+      assert(best.nm >= 150,
+        `「${p.name}」真的压在主航线上（最长穿过 ${best.nm.toFixed(0)} 海里：${best.label}）——摆在没人走的洋面上等于没做`)
+    }
+  }
+
+  // ---- ⑤ 真的改变天数：同一条航线，这一季比别的季慢 ----
+  {
+    const fleet2 = {
+      ships: [{ id: 1, name: 'x', type: 'caravel', capacity: 60, usedCapacity: 0, durability: 100, crew: 40, speed: 6, maxCrew: 40 }],
+      officers: [], morale: 80, fame: 0, gold: 500, day: 1, food: 100, water: 100,
+      trait: null, currentPortId: 6, isSailing: false,
+    } as unknown as Parameters<typeof voyageDays>[0]['fleet']
+    const clear = { kind: 'clear' } as unknown as Parameters<typeof voyageDays>[0]['weather']
+    const lis = ports.find(p => p.nameCn === '里斯本')!
+    const sju = ports.find(p => p.nameCn === '圣胡安')!
+    const A: [number, number] = [lis.latitude, lis.longitude]
+    const B: [number, number] = [sju.latitude, sju.longitude]
+    const geom = buildRouteGeometry(A, B)
+    const nm = Math.round(geom.totalNm)
+    const daysAt = (day: number) => voyageDays({
+      distanceNm: nm,
+      windFavor: windFavorForRoute(A, B, day, geom.points),
+      fleet: fleet2, officers: [], weather: clear,
+    })
+    const SPRING = 5, SUMMER = 35
+    // 里斯本→圣胡安 夏季要横穿马尾藻的无风带（实测 21.6% 的航程在圈内）
+    const dSpring = daysAt(SPRING), dSummer = daysAt(SUMMER)
+    assert(dSummer > dSpring,
+      `夏季走里斯本→圣胡安必须更慢（春 ${dSpring} 天 → 夏 ${dSummer} 天：要横穿马尾藻的无风带）`)
+
+    // 反过来：不在这一季，乘数必须是 1（不能"四季都在减速"）
+    const fSummer = routePhenomenonFactor(geom.points, SUMMER)
+    const fWinter = routePhenomenonFactor(geom.points, 95)
+    assert(fSummer < 0.99 && fSummer > 0.5,
+      `夏季这条航线被无风带拖慢（乘数 ${fSummer}，在 0.5~0.99 之间）`)
+    assert(fWinter === 1,
+      `冬季同一条航线完全不受影响（乘数 ${fWinter}）——现象只在它那一季生效`)
+  }
+
+  // ---- ⑥ 事件率：坏水更凶，无风带反而更太平 ----
+  {
+    const cape = SEA_PHENOMENA.find(p => p.id === 'cape_storm_belt')!
+    const sarg = SEA_PHENOMENA.find(p => p.id === 'sargasso_calm')!
+    assert(phenomenonEventBias(cape.lat, cape.lng, 65) > 1.3,
+      `秋季在风暴带里，天候事件率明显更高（×${phenomenonEventBias(cape.lat, cape.lng, 65).toFixed(2)}）`)
+    assert(phenomenonEventBias(sarg.lat, sarg.lng, 35) < 0.9,
+      `夏季在马尾藻里，天候事件率反而更低（×${phenomenonEventBias(sarg.lat, sarg.lng, 35).toFixed(2)}：没有风就没有风暴）`)
+    assert(phenomenonEventBias(cape.lat, cape.lng, 35) === 1,
+      '不在这一季就没有加成（同一片海，夏季不该还按风暴带算）')
+  }
+
+  // ---- ⑦ 2D 与 3D 必须读同一份数据 ----
+  {
+    const flat = readFileSync(join(process.cwd(), 'src', 'components', 'map', 'SeaPhenomena.tsx'), 'utf8')
+    assert(/activePhenomena\(day\)/.test(flat) && /phenomenonRing\(p\)/.test(flat),
+      '2D 海面层用 data/seaPhenomena 的选区与界线')
+    assert(/interactive=\{false\}/.test(flat),
+      '2D 现象层不吃点击（压在海图上的浮层绝不能挡玩家点地图）')
+    const three = readFileSync(join(process.cwd(), 'src', 'components', 'map3d', 'mapLayers3d.ts'), 'utf8')
+    assert(/SEA_PHENOMENA/.test(three) && /phenomenonRing\(/.test(three),
+      '3D 用的是同一批现象与同一条界线（不是各画一个形状）')
+    const badge = readFileSync(join(process.cwd(), 'src', 'components', 'ui', 'WeatherBadge.tsx'), 'utf8')
+    assert(/phenomenonAt\(lat, lng, fleet\.day\)/.test(badge),
+      '船在这片水里时天气面板要说出来（否则"这趟怎么慢了两成"会被当成 bug）')
+  }
+}
+
 console.log(`\n最终结果：${passed} 通过 / ${failed} 失败`)
 if (failed > 0) process.exit(1)

@@ -10,6 +10,7 @@ import { PortMarker } from './PortMarker'
 import TerrainDecor from './TerrainDecor'
 import SeaDebris from './SeaDebris'
 import SeaRelics from './SeaRelics'
+import { SeaPhenomena } from './SeaPhenomena'
 import MiniMap from './MiniMap'
 import { buildMajorLand, featureArea } from '@/utils/terrainDecor'
 import { RouteLine } from './RouteLine'
@@ -599,6 +600,9 @@ export default function MapView() {
               <MapHandleBridge />
               <MapController />
               <MapOverlays />
+              {/* 季节性海上现象：这一季的这片水（见 data/seaPhenomena）——
+                  纯展示、不吃点击；画在底图之上、船与港口之下 */}
+              <SeaPhenomena />
               {/* 右上角小地图：全世界轮廓 + 当前视野框，点击跳转 */}
               <MiniMap land={geoData.land} />
               <MapClickHandler />

@@ -5,6 +5,7 @@ import { prevailingWindBearing } from '@/utils/navigation'
 import { ports } from '@/data/ports'
 import WeatherIcon from '@/components/ui/WeatherIcon'
 import { seasonAt, SEASON_DAYS } from '@/utils/season'
+import { phenomenonAt } from '@/data/seaPhenomena'
 
 /**
  * 天候徽章（常驻罗盘下方）：
@@ -38,6 +39,15 @@ export default function WeatherBadge() {
   const forecast = lat != null && lng != null
     ? weatherForecast(weather, fleet.day, lat, lng, prevailingWindBearing(lat), 3)
     : []
+
+  /*
+   * 船此刻是不是漂在"这一季不好走的那片水"里。
+   *
+   * 【为什么必须说出来】那片水会让"约 N 天可达"变长、让天候事件变多。
+   * 不写这一行，玩家只会看到"同一趟怎么慢了两成"，然后当成 bug。
+   * 这是**因果**，不是气氛——所以它挂在预报面板里，而不是飘个提示。
+   */
+  const phenomenon = lat != null && lng != null ? phenomenonAt(lat, lng, fleet.day) : null
 
   const speedPct = Math.round((info.sailMul - 1) * 100)
   // 风向箭头：风吹去的方位 → 旋转角（罗盘 0°=上）
@@ -105,6 +115,19 @@ export default function WeatherBadge() {
               印度洋{season.monsoon > 0 ? '西南季风（东行顺）' : '东北季风（西行顺）'}
             </span>
           </div>
+          {phenomenon && (
+            <div className="flex items-start gap-2 text-xs font-serif" data-testid="phenomenon-now">
+              <span
+                className="mt-1 w-1.5 h-1.5 rounded-full shrink-0"
+                style={{ background: phenomenon.color }}
+                aria-hidden="true"
+              />
+              <span className="text-gold-200 flex-1">{phenomenon.name}</span>
+              <span className="text-gold-300 tabular-nums">
+                航速{Math.round((phenomenon.speedMul - 1) * 100)}%
+              </span>
+            </div>
+          )}
           <div className="border-t border-gold-700/20 pt-1.5">
             <p className="text-gold-400 font-serif text-xs mb-1.5 tracking-wide">未来三天</p>
             {forecast.map((w, i) => {

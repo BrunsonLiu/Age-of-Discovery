@@ -1339,7 +1339,7 @@ export default function Map3DView() {  const mountRef = useRef<HTMLDivElement>(n
       //
       // 数据来自 @/data/mapLayers，与 2D 完全同一份。
       const layers = buildMap3DLayers(useGameStore.getState().fleet.day)
-      scene.add(layers.currents, layers.pirates, layers.winds)
+      scene.add(layers.currents, layers.pirates, layers.winds, layers.phenomena.group)
       for (const m of layers.lineMaterials) m.resolution.set(width, height)
 
       // 洋流的虚线材质单独收一份，帧循环里推进 dashOffset 让流向"动起来"。
@@ -1762,6 +1762,13 @@ export default function Map3DView() {  const mountRef = useRef<HTMLDivElement>(n
               peaks.coldGroups.north.visible = coldNorth
               peaks.coldGroups.south.visible = !coldNorth
             }
+            /*
+             * 这一季的"不好走的那片水"也要跟着换。
+             *
+             * 【为什么放这里而不是每帧调】换季只发生一次，
+             * setDay 内部同一天重复调用是空操作；放在这里就少一条每帧分支。
+             */
+            layers.phenomena.setDay(fleet.day)
           }
         }
 

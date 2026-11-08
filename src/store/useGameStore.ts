@@ -10,9 +10,9 @@ import { ports, portGoods, localDemands } from '@/data/ports'
 import { events } from '@/data/events'
 import { tasks } from '@/data/tasks'
 import { goods } from '@/data/goods'
-import { calculateDailyConsumption, dangerLevelFromDistance, computeWindFavor, effectiveFleetSpeed, prevailingWindBearing, calculateSailingDays, dailyDistanceNm, haversineNm } from '@/utils/navigation'
+import { calculateDailyConsumption, dangerLevelFromDistance, effectiveFleetSpeed, prevailingWindBearing, calculateSailingDays, dailyDistanceNm, haversineNm } from '@/utils/navigation'
 import { getRouteGeometry } from '@/utils/routePath'
-import { routeFacts, voyageDays } from '@/utils/voyage'
+import { routeFacts, voyageDays, windFavorForRoute } from '@/utils/voyage'
 import { getRandomEvents, consumeEventFlags } from '@/utils/eventEngine'
 import { STANCES, segmentCountFor, nextSegmentBoundary, hazardLabel, dailyFoodUse, dailyWaterUse, dailyWearRate, settleWear } from '@/utils/segment'
 import { repairCost, taskGold, supplyCost, supplyAmounts, INTERPRETER_FACTION_MUL } from '@/utils/crewPerks'
@@ -37,6 +37,7 @@ import {
 import { advanceDebris } from '@/utils/seaDebris'
 import { debrisGain, DEBRIS_INFO, type DebrisSpot } from '@/data/debris'
 import { findRelic, relicDistanceNm, relicInSeason, RELIC_PICKUP_NM } from '@/data/relics'
+import { phenomenonEventBias } from '@/data/seaPhenomena'
 import { newlyReached } from '@/data/voyageMilestones'
 import { appendLogbook, findClueFor, makeArrivalEntry, makeEchoEntry, makeTitleEntry, markAllRead } from '@/data/logbook'
 import { SAVE_KEY, SAVE_VERSION } from '@/utils/saveFile'
@@ -1195,7 +1196,10 @@ export const useGameStore = create<GameStore>()(
         )
         const distanceNm = geom.totalNm
         const dangerLevel = dangerLevelFromDistance(distanceNm)
-        const windFavor = computeWindFavor(currentPos[0], currentPos[1], waypoint.latitude, waypoint.longitude, state.fleet.day)
+        // 含季节性海上现象（风暴带/无风带…）：与 routeFacts 同一个函数
+        const windFavor = windFavorForRoute(
+          [currentPos[0], currentPos[1]], [waypoint.latitude, waypoint.longitude], state.fleet.day, geom.points,
+        )
 
         const customRoute: Route = {
           id: -(Date.now()),
@@ -1283,7 +1287,7 @@ export const useGameStore = create<GameStore>()(
         const toPort = ports.find(p => p.id === actualRoute.toPortId)
         // 预定义航线也走真实风带计算，保证预估与实际一致
         const windFavor = fromPort && toPort
-          ? computeWindFavor(fromPort.latitude, fromPort.longitude, toPort.latitude, toPort.longitude, state.fleet.day)
+          ? windFavorForRoute([fromPort.latitude, fromPort.longitude], [toPort.latitude, toPort.longitude], state.fleet.day)
           : actualRoute.windFavor
         return {
           currentRoute: { ...actualRoute, windFavor },
@@ -1450,7 +1454,19 @@ export const useGameStore = create<GameStore>()(
           // 压到三成而不是归零——世界仍需一点活性，且事件卡本来就带
           // 「站在一边看」的旁观选项，真遇上了也能什么都不做。
           const modeEventMul = isVisitor ? 0.3 : 1
-          const eventBias = WEATHER_INFO[newWeather.kind].eventBias * profile.eventRateMul * modeEventMul
+          /*
+           * 季节性海上现象：船正漂在哪个"这一季不好走"的水里，那里就更容易出事。
+           *
+           * 【为什么读 shipPosition 而不是航线端点】风暴带/无风带是一片一片的区域，
+           * 船从塞维利亚开往巴达维亚，只有绕好望角那几天在风暴带里。
+           * 拿端点判会把整趟都算成"在风暴带"，那是另一件事（也已经在
+           * windFavorForRoute 里按航段加权算过航程了）。
+           *
+           * 位置未知（单测里没有地图）时退回 1：宁可少算，不要凭空加事件。
+           */
+          const seaPos = state.shipPosition
+          const seaEventMul = seaPos ? phenomenonEventBias(seaPos[0], seaPos[1], newFleet.day) : 1
+          const eventBias = WEATHER_INFO[newWeather.kind].eventBias * profile.eventRateMul * modeEventMul * seaEventMul
           const triggeredEvent = eventBias !== 1
             ? getRandomEvents({ ...state, fleet: newFleet, routeProgress: state.routeProgress }, events, newDay - lastEventDay, eventBias)
             : getRandomEvents({ ...state, fleet: newFleet, routeProgress: state.routeProgress }, events, newDay - lastEventDay)
@@ -2782,7 +2798,7 @@ export function selectBestDeal(state: GameState): BrokerDeal | null {
   // 真实航程 + 真实风向系数（与 sailToWaypoint / confirmDeparture 同一套）
   const geom = getRouteGeometry([fromPort.latitude, fromPort.longitude], [toPort.latitude, toPort.longitude])
   const nm = Math.round(geom.totalNm)
-  const windFavor = computeWindFavor(fromPort.latitude, fromPort.longitude, toPort.latitude, toPort.longitude, state.fleet.day)
+  const windFavor = windFavorForRoute([fromPort.latitude, fromPort.longitude], [toPort.latitude, toPort.longitude], state.fleet.day, geom.points)
   const route: Route = {
     id: -1, fromPortId, toPortId: toPort.id, distance: nm, dangerLevel: 2, windFavor,
   }
@@ -2915,7 +2931,7 @@ export function selectReturnLeg(state: GameState): ReturnLeg | null {
 
   const geom = getRouteGeometry([a.latitude, a.longitude], [b.latitude, b.longitude])
   const nm = Math.round(geom.totalNm)
-  const windFavor = computeWindFavor(a.latitude, a.longitude, b.latitude, b.longitude, state.fleet.day)
+  const windFavor = windFavorForRoute([a.latitude, a.longitude], [b.latitude, b.longitude], state.fleet.day, geom.points)
   // 与出航计划面板同口径（含天候）——回程提示的「N 天」和点开后的面板必须一样
   const days = voyageDays({
     distanceNm: nm,
