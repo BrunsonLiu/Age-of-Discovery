@@ -1025,9 +1025,14 @@ await sleep(400)
 const weatherChk = await page.evaluate(async () => {
   const g = window.__gameStore
   const sc = window.__map3d.scene
+  /*
+   * 按**名字**取海面材质，不要按"宽 20 + 有贴图"这种形状判据。
+   * 2026-11-08 实测：浅水带（shallowBand）也是宽 20 的贴图平面，而且后加入，
+   * 用形状判据会取到它那个恒为 (1,1,1) 的材质 —— 「暴风雨压暗」当场假红。
+   */
   let m = null
   sc.traverse(o => {
-    if (o.isMesh && !o.isInstancedMesh && o.material?.map && o.geometry?.parameters?.width === 20) m = o.material
+    if (o.name === 'map3d-sea' && o.isMesh) m = o.material
   })
   if (!m) return { err: 'no sea material' }
   // 光照也要一起读：亮度几乎全来自三盏灯（实测关灯 → 亮度掉到 4.9），

@@ -33,6 +33,7 @@ import { buildMap3DCoastline } from './mapCoastline3d'
 import { buildMap3DPeaks, type PeakFacing } from './mapPeaks3d'
 import { createRhumb3d } from './mapRhumb3d'
 import { createShipWake } from './shipWake'
+import { createShallowBand } from './shallowBand'
 import { loadReliefNormalMap } from '@/utils/reliefNormalMap'
 import { seasonAt } from '@/utils/season'
 import { buildTerrainSymbols, filterPeaksByElevation } from '@/utils/terrainDecor'
@@ -412,9 +413,29 @@ export default function Map3DView() {  const mountRef = useRef<HTMLDivElement>(n
         color: new THREE.Color(SEA_BASE_R, SEA_BASE_G, SEA_BASE_B),
       })
       const sea = new THREE.Mesh(seaGeo, seaMat)
+      /*
+       * 给海面一个名字。
+       *
+       * 【为什么】巡检（map3d-check）要读海面材质来验证"暴风雨压暗、晴天恢复"。
+       * 它原来是按"宽 20 + 有贴图的 Mesh"挑的——这个判据在浅水带加进来之后
+       * 同时命中两块（浅水带也是宽 20 的贴图平面，而且后加入，覆盖了前者），
+       * 于是读到一个恒为 (1,1,1) 的材质，断言当场红。
+       * 按名字取是唯一稳定的判据，也不会随渲染顺序变化。
+       */
+      sea.name = 'map3d-sea'
       sea.position.set(MAP_WORLD_SIZE / 2, -PLATE_THICKNESS - 0.004, 0)
       sea.receiveShadow = true
       scene.add(sea)
+
+      /*
+       * 岸外的浅水带：陆地与海之间唯一的过渡。
+       *
+       * 高度：海面在 -PLATE_THICKNESS-0.004（-0.089），叠加层最低的是
+       * 洋流/海盗区（-0.0880）。浅水带取 -0.0888——压在海面上、又在所有
+       * 叠加线之下，于是"洋流压在浅水上"，层次与真海图一致。
+       */
+      const shallow = createShallowBand(MAP_WORLD_SIZE, -PLATE_THICKNESS - 0.0032)
+      if (shallow) scene.add(shallow.mesh)
 
       /*
        * ---- 恒向线网 + 罗经花（2D 的身份特征，3D 之前完全没有）----
@@ -2405,6 +2426,7 @@ export default function Map3DView() {  const mountRef = useRef<HTMLDivElement>(n
         peaks?.dispose()
         rhumb.dispose()
         wake.dispose()
+        shallow?.dispose()
         renderer?.dispose()
         if (renderer && renderer.domElement.parentNode === mount) {
           mount.removeChild(renderer.domElement)
