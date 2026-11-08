@@ -176,8 +176,19 @@ export function phenomenonEventBias(lat: number, lng: number, day: number): numb
 export function routePhenomenonFactor(
   points: { lat: number; lng: number }[],
   day: number,
+  /**
+   * 已经"识得"的航路（现象 id）。
+   *
+   * 【为什么参数放在这里，而不是让本文件去读 store】data 层不认识 store。
+   * 更重要的是：这条判据必须能被单测直接喂值验证（给了就 1、不给就 <1），
+   * 而不是靠"跑一局看看"。
+   */
+  knownPassages: readonly string[] = [],
 ): number {
-  const act = activePhenomena(day)
+  const all = activePhenomena(day)
+  const act = knownPassages.length > 0
+    ? all.filter(p => !knownPassages.includes(p.id))
+    : all
   if (act.length === 0 || points.length < 2) return 1
   let totalNm = 0
   let slowedNm = 0

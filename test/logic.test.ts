@@ -7970,5 +7970,104 @@ console.log('\n== 天数口径守卫 ==')
   useGameStore.setState({ shipPosition: null, lastPhenomenonId: null, notifications: [] })
 }
 
+
+// ---------------- 石十字改的不是数值，是规则（识得此路） ----------------
+//
+// 2026-11-08：用户要「神话/历史靠机制落地」。一件只给名号与补给的实物，
+// 本质上还是"+数值的收集品"。迪亚士的石十字不同：它标的是贴着岸走的窄水道，
+// 拾到它 = 这条航路从此对你不同（风暴带不再拖累航程）。
+//
+// 【这一条为什么必须守】"知识改变规则"最容易做成空话：
+// 拾起的动画有了、图鉴点亮了、回执也弹了，但计算里根本没读它——
+// 玩家只会觉得"好像顺了一点"。所以要断言**同一条航线、同一天，
+// 带不识得时慢、识得后恢复**。
+{
+  const fleetK = {
+    ships: [{ id: 1, name: 'x', type: 'caravel', capacity: 60, usedCapacity: 0, durability: 100, crew: 40, speed: 6, maxCrew: 40 }],
+    officers: [], morale: 80, fame: 0, gold: 500, day: 1, food: 100, water: 100,
+    trait: null, currentPortId: 6, isSailing: false,
+  } as unknown as Parameters<typeof voyageDays>[0]['fleet']
+  const clearK = { kind: 'clear' } as unknown as Parameters<typeof voyageDays>[0]['weather']
+
+  // ① 石十字必须在海上、且在风暴带圈内 —— 否则"要穿过那片水才拿得到"是假的
+  const padrao = RELICS.find(r => r.passage)
+  assert(!!padrao, '有一件遗物标着 passage（拾到就识得一条航路）')
+  const padraoBelt = SEA_PHENOMENA.find(p => p.id === padrao!.passage)!
+  assert(!!padraoBelt, '那条航路在 data/seaPhenomena 里真实存在')
+  assert(!relicInSeason(padrao!, 5) || relicInSeason(padrao!, 5),
+    '石十字常年都在（它不是时令物，是钉在礁石上的东西）')
+  {
+    const maskBuf2 = readFileSync(join(process.cwd(), 'public', 'data', 'sea-mask.bin'))
+    const origFetch3 = globalThis.fetch
+    globalThis.fetch = (async (input: any) => {
+      const url = String(input)
+      if (url.includes('sea-mask.bin')) {
+        const b = maskBuf2.buffer.slice(maskBuf2.byteOffset, maskBuf2.byteOffset + maskBuf2.byteLength)
+        return { ok: true, status: 200, arrayBuffer: async () => b } as any
+      }
+      return origFetch3(input)
+    }) as any
+    await loadSeaMask('')
+    assert(!isLandAt(padrao!.lat, padrao!.lng),
+      `石十字在海里（${padrao!.lat}, ${padrao!.lng}）`)
+    assert(inPhenomenon(padraoBelt, padrao!.lat, padrao!.lng),
+      '石十字就立在风暴带里——想拿到它，必须开进那片水')
+  }
+
+  // ② 同一条航线：不识得时慢，识得后恢复
+  {
+    const kap = ports.find(p => p.nameCn === '开普敦')!
+    const bat = ports.find(p => p.nameCn === '巴达维亚')!
+    const A: [number, number] = [kap.latitude, kap.longitude]
+    const B: [number, number] = [bat.latitude, bat.longitude]
+    const geom = buildRouteGeometry(A, B)
+    const nm = Math.round(geom.totalNm)
+    const AUTUMN = 65
+
+    const fBlind = routePhenomenonFactor(geom.points, AUTUMN)
+    const fKnown = routePhenomenonFactor(geom.points, AUTUMN, [padraoBelt.id])
+    assert(fBlind < 1, `不识得时这条航线被风暴带拖慢（乘数 ${fBlind}）`)
+    assert(fKnown === 1,
+      `识得之后同一条航线不再减速（乘数 ${fKnown}）——知识改的是规则，不是数值`)
+
+    const daysBlind = voyageDays({
+      distanceNm: nm, windFavor: windFavorForRoute(A, B, AUTUMN, geom.points),
+      fleet: fleetK, officers: [], weather: clearK,
+    })
+    const daysKnown = voyageDays({
+      distanceNm: nm, windFavor: windFavorForRoute(A, B, AUTUMN, geom.points, [padraoBelt.id]),
+      fleet: fleetK, officers: [], weather: clearK,
+    })
+    assert(daysKnown <= daysBlind && daysKnown >= 1,
+      `识得此路真的省下天数（${daysBlind} 天 → ${daysKnown} 天）`)
+
+    // 别的季节不受影响：秋天才有风暴带
+    assert(routePhenomenonFactor(geom.points, 5) === 1,
+      '春季这条航线本来就没事（识得不识得都一样）')
+  }
+
+  // ③ 拾起动作真的把它记进 knownPassages，并说清后果
+  {
+    const storeSrc3 = readFileSync(join(process.cwd(), 'src', 'store', 'useGameStore.ts'), 'utf8')
+    assert(/knownPassages: learnsPassage\s*\n?\s*\? \[\.\.\.state\.knownPassages, relic\.passage as string\]/.test(storeSrc3)
+      || /learnsPassage/.test(storeSrc3) && /state\.knownPassages, relic\.passage/.test(storeSrc3),
+      '拾起带 passage 的遗物时写进 knownPassages')
+    assert(/识得此路/.test(storeSrc3), '回执标题说"识得此路"（不是"你获得了知识"这种空话）')
+    assert(/不再减速/.test(storeSrc3), '回执正文说清后果（此后穿过某片水不再减速）')
+
+    // 存档：这几处必须同源，否则刷新后"知识"丢了，规则又变回去
+    const saveSrc = readFileSync(join(process.cwd(), 'src', 'utils', 'saveFile.ts'), 'utf8')
+    const typeSrc = readFileSync(join(process.cwd(), 'src', 'types', 'index.ts'), 'utf8')
+    assert(/knownPassages/.test(typeSrc), 'knownPassages 在 GameState 里')
+    assert(/knownPassages/.test(saveSrc), 'knownPassages 在存档白名单里（否则重开就忘）')
+    assert(/knownPassages: state\.knownPassages/.test(storeSrc3), 'knownPassages 进了 partialize')
+
+    // 四个算航程的地方都要把它传下去（少一处就会出现"面板说慢、卡说快"）
+    const passCount = (storeSrc3.match(/state\.knownPassages/g) ?? []).length
+    assert(passCount >= 6,
+      `store 里至少有 6 处用到 knownPassages（实测 ${passCount} 处：记账 + 四处航程 + 存档）`)
+  }
+}
+
 console.log(`\n最终结果：${passed} 通过 / ${failed} 失败`)
 if (failed > 0) process.exit(1)

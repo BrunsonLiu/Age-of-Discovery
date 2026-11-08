@@ -122,11 +122,17 @@ export interface RouteFacts {
  * 掩码到位之后还要 `invalidateRouteGeometryCache()`，
  * 那一步没做完之前缓存里躺着的仍是旧的直线几何。
  */
-export function routeFacts(from: [number, number], to: [number, number], day: number): RouteFacts {
+export function routeFacts(
+  from: [number, number],
+  to: [number, number],
+  day: number,
+  /** 已识得的航路（拾到迪亚士的石十字之后，风暴带不再拖慢你） */
+  knownPassages: readonly string[] = [],
+): RouteFacts {
   const geom = getRouteGeometry(from, to)
   return {
     distanceNm: Math.round(geom.totalNm),
-    windFavor: windFavorForRoute(from, to, day, geom.points),
+    windFavor: windFavorForRoute(from, to, day, geom.points, knownPassages),
   }
 }
 
@@ -155,10 +161,12 @@ export function windFavorForRoute(
   day: number,
   /** 已经算好的航线点（不给就自己取，走缓存） */
   points?: { lat: number; lng: number }[],
+  /** 已识得的航路——传进来就按"知道怎么走"算 */
+  knownPassages: readonly string[] = [],
 ): number {
   const base = computeWindFavor(from[0], from[1], to[0], to[1], day)
   const pts = points ?? getRouteGeometry(from, to).points
-  return base * routePhenomenonFactor(pts, day)
+  return base * routePhenomenonFactor(pts, day, knownPassages)
 }
 
 /**

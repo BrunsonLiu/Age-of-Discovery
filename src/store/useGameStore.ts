@@ -37,7 +37,7 @@ import {
 import { advanceDebris } from '@/utils/seaDebris'
 import { debrisGain, DEBRIS_INFO, type DebrisSpot } from '@/data/debris'
 import { findRelic, relicDistanceNm, relicInSeason, RELIC_PICKUP_NM } from '@/data/relics'
-import { phenomenonAt, phenomenonEventBias } from '@/data/seaPhenomena'
+import { phenomenonAt, phenomenonEventBias, SEA_PHENOMENA } from '@/data/seaPhenomena'
 import { newlyReached } from '@/data/voyageMilestones'
 import { appendLogbook, findClueFor, makeArrivalEntry, makeEchoEntry, makeTitleEntry, markAllRead } from '@/data/logbook'
 import { SAVE_KEY, SAVE_VERSION } from '@/utils/saveFile'
@@ -246,6 +246,7 @@ const initialGameState: GameState = {
   claimedVictories: [],
   collectedDebris: [],
   collectedRelics: [],
+  knownPassages: [],
 }
 
 interface GameStore extends GameState {
@@ -868,6 +869,8 @@ export const useGameStore = create<GameStore>()(
           [waypoint.latitude, waypoint.longitude],
           // 带当前游戏日：印度洋的风半年反向，这一趟顺不顺要看季风
           state.fleet.day,
+          // 已识得的航路：拾到迪亚士的石十字之后，风暴带不再拖慢这一趟
+          state.knownPassages,
         )
         const dangerLevel = dangerLevelFromDistance(distanceNm)
 
@@ -1208,6 +1211,7 @@ export const useGameStore = create<GameStore>()(
         // 含季节性海上现象（风暴带/无风带…）：与 routeFacts 同一个函数
         const windFavor = windFavorForRoute(
           [currentPos[0], currentPos[1]], [waypoint.latitude, waypoint.longitude], state.fleet.day, geom.points,
+          state.knownPassages,
         )
 
         const customRoute: Route = {
@@ -1296,7 +1300,7 @@ export const useGameStore = create<GameStore>()(
         const toPort = ports.find(p => p.id === actualRoute.toPortId)
         // 预定义航线也走真实风带计算，保证预估与实际一致
         const windFavor = fromPort && toPort
-          ? windFavorForRoute([fromPort.latitude, fromPort.longitude], [toPort.latitude, toPort.longitude], state.fleet.day)
+          ? windFavorForRoute([fromPort.latitude, fromPort.longitude], [toPort.latitude, toPort.longitude], state.fleet.day, undefined, state.knownPassages)
           : actualRoute.windFavor
         return {
           currentRoute: { ...actualRoute, windFavor },
@@ -2447,9 +2451,23 @@ export const useGameStore = create<GameStore>()(
           'port',
         )
         useFxStore.getState().cue('splash')
+        /*
+         * 有的遗物不只是"一件东西"，它标着一条路。
+         *
+         * 【为什么要在回执里说清】"风暴带不再拖慢你"是一条**规则**变了，
+         * 但玩家手上只多了一个图标。不说，他只会觉得"这局好像顺了一点"，
+         * 而不会知道是哪件东西改的——那这条设计等于没做。
+         */
+        const learnsPassage = !!relic.passage && !state.knownPassages.includes(relic.passage)
+        const passageName = relic.passage
+          ? SEA_PHENOMENA.find(p => p.id === relic.passage)?.name ?? '那条航路'
+          : ''
         set((state) => withAchievements(state, {
           // 图鉴里点亮这一格：拾过什么，册子替你记着
           collectedRelics: [...state.collectedRelics, id],
+          knownPassages: learnsPassage
+            ? [...state.knownPassages, relic.passage as string]
+            : state.knownPassages,
           fleet: {
             ...state.fleet,
             fame: state.fleet.fame + g.fame,
@@ -2459,13 +2477,23 @@ export const useGameStore = create<GameStore>()(
             water: state.fleet.water + g.water,
             morale: state.fleet.morale + g.morale,
           },
-          notifications: [...state.notifications, {
-            id: `relic-${id}-${Date.now()}`,
-            type: 'discovery' as const,
-            title: `拾起 · ${relic.name}`,
-            message: relic.note,
-            timestamp: Date.now(),
-          }],
+          notifications: [...state.notifications,
+            {
+              id: `relic-${id}-${Date.now()}`,
+              type: 'discovery' as const,
+              title: `拾起 · ${relic.name}`,
+              message: relic.note,
+              timestamp: Date.now(),
+            },
+            ...(learnsPassage ? [{
+              id: `passage-${relic.passage}-${Date.now()}`,
+              type: 'history' as const,
+              title: `识得此路 · ${passageName}`,
+              // 说出后果，而不是"你获得了知识"这种空话
+              message: `此后穿过${passageName}不再减速——你知道那条贴着岸走的窄水道在哪。`,
+              timestamp: Date.now(),
+            }] : []),
+          ],
         }))
       },
       addNotification: (notification) => set((state) => ({ notifications: [...state.notifications, { ...notification, timestamp: Date.now() }] })),
@@ -2713,6 +2741,7 @@ export const useGameStore = create<GameStore>()(
         claimedVictories: state.claimedVictories,
         collectedDebris: state.collectedDebris,
         collectedRelics: state.collectedRelics,
+        knownPassages: state.knownPassages,
       }),
       // 存档软锁修复：存档里若停在事件阶段但事件未持久化，重开时落回 playing
       merge: (persisted, current) => {
@@ -2831,7 +2860,7 @@ export function selectBestDeal(state: GameState): BrokerDeal | null {
   // 真实航程 + 真实风向系数（与 sailToWaypoint / confirmDeparture 同一套）
   const geom = getRouteGeometry([fromPort.latitude, fromPort.longitude], [toPort.latitude, toPort.longitude])
   const nm = Math.round(geom.totalNm)
-  const windFavor = windFavorForRoute([fromPort.latitude, fromPort.longitude], [toPort.latitude, toPort.longitude], state.fleet.day, geom.points)
+  const windFavor = windFavorForRoute([fromPort.latitude, fromPort.longitude], [toPort.latitude, toPort.longitude], state.fleet.day, geom.points, state.knownPassages)
   const route: Route = {
     id: -1, fromPortId, toPortId: toPort.id, distance: nm, dangerLevel: 2, windFavor,
   }
@@ -2964,7 +2993,7 @@ export function selectReturnLeg(state: GameState): ReturnLeg | null {
 
   const geom = getRouteGeometry([a.latitude, a.longitude], [b.latitude, b.longitude])
   const nm = Math.round(geom.totalNm)
-  const windFavor = windFavorForRoute([a.latitude, a.longitude], [b.latitude, b.longitude], state.fleet.day, geom.points)
+  const windFavor = windFavorForRoute([a.latitude, a.longitude], [b.latitude, b.longitude], state.fleet.day, geom.points, state.knownPassages)
   // 与出航计划面板同口径（含天候）——回程提示的「N 天」和点开后的面板必须一样
   const days = voyageDays({
     distanceNm: nm,

@@ -47,6 +47,8 @@ export interface VoyageNextInfo {
 export function useVoyageNext(): VoyageNextInfo {
   const discoveredPorts = useGameStore(s => s.discoveredPorts)
   const fleet = useGameStore(s => s.fleet)
+  // 已识得的航路：拾到迪亚士的石十字之后，风暴带不再拖慢这一站
+  const knownPassages = useGameStore(s => s.knownPassages)
   const shipPosition = useGameStore(s => s.shipPosition)
   const officers = useGameStore(s => s.officers)
   const weather = useGameStore(s => s.weather)
@@ -75,8 +77,8 @@ export function useVoyageNext(): VoyageNextInfo {
     if (!picked || !here || !landDataReady) return null
     const p = ports.find(x => x.id === picked.id)
     if (!p) return null
-    return routeFacts(here, [p.latitude, p.longitude], fleet.day)
-  }, [picked, here, landDataReady, fleet.day])
+    return routeFacts(here, [p.latitude, p.longitude], fleet.day, knownPassages)
+  }, [picked, here, landDataReady, fleet.day, knownPassages])
 
   const suggest = useMemo(
     () => (picked ? { id: picked.id, nameCn: picked.nameCn, distanceNm: route ? route.distanceNm : null } : null),
