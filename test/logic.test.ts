@@ -8476,5 +8476,18 @@ console.log('\n== 天数口径守卫 ==')
   assert(Number.isFinite(sunDirection(NaN, NaN).y), 'NaN 输入仍给出有限方向')
 }
 
+/*
+ * ---- 海岸接触影必须真的画在陆地图层上 ----
+ * 它是"板块读成实物"的唯一提示（侧壁不受光，打光打不出来），
+ * 而它只是重绘回调里的一行——重构时最容易静默丢掉。
+ */
+{
+  const src = readFileSync(join(process.cwd(), 'src', 'components', 'map3d', 'Map3DView.tsx'), 'utf8')
+  assert(/paintCoastShade\(c2d, geojson, c\.width, c\.height\)/.test(src),
+    '陆地重绘时画了海岸接触影')
+  const shade = readFileSync(join(process.cwd(), 'src', 'utils', 'coastShade.ts'), 'utf8')
+  assert(/source-atop/.test(shade), '接触影只画在陆地内侧（source-atop）')
+}
+
 console.log(`\n最终结果：${passed} 通过 / ${failed} 失败`)
 if (failed > 0) process.exit(1)

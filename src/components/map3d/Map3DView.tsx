@@ -37,6 +37,7 @@ import { createShipWake } from './shipWake'
 import { createShallowBand } from './shallowBand'
 import { shipNearZoomScale } from '@/utils/shipZoom'
 import { paintPolarIce } from '@/utils/polarIce'
+import { paintCoastShade } from '@/utils/coastShade'
 import { surfaceDimMul, seaOverlayMul } from '@/utils/mapSurfaceDim'
 import { loadReliefNormalMap } from '@/utils/reliefNormalMap'
 import { seasonAt } from '@/utils/season'
@@ -770,6 +771,12 @@ export default function Map3DView() {  const mountRef = useRef<HTMLDivElement>(n
             c2d.clearRect(0, 0, c.width, c.height)
             c2d.drawImage(landImg, 0, 0, c.width, c.height)
             paintPolarIce(c2d, c.width, c.height, day)
+            /*
+             * 海岸接触影：沿陆地内侧压一道淡影。
+             * 画在冰之后 —— 冰盖的边缘同样需要这条影，否则南极/格陵兰
+             * 会是一块"飘在纸上的白"，与大陆的厚度对不上。
+             */
+            paintCoastShade(c2d, geojson, c.width, c.height)
             iceTex!.needsUpdate = true
           }
           repaintIce(useGameStore.getState().fleet.day || 1)
