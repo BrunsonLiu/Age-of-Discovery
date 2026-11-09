@@ -48,6 +48,7 @@ import {
 import { shipNearZoomScale, SHIP_NEAR_ZOOM_MIN } from '../src/utils/shipZoom'
 import { iceStrengthAt, iceEdgeShift, ICE_SEASON_SHIFT_DEG } from '../src/utils/polarIce'
 import { componentAreas, majorLand } from '../src/utils/shoreBand'
+import { surfaceDimMul } from '../src/utils/mapSurfaceDim'
 import { durabilityColor, loadColor, DANGER_COLOR, WARN_COLOR, SAFE_COLOR } from '../src/utils/shipVitals'
 import {
   STANCES, forecastSegment, stanceLedgers, segmentCountFor, segmentIndexFor, nextSegmentBoundary,
@@ -8350,6 +8351,30 @@ console.log('\n== 天数口径守卫 ==')
     assert(/repaintIce\?\.\(fleet\.day\)/.test(src),
       '换季时重画冰盖——否则季节对它不起作用')
   }
+}
+
+/*
+ * ---- 海面上"不受光的东西"的昼夜/天气倍率 ----
+ *
+ * 【守什么】岸外的浅水带/白沫是 MeshBasicMaterial（不受光），它的颜色
+ * 只能靠这条倍率跟着暗。漏掉它白天一点看不出来（乘数正好 1），
+ * 傍晚才露馅：海面暗下去、贴岸一圈白沫还亮着，读作"会发光的岸"。
+ */
+{
+  assert(Math.abs(surfaceDimMul(1, 1) - 1) < 1e-9, '白天天晴 = 原样（乘数 1）')
+  const night = surfaceDimMul(1, 0)
+  assert(Math.abs(night - 0.62) < 1e-9, `天晴的夜里压到 0.62（实测 ${night.toFixed(3)}）`)
+  assert(Math.abs(surfaceDimMul(0, 1) - 0.55) < 1e-9, '最差天气的白天压到 0.55')
+  assert(surfaceDimMul(0, 1) < surfaceDimMul(1, 1), '阴天比晴天暗')
+  assert(surfaceDimMul(1, 0) < surfaceDimMul(0.5, 0.5), '夜里比阴天更暗')
+  assert(Math.abs(surfaceDimMul(NaN, NaN) - 1) < 1e-9, 'NaN 退回满亮度，不把地图压黑')
+  // 单调：天气/日相任一维变好都不该更暗
+  assert(surfaceDimMul(0.3, 0.8) <= surfaceDimMul(0.6, 0.8), '天气单调')
+  assert(surfaceDimMul(1, 0.3) <= surfaceDimMul(1, 0.7), '日相单调')
+
+  const src = readFileSync(join(process.cwd(), 'src', 'components', 'map3d', 'Map3DView.tsx'), 'utf8')
+  assert(/sm\.color\.setScalar\(lineMul\)/.test(src),
+    '浅水带/白沫用的是同一条倍率（否则夜里会亮成一圈发光的岸）')
 }
 
 console.log(`\n最终结果：${passed} 通过 / ${failed} 失败`)

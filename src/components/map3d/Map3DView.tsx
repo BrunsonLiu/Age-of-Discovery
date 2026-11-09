@@ -36,6 +36,7 @@ import { createShipWake } from './shipWake'
 import { createShallowBand } from './shallowBand'
 import { shipNearZoomScale } from '@/utils/shipZoom'
 import { paintPolarIce } from '@/utils/polarIce'
+import { surfaceDimMul } from '@/utils/mapSurfaceDim'
 import { loadReliefNormalMap } from '@/utils/reliefNormalMap'
 import { seasonAt } from '@/utils/season'
 import { buildTerrainSymbols, filterPeaksByElevation } from '@/utils/terrainDecor'
@@ -2186,7 +2187,7 @@ export default function Map3DView() {  const mountRef = useRef<HTMLDivElement>(n
            * 用的倍率与侧壁完全相同 —— 它们在同一张图上，若各走一条曲线，
            * 夜里会出现"海岸变暗了但网格还是白天的亮度"这种错位。
            */
-          const lineMul = (0.55 + 0.45 * weatherDim) * (0.62 + 0.38 * lit)
+          const lineMul = surfaceDimMul(weatherDim, lit)
           /*
            * 除了压暗，还要**偏冷**。
            *
@@ -2208,6 +2209,19 @@ export default function Map3DView() {  const mountRef = useRef<HTMLDivElement>(n
           // dist 范围 3~40：≤12 保持 0.22，到 40 降到 0.121，近景仍读得出网格。
           const farK = Math.min(1, Math.max(0, (camState.dist - 12) / (40 - 12)))
           graticule.material.opacity = GRATICULE_OPACITY_NEAR * (1 - 0.45 * farK)
+          /*
+           * 浅水带与白沫：同一块海面上的颜色，必须跟同一套倍率。
+           *
+           * 【为什么必须补这一句】它是 MeshBasicMaterial（不受光），
+           * 颜色一直停在白天的白；海面与墨线都暗下去了，只剩贴岸一圈白沫
+           * 亮在那里 —— 傍晚会读成"会发光的岸"。白天乘数正好是 1，
+           * 所以白天一点变化都没有。
+           */
+          if (shallow) {
+            const sm = shallow.mesh.material as THREE.MeshBasicMaterial
+            sm.color.setScalar(lineMul)
+            coolLine(sm.color, nightK)
+          }
           // 山也是不受光材质（画在纸上的墨迹），同一套倍率
           for (const mat of peakMats) {
             mat.color.copy(peakBase).multiplyScalar(lineMul)
