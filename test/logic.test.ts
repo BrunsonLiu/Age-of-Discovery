@@ -46,6 +46,8 @@ import {
   SHALLOW_FALLOFF_DEG, MAX_SHALLOW_ALPHA,
 } from '../src/utils/shoreBand'
 import { shipNearZoomScale, SHIP_NEAR_ZOOM_MIN } from '../src/utils/shipZoom'
+import { iceStrengthAt, iceEdgeShift, ICE_SEASON_SHIFT_DEG } from '../src/utils/polarIce'
+import { componentAreas, majorLand } from '../src/utils/shoreBand'
 import { durabilityColor, loadColor, DANGER_COLOR, WARN_COLOR, SAFE_COLOR } from '../src/utils/shipVitals'
 import {
   STANCES, forecastSegment, stanceLedgers, segmentCountFor, segmentIndexFor, nextSegmentBoundary,
@@ -8237,6 +8239,116 @@ console.log('\n== 天数口径守卫 ==')
     const src = readFileSync(join(process.cwd(), 'src', 'components', 'map3d', 'Map3DView.tsx'), 'utf8')
     assert(/npcK = NPC_SCALE \* shipNearZoomScale\(camState\.dist\)/.test(src),
       'NPC 商船也走同一条缩放曲线（否则近景会"别人的船比我的大"）')
+  }
+}
+
+/*
+ * ---- 极地冰盖 ----
+ *
+ * 【守什么】这块最容易"看着像做了、其实没做"：
+ * ① 按纬度一刀切会把挪威/西伯利亚刷成冰——格陵兰必须是**单独的软框**；
+ * ② 冰缘伸缩的符号很容易写反（冬天反而缩回去），屏幕上只是"好像没变"；
+ * ③ 强度必须落在 0..1，否则 [0,1] 之外的 alpha 会被 canvas 静默夹掉。
+ */
+{
+  const spring = 5    // 季节 0：南半球正是夏天之后? —— 见下：0/1 是南半球寒季
+  const autumn = 65   // 季节 2
+  const day = (idx: number) => idx * 30 + 5   // 0→5(春) 1→35(夏) 2→65(秋) 3→95(冬)
+
+  // ---- ① 两块冰盖都在，赤道带没有 ----
+  assert(iceStrengthAt(-75, 0, spring) > 0.9, '南极内陆是冰盖')
+  assert(iceStrengthAt(72, -42, autumn) > 0.8, '格陵兰是冰盖')
+  assert(iceStrengthAt(-35, -30, spring) === 0, '南大西洋没有冰')
+  assert(iceStrengthAt(20, 10, autumn) === 0, '撒哈拉当然没有冰')
+
+  // ---- ② 同纬度但不是冰盖的地方不许染白 ----
+  assert(iceStrengthAt(68, 20, day(3)) === 0,
+    '挪威 68°N 不是冰盖（按纬度一刀切就会把它刷白）')
+  assert(iceStrengthAt(70, 100, day(3)) === 0, '西伯利亚 70°N 不是冰盖')
+
+  // ---- ③ 冰缘随季伸缩：南半球寒季（我们的春/夏）向南推 ----
+  {
+    const edgeLat = -60
+    const winter = iceStrengthAt(edgeLat, 0, day(1))   // 南半球冬天
+    const summer = iceStrengthAt(edgeLat, 0, day(3))   // 南半球夏天
+    assert(winter > summer,
+      `南极冰缘在南半球冬天要更靠北（冬 ${winter.toFixed(2)} / 夏 ${summer.toFixed(2)}）`)
+    assert(summer === 0, '夏天 -60° 上没有冰')
+    // 北半球反过来
+    const gWinter = iceStrengthAt(57, -42, day(3))
+    const gSummer = iceStrengthAt(57, -42, day(1))
+    assert(gWinter >= gSummer,
+      `格陵兰南缘在北半球冬天更靠南（冬 ${gWinter.toFixed(2)} / 夏 ${gSummer.toFixed(2)}）`)
+  }
+
+  // ---- ④ 伸缩幅度本身：两季之差就是 ICE_SEASON_SHIFT_DEG ----
+  {
+    const sh = iceEdgeShift(day(1))
+    assert(sh.south === ICE_SEASON_SHIFT_DEG, '南半球寒季冰缘推 5°')
+    assert(sh.north === 0, '同一时刻北半球不推（一个半球冷，另一个不冷）')
+    const sh2 = iceEdgeShift(day(3))
+    assert(sh2.north === ICE_SEASON_SHIFT_DEG && sh2.south === 0,
+      '北半球寒季反过来——两个半球不会同时到达最北')
+  }
+
+  // ---- ⑤ 值域与单调 ----
+  {
+    for (const d of [5, 65]) {
+      for (let lat = -85; lat <= 85; lat += 2.5) {
+        const v = iceStrengthAt(lat, -42, d)
+        assert(v >= 0 && v <= 1, `冰盖强度必须落在 0..1（lat=${lat} → ${v}）`)
+      }
+    }
+    let prev = 0
+    for (let lat = -55; lat >= -80; lat -= 1) {
+      const v = iceStrengthAt(lat, 0, day(1))
+      assert(v >= prev - 1e-9, `越往南极越白（lat=${lat}）`)
+      prev = v
+    }
+    assert(iceStrengthAt(NaN, 0, 5) === 0, 'NaN 输入返回 0，不把整块地图刷白')
+  }
+
+  // ---- ⑥ 陆块面积：群岛不许连成一条假海岸线 ----
+  {
+    // 4×4 网格：左边一块 2×2 的大陆，右上角一个孤格小岛
+    const w = 4, h = 4
+    const land = new Uint8Array(w * h)
+    land[0] = 1; land[1] = 1; land[4] = 1; land[5] = 1   // 2×2
+    land[3] = 1                                          // 单格小岛
+    const areas = componentAreas(land, w, h)
+    assert(areas[0] === 4 && areas[5] === 4, `连成一片的陆地面积要算对（${areas[0]}）`)
+    assert(areas[3] === 1, '孤立一格是 1')
+    assert(areas[2] === 0, '海面没有面积')
+
+    // 门槛 2：2×2 的留下，孤格被剔除
+    const big = majorLand(land, w, h, 2)
+    assert(big[0] === 1 && big[5] === 1, '有分量的陆块保留')
+    assert(big[3] === 0, '孤立礁石不产生岸外光晕（否则群岛会连成一条假海岸线）')
+    assert(big[2] === 0, '海面仍是海面')
+
+    // 对角相邻不算相连（4 连通）：否则一串斜着排的礁石会被当成一块大陆
+    const diag = new Uint8Array(w * h)
+    diag[0] = 1; diag[5] = 1
+    assert(componentAreas(diag, w, h)[5] === 1, '对角相邻不合并')
+
+    /*
+     * 【为什么这条守卫重要】实测德雷克海峡从合恩角到南极半岛被 0.75° 的
+     * 光晕连成一条横穿大洋的白线，远景读作一条不存在的海岸线。
+     * 判据用"陆块面积"而不是"腐蚀一格"：南设得兰那种几公里宽、彼此只隔 1° 的
+     * 岛群腐蚀完还在，晕照样连成线。
+     */
+    const src = readFileSync(join(process.cwd(), 'src', 'components', 'map3d', 'shallowBand.ts'), 'utf8')
+    assert(/distanceField\(majorLand\(/.test(src),
+      '距离场用的是"有分量的陆地"，不是全部陆地')
+  }
+
+  // ---- ⑦ 两条线必须接上：材质用的是被重画过的贴图 ----
+  {
+    const src = readFileSync(join(process.cwd(), 'src', 'components', 'map3d', 'Map3DView.tsx'), 'utf8')
+    assert(/map: lidMap, roughness/.test(src),
+      '陆地材质用 lidMap（画过冰的那张），不是原始 painted-land')
+    assert(/repaintIce\?\.\(fleet\.day\)/.test(src),
+      '换季时重画冰盖——否则季节对它不起作用')
   }
 }
 

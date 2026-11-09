@@ -35,6 +35,7 @@ import { createRhumb3d } from './mapRhumb3d'
 import { createShipWake } from './shipWake'
 import { createShallowBand } from './shallowBand'
 import { shipNearZoomScale } from '@/utils/shipZoom'
+import { paintPolarIce } from '@/utils/polarIce'
 import { loadReliefNormalMap } from '@/utils/reliefNormalMap'
 import { seasonAt } from '@/utils/season'
 import { buildTerrainSymbols, filterPeaksByElevation } from '@/utils/terrainDecor'
@@ -730,9 +731,53 @@ export default function Map3DView() {  const mountRef = useRef<HTMLDivElement>(n
       setSeaColor(SEA_BASE_R, SEA_BASE_G, SEA_BASE_B)
 
       // ---- 陆地板块 ----
+      /*
+       * ---- 极地冰盖：陆地贴图要能被"重画" ----
+       *
+       * 【为什么不是直接给材质再叠一层】陆地只有一个颜色来源（`map`）。
+       * 想让它带冰盖，只能把冰画进这张图里。painted-land 是 1024×512，
+       * 与画布 1:1，重画一次只是 drawImage + 两段渐变（几毫秒），
+       * 不会掉分辨率。
+       *
+       * 【为什么要重画而不是画一次】冰缘随季伸缩（见 utils/polarIce）：
+       * 换季时北/南各自的冰盖要向南/北推 5°，这是**看得见的**季节变化，
+       * 而且不需要文字解释。
+       */
+      const landImg = landTex.image as HTMLImageElement | undefined
+      let lidMap: THREE.Texture = landTex
+      let iceTex: THREE.CanvasTexture | null = null
+      let repaintIce: ((day: number) => void) | null = null
+      if (landImg && landImg.width > 0) {
+        const c = document.createElement('canvas')
+        c.width = landImg.width
+        c.height = landImg.height
+        const c2d = c.getContext('2d')
+        if (c2d) {
+          iceTex = new THREE.CanvasTexture(c)
+          // 与 painted-land 同一约定：第 0 行 = 北极（flipY 关掉）
+          iceTex.flipY = false
+          iceTex.colorSpace = landTex.colorSpace
+          iceTex.anisotropy = landTex.anisotropy
+          iceTex.wrapS = landTex.wrapS
+          iceTex.wrapT = landTex.wrapT
+          iceTex.minFilter = landTex.minFilter
+          iceTex.magFilter = landTex.magFilter
+          iceTex.generateMipmaps = true
+          repaintIce = (day: number) => {
+            c2d.globalCompositeOperation = 'source-over'
+            c2d.clearRect(0, 0, c.width, c.height)
+            c2d.drawImage(landImg, 0, 0, c.width, c.height)
+            paintPolarIce(c2d, c.width, c.height, day)
+            iceTex!.needsUpdate = true
+          }
+          repaintIce(useGameStore.getState().fleet.day || 1)
+          lidMap = iceTex
+        }
+      }
+
       const land = buildLandGeometry(geojson as unknown as Parameters<typeof buildLandGeometry>[0])
       const lidMat = new THREE.MeshStandardMaterial({
-        map: landTex, roughness: 0.88, metalness: 0.02,
+        map: lidMap, roughness: 0.88, metalness: 0.02,
       })
       /*
        * 地形法线：让平坦的陆地顶面被方向光照出山脊明暗。
@@ -907,6 +952,7 @@ export default function Map3DView() {  const mountRef = useRef<HTMLDivElement>(n
       wallMesh.castShadow = true; wallMesh.receiveShadow = true
       scene.add(lidMesh, wallMesh)
       disposables.push(land.lid, land.wall, lidMat, wallMat)
+      if (iceTex) disposables.push(iceTex)
 
       /*
        * ---- 海岸墨线 + 经纬网 ----
@@ -1799,6 +1845,11 @@ export default function Map3DView() {  const mountRef = useRef<HTMLDivElement>(n
              */
             // 洋流点序 / 风箭头朝向 / 现象可见性，一次推进到新的一季
             layers.setDay(fleet.day)
+            /*
+             * 冰盖也跟着换季。放在这里而不是每帧：重画一次是几张画布合成，
+             * 每帧做会白烧 CPU；而它一年只变四次。
+             */
+            repaintIce?.(fleet.day)
           }
         }
 

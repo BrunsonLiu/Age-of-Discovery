@@ -67,3 +67,66 @@ export function compositeShore(dDeg: number, patch: number): { alpha: number; fo
   if (alpha <= 0) return { alpha: 0, foamMix: 0 }
   return { alpha, foamMix: (a2 * (1 - a1)) / alpha }
 }
+
+/**
+ * 每格所属陆块的面积（单位：格）。非陆地返回 0。
+ *
+ * 【为什么需要】岸外那圈光晕的宽度是 0.75°，而海上有大量群岛
+ * （德雷克海峡的南设得兰、印度洋的凯尔盖朗、太平洋的环礁）——
+ * 岛与岛之间只有 1~2°，每一座都画晕，晕就会**连成一条横穿大洋的线**，
+ * 远景读作一条不存在的海岸线（实测截图里从合恩角一路拉到南极半岛）。
+ * 真实海图上这种地方画的是零散的礁石符号，不是连续的海岸。
+ *
+ * 【判据为什么用"陆块面积"而不是"腐蚀一格"】先试过腐蚀：小岛是没了，
+ * 但南设得兰这类**几公里宽、彼此只隔 1°** 的岛群腐蚀完还在，
+ * 晕照样连成线。面积是"这块陆地有没有分量"的直接度量。
+ *
+ * 4 连通洪泛（栈式，不递归：1024×512 递归会爆栈）。
+ */
+export function componentAreas(land: Uint8Array, w: number, h: number): Uint32Array {
+  const area = new Uint32Array(land.length)
+  const seen = new Uint8Array(land.length)
+  const stack: number[] = []
+  for (let i = 0; i < land.length; i++) {
+    if (!land[i] || seen[i]) continue
+    let count = 0
+    stack.length = 0
+    stack.push(i)
+    seen[i] = 1
+    // 先把这一块标出来，再统一写面积（同一块里的格面积相同）
+    const cells: number[] = []
+    while (stack.length) {
+      const k = stack.pop()!
+      cells.push(k)
+      count++
+      const x = k % w
+      const y = (k - x) / w
+      if (x > 0 && land[k - 1] && !seen[k - 1]) { seen[k - 1] = 1; stack.push(k - 1) }
+      if (x < w - 1 && land[k + 1] && !seen[k + 1]) { seen[k + 1] = 1; stack.push(k + 1) }
+      if (y > 0 && land[k - w] && !seen[k - w]) { seen[k - w] = 1; stack.push(k - w) }
+      if (y < h - 1 && land[k + w] && !seen[k + w]) { seen[k + w] = 1; stack.push(k + w) }
+    }
+    for (const k of cells) area[k] = count
+  }
+  return area
+}
+
+/**
+ * 岸外光晕只画给"有分量"的陆地：陆块面积 ≥ 这么多格。
+ *
+ * 20 格 ≈ 3 万平方公里（一格约 1500 km²）。按这个门槛：
+ *   保留 冰岛(≈70) 古巴(≈70) 西西里(≈17? 略低于门槛) 马达加斯加 日本 新西兰
+ *   丢弃 南设得兰(个位数) 南乔治亚 凯尔盖朗 太平洋环礁
+ * 门槛是**视觉**参数而不是地理常数：要的是"岛群的晕不会连成一条线"。
+ */
+export const MIN_SHORE_AREA_CELLS = 18
+
+/** 只保留面积达标的陆块（其余置 0） */
+export function majorLand(land: Uint8Array, w: number, h: number, minCells = MIN_SHORE_AREA_CELLS): Uint8Array {
+  const areas = componentAreas(land, w, h)
+  const out = new Uint8Array(land.length)
+  for (let i = 0; i < land.length; i++) {
+    if (land[i] && areas[i] >= minCells) out[i] = 1
+  }
+  return out
+}

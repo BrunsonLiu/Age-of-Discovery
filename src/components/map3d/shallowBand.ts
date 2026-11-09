@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 import { isLandAt, isSeaMaskLoaded } from '@/utils/seaRoute'
-import { compositeShore } from '@/utils/shoreBand'
+import { compositeShore, majorLand } from '@/utils/shoreBand'
 
 /**
  * 3D 岸外的两圈颜色：贴岸的白沫（碎浪）+ 向深海淡出的浅水带。
@@ -127,7 +127,16 @@ function buildShallowTexture(): THREE.Texture | null {
       land[y * TEX_W + x] = isLandAt(lat, lng) ? 1 : 0
     }
   }
-  const dist = distanceField(land, TEX_W, TEX_H)
+  /*
+   * 距离场只用**有分量的陆地**算（面积 ≥ 18 格的陆块）。
+   *
+   * 【为什么】0.75° 的光晕画在群岛的每一座小岛上，会连成一条横穿大洋的白线：
+   * 实测德雷克海峡从合恩角一路连到南极半岛，远景读作一条不存在的海岸线。
+   * 判据用"陆块面积"而不是"腐蚀一格"——腐蚀之后南设得兰那种
+   * 几公里宽、彼此只隔 1° 的岛群还在，晕照样连成线。
+   * 见 utils/shoreBand 的 componentAreas / MIN_SHORE_AREA_CELLS。
+   */
+  const dist = distanceField(majorLand(land, TEX_W, TEX_H), TEX_W, TEX_H)
 
   const canvas = document.createElement('canvas')
   canvas.width = TEX_W; canvas.height = TEX_H
