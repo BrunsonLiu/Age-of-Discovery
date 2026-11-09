@@ -8336,6 +8336,20 @@ console.log('\n== 天数口径守卫 ==')
     for (let x = 0; x < w; x++) ridge[3 * w + x] = 1
     assert(majorLand(ridge, w, h, 2).every(v => v === 0), '一格宽的细长陆地不产生光晕')
 
+    /*
+     * 大数组不许爆栈：`Math.max(...Uint32Array)` 在这种尺寸上会直接
+     * RangeError（52 万个参数），而且它发生在 3D 构建里 —— 表现是"3D 打不开"，
+     * 单测当时全绿也发现不了。这条用例专门用真实尺寸跑一遍。
+     */
+    {
+      const W = 600, H = 400
+      const big = new Uint8Array(W * H)
+      for (let y = 100; y < 300; y++) for (let x = 100; x < 500; x++) big[y * W + x] = 1
+      const areas = componentAreas(big, W, H)
+      assert(areas[200 * W + 200] === 400 * 200, `大网格的陆块面积（${areas[200 * W + 200]}）`)
+      assert(majorLand(big, W, H).length === W * H, 'majorLand 能在大网格上跑完')
+    }
+
     // 对角相邻不算相连（4 连通）：否则一串斜着排的礁石会被当成一块大陆
     const diag = new Uint8Array(w * h)
     diag[0] = 1; diag[1 * w + 1] = 1

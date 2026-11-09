@@ -83,31 +83,43 @@ export function compositeShore(dDeg: number, patch: number): { alpha: number; fo
  *
  * 4 连通洪泛（栈式，不递归：1024×512 递归会爆栈）。
  */
-export function componentAreas(land: Uint8Array, w: number, h: number): Uint32Array {
-  const area = new Uint32Array(land.length)
-  const seen = new Uint8Array(land.length)
+export function componentLabels(land: Uint8Array, w: number, h: number): Uint32Array {
+  const id = new Uint32Array(land.length)
   const stack: number[] = []
+  let next = 1
   for (let i = 0; i < land.length; i++) {
-    if (!land[i] || seen[i]) continue
-    let count = 0
+    if (!land[i] || id[i]) continue
     stack.length = 0
     stack.push(i)
-    seen[i] = 1
-    // 先把这一块标出来，再统一写面积（同一块里的格面积相同）
-    const cells: number[] = []
+    id[i] = next
     while (stack.length) {
       const k = stack.pop()!
-      cells.push(k)
-      count++
       const x = k % w
       const y = (k - x) / w
-      if (x > 0 && land[k - 1] && !seen[k - 1]) { seen[k - 1] = 1; stack.push(k - 1) }
-      if (x < w - 1 && land[k + 1] && !seen[k + 1]) { seen[k + 1] = 1; stack.push(k + 1) }
-      if (y > 0 && land[k - w] && !seen[k - w]) { seen[k - w] = 1; stack.push(k - w) }
-      if (y < h - 1 && land[k + w] && !seen[k + w]) { seen[k + w] = 1; stack.push(k + w) }
+      if (x > 0 && land[k - 1] && !id[k - 1]) { id[k - 1] = next; stack.push(k - 1) }
+      if (x < w - 1 && land[k + 1] && !id[k + 1]) { id[k + 1] = next; stack.push(k + 1) }
+      if (y > 0 && land[k - w] && !id[k - w]) { id[k - w] = next; stack.push(k - w) }
+      if (y < h - 1 && land[k + w] && !id[k + w]) { id[k + w] = next; stack.push(k + w) }
     }
-    for (const k of cells) area[k] = count
+    next++
   }
+  return id
+}
+
+/** 一份 id 数组里最大的 id（不能用 Math.max(...arr)：52 万个参数会爆栈） */
+function maxId(id: Uint32Array): number {
+  let m = 0
+  for (let i = 0; i < id.length; i++) if (id[i] > m) m = id[i]
+  return m
+}
+
+/** 每格所属陆块的面积（单位：格）。非陆地返回 0。 */
+export function componentAreas(land: Uint8Array, w: number, h: number): Uint32Array {
+  const id = componentLabels(land, w, h)
+  const sizes = new Uint32Array(maxId(id) + 1)
+  for (let i = 0; i < id.length; i++) if (id[i]) sizes[id[i]]++
+  const area = new Uint32Array(land.length)
+  for (let i = 0; i < land.length; i++) if (id[i]) area[i] = sizes[id[i]]
   return area
 }
 
@@ -155,11 +167,25 @@ export function erodeLand(land: Uint8Array, w: number, h: number): Uint8Array {
  *   面积 → 去掉真正的孤岛与礁石，它们成块但太小，晕会连成假海岸线。
  */
 export function majorLand(land: Uint8Array, w: number, h: number, minCells = MIN_SHORE_AREA_CELLS): Uint8Array {
+  const id = componentLabels(land, w, h)
   const solid = erodeLand(land, w, h)
-  const areas = componentAreas(solid, w, h)
+  /*
+   * 【为什么"体检"用腐蚀、几何却用原始陆地】
+   * 腐蚀会把整块大陆向内收一格：若直接拿腐蚀后的结果算距离，白沫就从**第二格**
+   * 海水才开始，贴岸那一格永远空着 —— 实测近景的海岸带因此淡了将近一半。
+   * 所以腐蚀只用来判断"这块陆地有没有厚度"（有没有一个 3×3 全是陆地的核），
+   * 保留下来的陆块仍用它**原始的边界**算距离。
+   * 一格宽的细条没有核，整块被丢掉（它们是海上那些假海岸线的来源）。
+   */
+  const coreIds = new Uint8Array(maxId(id) + 1)
+  for (let i = 0; i < solid.length; i++) if (solid[i] && id[i]) coreIds[id[i]] = 1
+  const sizes = new Uint32Array(coreIds.length)
+  for (let i = 0; i < id.length; i++) if (id[i]) sizes[id[i]]++
   const out = new Uint8Array(land.length)
   for (let i = 0; i < land.length; i++) {
-    if (solid[i] && areas[i] >= minCells) out[i] = 1
+    const k = id[i]
+    if (!k) continue
+    if (coreIds[k] && sizes[k] >= minCells) out[i] = 1
   }
   return out
 }
