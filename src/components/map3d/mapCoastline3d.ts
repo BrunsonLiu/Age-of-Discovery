@@ -28,9 +28,32 @@ import { COAST_COLOR, coastSegments, type LandGeoJsonLike } from '@/utils/chartL
  */
 const COAST_Y = 0.006
 
+/**
+ * 海岸墨线的线宽倍率（按相机距离）。
+ *
+ * 远景 dist≥8 保持 1.0（1.5px 的笔尖线），越近越粗，到 dist≤2 封顶 1.45
+ * （2.2px）——不是按比例放大（那会变 4.5px、像粗马克笔），
+ * 只是让放大后的画面里它仍然读作"一条线"。
+ */
+export function coastWidthScale(camDist: number): number {
+  if (!Number.isFinite(camDist)) return 1
+  return Math.min(1.45, Math.max(1, 1 + (8 - camDist) * 0.075))
+}
+
 export interface Map3DCoastline {
   lines: LineSegments2[]
   materials: LineMaterial[]
+  /**
+   * 按相机距离调线宽。
+   *
+   * 【为什么需要】LineMaterial 的线宽单位是**屏幕像素**，不随相机缩放。
+   * 远景 1.5px 正好（像笔尖划过的一线），但拉到近景（dist≈4）时，
+   * 陆地、石头、船都放大了 3 倍，海岸还是 1.5px —— 读作一根发丝，
+   * 与"这是这张图的骨架"的设计意图相反。
+   * 所以近景把线加粗到 2.2px：不是比例放大（那会变 4.5px，像粗马克笔），
+   * 只是让它在放大后的画面里仍然是"一条线"。
+   */
+  setZoom(linewidthScale: number): void
   /** 海岸线段数（e2e 用来断言"线真的建出来了"，而不是只有一个空对象） */
   segments: number
   dispose(): void
@@ -58,10 +81,15 @@ export function buildMap3DCoastline(geojson: LandGeoJsonLike): Map3DCoastline {
   const big = makeLines(major, 1.5, 0.85, 'map3d-coast-major')
   const small = makeLines(minor, 1, 0.5, 'map3d-coast-minor')
 
+  const baseWidths = [1.5, 1]
   return {
     lines: [big.lines, small.lines],
     materials: [big.material, small.material],
     segments: (major.length + minor.length) / 6,
+    setZoom(k) {
+      big.material.linewidth = baseWidths[0] * k
+      small.material.linewidth = baseWidths[1] * k
+    },
     dispose() {
       big.geo.dispose(); big.material.dispose()
       small.geo.dispose(); small.material.dispose()

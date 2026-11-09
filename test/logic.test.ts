@@ -49,6 +49,7 @@ import { shipNearZoomScale, SHIP_NEAR_ZOOM_MIN } from '../src/utils/shipZoom'
 import { iceStrengthAt, iceEdgeShift, ICE_SEASON_SHIFT_DEG } from '../src/utils/polarIce'
 import { componentAreas, majorLand } from '../src/utils/shoreBand'
 import { surfaceDimMul } from '../src/utils/mapSurfaceDim'
+import { coastWidthScale } from '../src/components/map3d/mapCoastline3d'
 import { durabilityColor, loadColor, DANGER_COLOR, WARN_COLOR, SAFE_COLOR } from '../src/utils/shipVitals'
 import {
   STANCES, forecastSegment, stanceLedgers, segmentCountFor, segmentIndexFor, nextSegmentBoundary,
@@ -8420,6 +8421,24 @@ console.log('\n== 天数口径守卫 ==')
   }
   assert(/d\.color\.copy\(d\.base\)\.multiplyScalar\(overlayMul\)/.test(src),
     '叠加层每帧从**基色**乘倍率（否则会越乘越暗）')
+}
+
+/*
+ * ---- 海岸墨线的线宽随距离 ----
+ * 线宽单位是屏幕像素，不随相机缩放：远景 1.5px 正好，近景就细成发丝。
+ */
+{
+  assert(coastWidthScale(15) === 1, '远景不加粗')
+  assert(coastWidthScale(8) === 1, 'dist=8 是起点')
+  assert(coastWidthScale(2) === 1.45, '最近端封顶 1.45（≈2.2px）')
+  assert(coastWidthScale(NaN) === 1, 'NaN 退回原宽')
+  // 距离越大越细：所以顺序扫一遍，k 必须是不增的
+  let prev = Infinity
+  for (let d = 1; d <= 20; d += 0.5) {
+    const k = coastWidthScale(d)
+    assert(k <= prev + 1e-9, `越远越细（d=${d} → ${k.toFixed(2)}）`)
+    prev = k
+  }
 }
 
 console.log(`\n最终结果：${passed} 通过 / ${failed} 失败`)

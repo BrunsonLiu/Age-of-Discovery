@@ -29,7 +29,7 @@ import {
 } from './models'
 import { buildMap3DLayers } from './mapLayers3d'
 import { buildMap3DBorders } from './mapBorders3d'
-import { buildMap3DCoastline } from './mapCoastline3d'
+import { buildMap3DCoastline, coastWidthScale } from './mapCoastline3d'
 import { buildMap3DPeaks, type PeakFacing } from './mapPeaks3d'
 import { createRhumb3d } from './mapRhumb3d'
 import { createShipWake } from './shipWake'
@@ -1775,6 +1775,8 @@ export default function Map3DView() {  const mountRef = useRef<HTMLDivElement>(n
       let lastSeasonIndex = -1
       /** 上一次写进材质的地势法线强度（避免每帧改属性） */
       let lastReliefK = -1
+      /** 同上：海岸墨线的线宽倍率 */
+      let lastCoastK = -1
       /*
        * 日相不在这里推进。
        *
@@ -2365,6 +2367,18 @@ export default function Map3DView() {  const mountRef = useRef<HTMLDivElement>(n
             }
           }
 
+          /*
+           * 海岸墨线随距离加粗：远景 1.5px、近景 2.2px。
+           * 只在明显变化时写（LineMaterial 改线宽会重建 uniform，不是免费操作）。
+           */
+          {
+            const k = coastWidthScale(camState.dist)
+            if (Math.abs(k - lastCoastK) > 0.03) {
+              lastCoastK = k
+              coast.setZoom(k)
+            }
+          }
+
           const tSec = tNow / 1000
           const detail = camState.dist < 22
           let bi = 0
@@ -2641,7 +2655,7 @@ function loadTexture(url: string, flipY: boolean): Promise<THREE.Texture> {
       (tex) => {
         tex.flipY = flipY
         tex.colorSpace = THREE.SRGBColorSpace
-        tex.anisotropy = 4
+        tex.anisotropy = 8
         tex.needsUpdate = true
         resolve(tex)
       },
