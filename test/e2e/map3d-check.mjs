@@ -1002,8 +1002,16 @@ for (let i = 0; i < 12; i++) {
 await sleep(600)
 const backFar = await page.evaluate(() =>
   +window.__map3d.scene.getObjectByName('map3d-ship').scale.x.toFixed(3))
-check(backFar > nearB.scale * 1.5,
-  `拉回远景后船恢复大小（${nearB.scale} → ${backFar}）`)
+/*
+ * 【阈值为什么从 1.5 改成 1.25】远景现在也会收敛（`shipFarZoomScale`，按 15/dist
+ * 收到 0.6 为止）：拉到最远时船是停泊基线的 0.6 倍，所以"近景 → 远景"的放大
+ * 倍数从 1.5 降到约 1.33。断言仍要守住两件事：**远景比近景大**、
+ * 且**不超过没缩放的基线 0.5**（否则远景又变成巨轮）。
+ */
+check(backFar > nearB.scale * 1.25,
+  `拉回远景后船恢复大小（${nearB.scale} → ${backFar}，要求放大 25% 以上）`)
+check(backFar <= 0.5 + 1e-6,
+  `远景的船不超过停泊基线（${backFar} ≤ 0.5，远景收敛没被绕过）`)
 
 // 移动端视口
 await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 2 })

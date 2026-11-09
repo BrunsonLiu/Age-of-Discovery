@@ -49,6 +49,10 @@ import { shipNearZoomScale, SHIP_NEAR_ZOOM_MIN } from '../src/utils/shipZoom'
 import { iceStrengthAt, iceEdgeShift, ICE_SEASON_SHIFT_DEG } from '../src/utils/polarIce'
 import { componentAreas, majorLand } from '../src/utils/shoreBand'
 import { surfaceDimMul } from '../src/utils/mapSurfaceDim'
+import {
+  pointSizeForWorld, portLightPlan, portLightStrength,
+} from '../src/utils/portLights'
+import { shipFarZoomScale, shipZoomScale, SHIP_FAR_ZOOM_MIN } from '../src/utils/shipZoom'
 import { coastWidthScale } from '../src/components/map3d/mapCoastline3d'
 import { sunDirection, SUN_SWING_DEG } from '../src/utils/sunDirection'
 import { durabilityColor, loadColor, DANGER_COLOR, WARN_COLOR, SAFE_COLOR } from '../src/utils/shipVitals'
@@ -8240,8 +8244,29 @@ console.log('\n== 天数口径守卫 ==')
      * 的同一个调用。
      */
     const src = readFileSync(join(process.cwd(), 'src', 'components', 'map3d', 'Map3DView.tsx'), 'utf8')
-    assert(/npcK = NPC_SCALE \* shipNearZoomScale\(camState\.dist\)/.test(src),
+    assert(/npcK = NPC_SCALE \* shipZoomScale\(camState\.dist\)/.test(src),
       'NPC 商船也走同一条缩放曲线（否则近景会"别人的船比我的大"）')
+
+    /*
+     * ---- 远景也要收 ----
+     *
+     * 旧曲线到 dist=8 就封顶 1.0，"远景不放大"看着对，但模型的尺寸是世界单位：
+     * 相机拉远时它在屏幕上本该变小，不缩就等于**越拉越大**。实测 dist=15 时
+     * 船长 ≈73px、dist=26 时 ≈123px（占屏高 14%），比伊比利亚半岛还高。
+     */
+    assert(shipFarZoomScale(10) === 1, 'dist≤15 不受远景曲线影响')
+    assert(shipFarZoomScale(15) === 1, 'dist=15 是分界点')
+    assert(shipFarZoomScale(26) < 1, 'dist=26 要收')
+    // 15/20 = 0.75 还没到钳位，正好用来验公式本身
+    assert(Math.abs(shipFarZoomScale(20) - 0.75) < 1e-9, '远景按 15/dist 收')
+    // 15/26 = 0.577 已经低于 0.6 ⇒ 被钳住（再远处屏幕尺寸保持不变）
+    assert(Math.abs(shipFarZoomScale(26) - SHIP_FAR_ZOOM_MIN) < 1e-9, 'dist=26 已到钳位')
+    assert(shipFarZoomScale(60) === SHIP_FAR_ZOOM_MIN, '收到底钳在 0.6（不能缩成看不见的点）')
+    assert(shipFarZoomScale(NaN) === 1, 'NaN 退回原尺寸')
+    // 合成曲线：近景端仍是 0.45，中景 1.0，远景按 15/dist
+    assert(Math.abs(shipZoomScale(3) - SHIP_NEAR_ZOOM_MIN) < 1e-9, '近景端不变')
+    assert(shipZoomScale(10) === 1, '中景不变')
+    assert(Math.abs(shipZoomScale(20) - 0.75) < 1e-9, '远景按 15/dist（合成曲线同值）')
   }
 }
 
@@ -8487,6 +8512,78 @@ console.log('\n== 天数口径守卫 ==')
     '陆地重绘时画了海岸接触影')
   const shade = readFileSync(join(process.cwd(), 'src', 'utils', 'coastShade.ts'), 'utf8')
   assert(/source-atop/.test(shade), '接触影只画在陆地内侧（source-atop）')
+}
+
+/*
+ * ---- 港口灯火 ----
+ *
+ * 【守什么】这一块全是"看不见就等于没做"的东西：
+ * ① 天还亮着时灯必须灭（否则白天一片光斑，像故障）；
+ * ② 每个港都得有一盏（小补给站也有一盏，否则夜里那些港等于不存在）；
+ * ③ 尺寸要按 fov 换算（PointsMaterial 的 size 比世界尺寸小 2.9 倍，
+ *    第一版就是这样，0.1 的信标只有 13px，4 倍放大才认得出）；
+ * ④ 灯必须跟着"港口发现"走，否则会泄露还没发现的港口位置。
+ */
+{
+  // ---- ① 一昼夜的曲线：白天全灭、深夜全亮、单调 ----
+  assert(portLightStrength(1) === 0, '正午不亮灯')
+  assert(portLightStrength(0.65) === 0, '天还亮着不亮灯（0.65 是起点）')
+  assert(portLightStrength(0) === 1, '深夜全亮')
+  assert(portLightStrength(0.18) === 1, '到 0.18 就全亮了')
+  const mid = portLightStrength(0.42)
+  assert(mid > 0.2 && mid < 0.8, `黄昏要有过渡（0.42 → ${mid.toFixed(2)}）`)
+  let prev = 0
+  for (let l = 1; l >= -0.2; l -= 0.05) {
+    const v = portLightStrength(l)
+    assert(v >= prev - 1e-9, `越黑越亮（lit=${l.toFixed(2)}）`)
+    assert(v >= 0 && v <= 1, `值域 0..1（lit=${l.toFixed(2)} → ${v}）`)
+    prev = v
+  }
+  assert(portLightStrength(NaN) === 0, 'NaN 不许把全图点亮')
+
+  // ---- ② 每个港都有灯，规模只决定数量 ----
+  for (const sc of ['major', 'medium', 'minor'] as const) {
+    const plan = portLightPlan(sc)
+    assert(plan.halo >= 1, `${sc} 要有暖光池（远景靠它读"哪里有港"）`)
+    assert(plan.lanterns >= 1, `${sc} 至少要有一盏码头灯`)
+    assert(plan.windows >= 1, `${sc} 至少要有一扇亮着的窗`)
+  }
+  assert(portLightPlan('major').beacons === 1, '只有大港有塔顶信标')
+  assert(portLightPlan('medium').beacons === 0, '中港没有信标')
+  assert(portLightPlan('minor').beacons === 0, '小补给站没有信标')
+  assert(portLightPlan('major').windows > portLightPlan('minor').windows,
+    '大港的窗比小港多（规模差要看得出来）')
+
+  // ---- ③ 尺寸换算：PointsMaterial 的 size 比世界尺寸小 tan(fov/2) ----
+  {
+    const k = pointSizeForWorld(1, 38)
+    assert(Math.abs(k - 1 / Math.tan((38 * Math.PI) / 360)) < 1e-9,
+      `fov=38 时换算系数应为 1/tan(19°)≈2.90（实测 ${k.toFixed(3)}）`)
+    assert(k > 2.8 && k < 3.0, '数量级别写错（差 10 倍就会变成一片光斑）')
+    assert(pointSizeForWorld(0.1, 38) > pointSizeForWorld(0.05, 38), '线性')
+    assert(pointSizeForWorld(NaN, 38) === 0 && pointSizeForWorld(0.1, NaN) === 0,
+      'NaN 输入不许算出 NaN 尺寸（three 会画成整屏）')
+  }
+
+  // ---- ④ 三条接线：建模登记灯位、渲染换算尺寸、灯跟随发现状态 ----
+  {
+    const models = readFileSync(join(process.cwd(), 'src', 'components', 'map3d', 'models.ts'), 'utf8')
+    assert(/g\.userData\.portLights = lights/.test(models),
+      '港口模型要把灯位登记到 userData.portLights')
+    assert(/portLightPlan\(scale\)/.test(models),
+      '灯的数量走 portLightPlan（与港规模同一套判据）')
+    // 灯位必须在 setScalar 之后算：早一步算，灯会浮在房子外面
+    const iScale = models.indexOf('g.scale.setScalar(0.8)')
+    const iLights = models.indexOf('g.userData.portLights = lights')
+    assert(iScale > 0 && iLights > iScale, '灯位要在缩放之后计算（否则整组偏移）')
+
+    const view = readFileSync(join(process.cwd(), 'src', 'components', 'map3d', 'Map3DView.tsx'), 'utf8')
+    assert(/size: pointSizeForWorld\(look\.size, camera\.fov\)/.test(view),
+      'Points 的 size 必须按 fov 换算（否则灯小 2.9 倍）')
+    assert(/applyLightDiscovery\(state\.discoveredPorts\)/.test(view),
+      '灯火要跟随发现状态（否则未发现的港口会自己亮起来）')
+    assert(/portLightStrength\(lit\)/.test(view), '亮度由昼夜曲线驱动')
+  }
 }
 
 console.log(`\n最终结果：${passed} 通过 / ${failed} 失败`)

@@ -32,6 +32,7 @@ export type PortRegion = 'caribbean' | 'europe' | 'africa' | 'asia'
  * 这里只做转出，保持 3D 侧的 import 路径不变。
  */
 import { portScaleOf, type PortScale } from '@/utils/portScale'
+import { portLightPlan, type PortLightKind } from '@/utils/portLights'
 import { flagYaw, smokePose } from '@/utils/portLife'
 export { portScaleOf, type PortScale }
 
@@ -193,6 +194,49 @@ export function createBirdTexture(): THREE.Texture {
 }
 
 /** 建一套港口模型用的几何体与材质（20 个港口共用，别每个港口各建一份） */
+/**
+ * 灯火用的光晕贴图（一盏灯一张 64×64 的径向渐变）。
+ *
+ * 【为什么必须有软边】Points 是一个**方形的 point**，直接给颜色画出来是方块。
+ * 加一张中心亮、边缘归零的贴图，叠加混合下才读作"一团光"。
+ *
+ * 【为什么内核要小、外圈要长】内核（0~0.18）决定"这是一点光"，
+ * 外圈（到 1.0）决定光晕的大小。内核做大了会变成一颗白球，
+ * 反而不像远处的灯——真实的灯在暗处是一小点实心加一大圈非常淡的光。
+ */
+export function createGlowTexture(): THREE.Texture {
+  const S = 64
+  const c = document.createElement('canvas')
+  c.width = S; c.height = S
+  const g = c.getContext('2d')!
+  const grad = g.createRadialGradient(S / 2, S / 2, 0, S / 2, S / 2, S / 2)
+  /*
+   * 【光晕中段为什么要到 0.8】叠加混合之后，只有**接近白**的部分才看得出来：
+   * 夜色里海面才 0.2 左右的亮度，加一层 0.3 的暖色，结果还是"稍微亮一点的蓝"，
+   * 读作脏点而不是光。第一版把中段压到 0.34，结果是"一圈几乎看不见的雾 + 一个硬核"，
+   * 4 倍放大才认得出是灯。把中段提到 0.8、外圈留一段才散，才读作一团光。
+   */
+  grad.addColorStop(0, 'rgba(255,252,240,1)')
+  grad.addColorStop(0.20, 'rgba(255,246,220,1)')
+  grad.addColorStop(0.40, 'rgba(255,228,168,0.80)')
+  grad.addColorStop(0.62, 'rgba(255,204,136,0.34)')
+  grad.addColorStop(0.84, 'rgba(255,188,118,0.06)')
+  grad.addColorStop(1, 'rgba(255,180,110,0)')
+  g.fillStyle = grad
+  g.fillRect(0, 0, S, S)
+  const tex = new THREE.CanvasTexture(c)
+  tex.colorSpace = THREE.SRGBColorSpace
+  return tex
+}
+
+/** 一个灯位：坐标是**相对港口原点**（已含 0.8 缩放与建筑群朝向） */
+export interface PortLightSpot {
+  x: number
+  y: number
+  z: number
+  kind: PortLightKind
+}
+
 export function createPortModelKit(): PortModelKit {
   const base = new THREE.CylinderGeometry(0.15, 0.19, 0.075, 16)
   paintPortBase(base)
@@ -302,12 +346,20 @@ export function makePortModel(kit: PortModelKit, port: PortModelInput): THREE.Gr
   base.receiveShadow = true
   g.add(base)
 
+  /** 房屋锚点（灯位要用它的世界位置：窗开在房子上，不在港口中心） */
+  const houseAnchors: THREE.Mesh[] = []
+  /** 旗杆锚点（码头灯挂在旗杆上） */
+  const poleAnchors: THREE.Mesh[] = []
+  /** 塔顶锚点（大港的信标） */
+  const beaconAnchors: THREE.Mesh[] = []
+
   // ---- 小屋（屋身 + 四棱锥屋顶，成对出现）----
   const addHouse = (x: number, z: number, ry = Math.PI / 4) => {
     const h = new THREE.Mesh(kit.house, kit.houseMat)
     h.position.set(x, baseTopY + 0.035, z)
     h.castShadow = true
     town.add(h)
+    houseAnchors.push(h)
     const r = new THREE.Mesh(kit.roof, roofMat)
     r.position.set(x, baseTopY + 0.087, z)
     r.rotation.y = ry
@@ -321,6 +373,7 @@ export function makePortModel(kit: PortModelKit, port: PortModelInput): THREE.Gr
     const pole = new THREE.Mesh(kit.pole, kit.poleMat)
     pole.position.set(x, baseTopY + 0.095, z)
     town.add(pole)
+    poleAnchors.push(pole)
     const flag = new THREE.Mesh(kit.flag, kit.flagMat)
     // x 就是杆的位置（几何原点已在左边缘，见 createPortModelKit）
     flag.position.set(x, baseTopY + 0.15, z)
@@ -345,6 +398,7 @@ export function makePortModel(kit: PortModelKit, port: PortModelInput): THREE.Gr
     // 塔身高 0.17、中心在 +0.11 → 塔顶 = +0.195；塔顶锥高 0.055 → 中心 = +0.2225
     cap.position.set(-0.005, baseTopY + 0.2225, 0.028)
     town.add(cap)
+    beaconAnchors.push(cap)
 
     addFlag(0.078, -0.024)
   } else if (scale === 'medium') {
@@ -431,11 +485,71 @@ export function makePortModel(kit: PortModelKit, port: PortModelInput): THREE.Gr
     puffs.push(sp)
   }
 
+  g.scale.setScalar(0.8)
+
+  /*
+   * ---- 灯位 ----
+   *
+   * 【为什么在这里算、而不是渲染时再算】灯要合成**一个** Points 对象
+   * （20 个港各画一份就是 20 次 draw call，而灯本来就只是几个顶点）。
+   * 合成的前提是坐标统一到同一空间，所以建模结束时把每盏灯的位置算成
+   * "相对港口原点"的坐标，交给 Map3DView 加上港口自身的位置即可。
+   *
+   * 【必须在 setScalar 和 updateMatrixWorld 之后】灯位要含 0.8 的缩放，
+   * 也要含建筑群的朝向（town 的 jitter 旋转）——窗开在房子上，
+   * 不在港口中心。早一步算，灯会浮在房子外面，而且 20 个港全浮在同一个方向。
+   */
+  g.updateMatrixWorld(true)
+  const lights: PortLightSpot[] = []
+  const tmpV = new THREE.Vector3()
+  const plan = portLightPlan(scale)
+  const pushSpot = (o: THREE.Object3D, dy: number, dz: number, kind: PortLightKind) => {
+    o.getWorldPosition(tmpV)
+    lights.push({
+      x: +tmpV.x.toFixed(4),
+      y: +(tmpV.y + dy).toFixed(4),
+      z: +(tmpV.z + dz).toFixed(4),
+      kind,
+    })
+  }
+  // 暖光池：整个港口中心，略高于底座顶面（压在陆地上，不埋进底座）
+  for (let i = 0; i < plan.halo; i++) {
+    lights.push({ x: 0, y: +((baseTopY + 0.02) * 0.8).toFixed(4), z: 0, kind: 'halo' })
+  }
+  // 窗：房子的前脸（+Z 侧，默认视角那一面），抬高一点点到窗台高度
+  for (let i = 0; i < Math.min(plan.windows, houseAnchors.length); i++) {
+    pushSpot(houseAnchors[i], 0.018, 0.03, 'window')
+  }
+  // 码头灯：挂在旗杆上（真实港口的灯就挂在杆子/桅杆上，不悬空）
+  for (let i = 0; i < Math.min(plan.lanterns, poleAnchors.length); i++) {
+    pushSpot(poleAnchors[i], 0.035, 0, 'lantern')
+  }
+  // 塔顶信标
+  for (const cap of beaconAnchors) pushSpot(cap, 0.03, 0, 'beacon')
+
+  /*
+   * 大港多出来的那盏码头灯：摆在底座边缘（+X/-X 一侧）。
+   *
+   * 一个港只有一根旗杆，第二盏灯没有杆可挂。摆在底座边缘是**故意的**：
+   * 真实的码头灯就是沿石砌岸边一溜排开的，正好把黑影里的底座轮廓勾出来。
+   * 坐标在这里是"已缩放"的空间（g.scale = 0.8），所以乘了 0.8。
+   */
+  const extraLanterns = plan.lanterns - Math.min(plan.lanterns, poleAnchors.length)
+  for (let i = 0; i < extraLanterns; i++) {
+    const ang = Math.PI * (0.62 + 0.55 * i)
+    lights.push({
+      x: +(Math.cos(ang) * 0.13 * baseR * 0.8).toFixed(4),
+      y: +((baseTopY + 0.03) * 0.8).toFixed(4),
+      z: +(Math.sin(ang) * 0.13 * baseR * 0.8).toFixed(4),
+      kind: 'lantern',
+    })
+  }
+
   g.userData.portScale = scale
   g.userData.portId = port.id
   g.userData.baseTopR = baseTopR
   g.userData.portLife = { flags, puffs, seed: port.id }
-  g.scale.setScalar(0.8)
+  g.userData.portLights = lights
   return g
 }
 

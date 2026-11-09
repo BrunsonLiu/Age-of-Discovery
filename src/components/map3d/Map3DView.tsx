@@ -25,7 +25,8 @@ import { relicMarkerHtml } from '@/utils/relicGlyph'
 import { skyAt } from '@/utils/skyClock'
 import {
   animatePortLife, createBirdTexture, createPortModelKit, createShipModelKit,
-  makePortModel, makeShipModel, portScaleOf,
+  createGlowTexture, makePortModel, makeShipModel, portScaleOf,
+  type PortLightSpot,
 } from './models'
 import { buildMap3DLayers } from './mapLayers3d'
 import { buildMap3DBorders } from './mapBorders3d'
@@ -35,7 +36,10 @@ import { buildMap3DPeaks, type PeakFacing } from './mapPeaks3d'
 import { createRhumb3d } from './mapRhumb3d'
 import { createShipWake } from './shipWake'
 import { createShallowBand } from './shallowBand'
-import { shipNearZoomScale } from '@/utils/shipZoom'
+import { shipZoomScale } from '@/utils/shipZoom'
+import {
+  portLightStrength, pointSizeForWorld, PORT_LIGHT_DRAW_ORDER, PORT_LIGHT_LOOK, type PortLightKind,
+} from '@/utils/portLights'
 import { paintPolarIce } from '@/utils/polarIce'
 import { paintCoastShade } from '@/utils/coastShade'
 import { surfaceDimMul, seaOverlayMul } from '@/utils/mapSurfaceDim'
@@ -1175,6 +1179,107 @@ export default function Map3DView() {  const mountRef = useRef<HTMLDivElement>(n
       }
       scene.add(portGroup)
 
+      /*
+       * ---- 港口灯火 ----
+       *
+       * 【为什么合成 Points 而不是每个港一个 Sprite】每个 Sprite 是一次 draw call：
+       * 20 个港 × 3~7 盏 = 80~130 次，而它们总共只有一百多个顶点。
+       * 按种类合成 3 个 Points（窗 / 码头灯 / 塔顶信标），一共 3 次绘制。
+       *
+       * 【为什么分种类而不是一个 Points】PointsMaterial 的 size 是材质级的：
+       * 窗要 0.018、信标要 0.05，差了近三倍。塞进同一个 Points 就只能取一个值，
+       * 于是要么窗变成白球，要么信标看不见。三种尺寸换三次绘制，很划算。
+       *
+       * 【为什么灯不在 portGroup 里】灯是"夜里才亮"的东西，而港口模型要随
+       * detail 整组隐藏（远景省 draw call）。挂在 portGroup 里会跟着一起没掉——
+       * 偏偏远景正是最需要"沿海一串灯"的时候。
+       */
+      const lightSpots: { x: number; y: number; z: number; kind: PortLightKind; portId: number }[] = []
+      for (const po of portObjects) {
+        const list = po.group.userData.portLights as PortLightSpot[] | undefined
+        if (!list) continue
+        for (const sp of list) {
+          lightSpots.push({
+            x: po.group.position.x + sp.x,
+            y: sp.y,
+            z: po.group.position.z + sp.z,
+            kind: sp.kind,
+            portId: po.id,
+          })
+        }
+      }
+      const glowTex = createGlowTexture()
+      const portLightMeshes: { mesh: THREE.Points; kind: PortLightKind }[] = []
+      /** 每个灯的原始高度（发现状态变化时要还原） */
+      const lightGroups: {
+        kind: PortLightKind
+        attr: THREE.BufferAttribute
+        spots: { x: number; y: number; z: number; portId: number }[]
+      }[] = []
+      for (const kind of PORT_LIGHT_DRAW_ORDER) {
+        const pts = lightSpots.filter(l => l.kind === kind)
+        if (!pts.length) continue
+        const geo = new THREE.BufferGeometry()
+        const arr = new Float32Array(pts.length * 3)
+        for (let i = 0; i < pts.length; i++) {
+          arr[i * 3] = pts[i].x
+          arr[i * 3 + 1] = pts[i].y
+          arr[i * 3 + 2] = pts[i].z
+        }
+        const attr = new THREE.BufferAttribute(arr, 3)
+        geo.setAttribute('position', attr)
+        const look = PORT_LIGHT_LOOK[kind]
+        const mat = new THREE.PointsMaterial({
+          map: glowTex,
+          // 分量可以大于 1：叠加混合 + ACES 之下，只有超白才会压出"过曝的核心"
+          color: new THREE.Color().setRGB(look.rgb[0], look.rgb[1], look.rgb[2]),
+          // 世界尺寸 → PointsMaterial 的 size（差一个 tan(fov/2)，见 pointSizeForWorld）
+          size: pointSizeForWorld(look.size, camera.fov),
+          sizeAttenuation: true,
+          transparent: true,
+          depthWrite: false,
+          blending: THREE.AdditiveBlending,
+          // 夜里才亮：白天 opacity=0，连绘制都跳过（见帧循环）
+          opacity: 0,
+        })
+        const mesh = new THREE.Points(geo, mat)
+        mesh.name = `map3d-port-lights-${kind}`
+        // 光源不该被视锥裁掉：一个灯点也算它的包围球，20 个港分布在全图
+        mesh.frustumCulled = false
+        scene.add(mesh)
+        portLightMeshes.push({ mesh, kind })
+        lightGroups.push({ kind, attr, spots: pts })
+        disposables.push(geo, mat)
+      }
+      disposables.push(glowTex)
+
+      /*
+       * ---- 未发现的港口不能亮 ----
+       *
+       * 【为什么这是必须的】港口模型有"未发现就隐藏"的规则（与 2D 的 PortMarker
+       * 一致），而灯是另一批顶点、不跟着那个 group 走 —— 结果**灯把还没发现的
+       * 港口位置泄露了**：截图里几团光漂在空海上，因为那里没有模型、只有灯。
+       * 玩家第一眼就会问"那团光是什么"。
+       *
+       * 做法是把未发现那几盏的 y 挪到 -500（三维空间里等于不存在），
+       * 而不是重建几何：发现一个港口是低频事件，但每帧遍历 109 个顶点并不贵，
+       * 真正贵的是"改 count / 重建 buffer"。所以只在**发现集合变化时**写一次。
+       */
+      const HIDDEN_LIGHT_Y = -500
+      let lastDiscSig = ''
+      const applyLightDiscovery = (discovered: readonly number[]) => {
+        const sig = discovered.join(',')
+        if (sig === lastDiscSig) return
+        lastDiscSig = sig
+        for (const g of lightGroups) {
+          const a = g.attr.array as Float32Array
+          for (let i = 0; i < g.spots.length; i++) {
+            a[i * 3 + 1] = discovered.includes(g.spots[i].portId) ? g.spots[i].y : HIDDEN_LIGHT_Y
+          }
+          g.attr.needsUpdate = true
+        }
+      }
+
       // ---- 「当前所在港口」的地面光环 ----
       //
       // 【为什么必须有】2D 的 PortMarker 用「34px + 发光 + portPulse 脉冲动画」
@@ -1938,7 +2043,7 @@ export default function Map3DView() {  const mountRef = useRef<HTMLDivElement>(n
           // 曲线取 dist/8：8 以上完全不缩（远景本来就小，占屏 1.7%），
           // 到 dist=3 缩到 0.45 → 占屏降到约 11%，港口露出来了。
           // 沿用"停泊时把船挪开缩小"的同一原则：**近景下船要给港口让位**。
-          const nearK = shipNearZoomScale(camState.dist)
+          const nearK = shipZoomScale(camState.dist)
           ship.scale.setScalar((docked ? 0.5 : 0.8) * nearK)
 
           // ---- 随浪摇晃 ----
@@ -2051,7 +2156,7 @@ export default function Map3DView() {  const mountRef = useRef<HTMLDivElement>(n
              * 修后两档都回到 0.90（停泊那档是 1.44，因为座舰靠岸时故意缩到 0.5
              * 给港口让位，那是另一条刻意的规则）。
              */
-            const npcK = NPC_SCALE * shipNearZoomScale(camState.dist)
+            const npcK = NPC_SCALE * shipZoomScale(camState.dist)
             if (Math.abs(npc.group.scale.x - npcK) > 0.01) npc.group.scale.setScalar(npcK)
           }
 
@@ -2269,6 +2374,25 @@ export default function Map3DView() {  const mountRef = useRef<HTMLDivElement>(n
            * 亮在那里 —— 傍晚会读成"会发光的岸"。白天乘数正好是 1，
            * 所以白天一点变化都没有。
            */
+          /*
+           * ---- 港口灯火 ----
+           *
+           * 【与其它图层相反的方向】上面所有东西都在**压暗**，灯是唯一
+           * 越黑越亮的东西。所以它不接 lineMul，只接 portLightStrength(lit)。
+           *
+           * 【为什么昼夜系数用 lit，而不是复用 nightK】nightK 是 1-lit 的线性量，
+           * 而灯的起亮要有"黄昏"这一段缓坡：天还亮的时候不该一下全亮。
+           * 曲线在 utils/portLights，单测钉住两端与单调性。
+           */
+          {
+            const s = portLightStrength(lit)
+            for (let i = 0; i < portLightMeshes.length; i++) {
+              const pm = portLightMeshes[i].mesh.material as THREE.PointsMaterial
+              pm.opacity = PORT_LIGHT_LOOK[portLightMeshes[i].kind].alpha * s
+              // 全灭时整组不画：白天这里是 0，不必为看不见的灯付 draw call
+              portLightMeshes[i].mesh.visible = s > 0.01
+            }
+          }
           const overlayMul = seaOverlayMul(weatherDim, lit)
           if (shallow) {
             const sm = shallow.mesh.material as THREE.MeshBasicMaterial
@@ -2330,6 +2454,8 @@ export default function Map3DView() {  const mountRef = useRef<HTMLDivElement>(n
           po.group.visible = found
           po.label.shown = found
         }
+        // 灯火跟着发现状态走（否则未发现的港口会自己亮起来）
+        applyLightDiscovery(state.discoveredPorts)
 
         /*
          * ---- 港口待机动画：旗 / 烟 / 海鸥 ----
