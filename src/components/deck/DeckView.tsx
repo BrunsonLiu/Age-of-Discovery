@@ -4,7 +4,7 @@ import { Anchor, X } from 'lucide-react'
 import { useGameStore } from '@/store/useGameStore'
 import { useMapStore } from '@/store/useMapStore'
 import { skyAt } from '@/utils/skyClock'
-import { createShipModelKit, makeShipModel } from '@/components/map3d/models'
+import { createDeckShip, type DeckShip } from './shipModel'
 import { DECK_WAVES, deckShipPose } from './deckWaves'
 
 /**
@@ -83,9 +83,9 @@ export default function DeckView() {
 
     const scene = new THREE.Scene()
     const camera = new THREE.PerspectiveCamera(42, width / height, 0.05, 400)
-    camera.position.set(1.15, 1.12, -3.55)
+    camera.position.set(-2.5, 1.75, -4.3)
     // 注视点略高于水线：让船占画面中下部，天空留白给月亮
-    camera.lookAt(0, 0.62, 2.4)
+    camera.lookAt(-0.25, 1.15, 1.4)
 
     /*
      * ---- 月亮方向 ----
@@ -97,7 +97,7 @@ export default function DeckView() {
      * 一路铺到镜头前——那是"月夜海面"最有说服力的一笔。
      * 第一版把月亮放在左上方画面外，结果只剩船尾一团无主的白光（实测截图）。
      */
-    const moonDir = new THREE.Vector3(0.40, 0.205, 0.89).normalize()
+    const moonDir = new THREE.Vector3(0.34, 0.20, 0.92).normalize()
 
     // ---- 天空：一个内表面球，渐变 + 月亮盘与光晕（不要贴图）----
     const skyGeo = new THREE.SphereGeometry(180, 32, 20)
@@ -252,22 +252,16 @@ export default function DeckView() {
     sea.frustumCulled = false
     scene.add(sea)
 
-    // ---- 船：与 2.5D 海图同一套模型（同一份 kit，不另做一套）----
-    const kit = createShipModelKit('player')
-    const ship = makeShipModel(kit)
-    ship.scale.setScalar(0.92)
-    scene.add(ship)
-
-    // 艉灯：夜里唯一的暖光。它在船尾，正好落在镜头与船之间
-    const lantern = new THREE.PointLight(0xffb066, 1.7, 4.5, 2)
-    lantern.position.set(0, 0.62, -0.78)
-    ship.add(lantern)
-    const lanternBall = new THREE.Mesh(
-      new THREE.SphereGeometry(0.016, 10, 8),
-      new THREE.MeshBasicMaterial({ color: new THREE.Color(1.5, 1.0, 0.5) }),
-    )
-    lanternBall.position.copy(lantern.position)
-    ship.add(lanternBall)
+    /*
+     * ---- 船 ----
+     * 换成按"放样 + 帆装 + 索具"重建的模型（见 shipModel.ts）：船壳有舷弧与收分、
+     * 甲板有板缝、帆会鼓着呼吸、索具把桅杆连起来，还有船尾楼的窗光与吊灯笼。
+     * 它的原尺度是半长 18（总长 36），这里缩到场景里 0.05 → 约 1.8 单位。
+     */
+    const deckShip: DeckShip = createDeckShip()
+    deckShip.group.scale.setScalar(0.05)
+    scene.add(deckShip.group)
+    const ship = deckShip.group
 
     // ---- 光：月光主光 + 极低环境（夜里靠月亮，不靠补光）----
     const moon = new THREE.DirectionalLight(0xbfd6ff, 2.1)
@@ -275,6 +269,17 @@ export default function DeckView() {
     scene.add(moon)
     const ambient = new THREE.AmbientLight(0x223347, 0.55)
     scene.add(ambient)
+    /*
+     * ---- 补光（"站在船上"的那一侧）----
+     * 月亮在船头前方，于是我们看到的帆与船尾全是背光面 —— 只吃环境光就是一团黑
+     * （实测截图：船只剩剪影，帆的织纹、舷墙、索具都看不见）。
+     * 真实拍摄里这时会在摄影机侧加一盏柔光；这里放一盏很弱的冷色平行光，
+     * 位置在镜头后方偏上，只负责"让结构读出来"，不改变夜的方向感。
+     * 这条与对方 spec 里的 deckFill 是同一个思路，只是我们用冷色（月亮的光是冷的）。
+     */
+    const fill = new THREE.DirectionalLight(0x9db6cf, 0.85)
+    fill.position.set(-6, 4, -7)
+    scene.add(fill)
 
     // ---- 尺寸 ----
     const onResize = () => {
@@ -303,18 +308,19 @@ export default function DeckView() {
       moon.intensity = 2.1 * lightMul
       ambient.intensity = 0.30 + 0.25 * skyInfo.lit
 
-      const pose = deckShipPose(t)
+      const pose = deckShipPose(t, 0.72, 0.26)
       ship.position.y = pose.y
       // 船有自重：姿态只跟随浪的一部分，全跟随会像一片叶子
       ship.rotation.x = pose.pitch * 0.6
       ship.rotation.z = pose.roll * 0.55
       // 极慢的艏向摆动，让画面"活着"但不打断观察
       ship.rotation.y = Math.sin(t * 0.09) * 0.012
+      deckShip.update(t)
 
       // 相机：贴着船尾缓慢横移，读作"站在船上"而不是"在看模型"
-      camera.position.x = 1.15 + Math.sin(t * 0.11) * 0.16
-      camera.position.y = 1.12 + Math.sin(t * 0.07 + 1.3) * 0.05 + pose.y * 0.35
-      camera.lookAt(0, 0.62, 2.4)
+      camera.position.x = -2.5 + Math.sin(t * 0.11) * 0.2
+      camera.position.y = 1.75 + Math.sin(t * 0.07 + 1.3) * 0.06 + pose.y * 0.35
+      camera.lookAt(-0.25, 1.15, 1.4)
 
       // 星空随夜色淡入（夜里才该看到星星）
       starMat.opacity = 0.12 + 0.68 * night
@@ -350,6 +356,7 @@ export default function DeckView() {
         const m = (o as THREE.Mesh).material as THREE.Material | THREE.Material[] | undefined
         for (const one of Array.isArray(m) ? m : m ? [m] : []) one.dispose()
       })
+      deckShip.dispose()
       renderer.dispose()
       renderer.domElement.remove()
     }
