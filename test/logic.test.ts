@@ -50,6 +50,7 @@ import { iceStrengthAt, iceEdgeShift, ICE_SEASON_SHIFT_DEG } from '../src/utils/
 import { componentAreas, majorLand } from '../src/utils/shoreBand'
 import { surfaceDimMul } from '../src/utils/mapSurfaceDim'
 import { coastWidthScale } from '../src/components/map3d/mapCoastline3d'
+import { sunDirection, SUN_SWING_DEG } from '../src/utils/sunDirection'
 import { durabilityColor, loadColor, DANGER_COLOR, WARN_COLOR, SAFE_COLOR } from '../src/utils/shipVitals'
 import {
   STANCES, forecastSegment, stanceLedgers, segmentCountFor, segmentIndexFor, nextSegmentBoundary,
@@ -8439,6 +8440,40 @@ console.log('\n== 天数口径守卫 ==')
     assert(k <= prev + 1e-9, `越远越细（d=${d} → ${k.toFixed(2)}）`)
     prev = k
   }
+}
+
+/*
+ * ---- 太阳方向：随日相摆动、随航季升降 ----
+ *
+ * 原来主光钉死在 (-9,6,6)，一整天里地势明暗完全一样，只有亮度在变——
+ * 那是调光台，不是太阳。这里钉住三条：方向是单位向量、正午在中位且两侧对称、
+ * 冬天比夏天低。
+ */
+{
+  const len = (d: { x: number; y: number; z: number }) => Math.hypot(d.x, d.y, d.z)
+  for (const p of [0, 0.25, 0.5, 0.75, 1]) {
+    for (const si of [0, 1, 2, 3]) {
+      const d = sunDirection(p, si)
+      assert(Math.abs(len(d) - 1) < 1e-9, `方向必须是单位向量（p=${p} si=${si}）`)
+    }
+  }
+  // 正午在中位：水平方向的比值与基准一致（归一化会同时缩放三个分量，比值不变）
+  const noon = sunDirection(0.5, 1)
+  assert(Math.abs(noon.x / noon.z - (-9 / 6)) < 0.01,
+    `正午保持在基准方位（x/z=${(noon.x / noon.z).toFixed(2)}）`)
+  // 晨昏之间正好差一个摆动幅度（用水平方位角量，别用 x 分量：旋转不对称）
+  const azimuth = (d: { x: number; z: number }) => (Math.atan2(d.z, d.x) * 180) / Math.PI
+  const morn = sunDirection(0.25, 1)
+  const eve = sunDirection(0.75, 1)
+  // 摆动是按整个日相 0..1 分配的，日出→日落只走一半
+  assert(Math.abs(azimuth(eve) - azimuth(morn) - SUN_SWING_DEG / 2) < 0.5,
+    `日出到日落走半个摆动幅度（实测 ${(azimuth(eve) - azimuth(morn)).toFixed(1)}°）`)
+  assert(Math.abs(morn.y - eve.y) < 1e-9, '晨昏高度相同')
+  // 冬天比夏天低（同一个日相）
+  assert(sunDirection(0.5, 3).y < sunDirection(0.5, 1).y, '冬天的太阳更低')
+  assert(sunDirection(0.5, 1).y > sunDirection(0.5, 0).y, '夏天比春天高')
+  // NaN 不许把光源甩到无穷远
+  assert(Number.isFinite(sunDirection(NaN, NaN).y), 'NaN 输入仍给出有限方向')
 }
 
 console.log(`\n最终结果：${passed} 通过 / ${failed} 失败`)

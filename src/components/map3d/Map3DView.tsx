@@ -30,6 +30,7 @@ import {
 import { buildMap3DLayers } from './mapLayers3d'
 import { buildMap3DBorders } from './mapBorders3d'
 import { buildMap3DCoastline, coastWidthScale } from './mapCoastline3d'
+import { sunDirection } from '@/utils/sunDirection'
 import { buildMap3DPeaks, type PeakFacing } from './mapPeaks3d'
 import { createRhumb3d } from './mapRhumb3d'
 import { createShipWake } from './shipWake'
@@ -2191,6 +2192,14 @@ export default function Map3DView() {  const mountRef = useRef<HTMLDivElement>(n
           rim.intensity = LIGHT_RIM * weatherDim * (0.55 + 0.45 * lit)
           ambient.intensity = LIGHT_AMB * weatherDim * (0.6 + 0.4 * lit)
           scene.environmentIntensity = ENV_BASE * weatherDim * (0.65 + 0.35 * lit)
+          /*
+           * 太阳真的会动：随日相摆 ±35°，随航季升降（见 utils/sunDirection）。
+           * 距离保持原来的 |(-9,6,6)| ≈ 12.4，免得阴影相机的取景范围跟着变。
+           */
+          {
+            const dir = sunDirection(sky.phase, seasonAt(fleet.day).index)
+            key.position.set(dir.x * 12.4, dir.y * 12.4, dir.z * 12.4)
+          }
           // 主光色温：深夜偏冷蓝 → 正午偏暖白。用同一个 lit 插值，
           // 不让"亮度"和"色温"各走一条曲线（那会在某个时段出现灰绿）。
           key.color.setRGB(
