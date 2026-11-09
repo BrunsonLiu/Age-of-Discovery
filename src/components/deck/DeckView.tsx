@@ -6,6 +6,9 @@ import { useMapStore } from '@/store/useMapStore'
 import { skyAt } from '@/utils/skyClock'
 import { createDeckShip, type DeckShip } from './shipModel'
 import { DECK_WAVES, deckShipPose } from './deckWaves'
+import { findCoast, bearingWord, type CoastSighting } from './deckCoast'
+import { createDeckCoast } from './coastModel'
+import { calculateBearing } from '@/utils/navigation'
 
 /**
  * 船上视角：贴着海面看自己的船（第三个空间）。
@@ -30,12 +33,20 @@ import { DECK_WAVES, deckShipPose } from './deckWaves'
  * 整张图像阴天的下午。现在两端各给一个 hex，每帧按日相 lerp。
  */
 const SKY_ZENITH_NIGHT = new THREE.Color(0x04080f)
-const SKY_ZENITH_DAY = new THREE.Color(0x5b86ad)
+const SKY_ZENITH_DAY = new THREE.Color(0x4478a6)
 const SKY_HORIZON_NIGHT = new THREE.Color(0x112436)
-const SKY_HORIZON_DAY = new THREE.Color(0x9dbfd8)
+const SKY_HORIZON_DAY = new THREE.Color(0xb2cee2)
 const SEA_DEEP_NIGHT = new THREE.Color(0x02060b)
 const SEA_DEEP_DAY = new THREE.Color(0x0d2a3f)
 const MOON_COLOR = new THREE.Color(0xdfe9ff)
+/*
+ * 黄昏的颜色：日出/日落时地平线偏橙、天顶偏紫。
+ * 【为什么必须有】只有"夜蓝 ↔ 日蓝"两端时，`lit≈0.45` 的那一段是**灰的**
+ * （两色线性插值的中点），读作"阴天"而不是黄昏 —— 傍晚截图就是这样。
+ * 真实的黄昏是**第三种色**，不是两端的中点。
+ */
+const DUSK_HORIZON = new THREE.Color(0xc47a52)
+const DUSK_ZENITH = new THREE.Color(0x4e4a66)
 
 /**
  * 船上视角的层级：压过底栏(40)/时间轴(50)/通知(60)的前一层，
@@ -43,7 +54,29 @@ const MOON_COLOR = new THREE.Color(0xdfe9ff)
  */
 const Z_DECK = 62
 
+/**
+ * 分段式 sRGB 编码。
+ *
+ * 【为什么必须自己写】自定义 `ShaderMaterial` 的 `gl_FragColor` 是**直接写进画布**的
+ * （画布按 sRGB 解释），three 不会替你转换。而 uniform 里的颜色经 `Color` 已经
+ * 是**线性**工作空间的值 —— 于是 0x5b86ad 这种中蓝写出去被当成 sRGB 0.10 显示，
+ * 屏幕上是 25/255 的深蓝。实测后果：`lit=0.95` 的"上午"看起来像黄昏，
+ * 天空与受光的船体（走 three 内置材质，会正确编码）明暗关系对不上。
+ *
+ * 【为什么不用 three 的 colorspace_fragment】那个 chunk 在 ShaderMaterial 里
+ * 生成的是纯 gamma 1/2.2，而画布是分段式 sRGB：暗部会差 7/255（海图的 post 里
+ * 踩过一模一样的坑）。
+ */
+const SRGB_ENCODE = /* glsl */ `
+vec3 srgbEncode(vec3 c) {
+  vec3 lo = c * 12.92;
+  vec3 hi = 1.055 * pow(max(c, vec3(0.0)), vec3(1.0 / 2.4)) - 0.055;
+  return mix(hi, lo, vec3(lessThanEqual(c, vec3(0.0031308))));
+}
+`
+
 export default function DeckView() {
+  const hudRef = useRef<HTMLDivElement>(null)
   const open = useMapStore((s) => s.deckView)
   const setDeckView = useMapStore((s) => s.setDeckView)
   const viewMode = useMapStore((s) => s.viewMode)
@@ -109,6 +142,10 @@ export default function DeckView() {
         uHorizon: { value: SKY_HORIZON_NIGHT.clone() },
         uMoonDir: { value: moonDir.clone() },
         uMoonColor: { value: MOON_COLOR.clone() },
+        // 月亮亮度：白天该淡到只剩一个白盘，夜里才是光源（见 fragment）
+        uMoonK: { value: 1 },
+        uDusk: { value: 0 },
+        uDuskColor: { value: DUSK_HORIZON.clone() },
       },
       vertexShader: /* glsl */ `
         varying vec3 vDir;
@@ -122,7 +159,11 @@ export default function DeckView() {
         uniform vec3 uHorizon;
         uniform vec3 uMoonDir;
         uniform vec3 uMoonColor;
+        uniform float uMoonK;
+        uniform float uDusk;
+        uniform vec3 uDuskColor;
         varying vec3 vDir;
+        ${SRGB_ENCODE}
         void main() {
           vec3 d = normalize(vDir);
           float h = clamp(d.y, -1.0, 1.0);
@@ -131,10 +172,22 @@ export default function DeckView() {
           col = mix(col, uHorizon * 0.55, smoothstep(0.0, -0.35, h));
           float m = max(dot(d, uMoonDir), 0.0);
           // 月亮：盘（~1.2°）+ 两圈光晕。加起来比贴图省一次采样
-          col += uMoonColor * smoothstep(0.9994, 0.9997, m) * 2.2;
-          col += uMoonColor * pow(m, 240.0) * 0.20;
-          col += uMoonColor * pow(m, 26.0) * 0.045;
-          gl_FragColor = vec4(col, 1.0);
+          // 盘：smoothstep 的下限决定直径。0.9994 对应 4°（屏幕上 60~80px，像太阳），
+          // 0.9999 对应 1.6°（约 26px）——那才是一轮月亮
+          /*
+           * 地平线暖带：黄昏时只有贴着海平线的一条是橙的，天顶仍然冷。
+           * 【为什么要单独一条带】只把 horizon 色往橙里混 25% 时，整片天是"灰紫"，
+           * 看不出日落（实测截图）；真实黄昏的暖是**集中在低空**的，
+           * 用 smoothstep 按仰角压成一条带，强度可以给足而不脏。
+           */
+          float band = smoothstep(0.30, 0.0, h);
+          col = mix(col, uDuskColor, uDusk * 0.55 * band);
+          col += uMoonColor * smoothstep(0.99988, 0.99994, m) * (0.10 + 2.10 * uMoonK);
+          col += uMoonColor * pow(m, 240.0) * 0.20 * uMoonK;
+          col += uMoonColor * pow(m, 26.0) * 0.045 * uMoonK;
+          // 黄昏整体压暗：日落时天比白天暗，不压的话"黄昏"会亮成一盏粉灯
+          col *= 1.0 - 0.30 * uDusk;
+          gl_FragColor = vec4(srgbEncode(clamp(col, 0.0, 1.0)), 1.0);
         }
       `,
     })
@@ -180,6 +233,7 @@ export default function DeckView() {
       uDeep: { value: SEA_DEEP_NIGHT.clone() },
       uSky: { value: SKY_HORIZON_NIGHT.clone().multiplyScalar(0.9) },
       uMoon: { value: MOON_COLOR.clone() },
+      uMoonK: { value: 1 },
       uAmp: { value: DECK_WAVES.map((w) => w.amp) },
       uLen: { value: DECK_WAVES.map((w) => w.len) },
       uSteep: { value: DECK_WAVES.map((w) => w.steep) },
@@ -221,14 +275,21 @@ export default function DeckView() {
         uniform vec3 uDeep;
         uniform vec3 uSky;
         uniform vec3 uMoon;
+        uniform float uMoonK;
         varying vec3 vWorld;
         varying vec3 vNormal;
+        ${SRGB_ENCODE}
         void main() {
           vec3 n = normalize(vNormal);
           vec3 v = normalize(cameraPosition - vWorld);
           // 菲涅尔：正视是深水，掠视反天光
+          /*
+           * 菲涅尔上限 0.82：相机贴着水面，**几乎整片海都是掠射角**，
+           * 上限给 1.0 时每一处都混成天光色，海面读作"浅灰的地板"（正午截图）。
+           * 留 18% 的深色底，近处才有水色、远处才反天光。
+           */
           float fres = pow(1.0 - max(dot(n, v), 0.0), 3.0);
-          vec3 col = mix(uDeep, uSky, clamp(fres * 1.15, 0.0, 1.0));
+          vec3 col = mix(uDeep, uSky, clamp(fres * 1.05, 0.0, 0.82));
           // 月光镜面（Blinn-Phong 的高光半径收得很紧，海面才不会整片发白）
           vec3 h = normalize(uMoonDir + v);
           /*
@@ -237,14 +298,18 @@ export default function DeckView() {
            * 反射角时整块过曝），读作探照灯而不是月光。收窄之后它才是一条
            * 随浪闪的碎光带。
            */
+          /*
+           * 月光反射只在夜里出现：白天太阳在天上，海面不该有一条"月色大道"。
+           * 第一版没乘 uMoonK，正午截图里那条白亮带横贯海面，读作"水面反光过曝"。
+           */
           float spec = pow(max(dot(n, h), 0.0), 420.0);
-          col += uMoon * spec * 0.85;
+          col += uMoon * spec * 0.85 * uMoonK;
           // 浪脊的微弱提亮：让相邻浪面之间有层次，不然海面是一块布
           col += uSky * clamp(n.y - 0.97, 0.0, 1.0) * 0.8;
           // 远处收到天光色：与天空球的地平线接上，不出现一条硬边
           float d = length(vWorld.xz);
           col = mix(col, uSky * 0.85, smoothstep(28.0, 62.0, d));
-          gl_FragColor = vec4(col, 1.0);
+          gl_FragColor = vec4(srgbEncode(clamp(col, 0.0, 1.0)), 1.0);
         }
       `,
     })
@@ -262,6 +327,17 @@ export default function DeckView() {
     deckShip.group.scale.setScalar(0.05)
     scene.add(deckShip.group)
     const ship = deckShip.group
+
+    /*
+     * ---- 近岸 ----
+     * 远洋时整组隐藏；进入 42 海里内按"最近港口"摆一条山脊 + 灯塔 + 沿岸窗光。
+     * 它解决的是这个视角唯一的地理问题：**船到岸了没有**。没有它，深海与
+     * 停在塞维利亚港里的画面一模一样。
+     */
+    const coast = createDeckCoast()
+    scene.add(coast.group)
+    // 取证句柄：巡检要能量岸线的可见性/坐标（与海图的 __map3d 同一做法）
+    ;(window as unknown as { __deckScene?: THREE.Scene }).__deckScene = scene
 
     // ---- 光：月光主光 + 极低环境（夜里靠月亮，不靠补光）----
     const moon = new THREE.DirectionalLight(0xbfd6ff, 2.1)
@@ -281,6 +357,9 @@ export default function DeckView() {
     fill.position.set(-6, 4, -7)
     scene.add(fill)
 
+    /** 上一帧算出的"海面该反射的天光色"（含一点黄昏暖），给 uSky 用 */
+    const lastSeaSky = new THREE.Color()
+
     // ---- 尺寸 ----
     const onResize = () => {
       const w = mount.clientWidth || window.innerWidth
@@ -293,7 +372,9 @@ export default function DeckView() {
 
     // ---- 帧循环 ----
     let raf = 0
+    let frame = 0
     const tick = () => {
+      frame++
       const t = performance.now() / 1000
       const st = useGameStore.getState()
       const skyInfo = skyAt(performance.now(), st.routeProgress ?? 0)
@@ -306,6 +387,13 @@ export default function DeckView() {
       seaUniforms.uFlow.value = sailing ? 0.55 + (st.simSpeed ?? 1) * 0.55 : 0.06
       const lightMul = 0.42 + 0.58 * skyInfo.lit
       moon.intensity = 2.1 * lightMul
+      skyMat.uniforms.uMoonK.value = 0.06 + 0.94 * night
+      /*
+       * 补光也要跟着日相：白天船体在阳光下不该是全黑的。
+       * 实测（停泊白昼截图）：fill 固定 0.85 时船壳与帆接近纯黑，
+       * 只剩轮廓——那是夜里的样子，白天需要更实的形体。
+       */
+      fill.intensity = 0.55 + 1.15 * skyInfo.lit
       ambient.intensity = 0.30 + 0.25 * skyInfo.lit
 
       const pose = deckShipPose(t, 0.72, 0.26)
@@ -322,14 +410,63 @@ export default function DeckView() {
       camera.position.y = 1.75 + Math.sin(t * 0.07 + 1.3) * 0.06 + pose.y * 0.35
       camera.lookAt(-0.25, 1.15, 1.4)
 
+      /*
+       * ---- 近岸：每 8 帧算一次 ----
+       * 20 个港的 haversine 不算贵，但也没必要每帧做——船一帧挪不了几米，
+       * 岸的景别在 8 帧里不会变。HUD 上的海里数同样跟着这个节奏刷新
+       * （读数是真实距离，画的位置是景别，两者不混）。
+       */
+      if (frame % 8 === 0) {
+        const pos = st.shipPosition
+        let sighting: CoastSighting | null = null
+        if (pos) {
+          /*
+           * 停泊时没有 waypoint：把港固定在左舷前方（−78°）。
+           * 用绝对方位会让"停在港里"的画面取决于上一段航向，随机得很。
+           */
+          const heading = st.fleet.isSailing && st.waypoint
+            ? calculateBearing(pos[0], pos[1], st.waypoint.latitude, st.waypoint.longitude)
+            : 0
+          sighting = findCoast(pos[0], pos[1], heading)
+          if (sighting && !st.fleet.isSailing) {
+            sighting = { ...sighting, relBearingDeg: -78, presence: 1 }
+          }
+        }
+        coast.setSighting(sighting)
+        if (hudRef.current) {
+          hudRef.current.textContent = sighting
+            ? `${sighting.port.nameCn} · ${bearingWord(sighting.relBearingDeg)} ${sighting.distNm.toFixed(1)} 海里`
+            : '远洋 · 视野内无陆地'
+        }
+      }
+      coast.update(t, night, skyMat.uniforms.uHorizon.value)
+
       // 星空随夜色淡入（夜里才该看到星星）
       starMat.opacity = 0.12 + 0.68 * night
       // 天亮时海色与天光一起抬起来，不让"白天还是深夜的蓝"
       const dayK = 1 - night
       skyMat.uniforms.uZenith.value.copy(SKY_ZENITH_NIGHT).lerp(SKY_ZENITH_DAY, dayK)
       skyMat.uniforms.uHorizon.value.copy(SKY_HORIZON_NIGHT).lerp(SKY_HORIZON_DAY, dayK)
-      seaUniforms.uDeep.value.copy(SEA_DEEP_NIGHT).lerp(SEA_DEEP_DAY, dayK)
-      seaUniforms.uSky.value.copy(skyMat.uniforms.uHorizon.value).multiplyScalar(0.9)
+      /*
+       * 黄昏强度：以 lit≈0.42 为中心的高斯（日出与日落都会经过这里）。
+       * 【强度为什么是 0.2 而不是 0.6】第一版给 0.62 时整幅画面变成粉色——
+       * 天顶的紫（0x4a4a72）与地平线的橙一混就是品红，而海面的 uSky 又跟着
+       * 地平线走，于是连海都粉了。黄昏只需要**地平线一带**暖，天顶保持冷。
+       */
+      const dusk = Math.exp(-Math.pow((skyInfo.lit - 0.42) / 0.2, 2))
+      skyMat.uniforms.uZenith.value.lerp(DUSK_ZENITH, 0.14 * dusk)
+      skyMat.uniforms.uHorizon.value.lerp(DUSK_HORIZON, 0.30 * dusk)
+      // 海面只借一点暖（水面反射天空，但反射率低、色偏冷）
+      /*
+       * 海面借的暖比"物理反射率"高一些（0.45 而不是 0.16）：
+       * 这是画面平衡，不是物理。黄昏时天空是暖的、海面若仍是冷灰，
+       * 整张图会读作"阴天配橙色滤镜"（实测截图）。
+       */
+      lastSeaSky.copy(SKY_HORIZON_NIGHT).lerp(SKY_HORIZON_DAY, dayK).lerp(DUSK_HORIZON, 0.45 * dusk)
+      skyMat.uniforms.uDusk.value = dusk
+      seaUniforms.uDeep.value.copy(SEA_DEEP_NIGHT).lerp(SEA_DEEP_DAY, dayK).multiplyScalar(1 - 0.22 * dusk)
+      seaUniforms.uSky.value.copy(lastSeaSky).multiplyScalar(0.72)
+      seaUniforms.uMoonK.value = 0.04 + 0.96 * night
 
       /*
        * 【这一版不接辉光】共用的 `post` 在**极暗**的场景里会把整体提亮很多：
@@ -357,8 +494,10 @@ export default function DeckView() {
         for (const one of Array.isArray(m) ? m : m ? [m] : []) one.dispose()
       })
       deckShip.dispose()
+      coast.dispose()
       renderer.dispose()
       renderer.domElement.remove()
+      delete (window as unknown as { __deckScene?: THREE.Scene }).__deckScene
     }
   }, [open])
 
@@ -395,8 +534,15 @@ export default function DeckView() {
         <X size={14} />
         回海图
       </button>
+      <div
+        ref={hudRef}
+        data-testid="deck-coast-hud"
+        className="pointer-events-none absolute left-4 top-[5.5rem] rounded-md border border-gold-600/25 bg-black/30 px-3 py-1.5 text-xs tracking-wider text-parchment-200/90 backdrop-blur-sm"
+      >
+        远洋 · 视野内无陆地
+      </div>
       <div className="pointer-events-none absolute bottom-4 left-1/2 -translate-x-1/2 text-xs tracking-wider text-parchment-200/70">
-        V / Esc 回海图 ｜ 拖拽与缩放暂不可用（这一版只有深海）
+        V / Esc 回海图
       </div>
     </div>
   )

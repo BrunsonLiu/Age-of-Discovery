@@ -48,6 +48,9 @@ import {
 import { shipNearZoomScale, SHIP_NEAR_ZOOM_MIN } from '../src/utils/shipZoom'
 import { iceStrengthAt, iceEdgeShift, ICE_SEASON_SHIFT_DEG } from '../src/utils/polarIce'
 import { componentAreas, majorLand } from '../src/utils/shoreBand'
+import {
+  findCoast, wrapDeg, coastLayout, coastScenePos, bearingWord,
+} from '../src/components/deck/deckCoast'
 import { surfaceDimMul } from '../src/utils/mapSurfaceDim'
 import {
   pointSizeForWorld, portLightPlan, portLightStrength,
@@ -8583,6 +8586,104 @@ console.log('\n== 天数口径守卫 ==')
     assert(/applyLightDiscovery\(state\.discoveredPorts\)/.test(view),
       '灯火要跟随发现状态（否则未发现的港口会自己亮起来）')
     assert(/portLightStrength\(lit\)/.test(view), '亮度由昼夜曲线驱动')
+  }
+}
+
+/*
+ * ---- 船上视角的近岸（岸线 / 灯塔 / 窗光）----
+ *
+ * 【守什么】这个模块最容易"看着像做了、其实错了"：
+ * ① 距离映射与方位换算错了，屏幕上一片海，没有报错；
+ * ② 场景坐标的**符号**反了，岸会出现在相反的一侧，看着还挺自然；
+ * ③ 岸在身后时硬画一块，变成"前方凭空出现陆地"。
+ */
+{
+  // ---- ① 最近港与 42 海里阈值 ----
+  const here = findCoast(37.3886, -5.9823, 0)
+  assert(here !== null, '停在港口坐标上必须找到近岸')
+  assert(here!.distNm < 1, `停泊时距离约 0（实测 ${here!.distNm.toFixed(2)}）`)
+  assert(here!.presence > 0.95, '贴岸时景别拉满')
+  assert(here!.port.nameCn === '塞维利亚', `最近港应是塞维利亚（实测 ${here!.port.nameCn}）`)
+
+  // 远洋：大西洋中部 42 海里内没有港
+  assert(findCoast(0, -40, 0) === null, '大西洋中部不该有近岸')
+  // 阈值本身可调（用 maxNm 收窄，验证"超阈值即 null"）
+  assert(findCoast(37.5, -6.2, 0, 1) === null, '超过 maxNm 就不画岸')
+  // NaN 不许算出岸
+  assert(findCoast(NaN, NaN, 0) === null, 'NaN 船位返回 null')
+
+  // ---- ② 相对方位：折到 −180..180 ----
+  assert(wrapDeg(370) === 10, `370° → 10°（实测 ${wrapDeg(370)}）`)
+  assert(wrapDeg(-350) === 10, '-350° → 10°')
+  assert(wrapDeg(180) === -180, '180° 折到 -180')
+  assert(wrapDeg(NaN) === 0, 'NaN 折成 0')
+
+  // ---- ③ 景别：越近半径越小、灯塔永远比"真实比例"高 ----
+  {
+    const near = coastLayout(1)
+    const far = coastLayout(0)
+    assert(Math.abs(near.radius - 24) < 1e-9, `贴岸半径 24（实测 ${near.radius}）`)
+    assert(Math.abs(far.radius - 58) < 1e-9, `最远半径 58（实测 ${far.radius}）`)
+    assert(near.radius < far.radius, 'presence 越大越近')
+    let prev = Infinity
+    for (let p = 0; p <= 1.0001; p += 0.05) {
+      const r = coastLayout(p).radius
+      assert(r <= prev + 1e-9, `半径单调（p=${p.toFixed(2)}）`)
+      prev = r
+    }
+    assert(Math.abs(near.width - near.radius * 2) < 1e-9, '宽度 = 2 × 半径')
+    assert(near.towerHeight >= 3.0, '灯塔高度有下限（否则 24 单位外只有几个像素）')
+    assert(far.towerHeight <= 5.6, '灯塔高度有上限（远处不能变成巨塔）')
+    /*
+     * 【上限为什么是 58】海面几何只有 140×140（半径 70），它的 fragment 在
+     * d=62 之外混成天光色 —— 岸画到那儿会浮在"地平线"上。这不是随便取的数，
+     * 改海面尺寸时这条会红。
+     */
+    assert(far.radius < 62, '岸线最远不超过海面的天光渐隐起点')
+  }
+
+  // ---- ④ 场景坐标符号：右舷在世界 −X（屏幕上"右边"）----
+  {
+    const front = coastScenePos(0, 24)
+    assert(Math.abs(front.x) < 1e-9 && Math.abs(front.z - 24) < 1e-9, '正前方：x=0、z=+R')
+    const starboard = coastScenePos(90, 24)
+    assert(starboard.x < -1e-6, `右舷的岸在世界 −X（实测 x=${starboard.x}）`)
+    const port = coastScenePos(-90, 24)
+    assert(port.x > 1e-6, '左舷在世界 +X')
+    assert(starboard.z > 0, '岸永远在远处（z>0），不按方位旋转')
+  }
+
+  // ---- ⑤ HUD 方位词 ----
+  assert(bearingWord(0) === '正前方', '0° 是正前方')
+  assert(bearingWord(-5) === '正前方', '±12° 内都算正前方')
+  assert(bearingWord(90) === '右舷', '90° 是右舷')
+  assert(bearingWord(-90) === '左舷', '−90° 是左舷')
+  // ±168° 以外并到"正后方"：那个角度上左右已经没有意义了
+  assert(bearingWord(170) === '正后方', '170° 归入正后方')
+  assert(bearingWord(150) === '右后方', '150° 是右后方')
+  assert(bearingWord(-150) === '左后方', '−150° 是左后方')
+
+  // ---- ⑥ 接线：三个必须存在的调用/判据 ----
+  {
+    const view = readFileSync(join(process.cwd(), 'src', 'components', 'deck', 'DeckView.tsx'), 'utf8')
+    assert(/coast\.setSighting\(/.test(view), '帧循环要把近岸交给岸线组')
+    assert(/frame % 8 === 0/.test(view), '近岸每 8 帧算一次（不必每帧）')
+    assert(/data-testid="deck-coast-hud"/.test(view), 'HUD 要有最近陆地的读数')
+    /*
+     * 【自定义 shader 必须自己做 sRGB 编码】这是本轮最本质的修复：
+     * ShaderMaterial 的 gl_FragColor 直接写画布，three 不会转换，而 uniform 里的
+     * 颜色已经是线性值 —— 不编码时 lit=0.95 的"上午"看起来像黄昏（实测）。
+     */
+    const enc = view.match(/srgbEncode\(clamp\(col, 0\.0, 1\.0\)\)/g) || []
+    assert(enc.length >= 2, `天空与海面两个 shader 都要编码（实测 ${enc.length} 处）`)
+
+    const coast = readFileSync(join(process.cwd(), 'src', 'components', 'deck', 'coastModel.ts'), 'utf8')
+    assert(/COAST_HIDE_BEHIND_DEG/.test(coast), '岸在身后时不画（否则"前方凭空出现陆地"）')
+    // 旧写法：整组按方位旋转 —— 实测把岸与灯塔一起转出画面
+    assert(!/rotation\.y = -s\.relBearingDeg/.test(coast),
+      '不许再按方位旋转整组（会把岸转出视野）')
+    assert(/setScalar\(tw\)/.test(coast),
+      '灯塔要均匀缩放（非均匀矩阵会把 sprite 拉成一条竖带）')
   }
 }
 

@@ -262,7 +262,8 @@ export function createDeckShip(): DeckShip {
     pivot.add(body)
     const glass = new THREE.Mesh(
       new THREE.CylinderGeometry(0.42, 0.52, 0.9, 8),
-      new THREE.MeshStandardMaterial({ color: 0x2a1a08, emissive: 0xffb066, emissiveIntensity: 3.2, roughness: 0.45 }),
+      /* emissiveIntensity 1.15：3.2 在 ACES 下直接过曝成纯白圆角块，读不出"灯罩" */
+      new THREE.MeshStandardMaterial({ color: 0x3a2408, emissive: 0xffa64e, emissiveIntensity: 1.15, roughness: 0.45 }),
     )
     body.add(glass)
     for (let i = 0; i < 4; i++) {
@@ -318,7 +319,8 @@ export function createDeckShip(): DeckShip {
     arm.rotation.z = Math.PI / 2
     arm.position.x = gx > 0 ? -0.35 : 0.35
     bracket.add(arm)
-    bracket.add(makeLantern(3.4, i === 1))
+    // 尺寸 1.4：3.4 时灯笼比船尾楼还大（4 倍放大实测：像两个挂在船外的大灯球）
+    bracket.add(makeLantern(1.4, i === 1))
     gallery.add(bracket)
   })
 
