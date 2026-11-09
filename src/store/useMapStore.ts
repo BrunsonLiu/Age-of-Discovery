@@ -30,6 +30,14 @@ interface MapState {
    */
   renderMode: '2d' | '3d'
   /**
+   * 船上视角（第三个空间）：贴着海面看自己的船。
+   *
+   * 【为什么也放在 useMapStore 而不是游戏状态】与 viewMode/renderMode 同理：
+   * 这是"这一刻站在哪看"，不是资产；不写进 partialize，刷新回海图。
+   */
+  deckView: boolean
+  setDeckView: (v: boolean) => void
+  /**
    * 海陆掩码与航线几何是否已就绪。
    *
    * 【为什么需要这个开关】航线弧长（避陆后的真实航程）要靠 A* 在海陆掩码上搜，
@@ -94,6 +102,7 @@ export const useMapStore = create<MapState>()(
       showPirateZones: true,
       selectedPortId: null,
       renderMode: '2d',
+      deckView: false,
       viewMode: 'chart',
       landDataReady: false,
       landDataFailed: false,
@@ -105,6 +114,7 @@ export const useMapStore = create<MapState>()(
       togglePirateZones: () => set((s) => ({ showPirateZones: !s.showPirateZones })),
       setSelectedPortId: (id) => set({ selectedPortId: id }),
       setRenderMode: (mode) => set({ renderMode: mode }),
+      setDeckView: (v) => set({ deckView: v }),
       setLandDataReady: (ready) => set({ landDataReady: ready }),
       setLandDataFailed: (failed) => set({ landDataFailed: failed }),
     }),

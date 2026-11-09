@@ -123,6 +123,9 @@ function prefetchSurface(): void {
 }
 import { useDialogueStore } from '@/store/useDialogueStore'
 
+/** 船上视角：独立 three 场景，必须懒加载（否则把 three 拖进主包） */
+const DeckView = lazy(() => import('@/components/deck/DeckView'))
+
 const totalAchievements = achievements.length
 
 const panelButtons: { type: PanelType; icon: React.ReactNode; label: string; side: 'left' | 'right' }[] = [
@@ -415,6 +418,10 @@ export default function MainMap() {
         {/* 海上异闻：只画剪影与一行字，不接收任何点击（pointer-events-none） */}
         <SeaOmen />
       </div>
+
+      <Suspense fallback={null}>
+        <DeckView />
+      </Suspense>
 
       {viewMode === 'harbor' && (
         <div

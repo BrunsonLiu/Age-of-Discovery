@@ -1937,6 +1937,16 @@ export default function Map3DView() {  const mountRef = useRef<HTMLDivElement>(n
 
       const tick = () => {
         raf = requestAnimationFrame(tick)
+        /*
+         * 船上视角打开时，海图这一帧不用画：它被整块盖住，但每帧仍要付
+         * 全屏像素（3D 的瓶颈就是填充）。跳过绘制、只保留 rAF 续帧，
+         * 关掉船上视角后画面立刻接上（相机状态没有丢）。
+         */
+        if (useMapStore.getState().deckView) {
+          raf = requestAnimationFrame(tick)
+          return
+        }
+
         const tNow = performance.now()
         const rawMs = tNow - lastT
         const dt = Math.min(0.1, rawMs / 1000)
