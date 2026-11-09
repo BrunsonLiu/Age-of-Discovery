@@ -121,12 +121,45 @@ export function componentAreas(land: Uint8Array, w: number, h: number): Uint32Ar
  */
 export const MIN_SHORE_AREA_CELLS = 18
 
-/** 只保留面积达标的陆块（其余置 0） */
+/**
+ * 腐蚀一格：只留下 3×3 邻域全是陆地的格。
+ *
+ * 【为什么面积过滤不够】海陆掩码在海上还留着一些**一格宽的细长"陆地"**
+ * （海底山脊在生成掩码时被算成了陆地的边）。它们的面积可以很大
+ * （一整条环），所以"面积 ≥ 18 格"放它们过去 —— 实测南大西洋上出现一条
+ * 横跨两千公里的**闭环白线**，就是这些细条被 0.75° 的光晕围着画出来的。
+ * 腐蚀一格能一次去干净：一格宽的东西必然留不下。
+ *
+ * 代价：白沫外缘向海挪了约 0.1°（11 公里），大陆与半岛（几十公里宽）不受影响。
+ */
+export function erodeLand(land: Uint8Array, w: number, h: number): Uint8Array {
+  const out = new Uint8Array(land.length)
+  for (let y = 1; y < h - 1; y++) {
+    for (let x = 1; x < w - 1; x++) {
+      const i = y * w + x
+      if (!land[i]) continue
+      if (
+        land[i - 1] && land[i + 1] && land[i - w] && land[i + w] &&
+        land[i - w - 1] && land[i - w + 1] && land[i + w - 1] && land[i + w + 1]
+      ) out[i] = 1
+    }
+  }
+  return out
+}
+
+/**
+ * 岸外光晕的门槛：**先腐蚀一格，再要求面积达标**。
+ *
+ * 两道关各管一类杂质：
+ *   腐蚀 → 去掉一格宽的细长"陆地"（海底山脊之类），它们面积够大但不成块；
+ *   面积 → 去掉真正的孤岛与礁石，它们成块但太小，晕会连成假海岸线。
+ */
 export function majorLand(land: Uint8Array, w: number, h: number, minCells = MIN_SHORE_AREA_CELLS): Uint8Array {
-  const areas = componentAreas(land, w, h)
+  const solid = erodeLand(land, w, h)
+  const areas = componentAreas(solid, w, h)
   const out = new Uint8Array(land.length)
   for (let i = 0; i < land.length; i++) {
-    if (land[i] && areas[i] >= minCells) out[i] = 1
+    if (solid[i] && areas[i] >= minCells) out[i] = 1
   }
   return out
 }

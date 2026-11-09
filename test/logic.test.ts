@@ -8311,26 +8311,35 @@ console.log('\n== 天数口径守卫 ==')
 
   // ---- ⑥ 陆块面积：群岛不许连成一条假海岸线 ----
   {
-    // 4×4 网格：左边一块 2×2 的大陆，右上角一个孤格小岛
-    const w = 4, h = 4
+    // 8×8 网格：左上角一块 4×4 的大陆，右上角一个孤格小岛
+    const w = 8, h = 8
     const land = new Uint8Array(w * h)
-    land[0] = 1; land[1] = 1; land[4] = 1; land[5] = 1   // 2×2
-    land[3] = 1                                          // 单格小岛
-    const areas = componentAreas(land, w, h)
-    assert(areas[0] === 4 && areas[5] === 4, `连成一片的陆地面积要算对（${areas[0]}）`)
-    assert(areas[3] === 1, '孤立一格是 1')
-    assert(areas[2] === 0, '海面没有面积')
+    for (let y = 0; y < 4; y++) for (let x = 0; x < 4; x++) land[y * w + x] = 1
+    land[1 * w + 6] = 1   // 孤格小岛
 
-    // 门槛 2：2×2 的留下，孤格被剔除
+    const areas = componentAreas(land, w, h)
+    assert(areas[0] === 16 && areas[3 * w + 3] === 16, `连成一片的陆地面积要算对（${areas[0]}）`)
+    assert(areas[1 * w + 6] === 1, '孤立一格是 1')
+    assert(areas[7 * w + 7] === 0, '海面没有面积')
+
+    // 门槛 2：4×4 腐蚀后还剩 2×2 的核心（保得住），孤格被剔除
     const big = majorLand(land, w, h, 2)
-    assert(big[0] === 1 && big[5] === 1, '有分量的陆块保留')
-    assert(big[3] === 0, '孤立礁石不产生岸外光晕（否则群岛会连成一条假海岸线）')
-    assert(big[2] === 0, '海面仍是海面')
+    assert(big[1 * w + 1] === 1, '有分量的陆块保留')
+    assert(big[1 * w + 6] === 0, '孤立礁石不产生岸外光晕（否则群岛会连成一条假海岸线）')
+    assert(big[7 * w + 7] === 0, '海面仍是海面')
+
+    /*
+     * 一格宽的细条（海底山脊那种）面积够大但保不住 —— 腐蚀先把它去掉。
+     * 这是南大西洋上那条"闭环白线"的成因。
+     */
+    const ridge = new Uint8Array(w * h)
+    for (let x = 0; x < w; x++) ridge[3 * w + x] = 1
+    assert(majorLand(ridge, w, h, 2).every(v => v === 0), '一格宽的细长陆地不产生光晕')
 
     // 对角相邻不算相连（4 连通）：否则一串斜着排的礁石会被当成一块大陆
     const diag = new Uint8Array(w * h)
-    diag[0] = 1; diag[5] = 1
-    assert(componentAreas(diag, w, h)[5] === 1, '对角相邻不合并')
+    diag[0] = 1; diag[1 * w + 1] = 1
+    assert(componentAreas(diag, w, h)[1 * w + 1] === 1, '对角相邻不合并')
 
     /*
      * 【为什么这条守卫重要】实测德雷克海峡从合恩角到南极半岛被 0.75° 的
@@ -8341,6 +8350,13 @@ console.log('\n== 天数口径守卫 ==')
     const src = readFileSync(join(process.cwd(), 'src', 'components', 'map3d', 'shallowBand.ts'), 'utf8')
     assert(/distanceField\(majorLand\(/.test(src),
       '距离场用的是"有分量的陆地"，不是全部陆地')
+    /*
+     * 【海岸几何必须与墨线同源】浅水带原来读 sea-mask.bin，墨线读 land.geojson，
+     * 两份数据有配准差 → 南大西洋上飘着几段"错位的海岸线"（截图实测）。
+     * 这条守卫钉死数据源：不许再 import seaRoute 的掩码。
+     */
+    assert(!/from '@\/utils\/seaRoute'/.test(src),
+      '浅水带不读海陆掩码（会与 geojson 海岸线错位），只用 land.geojson')
   }
 
   // ---- ⑦ 两条线必须接上：材质用的是被重画过的贴图 ----
@@ -8373,8 +8389,23 @@ console.log('\n== 天数口径守卫 ==')
   assert(surfaceDimMul(1, 0.3) <= surfaceDimMul(1, 0.7), '日相单调')
 
   const src = readFileSync(join(process.cwd(), 'src', 'components', 'map3d', 'Map3DView.tsx'), 'utf8')
-  assert(/sm\.color\.setScalar\(lineMul\)/.test(src),
+  assert(/sm\.color\.setScalar\(overlayMul\)/.test(src),
     '浅水带/白沫用的是同一条倍率（否则夜里会亮成一圈发光的岸）')
+
+  /*
+   * 【为什么逐个点名】这些图层原来全是"建好就再也不碰"的不受光材质，
+   * 实测风暴前后亮度一点不变（洋流 0.279、海盗区 0.098、风带 0.129、
+   * 季节现象 0.549）。夜里它们比海面亮好几倍，读成发光的电线圈。
+   * 少收一个就少一个；所以每个组都单独断言被收进清单。
+   */
+  for (const group of ['currents', 'pirates', 'winds', 'phenomena.group']) {
+    assert(
+      new RegExp(`collectDimmed\\(layers\\.${group.replace('.', '\\.')}\\)`).test(src),
+      `${group} 被收进统一压暗清单`,
+    )
+  }
+  assert(/d\.color\.copy\(d\.base\)\.multiplyScalar\(overlayMul\)/.test(src),
+    '叠加层每帧从**基色**乘倍率（否则会越乘越暗）')
 }
 
 console.log(`\n最终结果：${passed} 通过 / ${failed} 失败`)

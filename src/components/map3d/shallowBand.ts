@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import { isLandAt, isSeaMaskLoaded } from '@/utils/seaRoute'
+import { mercNorm } from '@/utils/mapProjection'
 import { compositeShore, majorLand } from '@/utils/shoreBand'
 
 /**
@@ -14,9 +14,11 @@ import { compositeShore, majorLand } from '@/utils/shoreBand'
  * 试过宽线条：LineMaterial 没有软边，加宽就是一条硬边带，读作"沿岸贴了条胶带"。
  * 贴图版可以做到软边 + 沿距离渐变，且只需要一次绘制、一次 draw call。
  *
- * 【数据从哪来】`public/data/sea-mask.bin`（0.1°/格、1bit/格）——它本来就在内存里，
- * 是同一份用来算 A* 避陆与「船会不会上岸」的掩码。**不引入新素材**，
- * 也不假装知道真实水深：这里画的只是"离岸多近"，命名与注释都不说"水深"。
+ * 【数据从哪来】**land.geojson**（与海岸墨线、陆地几何同一份）。
+ * 最初用的是 `sea-mask.bin`（A* 避陆用的 0.1° 二值掩码），结果南大西洋上
+ * 出现几段十几度长的**错位海岸线**飘在海里——两份数据的配准差被 0.75° 的
+ * 光晕放大了。换成 geojson 之后配准差在原理上就不存在。
+ * 不假装知道真实水深：这里画的只是"离岸多近"，命名与注释都不说"水深"。
  *
  * 【分辨率与成本】0.35°/格（1024×512）。距离场实测 512→19.5ms、
  * 1024→30.4ms（`.workbuddy/probe-shallow-cost.mjs`）。512 时碎浪只有一像素，
@@ -116,17 +118,68 @@ function distanceField(land: Uint8Array, w: number, h: number): Float32Array {
  * 不需要再翻一次——翻两次就会得到南北颠倒的一圈浅水（会在印度洋北岸出现、
  * 在南非外海消失），肉眼很容易看出来。
  */
-function buildShallowTexture(): THREE.Texture | null {
-  if (!isSeaMaskLoaded()) return null
+type Ring = [number, number][]
+interface PolyFeature {
+  geometry?: { type: string; coordinates: unknown }
+}
 
-  const land = new Uint8Array(TEX_W * TEX_H)
-  for (let y = 0; y < TEX_H; y++) {
-    const lat = 90 - ((y + 0.5) / TEX_H) * 180
-    for (let x = 0; x < TEX_W; x++) {
-      const lng = -180 + ((x + 0.5) / TEX_W) * 360
-      land[y * TEX_W + x] = isLandAt(lat, lng) ? 1 : 0
+/**
+ * 从 **land.geojson** 栅格化出陆地掩码（0/1），而不是读 `sea-mask.bin`。
+ *
+ * 【为什么要换数据源】3D 的海岸墨线由 land.geojson 画（buildMap3DCoastline），
+ * 而浅水带原来由 sea-mask.bin 算距离。两份数据只要有一点配准差，
+ * 就会看到"贴着岸一圈浅色"之外还有一圈**错位的海岸线**飘在海上——
+ * 实测南大西洋上有几段十几度长的弧线，形态就是海岸线，但整段平移到了海里。
+ * 换成同一份 geojson，配准差在原理上就不存在了。
+ *
+ * 顺带解决另一件事：掩码里有海底山脊被算成陆地的细条（一格宽），
+ * geojson 没有它们。
+ *
+ * 朝向必须与贴图一致：x = 经度线性、y = **mercNorm(lat)**（不是线性纬度），
+ * 否则高纬那一圈会整体错位。
+ */
+function landMaskFromGeoJson(geojson: unknown, w: number, h: number): Uint8Array | null {
+  const feats = (geojson as { features?: PolyFeature[] })?.features
+  if (!Array.isArray(feats) || !feats.length) return null
+  const cv = document.createElement('canvas')
+  cv.width = w; cv.height = h
+  const g = cv.getContext('2d')
+  if (!g) return null
+  g.fillStyle = '#fff'
+  g.beginPath()
+  for (const f of feats) {
+    const geom = f.geometry
+    if (!geom) continue
+    const polys: unknown[] = geom.type === 'Polygon'
+      ? [geom.coordinates]
+      : geom.type === 'MultiPolygon'
+        ? (geom.coordinates as unknown[])
+        : []
+    for (const poly of polys) {
+      for (const ring of poly as Ring[]) {
+        if (!Array.isArray(ring) || ring.length < 3) continue
+        for (let i = 0; i < ring.length; i++) {
+          const [lng, lat] = ring[i]
+          const x = ((lng + 180) / 360) * w
+          const y = mercNorm(lat) * h
+          if (i === 0) g.moveTo(x, y)
+          else g.lineTo(x, y)
+        }
+        g.closePath()
+      }
     }
   }
+  g.fill('nonzero')
+  const img = g.getImageData(0, 0, w, h).data
+  const land = new Uint8Array(w * h)
+  for (let i = 0; i < land.length; i++) land[i] = img[i * 4 + 3] > 127 ? 1 : 0
+  return land
+}
+
+function buildShallowTexture(geojson: unknown): THREE.Texture | null {
+
+  const land = landMaskFromGeoJson(geojson, TEX_W, TEX_H)
+  if (!land) return null
   /*
    * 距离场只用**有分量的陆地**算（面积 ≥ 18 格的陆块）。
    *
@@ -185,8 +238,8 @@ export interface ShallowBand {
  * @param worldSize 海图的世界边长（与海面 PlaneGeometry 同一个值）
  * @param y         贴在海面上方一点点（要低于所有叠加线，否则会盖住洋流）
  */
-export function createShallowBand(worldSize: number, y: number): ShallowBand | null {
-  const tex = buildShallowTexture()
+export function createShallowBand(worldSize: number, y: number, geojson: unknown): ShallowBand | null {
+  const tex = buildShallowTexture(geojson)
   if (!tex) return null
 
   const geo = new THREE.PlaneGeometry(worldSize, worldSize)

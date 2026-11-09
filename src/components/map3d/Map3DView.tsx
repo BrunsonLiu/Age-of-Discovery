@@ -36,7 +36,7 @@ import { createShipWake } from './shipWake'
 import { createShallowBand } from './shallowBand'
 import { shipNearZoomScale } from '@/utils/shipZoom'
 import { paintPolarIce } from '@/utils/polarIce'
-import { surfaceDimMul } from '@/utils/mapSurfaceDim'
+import { surfaceDimMul, seaOverlayMul } from '@/utils/mapSurfaceDim'
 import { loadReliefNormalMap } from '@/utils/reliefNormalMap'
 import { seasonAt } from '@/utils/season'
 import { buildTerrainSymbols, filterPeaksByElevation } from '@/utils/terrainDecor'
@@ -437,7 +437,7 @@ export default function Map3DView() {  const mountRef = useRef<HTMLDivElement>(n
        * 洋流/海盗区（-0.0880）。浅水带取 -0.0888——压在海面上、又在所有
        * 叠加线之下，于是"洋流压在浅水上"，层次与真海图一致。
        */
-      const shallow = createShallowBand(MAP_WORLD_SIZE, -PLATE_THICKNESS - 0.0032)
+      const shallow = createShallowBand(MAP_WORLD_SIZE, -PLATE_THICKNESS - 0.0032, geojson)
       if (shallow) scene.add(shallow.mesh)
 
       /*
@@ -1441,6 +1441,40 @@ export default function Map3DView() {  const mountRef = useRef<HTMLDivElement>(n
         borders.material.resolution.set(width, height)
       }
 
+      /*
+       * ---- 海面/地图叠加层：统一压暗的材质清单 ----
+       *
+       * 【为什么要有这份清单】图层（洋流、海盗区、风带、季节现象、国界）全是
+       * 不受光材质（LineMaterial / MeshBasicMaterial），颜色在建的时候写死，
+       * 之后再没人动过。天气一坏、太阳一落，海面与墨线都暗下去了，它们还停在
+       * 白天的亮度：实测风暴前后亮度**一点不变**（洋流 0.279、海盗区 0.098、
+       * 风带 0.129、季节现象 0.549/0.401/0.132/0.380），
+       * 夜里这几条线就成了"发光的电线圈"。
+       *
+       * 【为什么不用逐层改代码】每层各写一遍"乘倍率"必然漏（漏掉的正是原来
+       * 那条浅水带）；这里在创建后遍历一次收齐材质与**基色**，
+       * 帧循环里统一 `基色 × 倍率`，新增图层只要接进这一处。
+       */
+      const dimmedMats: { color: THREE.Color; base: THREE.Color }[] = []
+      const collectDimmed = (root: THREE.Object3D | null | undefined) => {
+        if (!root) return
+        root.traverse((o) => {
+          const mat = (o as THREE.Mesh).material as THREE.Material | THREE.Material[] | undefined
+          for (const m of Array.isArray(mat) ? mat : mat ? [mat] : []) {
+            const c = (m as unknown as { color?: THREE.Color }).color
+            if (!c) continue
+            if (dimmedMats.some(d => d.color === c)) continue
+            // 记下基色：每帧都从基色乘，避免"越乘越暗"的累积
+            dimmedMats.push({ color: c, base: c.clone() })
+          }
+        })
+      }
+      collectDimmed(layers.currents)
+      collectDimmed(layers.pirates)
+      collectDimmed(layers.winds)
+      collectDimmed(layers.phenomena.group)
+      collectDimmed(borders?.lines)
+
       // ---- 光照 ----
       const key = new THREE.DirectionalLight(0xffe4b8, LIGHT_KEY)
       key.position.set(-9, 6, 6)
@@ -2217,10 +2251,20 @@ export default function Map3DView() {  const mountRef = useRef<HTMLDivElement>(n
            * 亮在那里 —— 傍晚会读成"会发光的岸"。白天乘数正好是 1，
            * 所以白天一点变化都没有。
            */
+          const overlayMul = seaOverlayMul(weatherDim, lit)
           if (shallow) {
             const sm = shallow.mesh.material as THREE.MeshBasicMaterial
-            sm.color.setScalar(lineMul)
+            sm.color.setScalar(overlayMul)
             coolLine(sm.color, nightK)
+          }
+          /*
+           * 洋流/海盗区/风带/季节现象/国界：同一条倍率。
+           * 它们和墨线一样是"画在海图上的线"，不该比墨线更亮。
+           */
+          for (let i = 0; i < dimmedMats.length; i++) {
+            const d = dimmedMats[i]
+            d.color.copy(d.base).multiplyScalar(overlayMul)
+            coolLine(d.color, nightK)
           }
           // 山也是不受光材质（画在纸上的墨迹），同一套倍率
           for (const mat of peakMats) {
