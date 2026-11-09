@@ -36,6 +36,7 @@ import { buildMap3DPeaks, type PeakFacing } from './mapPeaks3d'
 import { createRhumb3d } from './mapRhumb3d'
 import { createShipWake } from './shipWake'
 import { createShallowBand } from './shallowBand'
+import { createMap3DPost } from './post'
 import { shipZoomScale } from '@/utils/shipZoom'
 import {
   portLightStrength, pointSizeForWorld, PORT_LIGHT_DRAW_ORDER, PORT_LIGHT_LOOK, type PortLightKind,
@@ -359,6 +360,17 @@ export default function Map3DView() {  const mountRef = useRef<HTMLDivElement>(n
       renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'low-power' })
       renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5))
       renderer.setSize(width, height)
+      /*
+       * ---- 后处理（只做辉光）----
+       *
+       * 场景 → 8bit RT → 亮部提取（半分辨率）→ 横向模糊 → 纵向模糊 → 合成。
+       * 见 post.ts 的说明：暗角/颗粒/色差不接，理由是与我们的纸面语言冲突。
+       *
+       * 【为什么放在 renderer 之后立刻建】它的 RT 尺寸跟随 drawingBuffer，
+       * 而 drawingBuffer 由 setPixelRatio/setSize 决定；晚建不会错，但会多一帧
+       * 用默认 2×2 的缓冲。
+       */
+      const post = createMap3DPost(renderer)
       renderer.shadowMap.enabled = true
       /*
        * PCFSoft 而不是 PCF。
@@ -2674,7 +2686,7 @@ export default function Map3DView() {  const mountRef = useRef<HTMLDivElement>(n
         // 漂流物与标签共用同一台相机、同一个临时向量（不另分配）
         seaLayer.update(camera, width, height, tmpV)
 
-        renderer!.render(scene, camera)
+        post.render(scene, camera)
       }
 
       raf = requestAnimationFrame(tick)
@@ -2706,6 +2718,7 @@ export default function Map3DView() {  const mountRef = useRef<HTMLDivElement>(n
         rhumb.dispose()
         wake.dispose()
         shallow?.dispose()
+        post.dispose()
         renderer?.dispose()
         if (renderer && renderer.domElement.parentNode === mount) {
           mount.removeChild(renderer.domElement)
@@ -2716,7 +2729,8 @@ export default function Map3DView() {  const mountRef = useRef<HTMLDivElement>(n
       // 开发调试钩子：仅在 dev 构建下暴露 three 场景，便于自动化验证
       // （生产构建会被 tree-shake 掉，实测生产包 0 命中）。
       if (import.meta.env?.DEV && typeof window !== 'undefined') {
-        ;(window as unknown as { __map3d?: unknown }).__map3d = { scene, camera, renderer }
+        // post 也挂出来：取证脚本要能同帧 A/B（太阳在动，跨次截图没法比）
+        ;(window as unknown as { __map3d?: unknown }).__map3d = { scene, camera, renderer, post }
       }
     }
 
