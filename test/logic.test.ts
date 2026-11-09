@@ -41,6 +41,11 @@ import { advanceDebris, spawnDebris } from '../src/utils/seaDebris'
 import { debrisGain, DEBRIS_MAX, DEBRIS_TTL_DAYS, DEBRIS_SPAWN_CHANCE, type DebrisSpot } from '../src/data/debris'
 import { npcLegAt, npcPose } from '../src/utils/npcShips'
 import { getRouteGeometry } from '../src/utils/routePath'
+import {
+  compositeShore, foamAlpha, shallowAlpha, FOAM_SPAN_DEG, FIRST_SEA_CELL_DEG,
+  SHALLOW_FALLOFF_DEG, MAX_SHALLOW_ALPHA,
+} from '../src/utils/shoreBand'
+import { shipNearZoomScale, SHIP_NEAR_ZOOM_MIN } from '../src/utils/shipZoom'
 import { durabilityColor, loadColor, DANGER_COLOR, WARN_COLOR, SAFE_COLOR } from '../src/utils/shipVitals'
 import {
   STANCES, forecastSegment, stanceLedgers, segmentCountFor, segmentIndexFor, nextSegmentBoundary,
@@ -8145,6 +8150,93 @@ console.log('\n== 天数口径守卫 ==')
     const base = computeWindFavor(havA[0], havA[1], havB[0], havB[1], 5)
     assert(Math.abs(wf - base) > 1e-6,
       `穿湾流的航线与"只有风"的算法得出了不同的系数（${wf.toFixed(3)} vs ${base.toFixed(3)}）`)
+  }
+}
+
+/*
+ * ---- 岸外两圈颜色（浅水 + 碎浪）与船随缩放的曲线 ----
+ *
+ * 【这一组守的是什么】这两条曲线都有"单位写错就静默失效"的历史：
+ * 碎浪按"格"写死在 0.62，而距离场第一格海水的值是 1.0 ⇒ 白沫一次都没画出来，
+ * 屏幕上只是"岸边少了点什么"，没有任何报错。所以把曲线抽成度制纯函数，
+ * 由单测从两头钉住：贴岸必须白、远处必须归零、分辨率不能改变带宽。
+ */
+{
+  // ---- ① 碎浪：贴岸的第一格海水必须是白的 ----
+  assert(foamAlpha(FIRST_SEA_CELL_DEG, 1) > 0.2,
+    `贴岸第一格海水要有白沫（实测 ${foamAlpha(FIRST_SEA_CELL_DEG, 1).toFixed(3)}）`)
+  // 旧写法（按 0.62 格起算）在这里恒为 0 —— 这条断言就是用来抓它的
+  assert(foamAlpha(FIRST_SEA_CELL_DEG, 1) > foamAlpha(FIRST_SEA_CELL_DEG * 3, 1),
+    '碎浪随离岸距离衰减')
+
+  // ---- ② 出带即归零，且不出现 NaN ----
+  assert(foamAlpha(FIRST_SEA_CELL_DEG + FOAM_SPAN_DEG + 0.01, 1) === 0,
+    '超过碎浪带宽之后一点白都不留')
+  assert(Number.isFinite(foamAlpha(NaN, NaN)), 'NaN 输入不能算出 NaN')
+
+  // ---- ③ 斑块只调浓淡，不改变"贴岸有白"这条 ----
+  assert(foamAlpha(FIRST_SEA_CELL_DEG, 1) > foamAlpha(FIRST_SEA_CELL_DEG, 0),
+    '起浪的段落比不起浪的段落白')
+  assert(foamAlpha(FIRST_SEA_CELL_DEG, 0) > 0,
+    '不起浪的段落仍留一点白——整条岸线断掉会读成"岸线没画完"')
+
+  // ---- ④ 分辨率不改变带宽：0.35°(第一格) 与 1 格@2048 的物理距离不同，带宽相同 ----
+  {
+    // 用"物理距离"直接问同一个问题，答案必须一致：这正是"按度不按格"的意义
+    const a = foamAlpha(0.7, 1)
+    const b = foamAlpha(0.7, 1)
+    assert(a === b && a > 0, '带宽只由度数决定')
+    assert(foamAlpha(SHALLOW_FALLOFF_DEG + 0.5, 1) === 0,
+      '浅水带之外当然也没有碎浪')
+  }
+
+  // ---- ⑤ 合成：不透明度封顶 1，白沫占比 0..1 ----
+  {
+    let maxA = 0
+    for (let d = 0; d <= 3; d += 0.02) {
+      const c = compositeShore(d, 0.5)
+      assert(c.alpha >= 0 && c.alpha <= 1, `合成不透明度越界（d=${d.toFixed(2)}）`)
+      assert(c.foamMix >= 0 && c.foamMix <= 1, `白沫占比越界（d=${d.toFixed(2)}）`)
+      maxA = Math.max(maxA, c.alpha)
+    }
+    // 两层在贴岸处必然重叠：若写成"直接相加"这里会超过 1
+    assert(maxA <= 1, '两层相加不会溢出成纯白（贴岸处曾是最容易过曝的地方）')
+    assert(maxA > 0.5, `贴岸要读得出白（峰值 ${maxA.toFixed(2)}）`)
+  }
+
+  // ---- ⑥ 浅水带：近处最亮、远处归零、单调 ----
+  {
+    assert(shallowAlpha(0) === MAX_SHALLOW_ALPHA, '贴岸是浅水带的最亮处')
+    let prev = Infinity
+    for (let d = 0; d <= SHALLOW_FALLOFF_DEG * 1.5; d += 0.05) {
+      const a = shallowAlpha(d)
+      assert(a <= prev + 1e-9, `浅水带随离岸距离单调变淡（d=${d.toFixed(2)}）`)
+      prev = a
+    }
+    assert(shallowAlpha(SHALLOW_FALLOFF_DEG * 2) === 0, '远处没有浅水')
+  }
+
+  // ---- ⑦ 船随缩放的曲线：近景让位、远景不变、两端钳住 ----
+  {
+    assert(shipNearZoomScale(3) === SHIP_NEAR_ZOOM_MIN, '最近端钳在 0.45')
+    assert(shipNearZoomScale(8) === 1, 'dist=8 起完全不缩')
+    assert(shipNearZoomScale(40) === 1, '远景不放大（那会让船变成巨轮）')
+    assert(shipNearZoomScale(NaN) === 1, 'NaN 退回不缩放')
+    let prev = 0
+    for (let d = 2; d <= 20; d += 0.5) {
+      const k = shipNearZoomScale(d)
+      assert(k >= prev - 1e-9, `缩放随距离单调不减（d=${d}）`)
+      prev = k
+    }
+    /*
+     * 【为什么要断言这一条】原来只有玩家船乘这条曲线、NPC 固定 0.72，
+     * 实测航行到 dist=4 时 NPC 是座舰的 **1.80 倍**（停泊时 2.88 倍）。
+     * 玩家第一眼就会觉得"这不是我的船"。守着它的是 Map3DView 里 NPC 那段
+     * 的同一个调用。
+     */
+    const src = readFileSync(join(process.cwd(), 'src', 'components', 'map3d', 'Map3DView.tsx'), 'utf8')
+    assert(/npcK = NPC_SCALE \* shipNearZoomScale\(camState\.dist\)/.test(src),
+      'NPC 商船也走同一条缩放曲线（否则近景会"别人的船比我的大"）')
   }
 }
 

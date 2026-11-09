@@ -34,6 +34,7 @@ import { buildMap3DPeaks, type PeakFacing } from './mapPeaks3d'
 import { createRhumb3d } from './mapRhumb3d'
 import { createShipWake } from './shipWake'
 import { createShallowBand } from './shallowBand'
+import { shipNearZoomScale } from '@/utils/shipZoom'
 import { loadReliefNormalMap } from '@/utils/reliefNormalMap'
 import { seasonAt } from '@/utils/season'
 import { buildTerrainSymbols, filterPeaksByElevation } from '@/utils/terrainDecor'
@@ -1841,7 +1842,7 @@ export default function Map3DView() {  const mountRef = useRef<HTMLDivElement>(n
           // 曲线取 dist/8：8 以上完全不缩（远景本来就小，占屏 1.7%），
           // 到 dist=3 缩到 0.45 → 占屏降到约 11%，港口露出来了。
           // 沿用"停泊时把船挪开缩小"的同一原则：**近景下船要给港口让位**。
-          const nearK = Math.min(1, Math.max(0.45, camState.dist / 8))
+          const nearK = shipNearZoomScale(camState.dist)
           ship.scale.setScalar((docked ? 0.5 : 0.8) * nearK)
 
           // ---- 随浪摇晃 ----
@@ -1943,6 +1944,19 @@ export default function Map3DView() {  const mountRef = useRef<HTMLDivElement>(n
             // 与玩家船同频的轻摇，但幅度小一半（商船装得满，不该晃得比战舰厉害）
             npc.group.rotation.z = Math.sin(tNow / 1000 * 1.5 + npc.geom.totalNm) * 0.018
             npc.group.rotation.x = Math.sin(tNow / 1000 * 0.9 + npc.geom.totalNm) * 0.012
+            /*
+             * 近景缩放必须与座舰**同一条曲线**。
+             *
+             * 【为什么要修】原来只有玩家船乘了 nearK，NPC 固定 0.72，
+             * 于是**船越小越显得别人大**：实测（`.workbuddy/probe-npc-scale.mjs`）
+             *   航行 dist=15：座舰 0.80 / NPC 0.72 → 0.90（对）
+             *   航行 dist=4 ：座舰 0.40 / NPC 0.72 → **1.80（别人的船大近一倍）**
+             *   停泊 dist=4 ：座舰 0.25 / NPC 0.72 → **2.88**
+             * 修后两档都回到 0.90（停泊那档是 1.44，因为座舰靠岸时故意缩到 0.5
+             * 给港口让位，那是另一条刻意的规则）。
+             */
+            const npcK = NPC_SCALE * shipNearZoomScale(camState.dist)
+            if (Math.abs(npc.group.scale.x - npcK) > 0.01) npc.group.scale.setScalar(npcK)
           }
 
           /*

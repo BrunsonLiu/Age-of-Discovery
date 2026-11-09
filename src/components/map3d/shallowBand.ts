@@ -1,14 +1,14 @@
 import * as THREE from 'three'
 import { isLandAt, isSeaMaskLoaded } from '@/utils/seaRoute'
+import { compositeShore } from '@/utils/shoreBand'
 
 /**
- * 3D 岸外的浅水带：贴着海岸的一圈淡青，向深海淡出。
+ * 3D 岸外的两圈颜色：贴岸的白沫（碎浪）+ 向深海淡出的浅水带。
  *
  * 【为什么需要它】
  * 3D 的陆地是一块厚板：顶面米黄、侧壁深褐、海岸上压一条墨线。
  * 中景看过去，陆地与海之间**没有任何过渡**，像切开的蛋糕。
- * 真海图不是这么画的——岸外先是一圈浅水（沙洲、滩涂、浪线），
- * 再过渡到蓝；那圈浅色正是"这是海，但不深"的唯一提示。
+ * 真海图不是这么画的——岸外先是一条白浪线，再一圈浅水，然后才是蓝。
  *
  * 【为什么生成一张贴图，而不是给海岸线加宽】
  * 试过宽线条：LineMaterial 没有软边，加宽就是一条硬边带，读作"沿岸贴了条胶带"。
@@ -18,30 +18,56 @@ import { isLandAt, isSeaMaskLoaded } from '@/utils/seaRoute'
  * 是同一份用来算 A* 避陆与「船会不会上岸」的掩码。**不引入新素材**，
  * 也不假装知道真实水深：这里画的只是"离岸多近"，命名与注释都不说"水深"。
  *
- * 【为什么用 512×256 的小图】浅水带是一条 100 海里量级的过渡，
- * 远比高程图需要粗的网格；而且这是启动时同步算的（131k 像素），
- * 用 2048 宽会让首屏多花上百毫秒，换不来任何可见的差别。
- */
-
-/** 贴图分辨率：0.7°/格 ≈ 42 海里，够画出岸外一圈 */
-const TEX_W = 512
-const TEX_H = 256
-
-/**
- * 距离场以「格」为单位，超过这个格数就完全看不见。
+ * 【分辨率与成本】0.35°/格（1024×512）。距离场实测 512→19.5ms、
+ * 1024→30.4ms（`.workbuddy/probe-shallow-cost.mjs`）。512 时碎浪只有一像素，
+ * 放大三倍也看不出白线；多花 11ms 换一条看得见的岸线，值。
  *
- * 1.3 格 ≈ 55 海里。第一版取 2.5 格（105 海里）：地中海整体只有 300 海里宽，
- * 实测被这圈浅水填成一片淡青，读作"海变浅了"而不是"岸外有浅滩"。
- * 收到 55 海里之后它才是一条**贴着岸的窄带**。
- * 注释与 UI 都不称它为水深——这里只有离岸距离，没有测深数据。
+ * 【两条曲线在 utils/shoreBand，单位是度】距离场返回的是"格"，格的大小随
+ * 分辨率变。按格写死的系数改分辨率后会**静默**变成另一条带宽（1.3 格
+ * 从 55 海里变 16 海里），屏幕上只是"浅水带不见了"，没有任何报错。
  */
-const FALLOFF_CELLS = 1.3
-
-/** 满强度（贴岸第一格）不透明度 */
-const MAX_ALPHA = 0.42
+const TEX_W = 1024
+const TEX_H = 512
+/** 一格多少度（经度；纬度同值，因为等距圆柱这里 360/1024 = 180/512） */
+const DEG_PER_CELL = 360 / TEX_W
 
 /** 浅水色：海色的提亮版（不换色相，只提亮——2D 那条规矩同样适用） */
 const SHALLOW_RGB: [number, number, number] = [176, 216, 224]
+
+/** 碎浪色：略微偏冷的白（暖白会读成沙滩，冷白才像浪） */
+const FOAM_RGB: [number, number, number] = [238, 247, 250]
+
+/**
+ * 沿海的"哪一段起浪"噪声。
+ *
+ * 【为什么必须有】均匀的白线不是浪，是描边。真实海岸只有部分段落起浪
+ * （迎风的、有礁的、坡度陡的），而且是几十到几百公里一段的斑块。
+ * 这里用一张**粗网格的哈希值 + 双线性插值**做低频斑块：
+ * 网格边长 74 格（≈26°，约 2900 公里）刻意与 180/360 不整除，避免与经纬网共振。
+ *
+ * 【为什么用哈希而不是预生成随机场】贴图每次启动必须一样（截图巡检要可复现），
+ * 而这里只需要"同一个格子永远同一个值"，哈希天然满足，且不用存表。
+ */
+const PATCH_CELLS = 74
+function hash01(ix: number, iy: number): number {
+
+  let h = (ix * 374761393 + iy * 668265263) | 0
+  h = (h ^ (h >>> 13)) * 1274126177
+  h = h ^ (h >>> 16)
+  return ((h >>> 0) % 100000) / 100000
+}
+/** 0..1 的低频斑块场（双线性） */
+function patchAt(x: number, y: number): number {
+  const gx = x / PATCH_CELLS, gy = y / PATCH_CELLS
+  const ix = Math.floor(gx), iy = Math.floor(gy)
+  const fx = gx - ix, fy = gy - iy
+  // 平滑插值：线性会让斑块边界读成方块
+  const sx = fx * fx * (3 - 2 * fx)
+  const sy = fy * fy * (3 - 2 * fy)
+  const a = hash01(ix, iy), b = hash01(ix + 1, iy)
+  const c = hash01(ix, iy + 1), d = hash01(ix + 1, iy + 1)
+  return (a + (b - a) * sx) + ((c + (d - c) * sx) - (a + (b - a) * sx)) * sy
+}
 
 /**
  * 两遍 chamfer 距离变换（3/4 权重）。
@@ -110,13 +136,21 @@ function buildShallowTexture(): THREE.Texture | null {
   for (let i = 0; i < dist.length; i++) {
     const o = i * 4
     if (land[i]) { img.data[o + 3] = 0; continue }
-    const t = Math.min(1, dist[i] / FALLOFF_CELLS)
-    // 离岸越近越亮；用 1.6 次方让边缘散得快一点，免得整片海泛白
-    const a = Math.round(255 * MAX_ALPHA * Math.pow(1 - t, 1.6))
-    img.data[o] = SHALLOW_RGB[0]
-    img.data[o + 1] = SHALLOW_RGB[1]
-    img.data[o + 2] = SHALLOW_RGB[2]
-    img.data[o + 3] = a
+    const x = i % TEX_W
+    const y = (i / TEX_W) | 0
+    /** 离岸距离换算成度：分辨率只影响锐度，不影响带宽（见 utils/shoreBand） */
+    const dDeg = dist[i] * DEG_PER_CELL
+    /*
+     * 两层（浅水 + 碎浪）的曲线在 utils/shoreBand 里，度制、纯函数、有单测。
+     * 这里只负责"把结果画进贴图"。
+     */
+    const { alpha: a, foamMix } = compositeShore(dDeg, patchAt(x, y))
+    if (a <= 0.002) { img.data[o + 3] = 0; continue }
+    const mix = (c1: number, c2: number) => Math.round(c1 + (c2 - c1) * foamMix)
+    img.data[o] = mix(SHALLOW_RGB[0], FOAM_RGB[0])
+    img.data[o + 1] = mix(SHALLOW_RGB[1], FOAM_RGB[1])
+    img.data[o + 2] = mix(SHALLOW_RGB[2], FOAM_RGB[2])
+    img.data[o + 3] = Math.round(255 * a)
   }
   g.putImageData(img, 0, 0)
 
