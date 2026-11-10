@@ -9402,5 +9402,28 @@ console.log('\n== 天数口径守卫 ==')
   }
 }
 
+/*
+ * ---- 接触暗部：便宜、但有三条硬约束 ----
+ *
+ * 【守什么】接触暗部是"物件落在地上"的那圈软阴影（不开 shadowMap，用一张径向渐变
+ * 贴图贴在脚下）。它有三个容易写错、而且在截图里看不出来的地方：
+ *  ① **必须 depthWrite = false**：写深度会让后面绘制的透明物体（雨、光晕）被一块
+ *     看不见的平面切掉；
+ *  ② **必须 disabling raycast**：否则点"影子"会命中一个看不见的平面，甲板拾取会飘；
+ *  ③ **纹理边缘必须淡到 0**：硬边一眼就看出来是贴片。
+ */
+{
+  const ship = readFileSync(join(process.cwd(), 'src', 'components', 'deck', 'shipModel.ts'), 'utf8')
+  assert(/depthWrite: false, opacity: 0\.6, color: 0x000000/.test(ship),
+    '接触暗部的材质写了 depthWrite: false（不然会切掉后面的透明物体）')
+  assert(/m\.raycast = \(\) => \{\}/.test(ship), '接触暗部不参与拾取（否则点到"影子"）')
+  assert(/grad\.addColorStop\(1, 'rgba\(0,0,0,0\)'\)/.test(ship), '纹理边缘淡到 0（不能有硬边）')
+  // 至少覆盖甲板家具、水手、舱内家具三类
+  const uses = (ship.match(/addShadow\(/g) || []).length
+  assert(uses >= 8, `至少 8 处用了接触暗部（实测 ${uses}，含函数定义）`)
+  assert(/addShadow\(g, 0, 0\.008, 0\.06, 0\.42, 0\.34\)/.test(ship), '水手脚下也有')
+  assert(/addShadow\(cabin,/.test(ship), '舱内家具也有')
+}
+
 console.log(`\n最终结果：${passed} 通过 / ${failed} 失败`)
 if (failed > 0) process.exit(1)

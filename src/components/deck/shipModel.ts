@@ -59,12 +59,67 @@ export interface DeckShip {
   dispose(): void
 }
 
+/**
+ * 接触暗部（contact shadow）用的软圆贴图。
+ *
+ * 【为什么不用 shadowMap】整条船 + 整片海都要阴影的话，光源得开 castShadow、
+ * 每个网格要 receiveShadow，代价是每个阴影光源一次额外的深度 pass —— 而这里
+ * 需要的只是"东西落在地板上"的那一圈暗部。一张径向渐变的贴图贴在物件脚下，
+ * 几十个顶点就能有 80% 的效果。
+ */
+function contactShadowTexture(): THREE.CanvasTexture {
+  const S = 128
+  const c = document.createElement('canvas')
+  c.width = S
+  c.height = S
+  const g = c.getContext('2d')!
+  const grad = g.createRadialGradient(S / 2, S / 2, 0, S / 2, S / 2, S / 2)
+  // 中心 0.85、边缘 0：暗部要"从物件底下往外淡出"，硬边一眼就看出来是贴片
+  grad.addColorStop(0, 'rgba(0,0,0,0.85)')
+  grad.addColorStop(0.45, 'rgba(0,0,0,0.45)')
+  grad.addColorStop(1, 'rgba(0,0,0,0)')
+  g.fillStyle = grad
+  g.fillRect(0, 0, S, S)
+  const t = new THREE.CanvasTexture(c)
+  t.colorSpace = THREE.SRGBColorSpace
+  return t
+}
+
 export function createDeckShip(): DeckShip {
   /** 简写：本文件里到处要写三维点 */
   const V = THREE.Vector3
   const group = new THREE.Group()
   group.name = 'deck-ship'
   const disposables: (THREE.BufferGeometry | THREE.Material | THREE.Texture)[] = []
+
+  /*
+   * ---- 接触暗部：所有"落在地上"的东西脚下一圈软阴影 ----
+   *
+   * 共享一张贴图 / 一个材质 / 一个 1×1 平面：每个物件只是缩放到自己的占地大小、
+   * 加一个位置。**不共享几何会多十几个 draw setup**，而这里每个都是一个 quad。
+   * 透明度按材质统一（0.6）—— 分档反而会让"桌面亮、椅子暗"这种不一致露出来。
+   */
+  const shadowTex = contactShadowTexture()
+  const shadowMat = new THREE.MeshBasicMaterial({
+    map: shadowTex, transparent: true, depthWrite: false, opacity: 0.6, color: 0x000000,
+  })
+  const shadowGeo = new THREE.PlaneGeometry(1, 1)
+  disposables.push(shadowTex, shadowMat, shadowGeo)
+  /**
+   * 在父节点下的 (x,y,z) 处放一块 rx × rz 的接触暗部（y 由调用方给，必须略高于地面）。
+   */
+  const addShadow = (
+    parent: THREE.Object3D, x: number, y: number, z: number, rx: number, rz: number,
+  ) => {
+    const m = new THREE.Mesh(shadowGeo, shadowMat)
+    m.rotation.x = -Math.PI / 2
+    m.position.set(x, y, z)
+    m.scale.set(rx * 2, rz * 2, 1)
+    // 阴影不该被拾取（否则点到"影子"会命中一个看不见的平面）
+    m.raycast = () => {}
+    parent.add(m)
+    return m
+  }
 
   // ---------------- 贴图 ----------------
   const hullCanvas = plankCanvas({ seed: 4471, along: 'h', rows: 9, base: [86, 58, 36], seamW: 2.2 })
@@ -489,8 +544,11 @@ export function createDeckShip(): DeckShip {
     }
     disposables.push(tableMat, chartMat)
     // 凳子
+    // 接触暗部：舱内没有阴影贴图，家具与地板之间必须有一点暗，否则全是"贴纸"
+    addShadow(cabin, 0, -halfH + 0.012, 0.15, 1.05, 0.72)
     const stool = new THREE.Mesh(new THREE.CylinderGeometry(0.21, 0.19, 0.46, 8), tableMat)
     stool.position.set(0.95, -halfH + 0.23, 0.1)
+    addShadow(cabin, 0.95, -halfH + 0.012, 0.1, 0.3, 0.3)
     cabin.add(stool)
     // 卷起来的备用海图（两根纸筒）
     for (const [cx, cz] of [[-0.62, 0.55], [-0.5, 0.66]] as const) {
@@ -505,6 +563,7 @@ export function createDeckShip(): DeckShip {
      * 床靠左舷（+x 是左舷）：铺盖用暗红，与全船的棕调区分开，一眼能认出"那是床"。
      */
     const bunkMat = new THREE.MeshStandardMaterial({ color: 0x4a2a24, roughness: 0.95 })
+    addShadow(cabin, 2.3, -halfH + 0.012, 0.2, 0.55, 1.15)
     const bunk = new THREE.Mesh(new THREE.BoxGeometry(0.85, 0.3, 2.1), tableMat)
     bunk.position.set(2.3, -halfH + 0.55, 0.2)
     cabin.add(bunk)
@@ -512,6 +571,7 @@ export function createDeckShip(): DeckShip {
     bedding.position.set(2.3, -halfH + 0.76, 0.2)
     cabin.add(bedding)
     disposables.push(bunkMat)
+    addShadow(cabin, -2.3, -halfH + 0.012, -1.35, 0.6, 0.42)
     const chest = new THREE.Mesh(new THREE.BoxGeometry(0.95, 0.5, 0.6), tableMat)
     chest.position.set(-2.3, -halfH + 0.25, -1.35)
     cabin.add(chest)
@@ -563,7 +623,7 @@ export function createDeckShip(): DeckShip {
      * （实测截图：木桌与海图糊成一块米色板）。室内照明在这里要的是"均匀铺一层"，
      * 不是物理照度 —— decay=0 + distance 截断就是可用的那一种。
      */
-    const cabinLight = new THREE.PointLight(0xffd7b2, 0.5, 0.3, 0)
+    const cabinLight = new THREE.PointLight(0xffd7b2, 0.62, 0.3, 0)
     cabinLight.position.set(-1.05, halfH - 0.85, -0.1)
     cabin.add(cabinLight)
     /*
@@ -651,6 +711,8 @@ export function createDeckShip(): DeckShip {
     hit.position.y = 0.16
     hatch.add(hit)
   }
+  // 舱口：占地 3.0×2.4，阴影略大一圈（光总有一点绕射）
+  addShadow(group, 0.4, shipDeckAt(5.6) + 0.05, 5.6, 1.85, 1.5)
   group.add(hatch)
 
   /*
@@ -709,6 +771,7 @@ export function createDeckShip(): DeckShip {
     hit.position.y = 1.95
     wheel.add(hit)
   }
+  addShadow(group, 0, shipDeckAt(-10.9) + 0.05, -10.9, 0.7, 0.55)
   group.add(wheel)
   // 舵轮要能被逐帧转动（改航向时的回执），所以单独留一个引用
   const wheelSpinner = wheel
@@ -794,6 +857,8 @@ export function createDeckShip(): DeckShip {
      * 水手也参与"能不能点"？**不参与**。甲板上可点的三件东西（舱口 / 舵轮 / 瞭望台）
      * 各自对应一组真实数字；点一个人却只能说一句废话，那会稀释另外三个的意义。
      */
+    // 脚下那圈暗部：没有它，人像"贴在甲板上的一张纸"
+    addShadow(g, 0, 0.008, 0.06, 0.42, 0.34)
     group.add(g)
     sailors.push(g)
   }
@@ -828,8 +893,10 @@ export function createDeckShip(): DeckShip {
       coil.rotation.x = Math.PI / 2
       group.add(coil)
     }
+    addShadow(group, -1.5, shipDeckAt(-2.6) + 0.05, -2.6, 0.8, 0.8)
     // 两只木桶（箍是深色的一圈，近看才有"桶"而不只是"圆柱"）
     for (const [bx, bz] of [[1.7, 2.4], [2.1, 1.2]] as const) {
+      addShadow(group, bx, shipDeckAt(bz) + 0.05, bz, 0.5, 0.5)
       const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.28, 0.82, 10), woodMid)
       barrel.position.set(bx, shipDeckAt(bz) + 0.41, bz)
       group.add(barrel)
@@ -1382,7 +1449,7 @@ export function createDeckShip(): DeckShip {
       windowMat.emissiveIntensity = 2.2 * litK
       for (const m of warmMats) if (m !== windowMat) m.emissiveIntensity = 1.15 * litK
       for (const w of warmLights) w.light.intensity = w.base * litK
-      if (cabinLamp) cabinLamp.intensity = 0.5 * (0.55 + 0.25 * night)
+      if (cabinLamp) cabinLamp.intensity = 0.62 * (0.55 + 0.25 * night)
       // 窗外一直是冷的（白天是天光、夜里是月光），只在雾天更暗一点
       if (cabinWindowLamp) cabinWindowLamp.intensity = 0.4 * (0.35 + 0.65 * (1 - night * 0.4))
       /*
