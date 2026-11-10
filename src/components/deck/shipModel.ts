@@ -45,6 +45,11 @@ export interface DeckShip {
    *   决定，这里只是让甲板上那件东西对"改向"这件事有反应。
    */
   update(t: number, helm?: number, night?: number): void
+  /**
+   * 背光方向与透光颜色（世界空间）。帆是薄的，逆光时会透亮。
+   * @param color 透出的光色；@param k 强度（0 = 完全不透）
+   */
+  setBacklight(dir: THREE.Vector3, color: THREE.Color, k: number): void
   dispose(): void
 }
 
@@ -72,6 +77,12 @@ export function createDeckShip(): DeckShip {
     seed: 9917, along: 'v', rows: 24, base: [150, 112, 74], seamW: 2.4,
     // grain 0.4：一点点木纹就够；0 的时候近看是一块平涂的板（放大截图）
     grain: 0.4, wear: 0.15, size: 1024, buttJoints: true,
+    /*
+     * traffic：中央走道的磨损。甲板是这条船上唯一"被人反复走过"的表面，
+     * 一条磨白的带 + 十几道拖痕，是它和"刚刷过漆的新地板"唯一的区别。
+     * 强度 1.0 —— uv 的 u 横跨整个船宽（repeat 只沿 v），所以这条带正好落在中线。
+     */
+    traffic: 1,
   })
   const hullTex = texFrom(hullCanvas, true)
   const hullNormal = normalFromCanvas(hullCanvas, 2.2)
@@ -518,6 +529,63 @@ export function createDeckShip(): DeckShip {
   }
 
   /*
+   * ---------------- 桅顶瞭望台（crow's nest / top） ----------------
+   *
+   * 【为什么是"主桅下桁之上"这个位置】这不是随便挑的高度：真实帆船的"桅盘"就
+   * 架在下桅的桅头、下帆桁的正上方 —— 水手从绳梯爬到这里，再上桅顶。主桅下帆桁在
+   * y=15，上帆帆脚在 17.9，所以 17.2 正好是那条缝。放在这里，抬头看是"桅杆中间
+   * 多了一圈平台"，符合眼睛对帆船的记忆；放到桅顶反而成了旗杆上的鸟窝。
+   *
+   * 【它为什么值得存在】它是这条船上**第二个能点的地方**（第一个是舱口/舵轮），
+   * 而它给的是"船上看不出来的信息"：最近的陆地在哪个方位、多远、天气在往哪走。
+   * 玩家在甲板上是看不到这些的（镜头被舷墙挡住），只有爬上去才看得见 —— 这就是
+   * "机制靠位置落地"，不是弹一段文案。
+   */
+  {
+    const NEST_Y = 17.2
+    const NEST_Z = 1
+    const nest = new THREE.Group()
+    nest.name = 'ship-crow-group'
+    nest.position.set(0, NEST_Y, NEST_Z)
+    // 平台：一圈略厚的圆盘（木板的端面朝向天空，所以用 woodMid 而不是深色）
+    const floor = new THREE.Mesh(new THREE.CylinderGeometry(1.55, 1.3, 0.16, 10), woodMid)
+    floor.position.y = 0
+    nest.add(floor)
+    // 支撑梁：斜撑到下桅上（没有它那圈平台是"浮"在桅杆上的）
+    for (let i = 0; i < 4; i++) {
+      const a = (i / 4) * Math.PI * 2 + Math.PI / 4
+      const brace = new THREE.Mesh(new THREE.BoxGeometry(0.09, 1.5, 0.09), woodDark)
+      brace.position.set(Math.cos(a) * 0.72, -0.62, Math.sin(a) * 0.72)
+      brace.rotation.set(Math.sin(a) * 0.62, 0, -Math.cos(a) * 0.62)
+      nest.add(brace)
+    }
+    // 栏杆：8 根立柱 + 一圈扶手（站着的人要扶得住东西）
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2
+      const post = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.78, 0.07), woodDark)
+      post.position.set(Math.cos(a) * 1.36, 0.45, Math.sin(a) * 1.36)
+      nest.add(post)
+    }
+    const rail = new THREE.Mesh(new THREE.TorusGeometry(1.36, 0.045, 5, 20), woodDark)
+    rail.rotation.x = Math.PI / 2
+    rail.position.y = 0.84
+    nest.add(rail)
+    /*
+     * 命中体：栏杆是 8 根细柱 + 一根细环，点击几乎命不中 —— 用一个透明的扁盒子
+     * 兜住整圈平台（与舱口/舵轮同一手法）。
+     * 盒子比平台大一圈：玩家点到"平台附近"就该算点到，而不是必须精确戳中木条。
+     */
+    const hit = new THREE.Mesh(
+      new THREE.BoxGeometry(3.4, 1.5, 3.4),
+      new THREE.MeshBasicMaterial({ visible: false }),
+    )
+    hit.name = 'ship-crow'
+    hit.position.y = 0.42
+    nest.add(hit)
+    group.add(nest)
+  }
+
+  /*
    * 帆桁的高度表。
    *
    * 【为什么整组抬高】原表的最低帆（下桁）脚离甲板只有 1.6 米 —— 站到甲板上
@@ -537,6 +605,23 @@ export function createDeckShip(): DeckShip {
 
   const sailTime = { value: 0 }
   const sailMats: THREE.MeshStandardMaterial[] = []
+  /*
+   * ---- 帆的透光（背光时布是亮的）----
+   *
+   * 【为什么需要】帆布是**薄的**。原来它只有漫反射：太阳/月亮在帆背后时，
+   * 帆读作一块纯黑剪影（夜航尤其明显 —— 六张帆是六个黑三角，贴在星空上）。
+   * 真实的帆在逆光下是"发亮的布"：光穿过经纬线，从缝里漏出来。
+   *
+   * 【怎么算】经典的单次散射近似：
+   *   through = max(-dot(N, L), 0)     光从背面来多少
+   *   facing  = |dot(N, V)|            视线穿过多厚的布（正对着看最亮）
+   *   加法项 = uSailGlow * through * (0.3 + 0.7*facing)
+   * 它只加到 emissive 上，不参与漫反射，所以**不会改变"光从哪来"的判断**。
+   *
+   * 两个 uniform 是所有帆共用的（同一个太阳/月亮），由 `setBacklight` 每帧写。
+   */
+  const sailLightDir = { value: new THREE.Vector3(-0.45, 0.42, -0.78).normalize() }
+  const sailGlow = { value: new THREE.Color(0, 0, 0) }
 
   /**
    * 帆的材质 + 摆动。
@@ -564,13 +649,22 @@ export function createDeckShip(): DeckShip {
       shader.uniforms.uSeed = { value: seed }
       shader.uniforms.uAxis = { value: flapAxis }
       shader.uniforms.uStrength = { value: strength }
+      shader.uniforms.uLightDir = sailLightDir
+      shader.uniforms.uSailGlow = sailGlow
       shader.vertexShader = `
         uniform float uTime; uniform float uSeed; uniform vec3 uAxis; uniform float uStrength;
+        varying vec3 vSailN;
       ` + shader.vertexShader
         .replace('#include <beginnormal_vertex>', `
           #include <beginnormal_vertex>
           float senv = sin(uv.y * 3.14159) * (0.55 + 0.45 * sin(uv.x * 3.14159));
           objectNormal = normalize(objectNormal + uAxis * senv * 0.42);
+          /*
+           * 世界空间法线（**不按面翻转**）：透光要判"光在布的哪一侧"。
+           * 片元里的 normal 会被 three 按 gl_FrontFacing 翻成朝相机的那一面，
+           * 那样永远算不出逆光 —— 所以单独传一份原始朝向。
+           */
+          vSailN = normalize(mat3(modelMatrix) * objectNormal);
         `)
         .replace('#include <begin_vertex>', `
           #include <begin_vertex>
@@ -592,7 +686,11 @@ export function createDeckShip(): DeckShip {
        *   ② 纵缝：帆是几幅布拼的，缝线处一条浅阴影；
        *   ③ 帆脚透光：光从背后压过来，越靠下越亮一点。
        */
-      shader.fragmentShader = shader.fragmentShader.replace('#include <color_fragment>', `
+      shader.fragmentShader = `
+        varying vec3 vSailN;
+        uniform vec3 uLightDir;
+        uniform vec3 uSailGlow;
+      ` + shader.fragmentShader.replace('#include <color_fragment>', `
         #include <color_fragment>
         /*
          * 注意用 vMapUv 而不是 vUv：three 0.15x 之后每张贴图有**自己的** uv varying
@@ -609,6 +707,22 @@ export function createDeckShip(): DeckShip {
         // 布面整体有一点点自上而下的明暗（帆桁上沿最暗）
         diffuseColor.rgb *= 0.94 + 0.06 * smoothstep(0.0, 0.7, vMapUv.y);
       `)
+        /*
+         * 透光：加到 emissive 上（不参与漫反射）。`normal` 已经是**朝相机**的那一面、
+         * `vViewPosition` 是片元→相机的视线（两者都在视空间），所以 |dot| 正好是
+         * "视线穿过多少布"；`vSailN` 是原始朝向（世界空间），与 uLightDir 同空间。
+         */
+        .replace('#include <emissivemap_fragment>', `
+          #include <emissivemap_fragment>
+          float through = max(-dot(normalize(vSailN), uLightDir), 0.0);
+          float facing = clamp(abs(dot(normal, normalize(vViewPosition))), 0.0, 1.0);
+          /*
+           * 乘 diffuseColor：透光要跟着布面自己的厚薄走 —— 包边（边缘 AO 0.58）、
+           * 纵缝（0.84）、织纹都在这上面。**不乘它，六张帆就是六块均匀发亮的板**
+           * （实测：帆面区域平均 54/61/65，整片没有一个明暗起伏，读作塑料）。
+           */
+          totalEmissiveRadiance += uSailGlow * through * (0.30 + 0.70 * facing) * diffuseColor.rgb * 1.25;
+        `)
     }
     sailMats.push(mat)
     return mat
@@ -781,6 +895,16 @@ export function createDeckShip(): DeckShip {
 
   return {
     group,
+    /**
+     * 背光方向 + 透光颜色：帆的透光靠它。
+     * @param dir 世界空间的"从帆指向光源"单位向量（与 `vSailN` 同空间）
+     * @param color 透出来的光色（夜里是月光的冷白，白天是天光的暖白）
+     * @param k 强度倍率（0 = 完全不透光）
+     */
+    setBacklight(dir: THREE.Vector3, color: THREE.Color, k: number) {
+      sailLightDir.value.copy(dir).normalize()
+      sailGlow.value.copy(color).multiplyScalar(k)
+    },
     update(t: number, helm = 0, night = 0) {
       sailTime.value = t
       wheelSpinner.rotation.z = helm

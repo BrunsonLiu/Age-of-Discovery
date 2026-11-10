@@ -55,7 +55,7 @@ import {
   shipDeckAt, shipKeelAt,
 } from '../src/components/deck/shipShape'
 import { DECK_WAVES } from '../src/components/deck/deckWaves'
-import { ridgeHeightAt, ridgeHeights } from '../src/components/deck/deckCoast'
+import { compassWord, ridgeHeightAt, ridgeHeights } from '../src/components/deck/deckCoast'
 import { clampElevation, EL_MAX, EL_MIN, EL_TIGHTEN_FROM, minElevationAt } from '../src/components/map3d/cameraLimits'
 import {
   findCoast, wrapDeg, coastLayout, coastScenePos, bearingWord,
@@ -9077,6 +9077,89 @@ console.log('\n== 天数口径守卫 ==')
     '极区压暗不许用 vMapUv（贴图矩阵变换后的 uv，值域不是 0..1）')
   assert(/diffuseColor\.rgb \*= 1\.0 - 0\.9[0-9] \* max\(edgeS, edgeN\)/.test(view),
     '暗角是乘性压暗（往海色 mix 太弱：陆地被方向光照得很亮）')
+}
+
+/*
+ * ---- 罗盘方位词（瞭望台报风用）----
+ *
+ * 【守什么】`compassWord` 接的是 `weather.windDir`，它是**风吹去**的罗盘方位
+ * （0 = 北、90 = 东）。8 个扇区必须覆盖整圈且相邻扇区不重叠；负数与 >360 要绕回。
+ * 这条判据看着琐碎，但报错一个字（"往东去"写成"从东来"）就是玩家按错的依据。
+ */
+{
+  const cases: [number, string][] = [
+    [0, '北'], [45, '东北'], [90, '东'], [135, '东南'],
+    [180, '南'], [225, '西南'], [270, '西'], [315, '西北'], [359, '北'],
+  ]
+  for (const [deg, want] of cases) {
+    assert(compassWord(deg) === want, `${deg}° → ${want}（实测 ${compassWord(deg)}）`)
+  }
+  // 绕回：−90 与 270 同向
+  assert(compassWord(-90) === compassWord(270), '负数绕回与正数同向')
+  assert(compassWord(450) === compassWord(90), '>360 绕回')
+  // 每个扇区宽 45°，边界取整必须落在一侧（不能出现空字符串）
+  for (let d = 0; d < 360; d += 7) {
+    assert(compassWord(d).length >= 1, `${d}° 有方位词`)
+  }
+}
+
+/*
+ * ---- 帆的透光：几何法线必须单独传 ----
+ *
+ * 【守什么】片元里的 `normal` 会被 three 按 gl_FrontFacing 翻成"朝相机"的那一面 ——
+ * 用它算逆光永远得到 0（帆在夜里永远是纯黑剪影）。必须有 `vSailN`（世界空间的原始
+ * 朝向）；而且透光要乘 `diffuseColor`（包边/纵缝/织纹），否则六张帆是六块均匀
+ * 发亮的板（实测：整片 54/61/65 没有起伏，读作塑料）。
+ */
+{
+  const ship = readFileSync(join(process.cwd(), 'src', 'components', 'deck', 'shipModel.ts'), 'utf8')
+  assert(/vSailN\s*=\s*normalize\(mat3\(modelMatrix\) \* objectNormal\)/.test(ship),
+    '透光用的是世界空间原始法线（vSailN），不是会被翻转的 normal')
+  assert(/totalEmissiveRadiance \+= uSailGlow \* through/.test(ship), '透光加到 emissive 上')
+  assert(/uSailGlow \* through[^;]*diffuseColor\.rgb/.test(ship), '透光要乘布面自身的明暗')
+  assert(/setBacklight\(/.test(ship), 'DeckShip 暴露 setBacklight')
+  const view = readFileSync(join(process.cwd(), 'src', 'components', 'deck', 'DeckView.tsx'), 'utf8')
+  assert(/setBacklight\(fill\.position, fill\.color, [\d.]+ \* fill\.intensity\)/.test(view),
+    '透光方向与强度都跟着主光（fill）走，不另设曲线')
+}
+
+/*
+ * ---- 甲板中央走道：磨损必须横跨船宽 ----
+ *
+ * 【守什么】`traffic` 是按 uv 的 **u** 做的剖面。甲板的 uv 里 u 是横向（24 块板沿 u
+ * 排开）、v 是船长方向，且 repeat 只沿 v —— 一旦有人把 repeat 改成 (2,3) 或把
+ * 剖面写成按 v，那条"被踩白的走道"就会变成几道横杠（而截图里看着仍像"有纹理"）。
+ */
+{
+  const ship = readFileSync(join(process.cwd(), 'src', 'components', 'deck', 'shipModel.ts'), 'utf8')
+  assert(/traffic:\s*1/.test(ship), '甲板贴图开了中央走道磨损')
+  assert(/deckTex\.repeat\.set\(1, 3\)/.test(ship), '甲板 uv 只沿 v 重复（u 横跨整条船宽一次）')
+  const tex = readFileSync(join(process.cwd(), 'src', 'components', 'deck', 'shipTextures.ts'), 'utf8')
+  assert(/createLinearGradient\(0, 0, S, 0\)/.test(tex), '走道剖面沿 x（= u = 船宽）')
+}
+
+/*
+ * ---- 桅顶瞭望台：必须在下帆桁与上帆脚之间 ----
+ *
+ * 【守什么】这个高度不是随便挑的：真实帆船的桅盘就架在下桅桅头（下帆桁正上方）。
+ * 改帆桁表的人很容易把它忘掉 —— 一旦挪到下帆桁以下，平台会插进帆布里；挪到桅顶
+ * 以上，就变成"旗杆上的鸟窝"。两条边界都用帆桁表推出来。
+ */
+{
+  const ship = readFileSync(join(process.cwd(), 'src', 'components', 'deck', 'shipModel.ts'), 'utf8')
+  const m = ship.match(/const NEST_Y = ([\d.]+)/)
+  assert(!!m, '桅顶瞭望台有明确的高度常量 NEST_Y')
+  const nestY = Number(m![1])
+  const yardBlock = ship.match(/const yardData = \[([\s\S]*?)\n  \]/)
+  assert(!!yardBlock, '找得到帆桁表')
+  const rows = [...yardBlock![1].matchAll(/\{ z: (-?\d+), y: ([\d.]+), len: ([\d.]+), sailH: ([\d.]+)/g)]
+    .map((r) => ({ z: Number(r[1]), y: Number(r[2]), h: Number(r[4]) }))
+  const main = rows.filter((r) => r.z === 1).sort((a, b) => a.y - b.y)
+  assert(main.length === 2, `主桅有两张帆（实测 ${main.length}）`)
+  const lowerYard = main[0].y
+  const upperFoot = main[1].y - main[1].h
+  assert(nestY > lowerYard && nestY < upperFoot,
+    `瞭望台（${nestY}）必须在下帆桁（${lowerYard}）与上帆脚（${upperFoot}）之间`)
 }
 
 console.log(`\n最终结果：${passed} 通过 / ${failed} 失败`)

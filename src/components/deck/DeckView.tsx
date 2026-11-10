@@ -6,7 +6,7 @@ import { useMapStore } from '@/store/useMapStore'
 import { skyAt } from '@/utils/skyClock'
 import { createDeckShip, type DeckShip } from './shipModel'
 import { DECK_WAVES, deckShipPose } from './deckWaves'
-import { findCoast, bearingWord, wrapDeg, type CoastSighting } from './deckCoast'
+import { findCoast, bearingWord, compassWord, wrapDeg, type CoastSighting } from './deckCoast'
 import { createDeckCoast } from './coastModel'
 import { deckEyeY, stepWalk, WALK_SPEED_M, type WalkPos } from './deckWalk'
 import { SHIP_DRAFT_LIFT } from './shipShape'
@@ -17,6 +17,7 @@ import {
 } from './deckWeather'
 import { calculateBearing } from '@/utils/navigation'
 import { goods } from '@/data/goods'
+import { WEATHER_INFO } from '@/utils/weather'
 import { ports } from '@/data/ports'
 import { useVoyageNext } from '@/hooks/useVoyageNext'
 
@@ -67,11 +68,14 @@ const DUSK_ZENITH = new THREE.Color(0x4e4a66)
  * 否则甲板上写"约 12 天"、出航计划写"约 15 天"，玩家不知道该信哪个。
  */
 function DeckSpotPanel({
-  spot, fleet, next, onClose,
+  spot, fleet, weather, next, sighting, onClose,
 }: {
-  spot: 'hatch' | 'wheel'
+  spot: 'hatch' | 'wheel' | 'crow'
   fleet: ReturnType<typeof useGameStore.getState>['fleet']
+  weather: ReturnType<typeof useGameStore.getState>['weather']
   next: ReturnType<typeof useVoyageNext>
+  /** 当前位置的最近陆地（`findCoast` 的结果，与 HUD 同一个来源） */
+  sighting: CoastSighting | null
   onClose: () => void
 }) {
   const flagship = fleet.ships.find((s) => s.id === fleet.flagshipId) ?? fleet.ships[0]
@@ -89,7 +93,7 @@ function DeckSpotPanel({
     >
       <div className="flex items-baseline justify-between">
         <div className="text-xs tracking-[0.3em] text-gold-400">
-          {spot === 'hatch' ? '货舱口' : '舵轮'}
+          {spot === 'hatch' ? '货舱口' : spot === 'wheel' ? '舵轮' : '桅顶瞭望台'}
         </div>
         <button
           type="button"
@@ -127,6 +131,59 @@ function DeckSpotPanel({
                 <div className="tabular-nums">{Math.round(Number(v))}</div>
               </div>
             ))}
+          </div>
+        </>
+      ) : spot === 'crow' ? (
+        <>
+          {/*
+            * 瞭望台报的是**甲板上看不见的三样**：
+            *   ① 最近陆地（方位 + 海里，与 HUD 同源）；
+            *   ② 能见度（`WEATHER_INFO[kind].visibility` —— 它本来就在影响港口发现半径，
+            *      只是从来没露到界面上）；
+            *   ③ 风（`weather.windDir` 是"风吹去"的罗盘方位，所以写"往…去"）。
+            * 这三样都不是新算的：全部来自既有单一来源，瞭望台只是换了个**站得高**的出口。
+            */}
+          <div className="mt-1 text-sm">
+            {sighting ? (
+              <>
+                最近的陆地在<span className="text-gold-300"> {bearingWord(sighting.relBearingDeg)}</span>
+                <span className="ml-1 text-parchment-200/70">
+                  {sighting.distNm.toFixed(1)} 海里 · {sighting.port.nameCn}
+                </span>
+              </>
+            ) : (
+              <span className="text-parchment-200/70">四下皆是海 —— 视野里没有一片陆地</span>
+            )}
+          </div>
+          <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
+            <div className="rounded border border-white/10 px-2 py-1">
+              <div className="text-parchment-200/60">能见度</div>
+              <div className="tabular-nums">
+                {WEATHER_INFO[weather.kind]?.label ?? '—'}
+                <span className="ml-1 text-parchment-200/60">
+                  {Math.round((WEATHER_INFO[weather.kind]?.visibility ?? 1) * 100)}%
+                </span>
+              </div>
+            </div>
+            <div className="rounded border border-white/10 px-2 py-1">
+              <div className="text-parchment-200/60">风</div>
+              <div className="tabular-nums">
+                往{compassWord(weather.windDir)}去
+                <span className="ml-1 text-parchment-200/60">{Math.round(weather.windSpeed)} 节</span>
+              </div>
+            </div>
+          </div>
+          <div className="mt-2 text-xs text-parchment-200/70">
+            {next.suggest
+              ? <>下一站 <span className="text-gold-300">{next.suggest.nameCn}</span>
+                  {next.suggest.distanceNm != null && <> · {Math.round(next.suggest.distanceNm)} 海里</>}
+                  {next.days != null && <> · 约 {next.days} 天</>}
+                </>
+              : '航路还没定 —— 回海图挑一处目的地'}
+          </div>
+          <div className="mt-1 text-xs leading-snug text-parchment-200/60">
+            爬到这里，舷墙就挡不住视线了。能见度与风都不是新数：前者本来就决定你能在多远
+            发现港口，后者决定这趟要走几天。
           </div>
         </>
       ) : (
@@ -206,7 +263,13 @@ export default function DeckView() {
    * 甲板上被点开的物件（舱口 / 舵轮）。null = 没点开。
    * 用 React state 而不是 ref：它要驱动一个 DOM 面板，跟 3D 场景重建无关。
    */
-  const [spot, setSpot] = useState<null | 'hatch' | 'wheel'>(null)
+  const [spot, setSpot] = useState<null | 'hatch' | 'wheel' | 'crow'>(null)
+  /*
+   * 瞭望台面板要的"最近陆地"是在帧循环里每 8 帧算一次（与 HUD 同一次计算）。
+   * 用 ref 存：面板打开的那一刻读到的就是**最新一次真实计算的结果**，
+   * 不需要为了一个弹窗再跑一遍 haversine，也不会出现"HUD 与面板各算一遍"。
+   */
+  const sightingRef = useRef<CoastSighting | null>(null)
   /** 移动端方向键与键盘共用这一份状态（effect 里读、JSX 里写） */
   const keysRef = useRef({ f: false, b: false, l: false, r: false })
   const setWalk = (v: boolean) => {
@@ -221,6 +284,7 @@ export default function DeckView() {
    * 面板里**不允许自己再算一遍**里程或天数。
    */
   const fleet = useGameStore((s) => s.fleet)
+  const weather = useGameStore((s) => s.weather)
   const next = useVoyageNext()
   const setDeckView = useMapStore((s) => s.setDeckView)
   const viewMode = useMapStore((s) => s.viewMode)
@@ -795,10 +859,20 @@ export default function DeckView() {
         ),
         camera,
       )
+      /*
+       * 三个可点的东西：舱口 / 舵轮 / 桅顶瞭望台。
+       * 注意拾取的是 `ship.children` 的**递归**结果（`intersectObjects(..., true)`），
+       * 三件东西都在各自的 group 里，只传直接子节点会一个也点不到。
+       */
+      const HOTSPOTS: Record<string, 'hatch' | 'wheel' | 'crow'> = {
+        'ship-hatch': 'hatch',
+        'ship-wheel': 'wheel',
+        'ship-crow': 'crow',
+      }
       const named = picker
         .intersectObjects(ship.children, true)
-        .find((h) => h.object.name === 'ship-hatch' || h.object.name === 'ship-wheel')
-      setSpot(named ? (named.object.name === 'ship-hatch' ? 'hatch' : 'wheel') : null)
+        .find((h) => HOTSPOTS[h.object.name] != null)
+      setSpot(named ? HOTSPOTS[named.object.name] : null)
     }
     window.addEventListener('keydown', onKeyDown)
     window.addEventListener('keyup', onKeyUp)
@@ -945,6 +1019,19 @@ export default function DeckView() {
         helmPulse = Math.max(0, helmPulse - dt / 1.2)
         const pulse = helmPulse * helmPulse * 1.1 * helmSign
         const trim = st.fleet.isSailing ? Math.sin(t * 0.7) * 0.09 : 0
+        /*
+         * 帆的透光：方向就是主光（`fill`）的方向 —— 它是"太阳/月亮"在这一幕的位置，
+         * 用别的方向就会出现"背光的方向和投在地上的影子对不上"。
+         * 强度乘 `fill.intensity`：夜里月光弱、透出来的也少，白天强。
+         * **不另设曲线**，让"透光"和"受光"永远同源。
+         *
+         * 系数是量出来的，不是随手挑的（同一点 A/B，夜空 11/21/34）：
+         *   关掉透光 38/42/40 —— 纯黑剪影，夜航的帆看不出是布；
+         *   0.6      65/75/81 —— 比夜空亮六倍，读作"一块发光的塑料板"；
+         *   0.35     47/54/56 —— 看得出布在透光，又没脱离"夜"。
+         * 取 0.35。
+         */
+        deckShip.setBacklight(fill.position, fill.color, 0.30 * fill.intensity)
         deckShip.update(t, pulse + trim, night)
       }
 
@@ -1038,6 +1125,7 @@ export default function DeckView() {
             sighting = { ...sighting, relBearingDeg: -78, presence: 1 }
           }
         }
+        sightingRef.current = sighting
         coast.setSighting(sighting)
         if (hudRef.current) {
           hudRef.current.textContent = sighting
@@ -1211,7 +1299,9 @@ export default function DeckView() {
         <DeckSpotPanel
           spot={spot}
           fleet={fleet}
+          weather={weather}
           next={next}
+          sighting={sightingRef.current}
           onClose={() => setSpot(null)}
         />
       ) : null}

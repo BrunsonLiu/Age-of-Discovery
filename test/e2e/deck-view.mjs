@@ -184,6 +184,25 @@ await page.evaluate(() => [...document.querySelectorAll('button')].find((b) => /
 await sleep(400)
 check(await page.evaluate(() => !document.querySelector('[data-testid^=deck-spot-]')), '「收起」能关掉面板')
 
+// ---- ⑤b 抬头点桅顶瞭望台：面板里的能见度/风必须与 store 同源 ----
+// 瞭望台在 17.2 米的桅盘上，站着看不见 —— 先把视线抬起来（俯仰上限 1.3 rad）。
+await page.evaluate(() => window.__deckWalk?.set({ x: -2.4, z: -6.0, yaw: 0, pitch: 1.05 }))
+await sleep(1400)
+const crow = await spotClick('ship-crow', 'crow')
+check(crow.clicked && !!crow.text, '爬到桅顶的瞭望台 → 瞭望面板打开')
+if (crow.text) {
+  const wx = await page.evaluate(() => {
+    const g = window.__gameStore.getState()
+    return { kind: g.weather.kind, windSpeed: Math.round(g.weather.windSpeed) }
+  })
+  const labels = { clear: '晴朗', cloudy: '阴云', rain: '落雨', storm: '暴风雨', fog: '浓雾' }
+  check(crow.text.includes(labels[wx.kind]), `面板里的天候与 store 一致（${labels[wx.kind]}）`)
+  check(crow.text.includes(`${wx.windSpeed} 节`), `面板里的风速与 store 一致（${wx.windSpeed} 节）`)
+  check(/海里|视野里没有一片陆地/.test(crow.text), '瞭望台报的是真实距离，不是空话')
+}
+await page.evaluate(() => [...document.querySelectorAll('button')].find((b) => /收起/.test(b.textContent || ''))?.click())
+await sleep(400)
+
 // ---- ⑥ 回海图：场景要真的被拆掉（不能留一个跑着的 rAF）----
 await page.evaluate(() => document.querySelector('[data-testid=deck-view-close]')?.click())
 await sleep(1200)

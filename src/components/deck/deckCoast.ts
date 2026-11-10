@@ -149,6 +149,24 @@ export function coastScenePos(relBearingDeg: number, radius: number): { x: numbe
   return { x: -Math.sin(rad) * radius * 0.5, z: radius }
 }
 
+/**
+ * 罗盘方位词（八向）。
+ *
+ * 【为什么不复用 `bearingWord`】那个是**相对船首**的说法（左前方/右舷），
+ * 只对"看得见的东西"有意义。风是绝对方位（`weather.windDir` 是**风吹去**的
+ * 罗盘方位），瞭望手报的是"风往东北去"，不是"右前方有风"。
+ */
+export function compassWord(deg: number): string {
+  const names = ['北', '东北', '东', '东南', '南', '西南', '西', '西北']
+  /*
+   * `wrapDeg` 把 190° 折成 −170°，`Math.round(-170/45) = -4`，`-4 % 8` 在 JS 里还是
+   * **−4**（取余保留符号）→ `names[-4]` 是 undefined。单测就是在这里炸的。
+   * 要两次取模才是非负下标。
+   */
+  const i = (((Math.round(wrapDeg(deg) / 45) % 8) + 8) % 8)
+  return names[i]
+}
+
 /** HUD 用的方位词：左前方 / 右舷 / 正后方 …… */
 export function bearingWord(relBearingDeg: number): string {
   const a = wrapDeg(relBearingDeg)

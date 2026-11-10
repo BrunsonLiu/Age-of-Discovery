@@ -102,6 +102,8 @@ export interface PlankOptions {
   size?: number
   /** 每块板的端头接缝（brick 状），只在 along='v' 时有效 */
   buttJoints?: boolean
+  /** 中央走道的磨损强度（0 = 不加），只在 along='v' 时有效 */
+  traffic?: number
 }
 
 /**
@@ -111,7 +113,7 @@ export interface PlankOptions {
  * 每块板抖动亮度/色相，再各画几道年轮，才有"拼起来的"感觉。
  */
 export function plankCanvas(opts: PlankOptions): HTMLCanvasElement {
-  const { seed, along = 'h', rows = 8, base = [92, 64, 40], seam = 'rgba(20,12,6,0.85)', seamW = 2, wear = 0.5, grain = 1, size = 512, buttJoints = false } = opts
+  const { seed, along = 'h', rows = 8, base = [92, 64, 40], seam = 'rgba(20,12,6,0.85)', seamW = 2, wear = 0.5, grain = 1, size = 512, buttJoints = false, traffic = 0 } = opts
   const S = size
   const [c, g] = canvas(S, S)
   const rnd = rng(seed)
@@ -183,6 +185,53 @@ export function plankCanvas(opts: PlankOptions): HTMLCanvasElement {
         g.fill()
       }
     }
+  }
+  /*
+   * ---- 中央走道：甲板被踩了几十年的地方 ----
+   *
+   * 【为什么必须是"横向剖面"】甲板的 uv 里 u 是横向（24 块板沿 u 排开）、v 是船长
+   * 方向，且 repeat 只沿 v——所以一条按 u 的亮度剖面正好等于"沿船长的一条带"。
+   *
+   * 【为什么加的痕是这两样】真实的甲板磨损只有两种可见形态：
+   *   ① 中间一条被鞋底和货箱磨白的带（木头表层磨掉，露出更浅的纤维）；
+   *   ② 排水沟与舷边积着深色的垢（水往两边流、脏东西留在那）。
+   * 两样都不是"随机斑点"：随机斑点在掠射角下读成脏点，反而更像没渲染干净。
+   * 拖痕单独画：缆绳与货箱拖过留下的是**沿船长方向的长短线**，不是圆斑。
+   */
+  if (traffic > 0 && along === 'v') {
+    const grad = g.createLinearGradient(0, 0, S, 0)
+    /*
+     * 剖面：两侧 0.50（水沟积垢）→ 0.26 处回升 → 中线 0.24 的**偏冷**提亮
+     * （磨掉的木纤维是灰白的，不是加了一层黄光；先用暖白试过，甲板中心读作
+     * "被灯照亮的台面"，实测截图）。
+     */
+    grad.addColorStop(0, 'rgba(22,13,7,0.58)')
+    grad.addColorStop(0.22, 'rgba(22,13,7,0.20)')
+    grad.addColorStop(0.4, 'rgba(228,224,214,0.10)')
+    grad.addColorStop(0.5, 'rgba(234,231,222,0.30)')
+    grad.addColorStop(0.6, 'rgba(228,224,214,0.10)')
+    grad.addColorStop(0.78, 'rgba(22,13,7,0.20)')
+    grad.addColorStop(1, 'rgba(22,13,7,0.58)')
+    g.save()
+    g.globalAlpha = Math.min(1, traffic)
+    g.fillStyle = grad
+    g.fillRect(0, 0, S, S)
+    // 拖痕：十几道沿 v 的细擦痕，集中在中间 60% 的宽度里
+    for (let k = 0; k < 16; k++) {
+      const x = S * (0.2 + 0.6 * rnd())
+      const y0 = rnd() * S
+      const len = S * (0.08 + 0.22 * rnd())
+      g.strokeStyle = rnd() < 0.5
+        ? `rgba(255,240,214,${0.05 + 0.07 * rnd()})`
+        : `rgba(30,20,12,${0.06 + 0.08 * rnd()})`
+      g.lineWidth = 1 + rnd() * 2.4
+      g.beginPath()
+      g.moveTo(x, y0)
+      // 擦痕略微歪斜：人手拖出来的不会完全平行于板缝
+      g.lineTo(x + (rnd() - 0.5) * S * 0.02, y0 + len)
+      g.stroke()
+    }
+    g.restore()
   }
   return c
 }
