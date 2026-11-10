@@ -8680,12 +8680,34 @@ console.log('\n== 天数口径守卫 ==')
     assert(/frame % 8 === 0/.test(view), '近岸每 8 帧算一次（不必每帧）')
     assert(/data-testid="deck-coast-hud"/.test(view), 'HUD 要有最近陆地的读数')
     /*
-     * 【自定义 shader 必须自己做 sRGB 编码】这是本轮最本质的修复：
-     * ShaderMaterial 的 gl_FragColor 直接写画布，three 不会转换，而 uniform 里的
-     * 颜色已经是线性值 —— 不编码时 lit=0.95 的"上午"看起来像黄昏（实测）。
+     * 【天空与海面**不许**自己编码】—— 第 66 轮把这条判据整个翻了过来。
+     *
+     * 船上视角接了后处理：画面先渲进**线性 HalfFloat** 的 RT，再由 `post.ts` 的
+     * 合成 pass 统一 srgbEncode。天空/海面着色器如果自己也编码一遍，就是双编码：
+     * 线性 0.15 → 0.42 → 0.68，正午海面实测 135/155/168（灰白），而且**调 uSky
+     * 也救不回来**（只能把双编码后的值从 0.68 拉到 0.6）。去掉自编码后同一帧是
+     * 62/83/100（海）与 177/204/224（天），正好等于 uniform 里的 hex。
+     *
+     * 所以判据是：gl_FragColor 直接写线性 col，且**一次** srgbEncode 都不许出现在
+     * 天空与海面的片元着色器里（post.ts 里那两处才是唯一允许编码的地方）。
      */
     const enc = view.match(/srgbEncode\(clamp\(col, 0\.0, 1\.0\)\)/g) || []
-    assert(enc.length >= 2, `天空与海面两个 shader 都要编码（实测 ${enc.length} 处）`)
+    assert(enc.length === 0, `天空与海面不许自编码（实测 ${enc.length} 处，post 会编码）`)
+    const raw = view.match(/gl_FragColor = vec4\(clamp\(col, 0\.0, 1\.0\), 1\.0\);/g) || []
+    assert(raw.length >= 2, `天空与海面都直接写线性 col（实测 ${raw.length} 处）`)
+    const post = readFileSync(join(process.cwd(), 'src', 'components', 'map3d', 'post.ts'), 'utf8')
+    assert(/srgbEncode\(clamp\(col, 0\.0, 1\.0\)\)/.test(post), '编码只发生在 post 的合成 pass')
+    /*
+     * 【帆的片元补丁必须用 vMapUv】three 0.15x 之后每张贴图有自己的 uv varying。
+     * 帆材质定义了 USE_MAP 但**没有** USE_UV，写 vUv 会让整个片元着色器编译失败
+     * —— 表现是"帆整块不渲染"，控制台里只有一行 'vUv' undeclared。这条坑查了
+     * 整整一轮，所以要挡住。
+     */
+    const ship = readFileSync(join(process.cwd(), 'src', 'components', 'deck', 'shipModel.ts'), 'utf8')
+    assert(/vMapUv\.x/.test(ship), '帆的布面补丁用 vMapUv（每贴图自己的 uv）')
+    assert(!/vUv\.[xy]/.test(ship), '帆的布面补丁不许写 vUv（未定义 USE_UV 时编译失败）')
+    // 白沫必须按日相衰减：直接加到颜色上会让夜海整片发白（实测过）
+    assert(/uFoamLight/.test(view), '白沫必须乘 uFoamLight（夜里不是自发光）')
 
     const coast = readFileSync(join(process.cwd(), 'src', 'components', 'deck', 'coastModel.ts'), 'utf8')
     assert(/COAST_HIDE_BEHIND_DEG/.test(coast), '岸在身后时不画（否则"前方凭空出现陆地"）')

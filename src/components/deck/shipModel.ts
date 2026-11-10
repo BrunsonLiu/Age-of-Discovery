@@ -3,7 +3,7 @@ import { createGlowTexture } from '@/components/map3d/models'
 import { normalFromCanvas, plankCanvas, sailAlphaCanvas, sailCanvas, texFrom } from './shipTextures'
 import {
   HULL_BULWARK, HULL_STATIONS, SHIP_HALF_LENGTH,
-  shipDeckAt, shipDeckHalfWidthAt, shipHalfWidthAt,
+  shipDeckAt, shipDeckHalfWidthAt, shipHalfWidthAt, shipKeelAt,
 } from './shipShape'
 import { buildHullGeo } from './shipHull'
 
@@ -43,6 +43,8 @@ export interface DeckShip {
 }
 
 export function createDeckShip(): DeckShip {
+  /** 简写：本文件里到处要写三维点 */
+  const V = THREE.Vector3
   const group = new THREE.Group()
   group.name = 'deck-ship'
   const disposables: (THREE.BufferGeometry | THREE.Material | THREE.Texture)[] = []
@@ -155,7 +157,8 @@ export function createDeckShip(): DeckShip {
     map: deckTex,
     emissiveMap: deckTex,
     emissive: 0x6a4a2a,
-    emissiveIntensity: 0.3,
+    /* 0.2：自发光只用来托住夜里的暗部；0.3 在白天会把木纹糊成一层平橘色 */
+    emissiveIntensity: 0.2,
     side: THREE.DoubleSide,
   })
   const deck = new THREE.Mesh(deckGeo, deckMat)
@@ -507,6 +510,29 @@ export function createDeckShip(): DeckShip {
           // 静态细褶：让光在布面上散开，避免整片平光
           transformed += uAxis * (sin(uv.x * 9.4 + uSeed * 5.0) * sin(uv.y * 5.7 + uSeed * 2.2) * 0.035) * uStrength;
         `)
+      /*
+       * 布面明暗：帆原本是一整块平涂的土黄（顶点都在动，但颜色没有层次，
+       * 近看像一张纸）。这里加三件事，全部在 fragment 里按 uv 算，零成本：
+       *   ① 边缘自遮挡：靠近帆桁（上缘）与两侧包边的地方压暗 —— 布是被绑住的，
+       *      贴住绳边的那一圈本来就吃不到光；
+       *   ② 纵缝：帆是几幅布拼的，缝线处一条浅阴影；
+       *   ③ 帆脚透光：光从背后压过来，越靠下越亮一点。
+       */
+      shader.fragmentShader = shader.fragmentShader.replace('#include <color_fragment>', `
+        #include <color_fragment>
+        /*
+         * 注意用 vMapUv 而不是 vUv：three 0.15x 之后每张贴图有**自己的** uv varying
+         * （vMapUv / vAlphaMapUv ...），vUv 只在 USE_UV 时才有 —— 帆材质定义了
+         * USE_MAP 但没有 USE_UV，写 vUv 会直接编译失败（实测：Fragment shader is
+         * not compiled / 'vUv' undeclared，整块帆不渲染）。
+         */
+        float ex = smoothstep(0.0, 0.17, vMapUv.x) * smoothstep(0.0, 0.17, 1.0 - vMapUv.x);
+        float ey = smoothstep(0.0, 0.10, vMapUv.y) * smoothstep(0.0, 0.24, 1.0 - vMapUv.y);
+        diffuseColor.rgb *= 0.70 + 0.30 * min(ex, ey);
+        float seam = abs(fract(vMapUv.x * 4.0 + 0.5) - 0.5);
+        diffuseColor.rgb *= 1.0 - 0.11 * smoothstep(0.055, 0.0, seam);
+        diffuseColor.rgb *= 1.0 + 0.12 * smoothstep(0.6, 0.0, vMapUv.y);
+      `)
     }
     sailMats.push(mat)
     return mat
@@ -539,6 +565,69 @@ export function createDeckShip(): DeckShip {
     group.add(sail)
   }
 
+  /*
+   * ---------------- 船首斜桅（bowsprit） ----------------
+   *
+   * 【为什么必须补】前桅的系留索、艏三角帆的拉索全都收敛到空间中的一点
+   * ——而那个点上**原本什么都没有**。回看船时，几根线悬空指向船首前方，
+   * 一眼就假（而且它占的正是船最显眼的剪影位置）。斜桅是一根从船首斜插出去的
+   * 锥形木杆，前桅的支索就绑在它上面。
+   */
+  const bowBase = new V(0, shipDeckAt(17) + 0.95, 15.8)
+  {
+    const dir = new V(0, 6.1, 26.2).sub(new V(0, 0.95, 15.8)).normalize()
+    const len = new V(0, 6.1, 26.2).distanceTo(new V(0, 0.95, 15.8))
+    const sprit = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.3, len, 8), mastMat)
+    sprit.name = 'ship-bowsprit'
+    sprit.position.copy(bowBase).addScaledVector(dir, len / 2)
+    sprit.quaternion.setFromUnitVectors(new V(0, 1, 0), dir)
+    group.add(sprit)
+    // 捆绑环（gammoning）：斜桅穿过船首处的两三道绳圈
+    for (let i = 0; i < 3; i++) {
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(0.26, 0.045, 5, 12), ironMat)
+      ring.position.copy(bowBase).addScaledVector(dir, 0.5 + i * 0.55)
+      ring.quaternion.copy(sprit.quaternion)
+      ring.rotateX(Math.PI / 2)
+      group.add(ring)
+    }
+    // 斜桅端头的帽
+    const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.13, 0.34, 8), brassMat)
+    cap.position.copy(bowBase).addScaledVector(dir, len - 0.25)
+    cap.quaternion.copy(sprit.quaternion)
+    group.add(cap)
+  }
+
+  /*
+   * ---------------- 炮门（gun ports） ----------------
+   * 一排小黑方口是"这是一条武装商船/战舰"最省笔画的一笔：近看是框 + 洞，
+   * 远看是一条断续的暗带。位置贴着船壳的弧面算（cos 反解），不是随便摆的方块。
+   */
+  {
+    const portGeo = new THREE.BoxGeometry(0.62, 0.62, 0.16)
+    const portMat = new THREE.MeshBasicMaterial({ color: 0x07090b })
+    const frameGeo = new THREE.BoxGeometry(0.8, 0.8, 0.1)
+    for (const sgn of [-1, 1]) {
+      for (let k = 0; k < 5; k++) {
+        const z = -11 + k * 4.4
+        const deck = shipDeckAt(z)
+        const keel = shipKeelAt(z)
+        const w = shipHalfWidthAt(z)
+        // 炮门中心离甲板 0.85 米：由弧面公式反解出该高度处的舷侧 x
+        const y = deck - 0.85
+        const cosA = (deck - y) / (deck + keel)
+        const x = w * Math.sqrt(Math.max(0, 1 - cosA * cosA)) * 0.97
+        const frame = new THREE.Mesh(frameGeo, woodDark)
+        frame.position.set(sgn * x, y, z)
+        frame.lookAt(sgn * (x + 2), y, z)
+        group.add(frame)
+        const port = new THREE.Mesh(portGeo, portMat)
+        port.position.set(sgn * (x + 0.04), y, z)
+        port.lookAt(sgn * (x + 2), y, z)
+        group.add(port)
+      }
+    }
+  }
+
   // ---------------- 索具（静索 + 动索） ----------------
   const rigPts: THREE.Vector3[] = []
   const runPts: THREE.Vector3[] = []
@@ -550,10 +639,10 @@ export function createDeckShip(): DeckShip {
     const dst = running ? runPts : rigPts
     for (let i = 0; i < pts.length - 1; i++) dst.push(pts[i], pts[i + 1])
   }
-  const V = THREE.Vector3
   const foreTop = new V(0, mastData[0].top, 11)
   const mainTop = new V(0, mastData[1].top, 1)
   const mizTop = new V(0, mastData[2].top, -8)
+  // 斜桅端头：与上面那根实体的 bowsprit 是同一个点（两处各写一份必然分叉）
   const bowTip = new V(0, shipDeckAt(17) + 6.1, 26.2)
   curve(foreTop, bowTip, 0.9, false)
   curve(foreTop, mainTop, 0.7, false)

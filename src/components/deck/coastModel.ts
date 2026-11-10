@@ -158,9 +158,14 @@ export function createDeckCoast(): DeckCoast {
   const foamGeo = new THREE.BufferGeometry()
   foamGeo.setAttribute('position', new THREE.Float32BufferAttribute(linePos, 3))
   const foamMat = new THREE.LineBasicMaterial({
-    color: new THREE.Color(0.62, 0.68, 0.72),
+    /*
+     * 滩线亮度 0.62/0.35 → 0.5/0.16：去掉天空的双重 sRGB 编码之后，这几条用加法
+     * 混合的白线相对亮了一档，远看像沿岸挂了一条断断续续的白栅栏（实测截图）。
+     * 碎浪本来就该是"隐约一线"，不是硬线。
+     */
+    color: new THREE.Color(0.5, 0.55, 0.58),
     transparent: true,
-    opacity: 0.35,
+    opacity: 0.16,
     depthWrite: false,
     blending: THREE.AdditiveBlending,
   })

@@ -170,17 +170,17 @@ function DeckSpotPanel({
 const Z_DECK = 62
 
 /**
- * 分段式 sRGB 编码。
+ * 分段式 sRGB 编码（**船上视角的两个自定义着色器现在不用它**，留作参考）。
  *
- * 【为什么必须自己写】自定义 `ShaderMaterial` 的 `gl_FragColor` 是**直接写进画布**的
- * （画布按 sRGB 解释），three 不会替你转换。而 uniform 里的颜色经 `Color` 已经
- * 是**线性**工作空间的值 —— 于是 0x5b86ad 这种中蓝写出去被当成 sRGB 0.10 显示，
- * 屏幕上是 25/255 的深蓝。实测后果：`lit=0.95` 的"上午"看起来像黄昏，
- * 天空与受光的船体（走 three 内置材质，会正确编码）明暗关系对不上。
+ * 【为什么不再自己编码】第 66 轮查清了一条老账：船上视角接上后处理之后，画面
+ * 先渲进**线性 HalfFloat** 的 RT，再由 `post.ts` 的合成 pass 统一做 srgbEncode。
+ * 而天空/海面着色器当时**自己也编码了一遍** —— 双编码把 0.15 的线性值推到 0.68
+ * （168/255），于是"海面永远是灰白的、天空永远发白"：这不是调参能救的，
+ * 调 uSky 只能把双编码后的结果从 0.68 拉到 0.6。去掉自编码之后，uniform 里的
+ * 线性颜色才等于最终显示色（正午海面实测从 135/155/168 落到 ~70/95/115）。
  *
  * 【为什么不用 three 的 colorspace_fragment】那个 chunk 在 ShaderMaterial 里
- * 生成的是纯 gamma 1/2.2，而画布是分段式 sRGB：暗部会差 7/255（海图的 post 里
- * 踩过一模一样的坑）。
+ * 生成的是纯 gamma 1/2.2，而画布是分段式 sRGB：暗部会差 7/255。
  */
 const SRGB_ENCODE = /* glsl */ `
 vec3 srgbEncode(vec3 c) {
@@ -251,6 +251,18 @@ export default function DeckView() {
     const height = mount.clientHeight || window.innerHeight
 
     const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' })
+    /*
+     * 着色器编译失败时，three 默认只在 console 打印**出错行附近**的源码，看不到
+     * 前面的声明是否真的进了编译单元。这里把完整的 shader 源码与 info log 存到
+     * window 上 —— 排查"明明声明了却说 undeclared"这类问题只能靠它。
+     */
+    renderer.debug.onShaderError = (gl, _program, vs, fs) => {
+      const dump = (shader: WebGLShader | null) => shader
+        ? { log: gl.getShaderInfoLog(shader) || '', source: gl.getShaderSource(shader) || '' }
+        : { log: '', source: '' }
+      const w = window as unknown as { __shaderError?: unknown[] }
+      w.__shaderError = [...(w.__shaderError ?? []), { vs: dump(vs), fs: dump(fs) }]
+    }
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5))
     renderer.setSize(width, height)
     renderer.toneMapping = THREE.ACESFilmicToneMapping
@@ -349,7 +361,7 @@ export default function DeckView() {
            */
           col = mix(col, uFogColor, uFogK * (0.35 + 0.55 * smoothstep(0.45, 0.0, h)));
           col *= uDark;
-          gl_FragColor = vec4(srgbEncode(clamp(col, 0.0, 1.0)), 1.0);
+          gl_FragColor = vec4(clamp(col, 0.0, 1.0), 1.0);
         }
       `,
     })
@@ -404,6 +416,8 @@ export default function DeckView() {
       uFogK: { value: 0 },
       uFogColor: { value: new THREE.Color(0xb4bdc2) },
       uDark: { value: 1 },
+      uFoam: { value: 0.16 },
+      uFoamLight: { value: 1 },
       uAmp: { value: DECK_WAVES.map((w) => w.amp) },
       uLen: { value: DECK_WAVES.map((w) => w.len) },
       uSteep: { value: DECK_WAVES.map((w) => w.steep) },
@@ -421,6 +435,7 @@ export default function DeckView() {
         uniform float uWaveScale;
         varying vec3 vWorld;
         varying vec3 vNormal;
+        varying float vCrest;
         void main() {
           vec3 p = position;
           vec3 nrm = vec3(0.0, 1.0, 0.0);
@@ -436,6 +451,11 @@ export default function DeckView() {
             nrm.y -= uSteep[i] * k * uAmp[i] * uWaveScale * sin(f);
           }
           vNormal = normalize(nrm);
+          /*
+           * 浪高（相对静水面，世界单位）传给片元：白沫只应该长在浪尖上。
+           * 用**位移后的 y** 而不是法线：法线在缓坡上也很"平"，判不出浪尖。
+           */
+          vCrest = p.y;
           vec4 world = modelMatrix * vec4(p, 1.0);
           vWorld = world.xyz;
           gl_Position = projectionMatrix * viewMatrix * world;
@@ -452,8 +472,12 @@ export default function DeckView() {
         uniform float uFogK;
         uniform vec3 uFogColor;
         uniform float uDark;
+        uniform float uFoam;
+        uniform float uFoamLight;
+        uniform float uTime;
         varying vec3 vWorld;
         varying vec3 vNormal;
+        varying float vCrest;
         ${SRGB_ENCODE}
         void main() {
           vec3 n = normalize(vNormal);
@@ -475,6 +499,17 @@ export default function DeckView() {
            */
           vec3 col = mix(uDeep, uSky, clamp(fres * 1.05, 0.0, 0.55));
           // 月光镜面（Blinn-Phong 的高光半径收得很紧，海面才不会整片发白）
+          /*
+           * ---- 高光用的高频法线 ----
+           * 网格 200×200 铺 140 单位，近处一格约 0.7 单位；月光高光半径收窄之后，
+           * 每一格会被整块点亮，月光道读成"锯齿状的白折线"（实测截图）。这里在
+           * **只影响镜面项**的法线上叠两组不成比例的正弦，把高光打碎成鳞片状碎光。
+           * 注意：它只进高光，不动顶点位移，所以船不会浮在浪外，也不会变成布纹。
+           */
+          vec3 nn = n;
+          nn.x += sin(vWorld.x * 6.3 + uTime * 1.7) * 0.035 + sin(vWorld.z * 9.7 - uTime * 2.1) * 0.022;
+          nn.z += sin(vWorld.z * 5.9 + uTime * 1.3) * 0.035 + sin(vWorld.x * 11.3 - uTime * 1.6) * 0.018;
+          nn = normalize(nn);
           vec3 h = normalize(uMoonDir + v);
           /*
            * 月光镜面：指数收到 420、强度 0.85。
@@ -486,8 +521,14 @@ export default function DeckView() {
            * 月光反射只在夜里出现：白天太阳在天上，海面不该有一条"月色大道"。
            * 第一版没乘 uMoonK，正午截图里那条白亮带横贯海面，读作"水面反光过曝"。
            */
-          float spec = pow(max(dot(n, h), 0.0), 420.0);
-          col += uMoon * spec * 0.45 * uMoonK;
+          /*
+           * 指数 420 → 900、强度 0.45 → 0.34：月光道原来是**锯齿状的大块白**，
+           * 因为 200×200 的网格在近处每格约 0.7 单位，宽高光会把每一格都点亮成
+           * 一个多边形（实测截图：像一条折线的路）。收窄高光半径，碎光才像水面上
+           * 的鳞片，剩下的柔光交给后处理辉光。
+           */
+          float spec = pow(max(dot(nn, h), 0.0), 900.0);
+          col += uMoon * spec * 0.34 * uMoonK;
           // 浪脊的微弱提亮：让相邻浪面之间有层次，不然海面是一块布
           col += uSky * clamp(n.y - 0.985, 0.0, 1.0) * 0.35;
           // 远处收到天光色：与天空球的地平线接上，不出现一条硬边
@@ -505,8 +546,24 @@ export default function DeckView() {
            */
           vec3 farCol = mix(uSky * 0.85, uFogColor, uFogK);
           col = mix(col, farCol, smoothstep(uFogNear, uFogFar, d));
+          /*
+           * ---- 浪尖白沫 ----
+           * 没有白沫的海面读作"一块会动的塑料"：浪有形状、没有碎裂。
+           * 这里只用一条便宜的近似：位移高的地方起沫，再用两组世界坐标的正弦
+           * 把沫打碎成条带（不是均匀的一层白霜）。uFoam 由天气给（晴天 0.16、
+           * 暴雨 0.5），所以风暴天海面自己会"翻白"。
+           */
+          float crestK = clamp(vCrest / 0.13, 0.0, 1.5);
+          float grain = sin(vWorld.x * 9.1 + uTime * 0.9) * sin(vWorld.z * 7.7 - uTime * 0.7);
+          float foam = smoothstep(0.62, 1.12, crestK) * smoothstep(-0.15, 0.55, grain + 0.18);
+          /*
+           * 【白沫必须跟着光照走】第一版把白沫直接加到颜色上，结果夜里海面整片发白
+           * （实测截图：黑天 + 淡灰色的海，像结冰）—— 沫是漫反射，不是自发光。
+           * uFoamLight 由日相给（白天 1、夜里 0.18），天越黑沫越沉。
+           */
+          col += vec3(0.72, 0.78, 0.80) * foam * uFoam * uFoamLight;
           col *= uDark;
-          gl_FragColor = vec4(srgbEncode(clamp(col, 0.0, 1.0)), 1.0);
+          gl_FragColor = vec4(clamp(col, 0.0, 1.0), 1.0);
         }
       `,
     })
@@ -604,6 +661,8 @@ export default function DeckView() {
     post.setBloom(0.38)
     // 取证句柄：探针要能开/关辉光做同帧 A/B
     ;(window as unknown as { __deckPost?: unknown }).__deckPost = post
+    // 取证句柄：着色器编译失败时只有拿到 renderer 才能读 programs 的 diagnostics
+    ;(window as unknown as { __deckRenderer?: unknown }).__deckRenderer = renderer
 
     /** 上一帧算出的"海面该反射的天光色"（含一点黄昏暖），给 uSky 用 */
     const lastSeaSky = new THREE.Color()
@@ -770,14 +829,19 @@ export default function DeckView() {
        * 实测（停泊白昼截图）：fill 固定 0.85 时船壳与帆接近纯黑，
        * 只剩轮廓——那是夜里的样子，白天需要更实的形体。
        */
-      fill.intensity = 0.55 + 1.15 * skyInfo.lit
+      /*
+       * 去掉双重 sRGB 编码之后，同样的灯光参数看起来亮了一大截（甲板成了平涂的
+       * 橘色，实测截图）。这组数按"线性色直接进后处理"重调：白天总光量降约 30%，
+       * 甲板才有明暗层次，而不是一块发亮的木板。
+       */
+      fill.intensity = 0.5 + 0.75 * skyInfo.lit
       fill.color.copy(FILL_NIGHT).lerp(FILL_DAY, skyInfo.lit)
-      ambient.intensity = 0.30 + 0.25 * skyInfo.lit
+      ambient.intensity = 0.26 + 0.16 * skyInfo.lit
       /*
        * 半球光夜里给得多、白天给得少：白天有方向光（fill 涨到 1.7），
        * 再叠一层环境光会把船壳照成平涂；夜里则需要它撑住甲板的可读性。
        */
-      hemi.intensity = 0.74 - 0.26 * skyInfo.lit
+      hemi.intensity = 0.72 - 0.34 * skyInfo.lit
 
       /*
        * ---- 天气：平滑趋近 + 分发到四处 ----
@@ -797,6 +861,12 @@ export default function DeckView() {
         seaUniforms.uFogFar.value = 62 - 38 * look.fog
         const dark = 1 - 0.45 * look.darken
         seaUniforms.uDark.value = dark
+      /*
+       * 白沫随天候涨：晴天只在浪尖有一点点（0.16），暴雨整片翻白（0.5）。
+       * 与浪高同源（look.wave），所以"浪大"与"沫多"不会各说各话。
+       */
+      seaUniforms.uFoam.value = 0.12 + 0.34 * look.darken * look.wave
+      seaUniforms.uFoamLight.value = 0.18 + 0.82 * (1 - night)
       seaUniforms.uFogK.value = look.fog
       seaUniforms.uFogColor.value.copy(skyMat.uniforms.uFogColor.value)
         skyMat.uniforms.uDark.value = dark
@@ -980,7 +1050,11 @@ export default function DeckView() {
        * **至少 60/255**，且蓝分量大于红分量。压之前是海 205/221/233、天 200/217/231
        * （海比天还亮 5），压之后见 `.workbuddy/probe-deck-px.mjs` 的复测值。
        */
-      seaUniforms.uSky.value.copy(lastSeaSky).multiplyScalar(0.24)
+      /*
+       * 夜间把反射天光的权重提到 0.34：去掉双编码之后夜海几乎是纯黑（实测 4/11/20），
+       * 浪形完全看不出来；夜里真实的海面会反一点星光与天光，需要一点底。
+       */
+      seaUniforms.uSky.value.copy(lastSeaSky).multiplyScalar(0.24 + 0.10 * night)
       seaUniforms.uSky.value.r *= 0.80
       seaUniforms.uSky.value.g *= 0.95
       seaUniforms.uSky.value.b *= 1.06
