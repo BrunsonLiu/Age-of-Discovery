@@ -226,11 +226,18 @@ export function createDeckShip(): DeckShip {
   const warmGlows: THREE.Sprite[] = []
   /** 灯笼里的实体点光：白天必须关掉（它是"夜里照亮甲板"的那盏灯） */
   const warmLights: { light: THREE.PointLight, base: number }[] = []
+  /** 船长室里那盏灯：**独立一条曲线**，白天也亮着（室内没有天空的反弹光） */
+  let cabinLamp: THREE.PointLight | null = null
+  /** 艉窗透进来的冷光（给舱内拉色相层次） */
+  let cabinWindowLamp: THREE.PointLight | null = null
+  /** 舱内那三扇窗的玻璃：**不受光**，直接用天空色（白天亮、夜里暗） */
+  let cabinGlassMat: THREE.MeshBasicMaterial | null = null
   const windowMat = new THREE.MeshStandardMaterial({
     color: 0x1a1004,
     emissive: 0xffab5e,
     emissiveIntensity: 2.2,
-    roughness: 0.35,
+    // 0.35 → 0.55：老玻璃不是镜子，点光在它上面打出的高光会变成一团白斑
+    roughness: 0.55,
   })
   warmMats.push(windowMat)
   for (let i = -1; i <= 1; i++) {
@@ -326,6 +333,254 @@ export function createDeckShip(): DeckShip {
         cabin.add(f)
       }
     }
+  }
+
+  /*
+   * ================= 舱内（船长室）=================
+   *
+   * 【为什么必须自己铺一层内壁】船尾楼是一个 BoxGeometry：它的面朝外，从**里面**
+   * 看是被背面剔除的 —— 站进舱里会直接看见外面的海。所以内部要另铺一层朝内
+   * 的平面（地板、天花、四面墙），Box 只当"外壳"。
+   *
+   * 坐标全部用**舱的局部系**（cabin 的 position 已经把它放到位）：
+   *   x ∈ ±3.3（船宽方向）、y ∈ ±1.35（楼高 2.7）、z ∈ ±2.6（进深 5.2）；
+   *   地面在 y = −1.35，也就是甲板面。
+   *
+   * 【为什么值得做】舱门这一轮已经建在船尾楼正面了 —— 门后面如果是空的，
+   * 那扇门就是一张贴纸。舱内给的是这一局最安静的一处：海图桌（航路）、床（休息）、
+   * 箱子（货）、挂灯（光）。它也是唯一能"关起门来看海图"的地方。
+   */
+  {
+    /*
+     * 内宽 5.6 而不是 6.6：船体半宽在船尾只有 4.03（z=−12）→ 3.07（z=−17.2），
+     * 6.6 宽的舱会在艉部两侧穿出船壳 —— 站在舱里能看见**船壳的木条斜插进来**
+     * （实测：左侧一条灰蓝色的楔形，射线命中 `ship-hull`）。
+     * 5.6 宽（半宽 2.8）在整个进深里都留有余量。
+     */
+    const IN_W = 5.6
+    const IN_D = 5.2
+    const IN_H = 2.7
+    const halfH = IN_H / 2
+    /*
+     * 【半高 1.35 与半深 2.6 是两件事】第一版把 z 也写成了 halfH —— 于是四面墙、
+     * 艉窗、舱门全都挤到地板中心线附近，房间实际只有 2.7 米深，门开在屋子中间。
+     * 屏幕上看仍然"像个木盒子"，只有量了世界坐标才发现相机和门只差 1 毫米。
+     */
+    const halfD = IN_D / 2
+    /*
+     * 内壁用 Lambert + 船壳的木板贴图：Standard 在这个距离上会把天花板反成一块
+     * 灰蓝（和甲板"积水"同一个原因），而舱内是纯漫反射的木板。
+     */
+    // 0xa98a66 → 0x9c8b74：原色在暖光下整间屋子是一片橙（实测截图没有色相变化）
+    const wallMatIn = new THREE.MeshLambertMaterial({ map: hullTex, color: 0x9c8b74, side: THREE.FrontSide })
+    const floorMatIn = new THREE.MeshLambertMaterial({ map: deckTex, color: 0xb59a76, side: THREE.FrontSide })
+    const ceilMatIn = new THREE.MeshLambertMaterial({ color: 0x6d563c, side: THREE.FrontSide })
+    disposables.push(wallMatIn, floorMatIn, ceilMatIn)
+
+    const plane = (w: number, h: number, mat: THREE.Material) => new THREE.Mesh(new THREE.PlaneGeometry(w, h), mat)
+    // 地面（法线朝上）
+    const fl = plane(IN_W, IN_D, floorMatIn)
+    fl.rotation.x = -Math.PI / 2
+    fl.position.set(0, -halfH + 0.005, 0)
+    fl.name = 'ship-cabin-floor'
+    cabin.add(fl)
+    // 天花（法线朝下）
+    const cl = plane(IN_W, IN_D, ceilMatIn)
+    cl.rotation.x = Math.PI / 2
+    cl.position.set(0, halfH - 0.005, 0)
+    cl.name = 'cabin-ceiling'
+    cabin.add(cl)
+    // 前壁（朝舱内 = −z），门开在这面
+    const front = plane(IN_W, IN_H, wallMatIn)
+    front.rotation.y = Math.PI
+    front.position.set(0, 0, halfD - 0.01)
+    front.name = 'cabin-wall-front'
+    cabin.add(front)
+    // 后壁（艉板，朝 +z）：三扇窗在这里
+    const back = plane(IN_W, IN_H, wallMatIn)
+    back.position.set(0, 0, -halfD + 0.01)
+    back.name = 'cabin-wall-back'
+    cabin.add(back)
+    // 两舷
+    const port = plane(IN_D, IN_H, wallMatIn)
+    port.rotation.y = -Math.PI / 2
+    port.position.set(IN_W / 2 - 0.01, 0, 0)
+    port.name = 'cabin-wall-port'
+    cabin.add(port)
+    const stbd = plane(IN_D, IN_H, wallMatIn)
+    stbd.rotation.y = Math.PI / 2
+    stbd.position.set(-IN_W / 2 + 0.01, 0, 0)
+    stbd.name = 'cabin-wall-stbd'
+    cabin.add(stbd)
+
+    /*
+     * 艉窗的**内侧**：外面那三扇是朝外的（rotation.y=π），从舱里看是背面、被剔除，
+     * 于是夜里"舱内一片黑"。这里贴一层朝内的同款玻璃 —— 它同时是舱内唯一的光源
+     * 说辞：灯是给舱内用的，海光是从这扇窗进来的。
+     */
+    /*
+     * 【舱内的窗不能复用 `windowMat`】那是"灯光漏到外面"的材质（夜里 emissive 2.2）。
+     * 从舱里往外看，玻璃应该是**暗的** —— 夜里窗外是黑的，不是一盏灯。第一版直接
+     * 复用它，夜里三扇窗是三个过曝的黄板，整间屋子像烧起来了（实测截图）。
+     * 这里用一块深色的普通玻璃：白天被窗侧的冷光映成灰蓝，夜里几乎是黑。
+     */
+    /*
+     * 用 **MeshBasicMaterial**、完全不受光：舱内的窗是"看出去的那块天"，它不该
+     * 被舱里那盏灯照亮。第一版用 Standard，点光在玻璃上打出一大片渐变亮斑，
+     * 两块窗像贴了两团雾（实测截图）。颜色每帧由天空的昼夜插值给（见 update）。
+     */
+    const glassInMat = new THREE.MeshBasicMaterial({ color: 0x0a121c })
+    disposables.push(glassInMat)
+    cabinGlassMat = glassInMat
+    for (let i = -1; i <= 1; i++) {
+      const w = new THREE.Mesh(new THREE.PlaneGeometry(0.92, 0.78), glassInMat)
+      w.position.set(i * 1.55, 0.42, -halfD + 0.03)
+      w.name = 'cabin-window-in'
+      cabin.add(w)
+    }
+
+    // 门的内侧：门板 + 铜框 + 一个可以点回甲板的命中体
+    const doorIn = new THREE.Mesh(new THREE.BoxGeometry(0.95, 1.95, 0.06), new THREE.MeshStandardMaterial({ color: 0x4a3420, roughness: 0.92 }))
+    doorIn.position.set(0, -0.37, halfD - 0.07)
+    cabin.add(doorIn)
+    for (const sx of [-1, 1]) {
+      const post = new THREE.Mesh(new THREE.BoxGeometry(0.08, 2.06, 0.1), brassMat)
+      post.position.set(sx * 0.5, -0.34, halfD - 0.08)
+      cabin.add(post)
+    }
+    const doorHit = new THREE.Mesh(
+      new THREE.BoxGeometry(1.3, 2.2, 0.3),
+      new THREE.MeshBasicMaterial({ visible: false }),
+    )
+    doorHit.name = 'ship-cabin-inner-door'
+    doorHit.position.set(0, -0.2, halfD - 0.14)
+    cabin.add(doorHit)
+
+    /*
+     * ---- 海图桌 ----
+     * 桌面上摊一张海图（浅色羊皮纸 + 两道墨线）：它是这个房间里唯一"要被看"的东西，
+     * 也是整个游戏的隐喻 —— 玩家在做的所有决定，最后都落在这张纸上。
+     */
+    const tableMat = new THREE.MeshStandardMaterial({ color: 0x5a3f26, roughness: 0.9 })
+    const topY = -halfH + 0.92
+    const top = new THREE.Mesh(new THREE.BoxGeometry(1.75, 0.07, 1.05), tableMat)
+    top.position.set(0, topY, 0.15)
+    cabin.add(top)
+    for (const [lx, lz] of [[-0.78, -0.42], [0.78, -0.42], [-0.78, 0.72], [0.78, 0.72]] as const) {
+      const leg = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.9, 0.09), tableMat)
+      leg.position.set(lx, -halfH + 0.45, 0.15 + lz)
+      cabin.add(leg)
+    }
+    // 0xd9c79c → 0xc2ad80：正对着挂灯，原色在 0.5 米处被照到接近纯白（实测截图）
+    // 0xc2ad80 → 0xa89268：挂灯就在桌子正上方 1.3 米，原色被照到接近纯白（实测截图）
+    const chartMat = new THREE.MeshLambertMaterial({ color: 0xa89268 })
+    const chart = new THREE.Mesh(new THREE.PlaneGeometry(1.25, 0.82), chartMat)
+    chart.rotation.x = -Math.PI / 2
+    chart.position.set(0, topY + 0.04, 0.15)
+    cabin.add(chart)
+    // 海图上的两笔墨线（罗盘线/海岸线，不写具体地理，避免与真实地图打架）
+    for (const [x0, z0, x1, z1] of [[-0.42, -0.18, -0.1, 0.24], [0.06, -0.26, 0.38, 0.05]] as const) {
+      const len = Math.hypot(x1 - x0, z1 - z0)
+      const ink = new THREE.Mesh(new THREE.PlaneGeometry(len, 0.012), new THREE.MeshBasicMaterial({ color: 0x5c4a30 }))
+      ink.rotation.x = -Math.PI / 2
+      ink.rotation.z = -Math.atan2(z1 - z0, x1 - x0)
+      ink.position.set((x0 + x1) / 2, topY + 0.045, 0.15 + (z0 + z1) / 2)
+      cabin.add(ink)
+    }
+    disposables.push(tableMat, chartMat)
+    // 凳子
+    const stool = new THREE.Mesh(new THREE.CylinderGeometry(0.21, 0.19, 0.46, 8), tableMat)
+    stool.position.set(0.95, -halfH + 0.23, 0.1)
+    cabin.add(stool)
+    // 卷起来的备用海图（两根纸筒）
+    for (const [cx, cz] of [[-0.62, 0.55], [-0.5, 0.66]] as const) {
+      const roll = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.6, 6), chartMat)
+      roll.rotation.z = Math.PI / 2
+      roll.position.set(cx, topY + 0.09, cz)
+      cabin.add(roll)
+    }
+
+    /*
+     * ---- 床铺 / 箱子 / 挂灯 ----
+     * 床靠左舷（+x 是左舷）：铺盖用暗红，与全船的棕调区分开，一眼能认出"那是床"。
+     */
+    const bunkMat = new THREE.MeshStandardMaterial({ color: 0x4a2a24, roughness: 0.95 })
+    const bunk = new THREE.Mesh(new THREE.BoxGeometry(0.85, 0.3, 2.1), tableMat)
+    bunk.position.set(2.3, -halfH + 0.55, 0.2)
+    cabin.add(bunk)
+    const bedding = new THREE.Mesh(new THREE.BoxGeometry(0.78, 0.16, 1.95), bunkMat)
+    bedding.position.set(2.3, -halfH + 0.76, 0.2)
+    cabin.add(bedding)
+    disposables.push(bunkMat)
+    const chest = new THREE.Mesh(new THREE.BoxGeometry(0.95, 0.5, 0.6), tableMat)
+    chest.position.set(-2.3, -halfH + 0.25, -1.35)
+    cabin.add(chest)
+    for (const oy of [-0.18, 0.18]) {
+      const band = new THREE.Mesh(new THREE.BoxGeometry(0.99, 0.05, 0.64), ironMat)
+      band.position.set(-2.3, -halfH + 0.25 + oy, -1.35)
+      cabin.add(band)
+    }
+
+    /*
+     * 挂灯：舱里唯一的光源。**必须在夜里亮、白天暗**（与甲板的灯同一套 litK 逻辑），
+     * 否则正午的舱内会有一团无来源的暖光。
+     * 点光的 distance 是**世界单位**，船缩了 0.05 —— 4 米要写 0.2，写 4 会照亮整条船。
+     */
+    /*
+     * 挂灯用**内联的几件几何**，不复用甲板那盏 `makeLantern` —— 那个函数定义在文件
+     * 更下面（船尾楼这一段在它之前），直接调用会报"used before declaration"。
+     * 玻璃复用 `windowMat`：它已经挂在 `warmMats` 里，白天自动暗下去。
+     */
+    const lanternIn = new THREE.Group()
+    /*
+     * 位置从正中的 (0, …, −0.55) 挪到右舷：舱里那盏灯正好吊在**中间那扇艉窗**前面，
+     * 点光在窗玻璃（roughness 0.35）上打出一团白色高光，读作"窗里有个太阳"
+     * （实测截图）。挪开 1 米，高光就不在窗上了。
+     */
+    lanternIn.position.set(-1.05, halfH - 0.62, -0.1)
+    {
+      const hook = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.2, 5), brassMat)
+      hook.position.y = 0.2
+      lanternIn.add(hook)
+      const cap = new THREE.Mesh(new THREE.ConeGeometry(0.085, 0.07, 8), brassMat)
+      cap.position.y = 0.1
+      lanternIn.add(cap)
+      const glass = new THREE.Mesh(new THREE.CylinderGeometry(0.062, 0.062, 0.17, 8), windowMat)
+      glass.position.y = -0.01
+      lanternIn.add(glass)
+      const base = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.075, 0.03, 8), brassMat)
+      base.position.y = -0.1
+      lanternIn.add(base)
+    }
+    cabin.add(lanternIn)
+    /*
+     * 灯色 0xffb066 → 0xffd7b2：纯暖橙会把整间屋子染成同一种橙（没有色相变化，
+     * 木墙、床、桌子糊成一片）。偏白的暖光才让"木色/红铺盖/浅海图"分得开。
+     */
+    /*
+     * decay = 0（不是 2）。three 的物理点光是**平方反比**，而船缩了 0.05：
+     * 灯到桌面只有 0.065 世界单位 → 1/0.065² ≈ 236 倍，桌面直接被照成纯白
+     * （实测截图：木桌与海图糊成一块米色板）。室内照明在这里要的是"均匀铺一层"，
+     * 不是物理照度 —— decay=0 + distance 截断就是可用的那一种。
+     */
+    const cabinLight = new THREE.PointLight(0xffd7b2, 0.5, 0.3, 0)
+    cabinLight.position.set(-1.05, halfH - 0.85, -0.1)
+    cabin.add(cabinLight)
+    /*
+     * 【舱灯不能跟甲板的灯一样"白天熄"】室外有天空、有反弹光，室内没有：
+     * 只靠三扇艉窗的直射光，白天的舱内是一团深棕（实测截图：家具有没有都看不清）。
+     * 所以它单独一条曲线 —— 白天 0.45、夜里 1.0，读作"舱里那盏灯一直亮着"。
+     */
+    cabinLamp = cabinLight
+    /*
+     * 艉窗那一侧的冷光：舱里唯一的"外面的光"。没有它，整间屋子只有一盏暖灯 ——
+     * 所有东西同一个色相（实测截图）。冷光只给一点，作用是拉开层次，不是照明。
+     */
+    const windowLight = new THREE.PointLight(0x9fc0e0, 0.4, 0.34, 0)
+    // 也要离开窗轴：贴在中间那扇窗正前方时，点光会在玻璃上留一个小白点
+    windowLight.position.set(-1.9, 1.02, -halfD + 1.3)
+    cabin.add(windowLight)
+    cabinWindowLamp = windowLight
   }
 
   group.add(cabin)
@@ -440,8 +695,14 @@ export function createDeckShip(): DeckShip {
       handle.rotation.z = a
       wheel.add(handle)
     }
+    /*
+     * 命中盒 1.9 → 1.6×1.5：舵轮的直径只有 1.44，原来那个 1.9 的方盒**向下探出**
+     * 到船尾楼舱门的高度，于是点舱门正中会被舵轮抢走（射线实测：
+     * `ship-wheel@0.083` 排在 `ship-cabin-door@0.158` 前面）。盒子按轮盘的实际
+     * 尺寸收，两者才分得开。
+     */
     const hit = new THREE.Mesh(
-      new THREE.BoxGeometry(1.9, 1.9, 0.5),
+      new THREE.BoxGeometry(1.6, 1.5, 0.5),
       new THREE.MeshBasicMaterial({ visible: false }),
     )
     hit.name = 'ship-wheel'
@@ -804,6 +1065,10 @@ export function createDeckShip(): DeckShip {
    *
    * 两个 uniform 是所有帆共用的（同一个太阳/月亮），由 `setBacklight` 每帧写。
    */
+  /** 舱内窗玻璃的两个端点色（白天 / 夜里） */
+  const CABIN_GLASS_DAY = new THREE.Color(0x9fb6c8)
+  const CABIN_GLASS_NIGHT = new THREE.Color(0x0a121c)
+
   const sailLightDir = { value: new THREE.Vector3(-0.45, 0.42, -0.78).normalize() }
   const sailGlow = { value: new THREE.Color(0, 0, 0) }
 
@@ -1117,6 +1382,14 @@ export function createDeckShip(): DeckShip {
       windowMat.emissiveIntensity = 2.2 * litK
       for (const m of warmMats) if (m !== windowMat) m.emissiveIntensity = 1.15 * litK
       for (const w of warmLights) w.light.intensity = w.base * litK
+      if (cabinLamp) cabinLamp.intensity = 0.5 * (0.55 + 0.25 * night)
+      // 窗外一直是冷的（白天是天光、夜里是月光），只在雾天更暗一点
+      if (cabinWindowLamp) cabinWindowLamp.intensity = 0.4 * (0.35 + 0.65 * (1 - night * 0.4))
+      /*
+       * 舱内窗玻璃的颜色 = 窗外的天。白天 0x9fb6c8（灰蓝天光）、夜里 0x0a121c
+       * （几乎是黑）。**不跟舱里的灯** —— 否则"窗比墙还亮"，读作舱里挂了三盏灯。
+       */
+      if (cabinGlassMat) cabinGlassMat.color.copy(CABIN_GLASS_DAY).lerp(CABIN_GLASS_NIGHT, night)
       for (const g of warmGlows) {
         const mat = g.material as THREE.SpriteMaterial
         mat.opacity = (g.scale.x > 2 ? 0.30 : 0.48) * litK

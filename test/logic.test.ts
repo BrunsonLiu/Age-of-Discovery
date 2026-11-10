@@ -52,12 +52,13 @@ import { clampToDeck, deckEyeY, deckWalkHalfWidth, isOnDeck, stepWalk } from '..
 import { buildHullGeo } from '../src/components/deck/shipHull'
 import {
   HULL_ARC, HULL_BULWARK, SHIP_DRAFT_LIFT, SHIP_HALF_LENGTH, SHIP_SCALE,
-  shipDeckAt, shipDeckHalfWidthAt, shipKeelAt,
+  shipDeckAt, shipDeckHalfWidthAt, shipHalfWidthAt, shipKeelAt,
 } from '../src/components/deck/shipShape'
 import { DECK_WAVES } from '../src/components/deck/deckWaves'
 import { compassWord, ridgeHeightAt, ridgeHeights } from '../src/components/deck/deckCoast'
 import { BIRD_MAX, deckBirdFlock, deckBirdPose } from '../src/components/deck/deckBirds'
 import { SAILOR_STATIONS, sailorCount } from '../src/components/deck/deckCrew'
+import { CABIN_BOUNDS, CABIN_ENTER, CABIN_EXIT, cabinEyeY, cabinFloorY, clampToCabin, isInCabin, stepInCabin } from '../src/components/deck/deckCabin'
 import { clampElevation, EL_MAX, EL_MIN, EL_TIGHTEN_FROM, minElevationAt } from '../src/components/map3d/cameraLimits'
 import {
   findCoast, wrapDeg, coastLayout, coastScenePos, bearingWord,
@@ -8917,13 +8918,20 @@ console.log('\n== 天数口径守卫 ==')
   // ---- ⑤ 接线：三处必须存在的用法 ----
   {
     const view = readFileSync(join(process.cwd(), 'src', 'components', 'deck', 'DeckView.tsx'), 'utf8')
-    // 局部坐标交给 localToWorld —— 不许再乘一次 SHIP_SCALE（会缩两次）
-    assert(/const eye = new THREE\.Vector3\(walkPos\.x, deckEyeY\(walkPos\.z\), walkPos\.z\)/.test(view),
+    /*
+     * 局部坐标交给 localToWorld —— 不许再乘一次 SHIP_SCALE（会缩两次）。
+     * 第 76 轮起相机高度按"在甲板 / 在舱内"取两个来源：甲板是 `deckEyeY(z)`、
+     * 舱内是常数 `cabinEyeY()`，所以判据改成"两种来源都在、且仍直接交给 localToWorld"。
+     */
+    assert(/const eyeY = inCabinRef\.current \? cabinEyeY\(\) : deckEyeY\(walkPos\.z\)/.test(view),
+      '相机高度按甲板/舱内取两个来源（舱内的地板是常数高度）')
+    assert(/const eye = new THREE\.Vector3\(walkPos\.x, eyeY, walkPos\.z\)/.test(view),
       '相机用米制局部坐标交给 localToWorld（不要再乘 SHIP_SCALE）')
     assert(/ship\.localToWorld\(eye\)/.test(view), '船体的摇摆要传到相机')
     assert(/dir\.applyQuaternion\(ship\.quaternion\)/.test(view),
       '视线方向也要乘船的姿态（否则船一摇相机像浮在船外）')
-    assert(/walkPos = stepWalk\(walkPos, dx, dz\)/.test(view), '移动走 stepWalk（分轴 + 桅杆推离）')
+    assert(/walkPos = inCabinRef\.current \? stepInCabin\(walkPos, dx, dz\) : stepWalk\(walkPos, dx, dz\)/.test(view),
+      '移动在舱内走 stepInCabin（矩形）、在甲板走 stepWalk（分轴 + 桅杆推离）')
     // 键盘与移动端按钮共用 keysRef；用 state 会每帧重渲染整个组件
     assert(/keysRef\.current\[dir\] = true/.test(view), '移动端方向键写进 keysRef')
   }
@@ -9331,6 +9339,67 @@ console.log('\n== 天数口径守卫 ==')
   assert(!!litK, '灯的白天地板值是常量表达式')
   assert(Number(litK![1]) <= 0.05, `灯在白天的地板值 ${litK![1]} ≤ 0.05（0.12 时正午的窗还是亮的）`)
   assert(Math.abs(Number(litK![1]) + Number(litK![2]) - 1) < 1e-9, '夜里 litK 必须是 1')
+}
+
+/*
+ * ---- 船长室：矩形房间的边界，以及"舱比船壳窄" ----
+ *
+ * 【守什么】舱内是**第一个矩形**空间（甲板是按 z 求半宽的船体轮廓）。两条东西容
+ * 易错、而且在截图里看不出来：
+ *  ① 玩家能走出房间（撞墙不生效）→ 会站到舱壁里，看见全黑的背面；
+ *  ② 舱比船壳宽 → 船壳的木条会斜插进舱内（实测时射线命中 `ship-hull`，
+ *     画面里是一条灰蓝色楔形）。
+ */
+{
+  // 房间在地板之上，人眼高度合理
+  assert(cabinEyeY() - cabinFloorY() > 1.6 && cabinEyeY() - cabinFloorY() < 1.8,
+    `舱内人眼高度 ${(cabinEyeY() - cabinFloorY()).toFixed(2)} 米`)
+
+  // 钳制：界内不变，界外被拉回
+  const mid = clampToCabin(0, -14.5)
+  assert(Math.abs(mid.x) < 1e-9 && Math.abs(mid.z + 14.5) < 1e-9, '界内的点原样返回')
+  const far = clampToCabin(99, -99)
+  assert(far.x === CABIN_BOUNDS.maxX && far.z === CABIN_BOUNDS.minZ, '越界被拉回最近的一角')
+  assert(isInCabin(far.x, far.z), '拉回之后确实在舱内')
+
+  /*
+   * 随机走两万步，一步都不许出界。
+   * 【为什么先累计再断言】每步一条断言会让"通过数"虚增两万条，看起来像加了功能，
+   * 实际只是循环次数 —— 判据该说"零次越界"，而不是"两万次都在界内"。
+   */
+  let p = { x: 0, z: -14.5 }
+  let seed = 12345
+  let escapes = 0
+  let firstEscape = ''
+  const rnd = () => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648 }
+  for (let i = 0; i < 20000; i++) {
+    p = stepInCabin(p, (rnd() - 0.5) * 0.6, (rnd() - 0.5) * 0.6)
+    if (!isInCabin(p.x, p.z)) {
+      escapes++
+      if (!firstEscape) firstEscape = `第 ${i} 步 (${p.x.toFixed(2)}, ${p.z.toFixed(2)})`
+    }
+  }
+  assert(escapes === 0, `两万步零次越界（越界 ${escapes} 次，首例 ${firstEscape || '无'}）`)
+
+  /*
+   * 进/出舱的机位：进门那一刻必须已经在房间里（否则下一帧会被甲板钳制拽回去），
+   * 出门那一刻必须在**甲板上**（否则人会卡在船尾楼的墙里）。
+   */
+  assert(isInCabin(CABIN_ENTER.x, CABIN_ENTER.z), `进舱机位在房间内（z=${CABIN_ENTER.z}）`)
+  assert(!isInCabin(CABIN_EXIT.x, CABIN_EXIT.z), `出舱机位在房间外（z=${CABIN_EXIT.z}）`)
+  // 出舱机位还要在甲板可行走范围内（否则被 stepWalk 钳到别处，人会"跳"一下）
+  assert(Math.abs(CABIN_EXIT.x) <= deckWalkHalfWidth(CABIN_EXIT.z),
+    `出舱机位在甲板半宽内（${CABIN_EXIT.x} ≤ ${deckWalkHalfWidth(CABIN_EXIT.z).toFixed(2)}）`)
+
+  /*
+   * 舱必须比船壳窄。船体在船尾的半宽：z=−12 → 4.03、z=−17.2 → 3.07。
+   * 舱的内半宽（2.8）必须小于**最窄处**，否则船壳会插进舱里。
+   */
+  const innerHalfW = CABIN_BOUNDS.maxX + 0.4
+  for (const z of [-12, -14.6, -17.2]) {
+    assert(innerHalfW < shipHalfWidthAt(z),
+      `舱半宽 ${innerHalfW} < 船壳半宽 ${shipHalfWidthAt(z).toFixed(2)}（z=${z}）`)
+  }
 }
 
 console.log(`\n最终结果：${passed} 通过 / ${failed} 失败`)

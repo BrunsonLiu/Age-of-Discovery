@@ -9,6 +9,7 @@ import { DECK_WAVES, deckShipPose } from './deckWaves'
 import { findCoast, bearingWord, compassWord, wrapDeg, type CoastSighting } from './deckCoast'
 import { createDeckCoast } from './coastModel'
 import { deckEyeY, stepWalk, WALK_SPEED_M, type WalkPos } from './deckWalk'
+import { CABIN_ENTER, CABIN_EXIT, cabinEyeY, stepInCabin } from './deckCabin'
 import { SHIP_DRAFT_LIFT } from './shipShape'
 import { createMap3DPost, type Map3DPost } from '@/components/map3d/post'
 import { createDeckRain, rainTiltFromWind } from './rainLayer'
@@ -262,6 +263,12 @@ export default function DeckView() {
   const walkingRef = useRef(false)
   const [walking, setWalking] = useState(false)
   /*
+   * 是否在船长室里。ref 给帧循环读（每帧都要判），state 只驱动 UI ——
+   * 与甲板行走同一套写法：state 进 effect 依赖会重建整个场景。
+   */
+  const inCabinRef = useRef(false)
+  const [inCabin, setInCabin] = useState(false)
+  /*
    * 甲板上被点开的物件（舱口 / 舵轮）。null = 没点开。
    * 用 React state 而不是 ref：它要驱动一个 DOM 面板，跟 3D 场景重建无关。
    */
@@ -277,6 +284,11 @@ export default function DeckView() {
   const setWalk = (v: boolean) => {
     walkingRef.current = v
     setWalking(v)
+    // 离开甲板行走时一并退出舱内，否则下次进来会"开在舱里"
+    if (!v) {
+      inCabinRef.current = false
+      setInCabin(false)
+    }
   }
   const open = useMapStore((s) => s.deckView)
   /*
@@ -923,15 +935,42 @@ export default function DeckView() {
        * 注意拾取的是 `ship.children` 的**递归**结果（`intersectObjects(..., true)`），
        * 三件东西都在各自的 group 里，只传直接子节点会一个也点不到。
        */
-      const HOTSPOTS: Record<string, 'hatch' | 'wheel' | 'crow'> = {
+      /*
+       * 一次拾取决定三件事：开面板（舱口/舵轮/瞭望台）、进舱、还是什么都不做。
+       *
+       * 【为什么必须取"最近的命名物"】门在舵轮正后方 1.1 米。第一版先 `find` 门名、
+       * 再找热点 —— 于是点**舵轮**时，射线穿过舵轮命中了后面的门，人被传送进舱里，
+       * 舵轮面板永远打不开（e2e 当场炸掉三条）。
+       * 现在合成一张表，取 `hits` 里**第一个**在表里的对象：谁近听谁的。
+       */
+      const hits = picker.intersectObjects(ship.children, true)
+      const ACTIONS: Record<string, 'hatch' | 'wheel' | 'crow' | 'enter' | 'exit'> = {
         'ship-hatch': 'hatch',
         'ship-wheel': 'wheel',
         'ship-crow': 'crow',
+        'ship-cabin-door': 'enter',
+        'ship-cabin-inner-door': 'exit',
       }
-      const named = picker
-        .intersectObjects(ship.children, true)
-        .find((h) => HOTSPOTS[h.object.name] != null)
-      setSpot(named ? HOTSPOTS[named.object.name] : null)
+      const first = hits.find((h) => ACTIONS[h.object.name] != null)
+      const action = first ? ACTIONS[first.object.name] : null
+      if (action === 'enter' || action === 'exit') {
+        /*
+         * 点**外**门（船尾楼正面那扇）→ 进舱；点**内**门（舱里那扇）→ 出舱。
+         * 第一版把这一条写反了（`inside = name === 'inner'`），于是"点门进舱"变成了
+         * "点门把自己放到门外一步的地方" —— 看不出错，只是永远进不去。
+         */
+        const inside = action === 'enter'
+        inCabinRef.current = inside
+        setInCabin(inside)
+        const tgt = inside ? CABIN_ENTER : CABIN_EXIT
+        walkPos.x = tgt.x
+        walkPos.z = tgt.z
+        viewRef.current.yaw = tgt.yaw
+        viewRef.current.pitch = tgt.pitch
+        setSpot(null)
+        return
+      }
+      setSpot(action ?? null)
     }
     window.addEventListener('keydown', onKeyDown)
     window.addEventListener('keyup', onKeyUp)
@@ -1129,7 +1168,11 @@ export default function DeckView() {
           // 前向 = (sin yaw, cos yaw)，右向 = (cos yaw, -sin yaw)
           const dx = (fwd * sy + side * cy) * speed
           const dz = (fwd * cy - side * sy) * speed
-          walkPos = stepWalk(walkPos, dx, dz)
+          /*
+           * 舱内是矩形房间、甲板是船体轮廓 —— 两套约束不能混（见 deckCabin 的注释）。
+           * 这里只换约束函数，方向/速度/斜走归一的逻辑完全共用。
+           */
+          walkPos = inCabinRef.current ? stepInCabin(walkPos, dx, dz) : stepWalk(walkPos, dx, dz)
           bobPhase += dt * 7.5
         }
 
@@ -1141,7 +1184,12 @@ export default function DeckView() {
          * 屏幕上是"从船体内部往外看"的一堆木纹 —— 而且看起来还挺像有内容的，
          * 只有对照"人应该站在甲板上"才知道错了。
          */
-        const eye = new THREE.Vector3(walkPos.x, deckEyeY(walkPos.z), walkPos.z)
+        /*
+         * 舱内的地板是一个常数高度（船尾楼底面），不是 `shipDeckAt(z)` ——
+         * 后者是甲板线，在船尾会翘起来，站进舱里就会"脚陷进地板、头穿出天花"。
+         */
+        const eyeY = inCabinRef.current ? cabinEyeY() : deckEyeY(walkPos.z)
+        const eye = new THREE.Vector3(walkPos.x, eyeY, walkPos.z)
         ship.localToWorld(eye)
         // 走路时相机轻微上下起伏（幅度 2cm）：没有它走起来像滑冰
         eye.y += Math.sin(bobPhase) * 0.006
@@ -1191,9 +1239,13 @@ export default function DeckView() {
         sightingRef.current = sighting
         coast.setSighting(sighting)
         if (hudRef.current) {
+          if (inCabinRef.current) {
+            hudRef.current.textContent = '船长室 · 海图桌'
+          } else {
           hudRef.current.textContent = sighting
             ? `${sighting.port.nameCn} · ${bearingWord(sighting.relBearingDeg)} ${sighting.distNm.toFixed(1)} 海里`
             : '远洋 · 视野内无陆地'
+          }
         }
       }
       coast.update(t, night, skyMat.uniforms.uHorizon.value, look.fog, skyMat.uniforms.uFogColor.value)
@@ -1416,6 +1468,18 @@ export default function DeckView() {
       >
         远洋 · 视野内无陆地
       </div>
+      {/*
+        * 「你在哪」的常驻提示。舱内与甲板是两个空间，而画面里看不出边界
+        * （舱内四面都是木板）—— 一行小字比一个弹窗省事得多。
+        */}
+      {walking && inCabin ? (
+        <div
+          data-testid="deck-cabin-badge"
+          className="pointer-events-none absolute left-1/2 top-[5.5rem] -translate-x-1/2 rounded-md border border-gold-600/30 bg-black/45 px-3 py-1 text-xs tracking-[0.2em] text-gold-300 backdrop-blur-sm"
+        >
+          船长室
+        </div>
+      ) : null}
       {walking && spot ? (
         <DeckSpotPanel
           spot={spot}

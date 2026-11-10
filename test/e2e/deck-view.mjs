@@ -265,6 +265,75 @@ await sleep(1200)
 const c1 = await crewNow()
 check(c1.shown.length === 0, `船员清零后甲板上没人（实测 ${c1.shown.length} 个还在）`)
 
+// ---- ⑤e 船长室：点舱门进舱、舱内撞墙不出界、点门回甲板 ----
+const cabinState = () => page.evaluate(() => {
+  const w = window.__deckWalk?.get()
+  return {
+    walk: w,
+    hud: document.querySelector('[data-testid=deck-coast-hud]')?.textContent ?? '',
+    badge: !!document.querySelector('[data-testid=deck-cabin-badge]'),
+  }
+})
+// 站到舵轮右后方，正对舱门
+await page.evaluate(() => window.__deckWalk?.set({ x: 1.5, z: -9.2, yaw: Math.PI - 0.12, pitch: -0.18 }))
+await sleep(1200)
+const before = await cabinState()
+check(!before.badge, '进舱前没有「船长室」提示')
+const doorPt = await page.evaluate(() => {
+  const THREE = window.__THREE, o = window.__deckScene.getObjectByName('ship-cabin-door')
+  if (!o) return null
+  const v = new THREE.Vector3(); o.getWorldPosition(v)
+  /*
+   * 点门的**下沿**（世界 y 减 0.03 ≈ 模型 0.6 米）。门的上半截与舵轮在同一个高度，
+   * 从甲板看过去被舵轮挡着 —— 玩家实际能点到的也是下半截（射线实测：
+   * 门中心落在 `ship-wheel` 命中盒里，下沿才是 `ship-cabin-door`）。
+   */
+  v.y -= 0.03
+  window.__deckCam.updateMatrixWorld(true)
+  v.project(window.__deckCam)
+  return { x: Math.round(((v.x + 1) / 2) * innerWidth), y: Math.round(((-v.y + 1) / 2) * innerHeight) }
+})
+check(!!doorPt, '船尾楼正面有舱门（ship-cabin-door）')
+if (doorPt) {
+  await page.mouse.click(doorPt.x, doorPt.y)
+  await sleep(1200)
+  const inside = await cabinState()
+  check(inside.walk.z < -12.4, `点舱门后站进了舱里（z=${inside.walk.z?.toFixed(2)}）`)
+  check(inside.hud.includes('船长室'), '舱内 HUD 换成「船长室」（不再报海岸距离）')
+  check(inside.badge, '舱内有「船长室」提示')
+  // 舱内朝船尾一直走：不许穿出后壁
+  await page.evaluate(() => window.__deckWalk?.set({ x: 0, z: -14.5, yaw: Math.PI, pitch: 0 }))
+  await sleep(400)
+  await page.keyboard.down('w')
+  await sleep(2000)
+  await page.keyboard.up('w')
+  const pushed = await cabinState()
+  check(pushed.walk.z >= -16.85, `舱内撞到后壁就停住（z=${pushed.walk.z?.toFixed(2)}，后壁 −17.2）`)
+  // 点舱内的门回甲板
+  const innerPt = await page.evaluate(() => {
+    const THREE = window.__THREE, o = window.__deckScene.getObjectByName('ship-cabin-inner-door')
+    if (!o) return null
+    window.__deckWalk?.set({ x: 0, yaw: undefined, z: -13.4 })
+    const v = new THREE.Vector3(); o.getWorldPosition(v)
+    v.project(window.__deckCam)
+    return { x: Math.round(((v.x + 1) / 2) * innerWidth), y: Math.round(((-v.y + 1) / 2) * innerHeight) }
+  })
+  await page.evaluate(() => window.__deckWalk?.set({ x: 0, z: -13.4, yaw: 0, pitch: -0.1 }))
+  await sleep(900)
+  const innerPt2 = await page.evaluate(() => {
+    const THREE = window.__THREE, o = window.__deckScene.getObjectByName('ship-cabin-inner-door')
+    const v = new THREE.Vector3(); o.getWorldPosition(v)
+    window.__deckCam.updateMatrixWorld(true)
+    v.project(window.__deckCam)
+    return { x: Math.round(((v.x + 1) / 2) * innerWidth), y: Math.round(((-v.y + 1) / 2) * innerHeight) }
+  })
+  await page.mouse.click(innerPt2.x, innerPt2.y)
+  await sleep(1200)
+  const out = await cabinState()
+  check(out.walk.z > -12.4, `点内门后回到甲板（z=${out.walk.z?.toFixed(2)}）`)
+  check(!out.badge, '回甲板后「船长室」提示消失')
+}
+
 // ---- ⑥ 回海图：场景要真的被拆掉（不能留一个跑着的 rAF）----
 await page.evaluate(() => document.querySelector('[data-testid=deck-view-close]')?.click())
 await sleep(1200)
