@@ -6,7 +6,7 @@ import {
   shipDeckAt, shipDeckHalfWidthAt, shipHalfWidthAt, shipKeelAt,
 } from './shipShape'
 import { buildHullGeo } from './shipHull'
-import { SAILOR_STATIONS } from './deckCrew'
+import { SAILOR_POSES, SAILOR_STATIONS } from './deckCrew'
 import { chartCourse } from './deckChart'
 import { WATERLINE_Y_M, WAKE_SEGMENTS } from './deckWake'
 import { bearingDelta, FLAG_BASE_H_M, FLAG_LEN_M, FLAG_SEG_X, FLAG_SEG_Y, flagOffset, pennantYaw } from './deckFlag'
@@ -1010,17 +1010,25 @@ export function createDeckShip(): DeckShip {
   const beltGeo = new THREE.BoxGeometry(0.38, 0.075, 0.26)
   const neckGeo = new THREE.CylinderGeometry(0.055, 0.06, 0.09, 6)
   const headGeo = new THREE.SphereGeometry(0.112, 8, 6)
+  /*
+   * 手臂几何**下移到肩在原点**：这样 `rotation.x` 是绕肩摆，而不是绕手臂中点
+   * （绕中点转会把下半截甩到身后，看着像折了）。肩高 = 躯干上缘（1.33）。
+   */
   const armGeo = new THREE.CylinderGeometry(0.062, 0.072, 0.56, 5)
+  armGeo.translate(0, -0.28, 0)
   const hatGeo = new THREE.CylinderGeometry(0.132, 0.122, 0.1, 8)
   disposables.push(sailorMat, skinMat, hatMat, beltMat, legGeo, bootGeo, torsoGeo, beltGeo, neckGeo, headGeo, armGeo, hatGeo)
 
+  /** 上身组（绕髋部前倾）：呼吸摇晃也要动它 */
+  const sailorUppers: THREE.Group[] = []
   const sailors: THREE.Group[] = []
   for (const st of SAILOR_STATIONS) {
+    const pose = SAILOR_POSES[st.kind]
     const g = new THREE.Group()
     g.name = `ship-sailor-${st.kind}`
     g.position.set(st.x, shipDeckAt(st.z), st.z)
     g.rotation.y = st.yaw
-    // 腿 + 靴：两根分开站，脚底在 y=0（甲板面）
+    // 腿 + 靴：两根分开站，脚底在 y=0（甲板面）。腿不参与姿态（模型没有膝关节）
     for (const sx of [-1, 1]) {
       const leg = new THREE.Mesh(legGeo, hatMat)
       leg.position.set(sx * 0.115, 0.38, 0)
@@ -1029,32 +1037,50 @@ export function createDeckShip(): DeckShip {
       boot.position.set(sx * 0.115, 0.05, 0.03)
       g.add(boot)
     }
+    /*
+     * 上身从**髋部**起算：upper 的原点在 y=0.76（髋），绕 x 转 = 弯腰。
+     * 所有上身部件都相对它摆放，于是"前倾"会把头、肩、手一起带走 —— 这才是人
+     * 弯腰的样子（第一版没有这一层，只能整个 group 转，脚也跟着离地）。
+     */
+    const upper = new THREE.Group()
+    upper.position.set(0, 0.76, 0)
+    upper.rotation.x = pose.lean
+    g.add(upper)
+    const dy = -pose.sink
     // 躯干：略窄的方箱（人不是圆桶），上缘对齐肩
     const torso = new THREE.Mesh(torsoGeo, sailorMat)
-    torso.position.set(0, 1.08, 0)
-    g.add(torso)
+    torso.position.set(0, 0.32 + dy, 0)
+    upper.add(torso)
     // 腰带：这个尺寸上"人"是靠腰线认出来的
     const belt = new THREE.Mesh(beltGeo, beltMat)
-    belt.position.set(0, 0.82, 0)
-    g.add(belt)
-    // 手臂：外移到躯干轮廓之外，张开一点点，读作"站着"而不是"立正"
-    for (const sx of [-1, 1]) {
+    belt.position.set(0, 0.06 + dy, 0)
+    upper.add(belt)
+    /*
+     * 手臂：按岗位给角度（`SAILOR_POSES`）。几何已经把肩放在原点，
+     * 所以 armX 是"绕肩向前抬"、armZ 是"向外张"。
+     */
+    for (const [sx, ax, az] of [
+      [-1, pose.armLX, pose.armLZ],
+      [1, pose.armRX, pose.armRZ],
+    ] as const) {
       const arm = new THREE.Mesh(armGeo, sailorMat)
-      arm.position.set(sx * 0.245, 1.05, 0.01)
-      arm.rotation.z = sx * 0.16
-      g.add(arm)
+      arm.position.set(sx * 0.245, 0.57 + dy, 0.01)
+      arm.rotation.x = ax
+      arm.rotation.z = az
+      upper.add(arm)
     }
     // 脖子：一小截，头才不会直接坐在肩上
     const neck = new THREE.Mesh(neckGeo, skinMat)
-    neck.position.set(0, 1.4, 0)
-    g.add(neck)
+    neck.position.set(0, 0.64 + dy, 0)
+    upper.add(neck)
     const head = new THREE.Mesh(headGeo, skinMat)
-    head.position.set(0, 1.5, 0)
-    g.add(head)
+    head.position.set(0, 0.74 + dy, 0.01)
+    upper.add(head)
     // 帽子：一顶矮圆帽，从远处也能认出"这是个人"
     const hat = new THREE.Mesh(hatGeo, hatMat)
-    hat.position.set(0, 1.6, 0)
-    g.add(hat)
+    hat.position.set(0, 0.84 + dy, 0.01)
+    upper.add(hat)
+    sailorUppers.push(upper)
     /*
      * 水手也参与"能不能点"？**不参与**。甲板上可点的三件东西（舱口 / 舵轮 / 瞭望台）
      * 各自对应一组真实数字；点一个人却只能说一句废话，那会稀释另外三个的意义。
@@ -1902,8 +1928,15 @@ export function createDeckShip(): DeckShip {
         const g = sailors[i]
         if (!g.visible) continue
         const st = SAILOR_STATIONS[i]
+        const pose = SAILOR_POSES[st.kind]
         g.rotation.y = st.yaw + Math.sin(t * 0.45 + st.phase) * 0.07
         g.position.y = shipDeckAt(st.z) + Math.sin(t * 0.95 + st.phase) * 0.01
+        /*
+         * 呼吸式的上身起伏：**叠加在岗位姿态之上**（不是覆盖它）——
+         * 弯腰清点的人也在轻轻起伏，比"上半身一动不动"活得多。
+         */
+        const up = sailorUppers[i]
+        if (up) up.rotation.x = pose.lean + Math.sin(t * 0.9 + st.phase) * 0.018
       }
 
       /*

@@ -57,7 +57,7 @@ import {
 import { DECK_WAVES } from '../src/components/deck/deckWaves'
 import { compassWord, ridgeHeightAt, ridgeHeights } from '../src/components/deck/deckCoast'
 import { BIRD_MAX, deckBirdFlock, deckBirdPose } from '../src/components/deck/deckBirds'
-import { SAILOR_STATIONS, sailorCount } from '../src/components/deck/deckCrew'
+import { SAILOR_POSES, SAILOR_STATIONS, sailorCount } from '../src/components/deck/deckCrew'
 import { chartCourse, CHART_MAX_NM } from '../src/components/deck/deckChart'
 import { bearingDelta, FLAG_SEG_X, flagOffset, pennantYaw, windK } from '../src/components/deck/deckFlag'
 import { bowWaveLength, bowWaveSpread, KELVIN_TAN, kelvinStrength, wakeStrength } from '../src/components/deck/deckWake'
@@ -9668,6 +9668,68 @@ console.log('\n== 天数口径守卫 ==')
   assert(/ship-strake-\$\{side > 0 \? 'port' : 'stbd'\}/.test(ship), '护舷木条左右各一条')
   const strake = ship.match(/const strakeMat = new THREE\.MeshLambertMaterial\(\{ color: 0x([0-9a-f]{6}) \}\)/)
   assert(!!strake, '护舷木条用不透明的 Lambert（不是 Basic 贴片）')
+}
+
+/*
+ * ---- 三个水手必须各有姿态，而且舵手的手真的落在轮盘上 ----
+ *
+ * 【守什么】上一轮三个人是同样的垂手挺立 —— 从甲板上看是三根位置不同的木桩。
+ * "岗位"这件事靠**身体**表达：掌舵的人握着轮、清点的人弯着腰、瞭望的人举着手。
+ * 两条不变量：
+ *  ① 三个岗位的姿态不能有两个完全相同（改了数据退化成"都一样"时，画面会静悄悄
+ *     退回三根木桩，没有任何报错）；
+ *  ② 舵手的手必须落在**轮盘范围内** —— 站位、手臂角度、臂长三个数一起决定这件事，
+ *     改任何一个都可能变成"对着空气扶"（这一版改了三次才对上）。
+ */
+{
+  const kinds = ['helm', 'hatch', 'bow'] as const
+  // ① 两两不同
+  for (let i = 0; i < kinds.length; i++) {
+    for (let j = i + 1; j < kinds.length; j++) {
+      const a = JSON.stringify(SAILOR_POSES[kinds[i]])
+      const b = JSON.stringify(SAILOR_POSES[kinds[j]])
+      assert(a !== b, `${kinds[i]} 与 ${kinds[j]} 的姿态不同`)
+    }
+  }
+  // 角度都在人体范围内
+  for (const k of kinds) {
+    const p = SAILOR_POSES[k]
+    assert(p.lean >= 0 && p.lean <= 0.8, `${k} 的前倾 ${p.lean} 在 0..0.8 rad`)
+    assert(p.sink >= 0 && p.sink <= 0.2, `${k} 的下沉 ${p.sink} 在 0..0.2 m`)
+    for (const a of [p.armLX, p.armRX]) {
+      assert(a <= 0.35 && a >= -2.6, `${k} 的手臂角 ${a} 在 −2.6..0.35 rad（不甩到背后）`)
+    }
+    assert(Math.abs(p.headTilt) < 0.6, `${k} 的头俯仰 ${p.headTilt} 不超过 0.6 rad`)
+  }
+  // 舵手：两臂对称（不对称的手扶不住轮）
+  assert(SAILOR_POSES.helm.armLX === SAILOR_POSES.helm.armRX, '舵手两臂对称')
+  assert(Math.abs(SAILOR_POSES.helm.armLZ + SAILOR_POSES.helm.armRZ) < 1e-9, '舵手两臂的外张互为反向')
+  // 清点的人必须真的弯腰
+  assert(SAILOR_POSES.hatch.lean > 0.4, `舱口的人弯腰 ${SAILOR_POSES.hatch.lean} > 0.4 rad`)
+  // 瞭望的人只举一只手臂
+  assert(Math.abs(SAILOR_POSES.bow.armLX - SAILOR_POSES.bow.armRX) > 1, '船首的人只举一只手臂')
+
+  /*
+   * ② 舵手的手落在轮盘内。
+   * 轮盘：中心 (0, 1.0, −10.9)、半径 0.72（在 xy 平面上，轮平面法线是 z）。
+   * 手的水平位置 = 站位 + 手臂方向的水平分量 × 臂长。
+   */
+  const ARM_LEN = 0.56
+  const helmSt = SAILOR_STATIONS.find((s) => s.kind === 'helm')!
+  const armX = SAILOR_POSES.helm.armRX
+  /*
+   * 手臂几何朝 **−y** 延伸，所以经过 Rx(armX) 之后的方向是 (0, −cos, −sin)：
+   *   Rx(θ)·(0,−1,0) = (0, −cosθ, −sinθ)
+   * 第一版把 sin 的符号写反（(0,−cos,+sin)），算出来手在 z=−12.0（船尾方向），
+   * 而轮盘在 −10.9 —— 判据当场把这个符号错抓了出来。
+   */
+  const tipY = -ARM_LEN * Math.cos(armX)
+  const tipZ = -ARM_LEN * Math.sin(armX)
+  const handY = 1.33 + tipY
+  const handZ = -10.9 + (helmSt.z + tipZ + 10.9) // = helmSt.z + tipZ
+  const distToHub = Math.hypot(helmSt.x, handY - 1.0)
+  assert(handZ > -10.95 && handZ < -10.75, `手在轮盘平面上（z=${handZ.toFixed(2)}，轮在 −10.9）`)
+  assert(distToHub < 0.72, `手落在轮盘半径内（到轮心 ${distToHub.toFixed(2)} < 0.72）`)
 }
 
 console.log(`\n最终结果：${passed} 通过 / ${failed} 失败`)

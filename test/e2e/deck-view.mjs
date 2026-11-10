@@ -460,6 +460,47 @@ await sleep(1400)
 await page.evaluate(() => { window.__skyOff = 0 })
 await sleep(600)
 
+// ---- ⑤i 三个岗位的姿态必须不同（不是三根一样的木桩）----
+// 前面的用例把船员清零了（那是另一条断言），这里先恢复：三个人要同时在场
+await page.evaluate(() => {
+  const st = window.__gameStore.getState()
+  const flag = st.fleet.ships.find((x) => x.id === st.fleet.flagshipId) ?? st.fleet.ships[0]
+  window.__gameStore.setState({
+    fleet: {
+      ...st.fleet,
+      ships: st.fleet.ships.map((sh) => (sh.id === flag.id ? { ...sh, crew: 26 } : sh)),
+    },
+  })
+})
+await sleep(1200)
+const poses = await page.evaluate(() => {
+  const out = {}
+  for (const kind of ['helm', 'hatch', 'bow']) {
+    const g = window.__deckScene.getObjectByName(`ship-sailor-${kind}`)
+    if (!g) { out[kind] = null; continue }
+    const upper = g.children.find((c) => c.type === 'Group')
+    /*
+     * 手臂 = **圆柱**、高 0.56。必须同时判类型：躯干是 BoxGeometry，它的
+     * parameters.height 也是 0.56 —— 只按高度筛会连躯干一起抓进来（实测 3 个）。
+     */
+    const arms = (upper ? upper.children : []).filter(
+      (c) => c.isMesh && c.geometry?.type === 'CylinderGeometry' && c.geometry?.parameters?.height === 0.56,
+    )
+    out[kind] = upper
+      ? { lean: +upper.rotation.x.toFixed(2), arms: arms.map((a) => +a.rotation.x.toFixed(2)), visible: g.visible }
+      : null
+  }
+  return out
+})
+check(!!poses.helm?.visible, '舵手在甲板上（初始船员 15 → 至少两人）')
+check(poses.helm && poses.helm.arms.length === 2, `舵手有两条手臂（实测 ${poses.helm?.arms?.length}）`)
+check(poses.helm && poses.helm.arms[0] === poses.helm.arms[1],
+  `舵手两臂对称（${poses.helm?.arms?.join(' / ')}）`)
+check(poses.helm && poses.helm.arms[0] < -1, `舵手手臂前伸到轮上（${poses.helm?.arms?.[0]} rad）`)
+check(poses.hatch && poses.hatch.lean > 0.4, `舱口的人弯着腰（lean=${poses.hatch?.lean}）`)
+check(poses.hatch && Math.abs(poses.hatch.arms[0] - poses.helm.arms[0]) > 0.3,
+  '舱口的人手臂角度与舵手不同（各有各的动作）')
+
 // ---- ⑥ 回海图：场景要真的被拆掉（不能留一个跑着的 rAF）----
 await page.evaluate(() => document.querySelector('[data-testid=deck-view-close]')?.click())
 await sleep(1200)
