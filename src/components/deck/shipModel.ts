@@ -651,14 +651,39 @@ export function createDeckShip(): DeckShip {
   curve(bowTip, new V(0, 2.0, 17.6), 0.35, false)
   curve(bowTip, new V(-3.4, 2.1, 14.2), 0.4, true)
   curve(bowTip, new V(3.4, 2.1, 14.2), 0.4, true)
-  // 侧支索：从桅顶到舷边，左右各三组
+  /*
+   * 侧支索：从桅顶到舷边，左右各三组。
+   * 中间那道是**绳梯**（ratlines）：三条支索之间每隔一段架一根横档，水手踩着它上桅。
+   * 只有三条斜线时，抬头看桅杆读作"几根绳子"；加了横档才是"能爬上去的东西"。
+   * 横档跟着支索的曲度插值，所以不会浮在绳子外面。
+   */
+  const rungPts: THREE.Vector3[] = []
   for (const m of mastData) {
     for (const s of [-1, 1]) {
-      for (const dz of [-1.6, 0, 1.6]) {
-        curve(new V(0, m.top - 1.2, m.z), new V(s * shipHalfWidthAt(m.z + dz) * 0.92, shipDeckAt(m.z + dz) + BULWARK, m.z + dz), 0.25, false)
+      const top = new V(0, m.top - 1.2, m.z)
+      const feet = [-1.6, 0, 1.6].map((dz) => new V(
+        s * shipHalfWidthAt(m.z + dz) * 0.92,
+        shipDeckAt(m.z + dz) + BULWARK,
+        m.z + dz,
+      ))
+      for (const f of feet) curve(top.clone(), f.clone(), 0.25, false)
+      // 相邻两道支索之间架横档
+      for (let i = 0; i < feet.length - 1; i++) {
+        for (let t = 0.18; t < 0.92; t += 0.075) {
+          const a = top.clone().lerp(feet[i], t)
+          const b = top.clone().lerp(feet[i + 1], t)
+          // 侧支索是向下垂的（curve 里 sag 0.25 在两端点之间），横档跟着微微下垂
+          a.y -= Math.sin(t * Math.PI) * 0.25 * (1 - t)
+          b.y -= Math.sin(t * Math.PI) * 0.25 * (1 - t)
+          rungPts.push(a, b)
+        }
       }
     }
   }
+  const rungGeo = new THREE.BufferGeometry().setFromPoints(rungPts)
+  const rungMat = new THREE.LineBasicMaterial({ color: 0x3a3324, transparent: true, opacity: 0.75 })
+  group.add(new THREE.LineSegments(rungGeo, rungMat))
+  disposables.push(rungGeo, rungMat)
   const rigGeo = new THREE.BufferGeometry().setFromPoints(rigPts)
   const rigMat = new THREE.LineBasicMaterial({ color: 0x2a2419, transparent: true, opacity: 0.85 })
   group.add(new THREE.LineSegments(rigGeo, rigMat))
