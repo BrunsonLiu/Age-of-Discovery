@@ -9643,5 +9643,32 @@ console.log('\n== 天数口径守卫 ==')
   assert(sternWake > 0.3, `船尾后方中线有尾迹（实测 ${sternWake.toFixed(2)}）`)
 }
 
+/*
+ * ---- 不受光的材质必须自己跟日相；艉灯必须挂在船尾最高处 ----
+ *
+ * 【守什么】两条都是"夜里才看得出"的错：
+ *  ① 水线湿痕、舱内窗玻璃用的是 MeshBasicMaterial（不受光、颜色恒定）。船壳是
+ *     Lambert，夜里几乎全黑 —— 于是那条湿痕在夜里比整条船还亮，像贴了条胶带。
+ *     所有 Basic 材质都必须显式按 night 插值。
+ *  ② 艉灯如果挂在楼顶 **下方**，从船后上方看会被楼顶挡住一半（第一版就是），
+ *     只在画面上露出一个橘点。它必须在楼顶之上。
+ */
+{
+  const ship = readFileSync(join(process.cwd(), 'src', 'components', 'deck', 'shipModel.ts'), 'utf8')
+  assert(/wetMatRef\.color\.copy\(WET_DAY\)\.lerp\(WET_NIGHT, night\)/.test(ship),
+    '水线湿痕的颜色随夜色插值（Basic 材质不会自己变暗）')
+  assert(/cabinGlassMat\.color\.copy\(CABIN_GLASS_DAY\)\.lerp\(CABIN_GLASS_NIGHT, night\)/.test(ship),
+    '舱内窗玻璃同样跟随夜色')
+  // 艉灯：高度必须在楼顶之上（楼顶 = shipDeckAt(-14.6) + 2.7，灯再加 ≥1）
+  const m = ship.match(/lantern\.position\.set\(0, shipDeckAt\(-14\.6\) \+ ([\d.]+)/)
+  assert(!!m, '找得到艉灯的位置表达式')
+  assert(Number(m![1]) >= 3.6, `艉灯高于楼顶（偏移 ${m![1]}，楼顶在 +2.7）`)
+  assert(/ship-stern-lantern/.test(ship), '艉灯有名字（能定位、能被 e2e 断言）')
+  // 护舷木条：两侧各一条，且用不透明材质（半透明的贴片在夜里会消失）
+  assert(/ship-strake-\$\{side > 0 \? 'port' : 'stbd'\}/.test(ship), '护舷木条左右各一条')
+  const strake = ship.match(/const strakeMat = new THREE\.MeshLambertMaterial\(\{ color: 0x([0-9a-f]{6}) \}\)/)
+  assert(!!strake, '护舷木条用不透明的 Lambert（不是 Basic 贴片）')
+}
+
 console.log(`\n最终结果：${passed} 通过 / ${failed} 失败`)
 if (failed > 0) process.exit(1)

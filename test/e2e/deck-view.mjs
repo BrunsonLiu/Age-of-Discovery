@@ -406,6 +406,60 @@ await page.evaluate(() => {
 })
 await sleep(500)
 
+// ---- ⑤h 艉灯与护舷木条：物件在位，夜里那盏灯真的亮 ----
+const sternLamp = await page.evaluate(() => {
+  const lantern = window.__deckScene.getObjectByName('ship-stern-lantern')
+  if (!lantern) return null
+  const THREE = window.__THREE
+  const v = new THREE.Vector3()
+  lantern.getWorldPosition(v)
+  const lights = []
+  lantern.traverse((o) => { if (o.isLight) lights.push(+o.intensity.toFixed(3)) })
+  return { y: +v.y.toFixed(3), lights, sprites: lantern.children.filter((o) => o.isSprite).length }
+})
+check(!!sternLamp, '船尾有艉灯（ship-stern-lantern）')
+check(sternLamp && sternLamp.lights.length === 1, `艉灯带一盏点光（实测 ${sternLamp?.lights.length}）`)
+check(sternLamp && sternLamp.y > 0.15, `艉灯在船尾高处（世界 y=${sternLamp?.y}）`)
+
+const strakes = await page.evaluate(() => {
+  const out = {}
+  for (const n of ['ship-strake-port', 'ship-strake-stbd']) {
+    const o = window.__deckScene.getObjectByName(n)
+    out[n] = o ? o.geometry.attributes.position.count : null
+  }
+  return out
+})
+check(strakes['ship-strake-port'] === 58 && strakes['ship-strake-stbd'] === 58,
+  `左右舷护舷木条都是 29×2 顶点（实测 ${strakes['ship-strake-port']} / ${strakes['ship-strake-stbd']}）`)
+
+/*
+ * 夜里：艉灯的点光必须亮（白天被 litK 压成 0.0165）。
+ * 先把 performance.now 的偏移装上 —— 这个脚本原先没装，所以"推到夜里"那句是空操作，
+ * 断言拿到的是白天的值（实测 0.019）。推完必须复位，否则后面所有断言都在夜里跑。
+ */
+await page.evaluate(() => {
+  if (!window.__skyBase) {
+    const real = performance.now.bind(performance)
+    window.__skyBase = real()
+    window.__skyOff = 0
+    performance.now = () => real() + window.__skyOff
+  }
+  window.__skyOff = (0.72 - 0.18) * 480000
+})
+await sleep(1800)
+const lampNight = await page.evaluate(() => {
+  const lantern = window.__deckScene.getObjectByName('ship-stern-lantern')
+  let v = 0
+  lantern.traverse((o) => { if (o.isLight) v = o.intensity })
+  return +v.toFixed(3)
+})
+check(lampNight > 0.2, `夜里艉灯点亮（点光 ${lampNight}）`)
+await page.evaluate(() => { window.__skyOff = (0.25 - 0.18) * 480000 })
+await sleep(1400)
+// 复位到"不偏移"，别把后面的断言留在某个特定时刻
+await page.evaluate(() => { window.__skyOff = 0 })
+await sleep(600)
+
 // ---- ⑥ 回海图：场景要真的被拆掉（不能留一个跑着的 rAF）----
 await page.evaluate(() => document.querySelector('[data-testid=deck-view-close]')?.click())
 await sleep(1200)

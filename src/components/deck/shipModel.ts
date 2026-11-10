@@ -107,6 +107,16 @@ function contactShadowTexture(): THREE.CanvasTexture {
 export function createDeckShip(): DeckShip {
   /** 简写：本文件里到处要写三维点 */
   const V = THREE.Vector3
+  /**
+   * 任意高度处的船体半宽：截面是半椭圆（与炮门、放样用同一个公式），
+   * 给定 y 反解出该高度的 x。→ 水线泡沫带与湿痕都靠它贴到船壳上。
+   */
+  const hullHalfWidthAtY = (z: number, y: number): number => {
+    const deck = shipDeckAt(z)
+    const keel = shipKeelAt(z)
+    const cosA = (deck - y) / (deck + keel)
+    return shipHalfWidthAt(z) * Math.sqrt(Math.max(0, 1 - cosA * cosA))
+  }
   const group = new THREE.Group()
   group.name = 'deck-ship'
   const disposables: (THREE.BufferGeometry | THREE.Material | THREE.Texture)[] = []
@@ -304,6 +314,8 @@ export function createDeckShip(): DeckShip {
   let cabinLamp: THREE.PointLight | null = null
   /** 艉窗透进来的冷光（给舱内拉色相层次） */
   let cabinWindowLamp: THREE.PointLight | null = null
+  /** 水线湿痕的材质：**不受光**（Basic），所以必须自己跟夜色，否则夜里比船壳亮 */
+  let wetMatRef: THREE.MeshBasicMaterial | null = null
   /** 舱内那三扇窗的玻璃：**不受光**，直接用天空色（白天亮、夜里暗） */
   let cabinGlassMat: THREE.MeshBasicMaterial | null = null
   /** 往海图上画航线（方位 + 剩余距离）；未进舱时为 null */
@@ -728,6 +740,109 @@ export function createDeckShip(): DeckShip {
     windowLight.position.set(-1.9, 1.02, -halfD + 1.3)
     cabin.add(windowLight)
     cabinWindowLamp = windowLight
+  }
+
+  /*
+   * ---------------- 艉灯（stern lantern） ----------------
+   *
+   * 【为什么它值得单独做一盏】真实帆船的船尾挂一盏（或三盏）灯 —— 那是夜里
+   * 从后面判断"这是一条船、朝哪走"的唯一信号。我们的船尾原来只有六扇窗，
+   * 从船后看过去是"一排亮窗"，缺一个明确的光源标志。
+   *
+   * 做法与甲板的灯笼同一套（`warmMats` / `warmGlows` / `warmLights`），
+   * 所以白天它会自动暗下去（`litK` 那条曲线），不需要另写一份日夜判断。
+   */
+  {
+    const lantern = new THREE.Group()
+    lantern.name = 'ship-stern-lantern'
+    /*
+     * 位置：船尾楼**顶上 1.1 米**、后壁外一点。
+     * 【为什么不是挂在后壁侧面】第一版挂在楼顶后方 0.65 米，从船后上方看，楼顶
+     * 正好挡住它的一半 —— 只露出一个橘点（实测截图）。挂到楼顶之上 1.1 米之后，
+     * 从任何俯角它都在"船尾最高处"，与真实艉灯的位置一致。
+     */
+    lantern.position.set(0, shipDeckAt(-14.6) + 4.0, -17.45)
+    // 竖杆：从楼顶伸上来（灯笼是"立在船尾最高处"，不是斜挑出去的）
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.032, 0.04, 1.3, 6), brassMat)
+    pole.position.set(0, -0.42, 0.12)
+    lantern.add(pole)
+    const cap = new THREE.Mesh(new THREE.ConeGeometry(0.24, 0.2, 8), brassMat)
+    cap.position.y = 0.26
+    lantern.add(cap)
+    // 玻璃：复用 windowMat（它已经在 warmMats 里，白天 0.03、夜里 1）
+    const glass = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, 0.46, 8), windowMat)
+    glass.position.y = 0
+    lantern.add(glass)
+    // 四根铜棱：让灯笼不是一根圆柱
+    for (let i = 0; i < 4; i++) {
+      const a = (i / 4) * Math.PI * 2 + Math.PI / 4
+      const bar = new THREE.Mesh(new THREE.BoxGeometry(0.026, 0.48, 0.026), brassMat)
+      bar.position.set(Math.cos(a) * 0.18, 0, Math.sin(a) * 0.18)
+      lantern.add(bar)
+    }
+    const base = new THREE.Mesh(new THREE.CylinderGeometry(0.21, 0.19, 0.07, 8), brassMat)
+    base.position.y = -0.27
+    lantern.add(base)
+    // 光晕：与甲板灯笼同一张 sprite（加法混合）
+    const glow = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: glowTex, color: 0xffa64e, transparent: true, opacity: 0,
+      depthWrite: false, blending: THREE.AdditiveBlending,
+    }))
+    glow.scale.setScalar(3.2)
+    glow.position.y = 0
+    lantern.add(glow)
+    warmGlows.push(glow)
+    // 点光：照船尾那一小块甲板（distance 是**世界单位**，船缩了 0.05）
+    const lamp = new THREE.PointLight(0xffb066, 0.55, 0.5, 2)
+    lamp.position.y = 0.02
+    lantern.add(lamp)
+    warmLights.push({ light: lamp, base: 0.55 })
+    group.add(lantern)
+  }
+
+  /*
+   * ---------------- 护舷木条（rubbing strake） ----------------
+   *
+   * 【它是什么】船壳外侧、水线以上的一条凸出的水平木条 —— 靠岸、靠码头、与
+   * 别的船并排时，撞的是它而不是船壳板。几乎每一条老商船都有，而且是"这条船
+   * 用过很多年"最直观的一笔（船体上多了一条硬朗的水平线）。
+   *
+   * 几何与湿痕带同一套做法（沿船体截面反解 x），只是更窄、更凸出（外扩 2.5%
+   * ≈ 10 厘米），用不透明的深木色 —— 它必须是"实心的木条"，不能是半透明贴片。
+   */
+  {
+    const strakeMat = new THREE.MeshLambertMaterial({ color: 0x3d2a18 })
+    disposables.push(strakeMat)
+    /*
+     * 高度：水线以上 2.05~2.3 米（船体偏上、甲板下方 1 米多）。
+     * 【为什么不贴水线】第一版放在水线以上 1.4 米 —— 那里正好是湿痕带（0.9~2.4 米）
+     * 的范围，两条带子叠在一起，画面上只剩一条模糊的灰带（实测截图）。
+     * 挪到湿痕之上，它才是一条**独立**的硬朗水平线。
+     */
+    const S_TOP = WATERLINE_Y_M + 2.3
+    const S_BOT = WATERLINE_Y_M + 2.05
+    for (const side of [-1, 1]) {
+      const pos: number[] = []
+      const idx: number[] = []
+      for (let i = 0; i <= WAKE_SEGMENTS; i++) {
+        const t = i / WAKE_SEGMENTS
+        const z = SHIP_HALF_LENGTH * 0.955 - SHIP_HALF_LENGTH * 1.89 * t
+        pos.push(side * hullHalfWidthAtY(z, S_BOT) * 1.025, S_BOT, z)
+        pos.push(side * hullHalfWidthAtY(z, S_TOP) * 1.025, S_TOP, z)
+        if (i < WAKE_SEGMENTS) {
+          const a = i * 2
+          idx.push(a, a + 2, a + 1, a + 1, a + 2, a + 3)
+        }
+      }
+      const g = new THREE.BufferGeometry()
+      g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
+      g.setIndex(idx)
+      g.computeVertexNormals()
+      const m = new THREE.Mesh(g, strakeMat)
+      m.name = `ship-strake-${side > 0 ? 'port' : 'stbd'}`
+      group.add(m)
+      disposables.push(g)
+    }
   }
 
   group.add(cabin)
@@ -1211,16 +1326,6 @@ export function createDeckShip(): DeckShip {
   wakeGroup.name = 'ship-wake'
   group.add(wakeGroup)
 
-  /**
-   * 任意高度处的船体半宽：截面是半椭圆（与炮门、放样用同一个公式），
-   * 给定 y 反解出该高度的 x。→ 水线泡沫带与湿痕都靠它贴到船壳上。
-   */
-  const hullHalfWidthAtY = (z: number, y: number): number => {
-    const deck = shipDeckAt(z)
-    const keel = shipKeelAt(z)
-    const cosA = (deck - y) / (deck + keel)
-    return shipHalfWidthAt(z) * Math.sqrt(Math.max(0, 1 - cosA * cosA))
-  }
 
   /*
    * ---------------- 水线带：下半白沫、上半湿痕（都贴在船壳上） ----------------
@@ -1250,6 +1355,7 @@ export function createDeckShip(): DeckShip {
       color: 0x2c3a32, transparent: true, opacity: 0.72, depthWrite: false, side: THREE.DoubleSide,
     })
     disposables.push(wetMat)
+    wetMatRef = wetMat
     for (const side of [-1, 1]) {
       // ① 湿痕（深色，水线往上 1.7 米）
       {
@@ -1445,6 +1551,9 @@ export function createDeckShip(): DeckShip {
   /** 舱内窗玻璃的两个端点色（白天 / 夜里） */
   const CABIN_GLASS_DAY = new THREE.Color(0x9fb6c8)
   const CABIN_GLASS_NIGHT = new THREE.Color(0x0a121c)
+  /** 水线湿痕的两个端点色：白天是水藻绿、夜里接近黑 */
+  const WET_DAY = new THREE.Color(0x2c3a32)
+  const WET_NIGHT = new THREE.Color(0x0b110e)
 
   const sailLightDir = { value: new THREE.Vector3(-0.45, 0.42, -0.78).normalize() }
   const sailGlow = { value: new THREE.Color(0, 0, 0) }
@@ -1796,6 +1905,15 @@ export function createDeckShip(): DeckShip {
         g.rotation.y = st.yaw + Math.sin(t * 0.45 + st.phase) * 0.07
         g.position.y = shipDeckAt(st.z) + Math.sin(t * 0.95 + st.phase) * 0.01
       }
+
+      /*
+       * ---- 水线湿痕的颜色 ----
+       * 【为什么要单独写这一行】湿痕用的是 MeshBasicMaterial（不受光），颜色恒定。
+       * 白天它读作"水藻带"，正确；**夜里它比整条船壳还亮**（船壳是 Lambert，夜里
+       * 几乎全黑，而 Basic 还是 0x2c3a32）—— 实测夜景截图里船体中部挂着一条发灰
+       * 的宽带，像贴了一条胶带。夜里必须把它压到接近黑。
+       */
+      if (wetMatRef) wetMatRef.color.copy(WET_DAY).lerp(WET_NIGHT, night)
 
       /*
        * ---- 航迹 ----

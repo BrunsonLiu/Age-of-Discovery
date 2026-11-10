@@ -686,7 +686,15 @@ export default function DeckView() {
            * 不是"蒙了一层灰"）。
            */
           float gate = 0.2 + 1.7 * vnoise(vWorld.xz * 3.6 + 7.0);
-          float spec = pow(max(dot(nn, h), 0.0), 900.0) * gate;
+          /*
+           * ---- 波脊参与高光 ----
+           * 开尔文波的 V 脊是**水面被压出的一道凸起**，它的法线更陡，所以月光在
+           * 那上面会成片地亮起来（真实照片里夜航船的船首波是一条发亮的 V）。
+           * 只做"亮度加法"是不够的：那看起来像画上去的白线；把强度乘进镜面项，
+           * 高光才会沿着波脊碎成一片 —— 与月光道用的是同一套碎光。
+           */
+          float kwSpec = wakeField(vWorld.xz);
+          float spec = pow(max(dot(nn, h), 0.0), 900.0) * gate * (1.0 + kwSpec * 2.6);
           col += uMoon * spec * 0.34 * uMoonK;
           // 浪脊的微弱提亮：让相邻浪面之间有层次，不然海面是一块布
           col += uSky * clamp(n.y - 0.985, 0.0, 1.0) * 0.35;
@@ -712,7 +720,7 @@ export default function DeckView() {
            * 强度乘 uFoamLight：夜里波脊不该是白的（月光下的波脊只是比周围亮一档）。
            */
           {
-            float kw = wakeField(vWorld.xz);
+            float kw = kwSpec;
             /*
              * 【必须打碎】第一版直接按强度加亮，两条波脊是**两条连续的灰白带**，
              * 读作拖拉机履带（实测截图）。真实波脊被浪与风打断成一段段。
