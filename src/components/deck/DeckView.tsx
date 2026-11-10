@@ -89,7 +89,7 @@ function DeckSpotPanel({
   return (
     <div
       data-testid={`deck-spot-${spot}`}
-      className="absolute bottom-24 left-1/2 w-[min(92vw,25rem)] -translate-x-1/2 rounded-lg border border-gold-600/40 bg-[#0a1420]/92 p-3 text-parchment-100 shadow-xl backdrop-blur-md"
+      className="absolute bottom-24 left-1/2 w-[min(92vw,25rem)] -translate-x-1/2 rounded-lg border border-gold-600/40 bg-[#0a1420]/95 p-3 text-parchment-100 shadow-xl backdrop-blur-md"
     >
       <div className="flex items-baseline justify-between">
         <div className="text-xs tracking-[0.3em] text-gold-400">

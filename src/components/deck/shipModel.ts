@@ -547,15 +547,30 @@ export function createDeckShip(): DeckShip {
     const nest = new THREE.Group()
     nest.name = 'ship-crow-group'
     nest.position.set(0, NEST_Y, NEST_Z)
-    // 平台：一圈略厚的圆盘（木板的端面朝向天空，所以用 woodMid 而不是深色）
-    const floor = new THREE.Mesh(new THREE.CylinderGeometry(1.55, 1.3, 0.16, 10), woodMid)
+    /*
+     * 平台：一圈略厚的圆盘。
+     * 【为什么单独给它一个材质】从甲板往上看，看到的是**盘底** —— 它朝下、只吃环境光，
+     * 借 woodMid 时读作"桅杆上挂了一只黑鼓"（实测截图：一个纯黑圆盘，栏杆全被它挡住）。
+     * 给一点自发光把盘底托起来，再加一圈亮边的箍，它才是一个"木台"。
+     */
+    const nestMat = new THREE.MeshStandardMaterial({
+      color: 0x6b4d30, roughness: 0.9, metalness: 0.04,
+      emissive: 0x1d1409, emissiveIntensity: 0.55,
+    })
+    disposables.push(nestMat)
+    const floor = new THREE.Mesh(new THREE.CylinderGeometry(1.34, 1.12, 0.15, 12), nestMat)
     floor.position.y = 0
     nest.add(floor)
+    // 盘沿的一道箍：从下面看是这条边在反天光，圆盘才有厚度
+    const rimBand = new THREE.Mesh(new THREE.TorusGeometry(1.33, 0.055, 5, 18), nestMat)
+    rimBand.rotation.x = Math.PI / 2
+    rimBand.position.y = 0.055
+    nest.add(rimBand)
     // 支撑梁：斜撑到下桅上（没有它那圈平台是"浮"在桅杆上的）
     for (let i = 0; i < 4; i++) {
       const a = (i / 4) * Math.PI * 2 + Math.PI / 4
-      const brace = new THREE.Mesh(new THREE.BoxGeometry(0.09, 1.5, 0.09), woodDark)
-      brace.position.set(Math.cos(a) * 0.72, -0.62, Math.sin(a) * 0.72)
+      const brace = new THREE.Mesh(new THREE.BoxGeometry(0.1, 1.5, 0.1), nestMat)
+      brace.position.set(Math.cos(a) * 0.62, -0.6, Math.sin(a) * 0.62)
       brace.rotation.set(Math.sin(a) * 0.62, 0, -Math.cos(a) * 0.62)
       nest.add(brace)
     }
@@ -576,7 +591,7 @@ export function createDeckShip(): DeckShip {
      * 盒子比平台大一圈：玩家点到"平台附近"就该算点到，而不是必须精确戳中木条。
      */
     const hit = new THREE.Mesh(
-      new THREE.BoxGeometry(3.4, 1.5, 3.4),
+      new THREE.BoxGeometry(3.2, 1.5, 3.2),
       new THREE.MeshBasicMaterial({ visible: false }),
     )
     hit.name = 'ship-crow'

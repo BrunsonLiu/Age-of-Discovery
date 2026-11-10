@@ -169,6 +169,20 @@ if (hatch.text) {
     `面板里的载重与 store 一致（${st.used}/${st.cap}）`)
   check(hatch.text.includes(`粮 ${st.food}`), `面板里的粮与 store 一致（${st.food}）`)
   check(!/金币|gold/i.test(hatch.text), '货舱面板不谈钱（与"不再扩展经济"的方向一致）')
+  /*
+   * 【面板必须真的有不透明背景】
+   * 这条是第 73 轮抓到的真 bug：类名写的是 `bg-[#0a1420]/92`，而 Tailwind 的透明度
+   * 刻度里**没有 92**（0/5/10/20/25/30/40/50/60/70/75/80/90/95/100）——于是整条
+   * `bg-*` 被丢弃，面板算出来是 rgba(0,0,0,0)：一块只有模糊的玻璃，米色文字压在
+   * 亮帆上完全读不出来。截图看着"像设计"，量一次计算样式就露了。
+   */
+  const bg = await page.evaluate(() => {
+    const el = document.querySelector('[data-testid=deck-spot-hatch]')
+    return el ? getComputedStyle(el).backgroundColor : ''
+  })
+  const alpha = Number((bg.match(/rgba?\(([^)]+)\)/) || [])[1]?.split(',')[3] ?? 1)
+  check(/^rgba?\(/.test(bg) && alpha >= 0.85,
+    `面板背景是不透明的（实测 ${bg}，alpha ${alpha}）`)
 }
 
 // ---- ⑤ 点舵轮：转身，面板里的下一站必须与只读提示同源 ----
