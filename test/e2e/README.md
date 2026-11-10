@@ -35,6 +35,7 @@ npm run test:e2e:receipt  # 到港回执：回来的理由常驻 / 与册子同�
 npm run test:e2e:notify   # 通知横幅不挡玩家操作
 npm run test:e2e:mobile   # 移动端布局（390×844 触屏，dev）
 npm run test:e2e:mobile:prod   # 移动端生产产物冒烟（需先 build + vite preview）
+npm run test:e2e:deck     # 船上视角：上甲板 / 走动 / 点舱口与舵轮（真实鼠标）
 npm run test:e2e:live     # 线上冒烟（只走界面、不用 dev 钩子；默认打 GitHub Pages）
 npm run test:e2e:release  # full + live：推送之后跑这一条
 npm run test:e2e:all      # 以上全部（不含 mobile:prod / live）
@@ -42,7 +43,7 @@ npm run test:e2e:all      # 以上全部（不含 mobile:prod / live）
 
 ## 全链分段执行
 
-`test:e2e:all` 一条命令串 19 个脚本 + `seg6` 的 6 个（共 25 个），实测在受限
+`test:e2e:all` 一条命令串起全部脚本（含 `seg6` 的 8 个），实测在受限
 环境里跑到第 9 个就被 10 分钟上限 SIGTERM 掉（前 8 个日志 0 个 `✗`，**不是测试红**）。
 本机终端没有这个限制，可以直接 `npm run test:e2e:all`；受限环境按 7 段跑，
 每段一条单独命令：
@@ -53,7 +54,7 @@ npm run test:e2e:seg2   # 2.5D 海图 / 贸易报价      （3D 单项约 350~46
 npm run test:e2e:seg3   # 三档可点性 / 港口服务按钮 / 航海日志
 npm run test:e2e:seg4   # 多视口布局 / 岸上 / 小字 / 文案密度
 npm run test:e2e:seg5   # 真实首局 / 参观模式 / 中文字体覆盖
-npm run test:e2e:seg6   # 首分钟三屏 / 彩蛋不打断 / 对比度 / 天气 / 纸纹 / 3D 漂流物
+npm run test:e2e:seg6   # 首分钟三屏 / 彩蛋不打断 / 对比度 / 天气 / 纸纹 / 3D 漂流物 / 遗物 / 船上视角
 npm run test:e2e:seg7   # 补给对账 / 常驻下一站 / 到港回执 / 通知 / 移动端布局
 ```
 
@@ -61,7 +62,7 @@ npm run test:e2e:seg7   # 补给对账 / 常驻下一站 / 到港回执 / 通知
 5 个脚本后整段超过 10 分钟被 SIGTERM（实测 526s 仍只是前两项跑完）。拆开后
 seg2 约 357s、seg7 约 194s，都留了余量。**新增巡检时先估时长再决定放哪一段。**
 
-**seg6 是第 26 轮补进来的**：这 6 个脚本都自带失败退出、清存档、只需 dev server，
+**seg6 是第 26 轮补进来的**：这 8 个脚本都自带失败退出、清存档、只需 dev server，
 却常年不在任何分段里，只靠手工跑；补进来当天就查出 `intro-check` 天赋页 2 段
 12px 文字对比度不达标（3.92 / 4.4，AA 要 4.5），以及 `no-dialogue-interrupt`
 因「上岸走走」关面板后残留对白造成的前置污染。**`debris-3d` 排在段尾**：

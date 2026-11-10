@@ -1,6 +1,17 @@
 import * as THREE from 'three'
 import { createGlowTexture } from '@/components/map3d/models'
 import { normalFromCanvas, plankCanvas, sailAlphaCanvas, sailCanvas, texFrom } from './shipTextures'
+import {
+  HULL_BULWARK, HULL_STATIONS, SHIP_HALF_LENGTH,
+  shipDeckAt, shipDeckHalfWidthAt, shipHalfWidthAt,
+} from './shipShape'
+import { buildHullGeo } from './shipHull'
+
+/*
+ * 形状与缩放的定义搬到了 `shipShape.ts`（纯数字，可在单测里跑），这里转出去，
+ * 免得甲板行走与测试改 import 路径。**不要在这里再写一遍公式**。
+ */
+export { SHIP_SCALE, shipDeckAt, shipHalfWidthAt } from './shipShape'
 
 /**
  * 船上视角的船：按"放样 + 帆装 + 索具"重建，不是几个方块拼的。
@@ -21,32 +32,8 @@ import { normalFromCanvas, plankCanvas, sailAlphaCanvas, sailCanvas, texFrom } f
  * 剪影与细节都对得上"帆船"这个物件。
  */
 
-/**
- * 船体的模型尺度（**甲板行走也用这一套**，不要再写一遍）。
- * 半长 18、船宽 10；调用方整体缩到场景里（`SHIP_SCALE` 0.05 → 总长 1.8 单位）。
- */
-const HALF = 18
-const BEAM = 10
-/** 船模型 → 世界单位的统一缩放（甲板行走要用它换算人眼高度与步速） */
-export const SHIP_SCALE = 0.05
-const STATIONS = 30
-const ARC = 10
-const BULWARK = 0.95
-
-export function shipHalfWidthAt(z: number): number {
-  const t = Math.min(1, Math.abs(z) / HALF)
-  return z > 0
-    ? (BEAM / 2) * (1 - 0.78 * Math.pow(t, 2.6))
-    : (BEAM / 2) * (1 - 0.42 * Math.pow(t, 1.9))
-}
-function keelAt(z: number): number {
-  const t = Math.min(1, Math.abs(z) / HALF)
-  return z > 0 ? 3.1 * (1 - 0.62 * Math.pow(t, 1.35)) : 3.1 * (1 - 0.28 * Math.pow(t, 1.5))
-}
-export function shipDeckAt(z: number): number {
-  const t = Math.min(1, Math.abs(z) / HALF)
-  return 1.32 + 0.62 * Math.pow(t, 2.4)
-}
+/** 舷墙高度（甲板面往上），贴图与桅杆都要用；定义在 shipShape 里 */
+const BULWARK = HULL_BULWARK
 
 export interface DeckShip {
   group: THREE.Group
@@ -62,67 +49,51 @@ export function createDeckShip(): DeckShip {
 
   // ---------------- 贴图 ----------------
   const hullCanvas = plankCanvas({ seed: 4471, along: 'h', rows: 9, base: [86, 58, 36], seamW: 2.2 })
-  const deckCanvas = plankCanvas({ seed: 9917, along: 'v', rows: 14, base: [116, 86, 55], seamW: 1.6 })
+  /*
+   * 甲板木板：rows 24（约 0.39 米一条，接近真实板宽；14 条时每条 0.67 米，
+   * 脚边读成"木地板"而不是"船板"），1024 边长 + 端头接缝。
+   *
+   * grain: 0 —— 不要年轮线。船壳是立着的面、看的是"板缝 + 木纹"；甲板是
+   * **平的面**，视线掠着扫过去，任何一条沿板长方向的波浪线都被拉成"水波纹"
+   * （实测两版截图都是这样）。
+   * wear: 0.15 —— 不要钉子。钉子在 512 的贴图里只有 1.4px，掠射角下被过滤成
+   * 一小段短线，密密麻麻排在板缝旁，整片甲板读成"砖砌地面"（放大截图实测）。
+   */
+  const deckCanvas = plankCanvas({
+    seed: 9917, along: 'v', rows: 24, base: [122, 90, 58], seamW: 2.4,
+    grain: 0, wear: 0.15, size: 1024, buttJoints: true,
+  })
   const hullTex = texFrom(hullCanvas, true)
   const hullNormal = normalFromCanvas(hullCanvas, 2.2)
   const deckTex = texFrom(deckCanvas, true)
-  const deckNormal = normalFromCanvas(deckCanvas, 2.6)
   hullTex.repeat.set(1, 3)
-  deckTex.repeat.set(1, 1)
+  // 甲板沿船长方向重复 3 次：板是整根长的，重复的是木纹，衔接处在脚边看不出来
+  deckTex.repeat.set(1, 3)
   const sailTex = texFrom(sailCanvas(7), true)
   const sailAlpha = texFrom(sailAlphaCanvas(11), false)
   const glowTex = createGlowTexture()
-  disposables.push(hullTex, hullNormal, deckTex, deckNormal, sailTex, sailAlpha, glowTex)
+  // 取证句柄：贴图是程序化生成的，出问题时唯一直接的办法是把 canvas 本身导出来看
+  group.userData.sourceCanvases = { hull: hullCanvas, deck: deckCanvas, sail: sailCanvas(7) }
+  disposables.push(hullTex, hullNormal, deckTex, sailTex, sailAlpha, glowTex)
 
-  const woodDark = new THREE.MeshStandardMaterial({ color: 0x2c1e12, roughness: 0.88, metalness: 0.05 })
-  const woodMid = new THREE.MeshStandardMaterial({ color: 0x4a3320, roughness: 0.86, metalness: 0.05 })
+  const woodDark = new THREE.MeshStandardMaterial({ color: 0x3a2918, roughness: 0.9, metalness: 0.05 })
+  const woodMid = new THREE.MeshStandardMaterial({ color: 0x5c4129, roughness: 0.88, metalness: 0.05 })
   const ironMat = new THREE.MeshStandardMaterial({ color: 0x2a2a2c, roughness: 0.82, metalness: 0.35 })
   const brassMat = new THREE.MeshStandardMaterial({ color: 0x9d7a3c, roughness: 0.45, metalness: 0.7 })
-  const mastMat = new THREE.MeshStandardMaterial({ color: 0x1d150e, roughness: 0.85, metalness: 0.08 })
+  /*
+   * 桅杆色 0x33251a（原 0x1d150e）：0x1d150e 在 ACES 下几乎是纯黑，站到甲板上
+   * 时主桅是一根贯穿画面的黑柱子（实测截图），读作"穿模的圆柱"而不是木桅。
+   * 焦油涂过的木头是深棕，不是黑。
+   */
+  const mastMat = new THREE.MeshStandardMaterial({ color: 0x33251a, roughness: 0.85, metalness: 0.08 })
 
   // ---------------- 船体放样 ----------------
-  const verts: number[] = []
-  const uvs: number[] = []
-  const indices: number[] = []
-  const sectionCount = ARC + 2
-  for (let i = 0; i <= STATIONS; i++) {
-    const z = -HALF + 2 * HALF * (i / STATIONS)
-    const w = shipHalfWidthAt(z)
-    const depth = keelAt(z)
-    const dy = shipDeckAt(z)
-    verts.push(-w * 0.965, dy + BULWARK, z)
-    uvs.push(0, i / STATIONS)
-    for (let k = 0; k <= ARC; k++) {
-      const a = -Math.PI / 2 + (k / ARC) * Math.PI
-      verts.push(w * Math.sin(a), dy - (dy + depth) * Math.cos(a), z)
-      uvs.push((k + 1) / (sectionCount - 1), i / STATIONS)
-    }
-    verts.push(w * 0.965, dy + BULWARK, z)
-    uvs.push(1, i / STATIONS)
-  }
-  for (let i = 0; i < STATIONS; i++) {
-    for (let j = 0; j < sectionCount - 1; j++) {
-      const a = i * sectionCount + j
-      const b = a + sectionCount
-      indices.push(a, b, a + 1, b, b + 1, a + 1)
-    }
-  }
-  // 首尾封板：从中心点扇形连到该站位的截面
-  const cap = (stationIndex: number, atZ: number) => {
-    const base = stationIndex * sectionCount
-    const dy = shipDeckAt(atZ)
-    const centerIndex = verts.length / 3
-    verts.push(0, dy * 0.1 - keelAt(atZ) * 0.45, atZ)
-    uvs.push(0.5, 1)
-    for (let j = 0; j < sectionCount - 1; j++) indices.push(centerIndex, base + j, base + j + 1)
-  }
-  cap(0, -HALF)
-  cap(STATIONS, HALF)
-
+  // 几何在 `shipHull.ts` 里生成（纯数组、可单测）；这里只负责贴到 BufferGeometry 上
+  const hullData = buildHullGeo()
   const hullGeo = new THREE.BufferGeometry()
-  hullGeo.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3))
-  hullGeo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2))
-  hullGeo.setIndex(indices)
+  hullGeo.setAttribute('position', new THREE.Float32BufferAttribute(hullData.positions, 3))
+  hullGeo.setAttribute('uv', new THREE.Float32BufferAttribute(hullData.uvs, 2))
+  hullGeo.setIndex(hullData.indices)
   hullGeo.computeVertexNormals()
   const hullMat = new THREE.MeshStandardMaterial({
     color: 0xffffff,
@@ -131,12 +102,23 @@ export function createDeckShip(): DeckShip {
     normalScale: new THREE.Vector2(0.9, 0.9),
     roughness: 0.76,
     metalness: 0.06,
-    // 极弱自发光：夜里背光面不至于变成纯黑洞（海图那边同一条经验）
-    emissive: 0x0d1620,
-    emissiveIntensity: 0.35,
+    /*
+     * 极弱自发光：夜里背光面不至于变成纯黑洞（海图那边同一条经验）。
+     * 0.5 / 0x121c26 是第二轮调过的值：舷墙**内侧**是背光面，站上甲板时
+     * 它占了画面右半边，0.35 时读作一堵黑墙（实测 rgb 28/31/38，与夜空的
+     * 对比几乎为零），抬到这里之后能看出是木板。
+     */
+    emissive: 0x121c26,
+    emissiveIntensity: 0.5,
     side: THREE.DoubleSide,
   })
+  /*
+   * 【网格必须命名】甲板视角是"贴着物件看"，构图出问题时唯一可靠的定位手段是
+   * 从屏幕某点发一条射线，读命中的是谁。第一版全部无名，探针只能报
+   * "(无名) BufferGeometry #ffffff" —— 船壳与甲板两条都长这样，分不出来。
+   */
   const hull = new THREE.Mesh(hullGeo, hullMat)
+  hull.name = 'ship-hull'
   group.add(hull)
   disposables.push(hullGeo, hullMat)
 
@@ -144,14 +126,14 @@ export function createDeckShip(): DeckShip {
   const dv: number[] = []
   const du: number[] = []
   const di: number[] = []
-  for (let i = 0; i <= STATIONS; i++) {
-    const z = -HALF + 2 * HALF * (i / STATIONS)
-    const w = shipHalfWidthAt(z) * 0.94
+  for (let i = 0; i <= HULL_STATIONS; i++) {
+    const z = -SHIP_HALF_LENGTH + 2 * SHIP_HALF_LENGTH * (i / HULL_STATIONS)
+    const w = shipDeckHalfWidthAt(z)
     const y = shipDeckAt(z) + 0.03
     dv.push(-w, y, z, w, y, z)
-    du.push(0, i / STATIONS, 1, i / STATIONS)
+    du.push(0, i / HULL_STATIONS, 1, i / HULL_STATIONS)
   }
-  for (let i = 0; i < STATIONS; i++) {
+  for (let i = 0; i < HULL_STATIONS; i++) {
     const a = i * 2
     di.push(a, a + 1, a + 2, a + 1, a + 3, a + 2)
   }
@@ -160,23 +142,24 @@ export function createDeckShip(): DeckShip {
   deckGeo.setAttribute('uv', new THREE.Float32BufferAttribute(du, 2))
   deckGeo.setIndex(di)
   deckGeo.computeVertexNormals()
-  const deckMat = new THREE.MeshStandardMaterial({
+  /*
+   * 【甲板用 Lambert，不用 Standard】这一条是"脚边那块甲板像一汪水"的解法：
+   * 人眼高度看甲板是极限掠射角，Standard 材质的介质镜面反射（F0=0.04）在掠射
+   * 时菲涅尔趋近 1，粗糙度 0.92 也压不住 —— 整片近处甲板把天空镜面反射回来，
+   * 变成一块淡蓝灰色的板（实测截图：脚下像积了水）。干燥的木板本来就只有漫反射，
+   * Lambert 没有镜面项，这里用它才是对的材质。
+   * 顺带：甲板也不要法线贴图 —— 掠射角下板缝被压成断续短线，读作碎砖。
+   */
+  const deckMat = new THREE.MeshLambertMaterial({
     color: 0xffffff,
     map: deckTex,
-    normalMap: deckNormal,
-    /*
-     * 法线强度 0.62（原 1.15）：人眼高度看甲板是**极掠射角**，法线被放得很大，
-     * 板缝读成"一条条凸起十厘米的木条"（截图实测），像堆叠的台阶。
-     */
-    normalScale: new THREE.Vector2(0.62, 0.62),
     emissiveMap: deckTex,
     emissive: 0x6a4a2a,
     emissiveIntensity: 0.3,
-    roughness: 0.92,
-    metalness: 0.04,
     side: THREE.DoubleSide,
   })
   const deck = new THREE.Mesh(deckGeo, deckMat)
+  deck.name = 'ship-deck'
   group.add(deck)
   disposables.push(deckGeo, deckMat)
 
@@ -184,8 +167,8 @@ export function createDeckShip(): DeckShip {
   const railMat = new THREE.LineBasicMaterial({ color: 0xb08a45, transparent: true, opacity: 0.7 })
   for (const s of [-1, 1]) {
     const pts: THREE.Vector3[] = []
-    for (let i = 0; i <= STATIONS; i++) {
-      const z = -HALF + 2 * HALF * (i / STATIONS)
+    for (let i = 0; i <= HULL_STATIONS; i++) {
+      const z = -SHIP_HALF_LENGTH + 2 * SHIP_HALF_LENGTH * (i / HULL_STATIONS)
       pts.push(new THREE.Vector3(s * shipHalfWidthAt(z) * 0.99, shipDeckAt(z) + BULWARK + 0.02, z))
     }
     const g = new THREE.BufferGeometry().setFromPoints(pts)
@@ -197,6 +180,7 @@ export function createDeckShip(): DeckShip {
   // ---------------- 船尾楼 ----------------
   const sternDeck = shipDeckAt(-15)
   const cabin = new THREE.Group()
+  cabin.name = 'ship-cabin'
   cabin.position.set(0, sternDeck + 1.35, -14.6)
   const cabinBox = new THREE.Mesh(new THREE.BoxGeometry(6.6, 2.7, 5.2), woodMid)
   cabin.add(cabinBox)
@@ -262,6 +246,111 @@ export function createDeckShip(): DeckShip {
   transomGold.position.set(0, sternDeck + 2.62, -17.24)
   gallery.add(transomGold)
   group.add(gallery)
+
+  // ---------------- 甲板上的可点物件 ----------------
+  /*
+   * 【为什么要有它们】船上视角原本是一段"能走但没有东西"的过场：玩家在甲板上
+   * 走一圈，除了看什么也做不了。真实船上最常被摸的两件东西就是**货舱口**与
+   * **舵轮** —— 它们正好对应玩家最关心的两组数（载了什么、往哪走）。
+   * 点开的不是文案，而是当前这一局的真实数字（见 DeckView 的 `DeckHotspot`）。
+   */
+  const hatch = new THREE.Group()
+  hatch.name = 'ship-hatch-group'
+  hatch.position.set(0.4, shipDeckAt(5.6) + 0.03, 5.6)
+  {
+    // 舱口围板（coaming）+ 格栅：四根边梁 + 8 根横条
+    const coamingMat = woodDark
+    for (const [ox, oz, w, d] of [[0, -1.15, 3.0, 0.22], [0, 1.15, 3.0, 0.22], [-1.4, 0, 0.22, 2.3], [1.4, 0, 0.22, 2.3]] as const) {
+      const bar = new THREE.Mesh(new THREE.BoxGeometry(w, 0.26, d), coamingMat)
+      bar.position.set(ox, 0.13, oz)
+      hatch.add(bar)
+    }
+    for (let i = 0; i < 8; i++) {
+      const slat = new THREE.Mesh(new THREE.BoxGeometry(2.7, 0.1, 0.16), woodMid)
+      slat.position.set(0, 0.2, -0.92 + i * 0.26)
+      hatch.add(slat)
+    }
+    // 格栅下面是一条黑：近看才读得出"这是个洞"，不是一块板
+    const dark = new THREE.Mesh(
+      new THREE.PlaneGeometry(2.7, 2.2),
+      new THREE.MeshBasicMaterial({ color: 0x0a0705 }),
+    )
+    dark.rotation.x = -Math.PI / 2
+    dark.position.y = 0.11
+    hatch.add(dark)
+    /* 命中体：格栅本身是 8 根细条，点击很难命中 —— 用一个透明的扁盒子兜住整块区域 */
+    const hit = new THREE.Mesh(
+      new THREE.BoxGeometry(3.0, 0.4, 2.4),
+      new THREE.MeshBasicMaterial({ visible: false }),
+    )
+    hit.name = 'ship-hatch'
+    hit.position.y = 0.16
+    hatch.add(hit)
+  }
+  group.add(hatch)
+
+  /*
+   * 舵轮：站到船尾才看得见。两圈轮缘 + 8 根辐条 + 铜毂 + 立柱，尺寸按真舵轮
+   * （轮径 1.5 米）来 —— 它必须比手大得多，玩家才知道"这是要两个人转的东西"。
+   */
+  const wheel = new THREE.Group()
+  wheel.name = 'ship-wheel-group'
+  wheel.position.set(0, shipDeckAt(-12.2) + 0.03, -12.2)
+  {
+    const stand = new THREE.Mesh(new THREE.BoxGeometry(0.5, 1.1, 0.5), woodDark)
+    stand.position.y = 0.55
+    wheel.add(stand)
+    const column = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.18, 0.9, 8), woodMid)
+    column.position.set(0, 1.5, 0)
+    wheel.add(column)
+    const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.22, 0.34, 10), brassMat)
+    hub.position.set(0, 1.95, 0)
+    hub.rotation.x = Math.PI / 2
+    wheel.add(hub)
+    // 轮缘：内外两圈（真舵轮的轮缘是拼木的，两圈之间是辐条）
+    for (const r of [0.72, 0.62]) {
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(r, 0.055, 6, 24), woodMid)
+      ring.position.y = 1.95
+      wheel.add(ring)
+    }
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2
+      const spoke = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.72, 0.07), woodMid)
+      spoke.position.set(Math.cos(a) * 0.36, 1.95 + Math.sin(a) * 0.36, 0)
+      spoke.rotation.z = a - Math.PI / 2
+      wheel.add(spoke)
+      // 手柄：辐条伸出轮缘的那一小截
+      const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.3, 6), brassMat)
+      handle.position.set(Math.cos(a) * 0.82, 1.95 + Math.sin(a) * 0.82, 0)
+      handle.rotation.z = a
+      wheel.add(handle)
+    }
+    const hit = new THREE.Mesh(
+      new THREE.BoxGeometry(1.9, 1.9, 0.5),
+      new THREE.MeshBasicMaterial({ visible: false }),
+    )
+    hit.name = 'ship-wheel'
+    hit.position.y = 1.95
+    wheel.add(hit)
+  }
+  group.add(wheel)
+
+  // 绞盘：主桅后面一个，纯装饰（但它是"甲板上有活儿"的信号）
+  {
+    const capstan = new THREE.Group()
+    capstan.position.set(0, shipDeckAt(3.4) + 0.03, 3.4)
+    const drum = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.5, 0.95, 10), woodMid)
+    drum.position.y = 0.48
+    capstan.add(drum)
+    for (let i = 0; i < 6; i++) {
+      const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 1.5, 5), woodDark)
+      bar.position.y = 0.82
+      bar.rotation.z = Math.PI / 2
+      bar.rotation.y = (i / 6) * Math.PI * 2
+      capstan.add(bar)
+    }
+    group.add(capstan)
+  }
 
   // ---------------- 灯笼 ----------------
   const lanternPivots: THREE.Group[] = []
@@ -343,6 +432,7 @@ export function createDeckShip(): DeckShip {
   for (const m of mastData) {
     const h = m.top - m.baseDeck
     const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.36, h, 8, 1), mastMat)
+    mast.name = `ship-mast-${m.z}`
     mast.position.set(0, m.baseDeck + h / 2, m.z)
     group.add(mast)
     const tip = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.08, 1.6, 5), mastMat)
@@ -350,13 +440,22 @@ export function createDeckShip(): DeckShip {
     group.add(tip)
   }
 
+  /*
+   * 帆桁的高度表。
+   *
+   * 【为什么整组抬高】原表的最低帆（下桁）脚离甲板只有 1.6 米 —— 站到甲板上
+   * 齐胸就是一块帆布墙，六张帆把整片天空糊死（实测截图：画面上一半是平涂的
+   * 土黄，看不到桅、看不到天）。真实方帆船的下桁脚离甲板有 4~6 米（水手要在
+   * 底下走动、绞盘、抬炮），所以这里把三张下帆抬到"脚离甲板 4.5~5.5 米"，
+   * 上帆跟着上移，桅顶高度不变。结果：站在甲板上，帆在头顶、天在帆上方。
+   */
   const yardData = [
-    { z: 11, y: 10.5, len: 14.5, sailH: 7.2, sailW: 0.86, seed: 1 },
-    { z: 11, y: 17.6, len: 10.0, sailH: 5.6, sailW: 0.84, seed: 2 },
-    { z: 1, y: 12.0, len: 17.6, sailH: 9.4, sailW: 0.88, seed: 3 },
-    { z: 1, y: 21.2, len: 12.2, sailH: 7.0, sailW: 0.86, seed: 4 },
-    { z: -8, y: 9.0, len: 10.4, sailH: 6.2, sailW: 0.84, seed: 5 },
-    { z: -8, y: 14.2, len: 7.0, sailH: 4.2, sailW: 0.82, seed: 6 },
+    { z: 11, y: 13.6, len: 14.5, sailH: 6.4, sailW: 0.86, seed: 1 },
+    { z: 11, y: 20.2, len: 10.0, sailH: 4.6, sailW: 0.84, seed: 2 },
+    { z: 1, y: 15.0, len: 17.6, sailH: 8.0, sailW: 0.88, seed: 3 },
+    { z: 1, y: 23.2, len: 12.2, sailH: 5.4, sailW: 0.86, seed: 4 },
+    { z: -8, y: 12.4, len: 10.4, sailH: 5.6, sailW: 0.84, seed: 5 },
+    { z: -8, y: 17.4, len: 7.0, sailH: 3.6, sailW: 0.82, seed: 6 },
   ]
 
   const sailTime = { value: 0 }
@@ -415,6 +514,7 @@ export function createDeckShip(): DeckShip {
 
   for (const yd of yardData) {
     const yard = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.13, yd.len, 6), mastMat)
+    yard.name = `ship-yard-${yd.seed}`
     yard.rotation.z = Math.PI / 2
     yard.position.set(0, yd.y, yd.z)
     group.add(yard)
@@ -434,6 +534,7 @@ export function createDeckShip(): DeckShip {
     sailGeo.computeVertexNormals()
     // 帆挂在帆桁下方：几何中心下移半个帆高
     const sail = new THREE.Mesh(sailGeo, makeSailMaterial(yd.seed, new THREE.Vector3(0, 0, 1), 1))
+    sail.name = `ship-sail-${yd.seed}`
     sail.position.set(0, yd.y - sh / 2 - 0.2, yd.z + 0.42)
     group.add(sail)
   }

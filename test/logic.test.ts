@@ -49,7 +49,12 @@ import { shipNearZoomScale, SHIP_NEAR_ZOOM_MIN } from '../src/utils/shipZoom'
 import { iceStrengthAt, iceEdgeShift, ICE_SEASON_SHIFT_DEG } from '../src/utils/polarIce'
 import { componentAreas, majorLand } from '../src/utils/shoreBand'
 import { clampToDeck, deckEyeY, deckWalkHalfWidth, isOnDeck, stepWalk } from '../src/components/deck/deckWalk'
-import { shipDeckAt } from '../src/components/deck/shipModel'
+import { buildHullGeo } from '../src/components/deck/shipHull'
+import {
+  HULL_ARC, HULL_BULWARK, SHIP_DRAFT_LIFT, SHIP_HALF_LENGTH, SHIP_SCALE,
+  shipDeckAt, shipKeelAt,
+} from '../src/components/deck/shipShape'
+import { DECK_WAVES } from '../src/components/deck/deckWaves'
 import {
   findCoast, wrapDeg, coastLayout, coastScenePos, bearingWord,
 } from '../src/components/deck/deckCoast'
@@ -8896,6 +8901,80 @@ console.log('\n== 天数口径守卫 ==')
     // 键盘与移动端按钮共用 keysRef；用 state 会每帧重渲染整个组件
     assert(/keysRef\.current\[dir\] = true/.test(view), '移动端方向键写进 keysRef')
   }
+}
+
+/*
+ * ---- 船壳放样：顶点数必须与索引步长一致 ----
+ *
+ * 【守什么】`shipHull.ts` 里每个站位 push 的顶点数是 `ARC+3`（左舷墙顶 + ARC+1 个
+ * 圆弧点 + 右舷墙顶）。第一版的索引步长写成了 `ARC+2`，于是每一圈的第 0 个顶点
+ * 其实是上一圈的最后一个 —— 三角形斜着跨过甲板，把甲板切成一条条深色横带。
+ * 从默认机位（远看）它还是个"船形的东西"，只有站到甲板上才暴露。
+ *
+ * 这两条不变量就是那个错误的指纹：
+ *   ① 顶点数必须能被每站顶点数整除；
+ *   ② 任何**跨过中线**的三角形都必须整块落在甲板面以下（船壳是个 U，中线只有龙骨）。
+ */
+{
+  const hull = buildHullGeo()
+  const n = hull.positions.length / 3
+  // 首尾封板各多出一个"扇形中心"顶点，所以减掉 2 再除
+  assert((n - 2) % hull.perStation === 0,
+    `顶点数 ${n}（减掉 2 个封板中心）能被每站 ${hull.perStation} 整除`)
+  assert(hull.perStation === HULL_ARC + 3, `每站 ${hull.perStation} 个顶点 = ARC(10) + 3`)
+  const bad = hull.indices.filter((i) => i < 0 || i >= n)
+  assert(bad.length === 0, '所有索引都落在顶点范围内')
+  assert(!hull.positions.some((v) => !Number.isFinite(v)), '放样坐标没有 NaN')
+
+  let crossing = 0
+  for (let t = 0; t < hull.indices.length; t += 3) {
+    /*
+     * 首尾封板（transom）不算：它是从截面中心扇形连到整个截面（含舷墙顶）的，
+     * 本来就该跨中线、且高到舷墙 —— 这条判据只守**船壳侧壁**的放样。
+     */
+    const [a, b, c] = [hull.indices[t], hull.indices[t + 1], hull.indices[t + 2]]
+    const xs = [a, b, c].map((i) => hull.positions[i * 3])
+    const ys = [a, b, c].map((i) => hull.positions[i * 3 + 1])
+    const zs = [a, b, c].map((i) => hull.positions[i * 3 + 2])
+    if (zs.some((z) => Math.abs(Math.abs(z) - SHIP_HALF_LENGTH) < 1e-6)) continue // 封板
+    // 龙骨中线上有一个 x==0 的顶点，所以判据是"有没有落在两侧"，不是"跨过"
+    if (Math.min(...xs) > 0 || Math.max(...xs) < 0) continue
+    crossing++
+    const zc = (zs[0] + zs[1] + zs[2]) / 3
+    // 跨中线的三角形只能是龙骨附近的那几块：必须低于甲板面
+    assert(Math.max(...ys) < shipDeckAt(zc) - 0.2,
+      `跨中线的三角形必须低于甲板（z=${zc.toFixed(1)} 处最高 ${Math.max(...ys).toFixed(2)} vs 甲板 ${shipDeckAt(zc).toFixed(2)}）`)
+  }
+  assert(crossing >= 10, `中线上确实有三角形（龙骨 ${crossing} 个，说明放样没塌）`)
+
+  // 船壳不能高过舷墙顶，也不能低于龙骨
+  for (let i = 0; i < n; i++) {
+    const y = hull.positions[i * 3 + 1]
+    const z = hull.positions[i * 3 + 2]
+    assert(y <= shipDeckAt(z) + HULL_BULWARK + 1e-6, '船壳顶点不高于舷墙顶')
+    assert(y >= -shipKeelAt(z) - 1e-6, '船壳顶点不低于龙骨')
+  }
+}
+
+/*
+ * ---- 吃水：甲板必须高于浪峰 ----
+ *
+ * 【守什么】模型的水线在 y=0、甲板只有 1.32 模型米高。若不把整条船抬起来，
+ * 涌浪（±0.13 世界单位）会把甲板淹掉 —— 站到甲板上时脚下一大片"淡蓝色的板"，
+ * 其实是盖在甲板上的海水。那条 bug 活了整整一轮，因为从默认机位看不出来。
+ */
+{
+  const deckY = shipDeckAt(0) * SHIP_SCALE + SHIP_DRAFT_LIFT
+  const crest = DECK_WAVES.reduce((sum, w) => sum + w.amp, 0)
+  assert(deckY > crest + 0.02,
+    `甲板（${deckY.toFixed(3)}）必须高出浪峰（${crest.toFixed(3)}）至少 0.02`)
+  // 干舷占船长的比例要像真船（36 米船约 4 米 → 10%~12%）
+  const freeboardRatio = deckY / (2 * SHIP_HALF_LENGTH * SHIP_SCALE)
+  assert(freeboardRatio > 0.06 && freeboardRatio < 0.2,
+    `干舷/船长 = ${(freeboardRatio * 100).toFixed(1)}%，应在 6%~20%`)
+  const view = readFileSync(join(process.cwd(), 'src', 'components', 'deck', 'DeckView.tsx'), 'utf8')
+  assert(/ship\.position\.y = pose\.y \+ SHIP_DRAFT_LIFT/.test(view),
+    '船的 y 必须是 pose.y + SHIP_DRAFT_LIFT（写死数字会与测试脱钩）')
 }
 
 console.log(`\n最终结果：${passed} 通过 / ${failed} 失败`)

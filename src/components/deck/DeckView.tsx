@@ -9,12 +9,16 @@ import { DECK_WAVES, deckShipPose } from './deckWaves'
 import { findCoast, bearingWord, type CoastSighting } from './deckCoast'
 import { createDeckCoast } from './coastModel'
 import { deckEyeY, stepWalk, WALK_SPEED_M, type WalkPos } from './deckWalk'
+import { SHIP_DRAFT_LIFT } from './shipShape'
 import { createMap3DPost, type Map3DPost } from '@/components/map3d/post'
 import { createDeckRain, rainTiltFromWind } from './rainLayer'
 import {
   approachLook, deckWeatherLook, lightningEnvelope, rainDropCount, type DeckWeatherLook,
 } from './deckWeather'
 import { calculateBearing } from '@/utils/navigation'
+import { goods } from '@/data/goods'
+import { ports } from '@/data/ports'
+import { useVoyageNext } from '@/hooks/useVoyageNext'
 
 /**
  * 船上视角：贴着海面看自己的船（第三个空间）。
@@ -55,6 +59,111 @@ const DUSK_HORIZON = new THREE.Color(0xc47a52)
 const DUSK_ZENITH = new THREE.Color(0x4e4a66)
 
 /**
+ * 甲板上被点开的物件面板。
+ *
+ * 【它为什么不是"又一个弹窗"】它是**贴着物件的回执**：点舱口看舱里有什么、
+ * 点舵轮看往哪走。两个面板各自只有一组数，而且全部来自既有单一来源
+ * （载重与货来自 `fleet`，下一站来自 `useVoyageNext`）—— 面板里不重新算账，
+ * 否则甲板上写"约 12 天"、出航计划写"约 15 天"，玩家不知道该信哪个。
+ */
+function DeckSpotPanel({
+  spot, fleet, next, onClose,
+}: {
+  spot: 'hatch' | 'wheel'
+  fleet: ReturnType<typeof useGameStore.getState>['fleet']
+  next: ReturnType<typeof useVoyageNext>
+  onClose: () => void
+}) {
+  const flagship = fleet.ships.find((s) => s.id === fleet.flagshipId) ?? fleet.ships[0]
+  const capacity = flagship?.capacity ?? 0
+  const used = fleet.cargo.reduce((sum, c) => sum + c.quantity, 0)
+  const rows = [...fleet.cargo]
+    .sort((a, b) => b.quantity - a.quantity)
+    .slice(0, 5)
+    .map((c) => ({ name: goods.find((g) => g.id === c.goodId)?.nameCn ?? `货 ${c.goodId}`, qty: c.quantity }))
+
+  return (
+    <div
+      data-testid={`deck-spot-${spot}`}
+      className="absolute bottom-24 left-1/2 w-[min(92vw,25rem)] -translate-x-1/2 rounded-lg border border-gold-600/40 bg-[#0a1420]/92 p-3 text-parchment-100 shadow-xl backdrop-blur-md"
+    >
+      <div className="flex items-baseline justify-between">
+        <div className="text-xs tracking-[0.3em] text-gold-400">
+          {spot === 'hatch' ? '货舱口' : '舵轮'}
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          className="rounded px-1.5 text-xs text-parchment-200/70 hover:text-parchment-100"
+        >
+          收起
+        </button>
+      </div>
+      {spot === 'hatch' ? (
+        <>
+          <div className="mt-1 flex items-baseline gap-2">
+            <span className="text-lg leading-none">{used}</span>
+            <span className="text-xs text-parchment-200/70">/ {capacity} 载重</span>
+            <span className="ml-auto text-xs text-parchment-200/70">
+              空 {Math.max(0, capacity - used)}
+            </span>
+          </div>
+          <ul className="mt-2 space-y-0.5 text-xs">
+            {rows.length ? (
+              rows.map((r) => (
+                <li key={r.name} className="flex justify-between border-b border-white/5 pb-0.5">
+                  <span>{r.name}</span>
+                  <span className="tabular-nums text-parchment-200/80">×{r.qty}</span>
+                </li>
+              ))
+            ) : (
+              <li className="text-parchment-200/60">舱里是空的 —— 只有压舱石与缆绳</li>
+            )}
+          </ul>
+          <div className="mt-2 grid grid-cols-3 gap-2 text-center text-xs">
+            {[['粮', fleet.food], ['水', fleet.water], ['士气', fleet.morale]].map(([k, v]) => (
+              <div key={String(k)} className="rounded border border-white/10 py-1">
+                <div className="text-parchment-200/60">{k}</div>
+                <div className="tabular-nums">{Math.round(Number(v))}</div>
+              </div>
+            ))}
+          </div>
+        </>
+      ) : (
+        <>
+          <div className="mt-1 text-sm">
+            {next.suggest ? (
+              <>
+                下一站 <span className="text-gold-300">{next.suggest.nameCn}</span>
+                {next.suggest.distanceNm != null && (
+                  <span className="ml-2 text-xs text-parchment-200/70">
+                    {Math.round(next.suggest.distanceNm)} 海里
+                  </span>
+                )}
+                {next.days != null && (
+                  <span className="ml-2 text-xs text-parchment-200/70">约 {next.days} 天</span>
+                )}
+              </>
+            ) : (
+              <span className="text-parchment-200/70">航路还没定 —— 回海图挑一处目的地</span>
+            )}
+          </div>
+          <div className="mt-2 text-xs text-parchment-200/70">
+            第 {fleet.day} 天 · {fleet.isSailing ? '航行中' : '系泊'}
+            {fleet.currentPortId != null && (
+              <> · {ports.find((p) => p.id === fleet.currentPortId)?.nameCn ?? ''}</>
+            )}
+          </div>
+          <div className="mt-1 text-xs leading-snug text-parchment-200/60">
+            舵轮只报读数：真正的航向在海图的「出航计划」里定，这里转不动它。
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+/**
  * 船上视角的层级：压过底栏(40)/时间轴(50)/通知(60)的前一层，
  * 但**让位给通知与事件卡**——船上有海况，事件卡必须还能弹出来。
  */
@@ -93,6 +202,11 @@ export default function DeckView() {
    */
   const walkingRef = useRef(false)
   const [walking, setWalking] = useState(false)
+  /*
+   * 甲板上被点开的物件（舱口 / 舵轮）。null = 没点开。
+   * 用 React state 而不是 ref：它要驱动一个 DOM 面板，跟 3D 场景重建无关。
+   */
+  const [spot, setSpot] = useState<null | 'hatch' | 'wheel'>(null)
   /** 移动端方向键与键盘共用这一份状态（effect 里读、JSX 里写） */
   const keysRef = useRef({ f: false, b: false, l: false, r: false })
   const setWalk = (v: boolean) => {
@@ -100,6 +214,14 @@ export default function DeckView() {
     setWalking(v)
   }
   const open = useMapStore((s) => s.deckView)
+  /*
+   * 甲板物件面板要用的真实数据。全部走既有单一来源：
+   *  · 载重/货/粮水士气 ← `fleet`（与交易面板同一个 store 字段）
+   *  · 下一站港名/海里/天数 ← `useVoyageNext`（与出航计划、主屏指引同一个 hook）
+   * 面板里**不允许自己再算一遍**里程或天数。
+   */
+  const fleet = useGameStore((s) => s.fleet)
+  const next = useVoyageNext()
   const setDeckView = useMapStore((s) => s.setDeckView)
   const viewMode = useMapStore((s) => s.viewMode)
   const mountRef = useRef<HTMLDivElement>(null)
@@ -232,6 +354,8 @@ export default function DeckView() {
       `,
     })
     const sky = new THREE.Mesh(skyGeo, skyMat)
+    // 命名：取色/遮挡巡检要按名字开关某一层做 A/B（与海图的 'map3d-sea' 同一约定）
+    sky.name = 'deck-sky'
     sky.frustumCulled = false
     scene.add(sky)
 
@@ -341,7 +465,15 @@ export default function DeckView() {
            * 留 18% 的深色底，近处才有水色、远处才反天光。
            */
           float fres = pow(1.0 - max(dot(n, v), 0.0), 3.0);
-          vec3 col = mix(uDeep, uSky, clamp(fres * 1.05, 0.0, 0.82));
+          /*
+           * 【上限 0.70 而不是 0.82】这是"海为什么白得像天"的直接原因：
+           * 相机贴着水面，20 米以外的海面几乎全是掠射角，菲涅尔接近 1，
+           * 混进去的 82% 都是天光色；而天光色本身又亮，于是海面 = 天空
+           * （实测正午 205/221/233 vs 天空 200/217/231，肉眼就是"一片白"）。
+           * 真实的海即使在掠射角下也比天空暗一档、且更蓝（水体本身的吸收）。
+           * 上限压到 0.70，配合 uSky 的压暗（见 JS 侧），才有水的分量。
+           */
+          vec3 col = mix(uDeep, uSky, clamp(fres * 1.05, 0.0, 0.55));
           // 月光镜面（Blinn-Phong 的高光半径收得很紧，海面才不会整片发白）
           vec3 h = normalize(uMoonDir + v);
           /*
@@ -357,7 +489,7 @@ export default function DeckView() {
           float spec = pow(max(dot(n, h), 0.0), 420.0);
           col += uMoon * spec * 0.45 * uMoonK;
           // 浪脊的微弱提亮：让相邻浪面之间有层次，不然海面是一块布
-          col += uSky * clamp(n.y - 0.97, 0.0, 1.0) * 0.8;
+          col += uSky * clamp(n.y - 0.985, 0.0, 1.0) * 0.35;
           // 远处收到天光色：与天空球的地平线接上，不出现一条硬边
           float d = length(vWorld.xz);
           /*
@@ -379,6 +511,7 @@ export default function DeckView() {
       `,
     })
     const sea = new THREE.Mesh(seaGeo, seaMat)
+    sea.name = 'deck-sea'
     sea.frustumCulled = false
     scene.add(sea)
 
@@ -431,6 +564,16 @@ export default function DeckView() {
     const ambient = new THREE.AmbientLight(0x223347, 0.55)
     scene.add(ambient)
     /*
+     * ---- 半球光：专治"甲板极掠射角发黑" ----
+     * 甲板是**朝上**的面，而月亮压在低空（`moonDir.y≈0.2`），入射角接近 90°，
+     * 漫反射只拿到 cos≈0.2 的能量；站到甲板上时脚边一片黑，木纹全丢
+     * （实测截图：甲板读作一块深棕色的布）。真实世界里这些光来自天空本身。
+     * 半球光按法线朝向给两种环境色（朝上取天光、朝下取船体反光），
+     * 不加方向性、不改变"月光从哪来"的判断，是最省的一种补光。
+     */
+    const hemi = new THREE.HemisphereLight(0x36495f, 0x2b1c10, 0.55)
+    scene.add(hemi)
+    /*
      * ---- 补光（"站在船上"的那一侧）----
      * 月亮在船头前方，于是我们看到的帆与船尾全是背光面 —— 只吃环境光就是一团黑
      * （实测截图：船只剩剪影，帆的织纹、舷墙、索具都看不见）。
@@ -441,6 +584,13 @@ export default function DeckView() {
     const fill = new THREE.DirectionalLight(0x9db6cf, 0.85)
     fill.position.set(-6, 4, -7)
     scene.add(fill)
+    /*
+     * 补光的颜色要跟着日相变：夜里它是"月亮的散射"（冷蓝），白天它是"天光"
+     * （暖白）。固定冷蓝时，正午的帆与船壳被染成灰绿（实测截图：帆是一块
+     * 土灰色的布），整条船读作"阴天的模型"。
+     */
+    const FILL_NIGHT = new THREE.Color(0x8fa8c2)
+    const FILL_DAY = new THREE.Color(0xffeccc)
 
     // 后处理（辉光）：用海图那一份实现，参数共享一套
     const post: Map3DPost = createMap3DPost(renderer)
@@ -473,7 +623,7 @@ export default function DeckView() {
      * effect 内部的普通变量：切换甲板行走不该重建场景，所以不放进 React state。
      */
     // 朝船头：船体局部 +z 是船首，所以 yaw=0 就朝船头
-    const viewRef = { current: { yaw: 0.22, pitch: -0.30 } }
+    const viewRef = { current: { yaw: -0.05, pitch: -0.06 } }
     /*
      * 初始位置：**前桅右前方、略偏右舷**（x=1.4, z=9.5，米），视角略微低头、
      * 朝向船首偏右 20°。
@@ -482,7 +632,32 @@ export default function DeckView() {
      * 与船首（z=13.2）都只剩海 —— 前者被帆挡、后者船首结构在视野下边缘之外，
      * 第一眼像"站在海面上"。这一档能同时看到甲板、前桅的索具、舷墙与右前方的海。
      */
-    let walkPos: WalkPos = { x: 0.6, z: 8.2 }
+    /*
+     * 初始机位：主桅**后方** 6 米、略偏右舷，朝正前方。
+     * 试过的五个机位（`.workbuddy/probe-deck-frames.mjs` 一次拍完）：
+     *   A 前桅右前（原默认）：主桅贴着画面中轴，除了甲板只有一根黑柱子；
+     *   C 船首回望：下帆挡住整个上半屏；
+     *   E 右舷侧看：只有甲板与海，看不到船的结构；
+     *   D 主桅后方朝前 ← 现在这一档：甲板成透视带、主桅在画面中轴、下帆在头顶、
+     *     舷墙与船首外海岸（塞维利亚的灯塔）都在框里，一眼知道"我站在一条船上"。
+     */
+    let walkPos: WalkPos = { x: 1.55, z: -5.2 }
+    /*
+     * 取证/调试句柄：甲板行走的位置与朝向原本是 effect 里的闭包变量，外面读不到，
+     * 于是"换个机位看看"只能改代码重跑一次（一轮 50 秒）。
+     * 现在巡检脚本可以 `__deckWalk.set({z:2})` 连拍几个机位做构图对比；
+     * `get()` 同时给 e2e 断言用（相机确实站在甲板上、确实在动）。
+     */
+    ;(window as unknown as { __deckWalk?: unknown }).__deckWalk = {
+      get: () => ({ x: walkPos.x, z: walkPos.z, ...viewRef.current, walking: walkingRef.current }),
+      set: (p: { x?: number; z?: number; yaw?: number; pitch?: number }) => {
+        if (typeof p.x === 'number') walkPos.x = p.x
+        if (typeof p.z === 'number') walkPos.z = p.z
+        if (typeof p.yaw === 'number') viewRef.current.yaw = p.yaw
+        if (typeof p.pitch === 'number') viewRef.current.pitch = p.pitch
+        return { x: walkPos.x, z: walkPos.z, ...viewRef.current }
+      },
+    }
     let bobPhase = 0
 
     const onKey = (e: KeyboardEvent, down: boolean) => {
@@ -513,11 +688,18 @@ export default function DeckView() {
     let dragging = false
     let lastX = 0
     let lastY = 0
+    /** 按下时的屏幕位置：用来区分"拖拽转头"与"点物件" */
+    let downX = 0
+    let downY = 0
+    const picker = new THREE.Raycaster()
+    picker.params.Line.threshold = 0
     const onPointerDown = (e: PointerEvent) => {
       if (!walkingRef.current) return
       dragging = true
       lastX = e.clientX
       lastY = e.clientY
+      downX = e.clientX
+      downY = e.clientY
       ;(e.target as HTMLElement).setPointerCapture?.(e.pointerId)
     }
     const onPointerMove = (e: PointerEvent) => {
@@ -530,8 +712,29 @@ export default function DeckView() {
       // 俯仰钳在 ±75°：翻过来会看到船体内部
       viewRef.current.pitch = Math.max(-1.3, Math.min(1.3, viewRef.current.pitch - dy * 0.0032))
     }
-    const onPointerUp = () => {
+    /*
+     * 松手时才判断"这是点击还是拖拽"：位移小于 6px 才算点击。
+     * 【为什么不在 pointerdown 里捡】甲板行走同时用指针转头，如果按下就判定点击，
+     * 每次转头都会顺手点开一个面板（拖拽的第一帧位移为 0，必然命中）。
+     */
+    const onPointerUp = (e: PointerEvent) => {
+      const wasDragging = dragging
       dragging = false
+      if (!wasDragging || !walkingRef.current) return
+      if (Math.hypot(e.clientX - downX, e.clientY - downY) > 6) return
+      const rect = renderer.domElement.getBoundingClientRect()
+      if (!rect.width || !rect.height) return
+      picker.setFromCamera(
+        new THREE.Vector2(
+          ((e.clientX - rect.left) / rect.width) * 2 - 1,
+          -((e.clientY - rect.top) / rect.height) * 2 + 1,
+        ),
+        camera,
+      )
+      const named = picker
+        .intersectObjects(ship.children, true)
+        .find((h) => h.object.name === 'ship-hatch' || h.object.name === 'ship-wheel')
+      setSpot(named ? (named.object.name === 'ship-hatch' ? 'hatch' : 'wheel') : null)
     }
     window.addEventListener('keydown', onKeyDown)
     window.addEventListener('keyup', onKeyUp)
@@ -568,7 +771,13 @@ export default function DeckView() {
        * 只剩轮廓——那是夜里的样子，白天需要更实的形体。
        */
       fill.intensity = 0.55 + 1.15 * skyInfo.lit
+      fill.color.copy(FILL_NIGHT).lerp(FILL_DAY, skyInfo.lit)
       ambient.intensity = 0.30 + 0.25 * skyInfo.lit
+      /*
+       * 半球光夜里给得多、白天给得少：白天有方向光（fill 涨到 1.7），
+       * 再叠一层环境光会把船壳照成平涂；夜里则需要它撑住甲板的可读性。
+       */
+      hemi.intensity = 0.74 - 0.26 * skyInfo.lit
 
       /*
        * ---- 天气：平滑趋近 + 分发到四处 ----
@@ -619,8 +828,16 @@ export default function DeckView() {
         fill.intensity += flashK * 1.2
       }
 
+      /*
+       * 【吃水：船必须坐在水里，不能"泡"在水里】
+       * 模型的水线在 y=0、甲板 1.32（模型米）—— 相当于 36 米长的船只有 1.3 米干舷，
+       * 而海面的涌浪在这里是 ±0.13 世界单位（= ±2.6 模型米）。于是浪峰一过就把
+       * 甲板淹掉：站到甲板上时，脚下一大片"淡蓝色的板"，其实是**盖在甲板上的海水**
+       * （实测：关掉 deck-sea 那块就消失；把甲板涂红则红面完整，几何没洞）。
+       * 抬起 0.12 世界单位（2.4 模型米）= 真实干舷 ≈ 4 米/36 米船，甲板才在海面之上。
+       */
       const pose = deckShipPose(t, 0.72, 0.26, look.wave)
-      ship.position.y = pose.y
+      ship.position.y = pose.y + SHIP_DRAFT_LIFT
       // 船有自重：姿态只跟随浪的一部分，全跟随会像一片叶子
       ship.rotation.x = pose.pitch * 0.6
       ship.rotation.z = pose.roll * 0.55
@@ -756,7 +973,17 @@ export default function DeckView() {
        * 天光色的权重被放得很大，夜海会读成"浅灰的地板"。压到 0.55 之后
        * 近处才有水色、远处才反天光。
        */
-      seaUniforms.uSky.value.copy(lastSeaSky).multiplyScalar(0.55)
+      /*
+       * 【海水反射的天光要再压一道】0.32 × (0.80, 0.95, 1.06)：
+       * 先压三分之一（水的吸收 + 只有一部分天光被反射），再往蓝绿偏一点。
+       * 这两步都不是"调参玄学"：量出来的判据是——正午海面必须比天空暗
+       * **至少 60/255**，且蓝分量大于红分量。压之前是海 205/221/233、天 200/217/231
+       * （海比天还亮 5），压之后见 `.workbuddy/probe-deck-px.mjs` 的复测值。
+       */
+      seaUniforms.uSky.value.copy(lastSeaSky).multiplyScalar(0.24)
+      seaUniforms.uSky.value.r *= 0.80
+      seaUniforms.uSky.value.g *= 0.95
+      seaUniforms.uSky.value.b *= 1.06
       seaUniforms.uMoonK.value = 0.04 + 0.96 * night
 
       /*
@@ -809,6 +1036,7 @@ export default function DeckView() {
       renderer.dispose()
       renderer.domElement.remove()
       delete (window as unknown as { __deckScene?: THREE.Scene }).__deckScene
+      delete (window as unknown as { __deckWalk?: unknown }).__deckWalk
     }
   }, [open])
 
@@ -872,6 +1100,14 @@ export default function DeckView() {
       >
         远洋 · 视野内无陆地
       </div>
+      {walking && spot ? (
+        <DeckSpotPanel
+          spot={spot}
+          fleet={fleet}
+          next={next}
+          onClose={() => setSpot(null)}
+        />
+      ) : null}
       {walking ? (
         <>
           <div className="pointer-events-none absolute bottom-4 left-1/2 -translate-x-1/2 text-xs tracking-wider text-parchment-200/70">

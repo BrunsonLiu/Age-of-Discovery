@@ -32,7 +32,12 @@ export function texFrom(c: HTMLCanvasElement, srgb = true): THREE.CanvasTexture 
   t.wrapS = THREE.RepeatWrapping
   t.wrapT = THREE.RepeatWrapping
   t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace
-  t.anisotropy = 4
+  /*
+   * 各向异性 8（原 4）：甲板是**贴着视线**的平面，纹理在屏幕上一个方向被压到
+   * 几分之一像素、另一个方向还有几十像素。4 倍时 GPU 会掉到较粗的 mip，板缝
+   * 被采样成"断续的台阶"（放大截图：整片甲板像砖砌），8 倍才能让一条缝连续。
+   */
+  t.anisotropy = 8
   return t
 }
 
@@ -91,6 +96,12 @@ export interface PlankOptions {
   /** 缝的粗细（像素） */
   seamW?: number
   wear?: number
+  /** 年轮（纹理线）的强度倍率，0 = 只留板缝与板色差（甲板用） */
+  grain?: number
+  /** 贴图边长（默认 512；甲板用 1024，板缝在掠射角下才不糊） */
+  size?: number
+  /** 每块板的端头接缝（brick 状），只在 along='v' 时有效 */
+  buttJoints?: boolean
 }
 
 /**
@@ -100,8 +111,8 @@ export interface PlankOptions {
  * 每块板抖动亮度/色相，再各画几道年轮，才有"拼起来的"感觉。
  */
 export function plankCanvas(opts: PlankOptions): HTMLCanvasElement {
-  const { seed, along = 'h', rows = 8, base = [92, 64, 40], seam = 'rgba(20,12,6,0.85)', seamW = 2, wear = 0.5 } = opts
-  const S = 512
+  const { seed, along = 'h', rows = 8, base = [92, 64, 40], seam = 'rgba(20,12,6,0.85)', seamW = 2, wear = 0.5, grain = 1, size = 512, buttJoints = false } = opts
+  const S = size
   const [c, g] = canvas(S, S)
   const rnd = rng(seed)
   g.fillStyle = `rgb(${base[0]},${base[1]},${base[2]})`
@@ -117,20 +128,29 @@ export function plankCanvas(opts: PlankOptions): HTMLCanvasElement {
     if (along === 'h') g.fillRect(0, i * step, S, step)
     else g.fillRect(i * step, 0, step, S)
 
-    // 年轮：沿板长方向的几条深浅线（端点带随机偏移，避免像条纹纸）
-    const lines = 3 + Math.floor(rnd() * 3)
+    /*
+     * 年轮：沿板长方向的几条深浅线。
+     *
+     * 【为什么抖动必须很小】原先每 32px 抖 ±4px（±2）。在**人眼高度**看甲板时，
+     * 一张 512 的贴图被压到十几像素高，这点抖动经过各向异性过滤与法线贴图放大，
+     * 读成一条条"闪电状折线"（实测截图：整片甲板像锯末迷宫）。木纹本来就是
+     * 低频的，改成每 64px 抖 ±1.4px、透明度减半，它才回到"纹"而不是"纹的锯齿"。
+     */
+    const lines = Math.round((3 + Math.floor(rnd() * 3)) * grain)
     for (let k = 0; k < lines; k++) {
-      g.strokeStyle = `rgba(${(r * 0.62) | 0},${(gg * 0.55) | 0},${(b * 0.5) | 0},${0.18 + rnd() * 0.22})`
-      g.lineWidth = 0.6 + rnd() * 1.6
+      g.strokeStyle = `rgba(${(r * 0.62) | 0},${(gg * 0.55) | 0},${(b * 0.5) | 0},${0.10 + rnd() * 0.14})`
+      g.lineWidth = 0.6 + rnd() * 1.2
       g.beginPath()
       if (along === 'h') {
         const y = i * step + 3 + rnd() * (step - 6)
         g.moveTo(0, y)
-        for (let x = 0; x <= S; x += 32) g.lineTo(x, y + (rnd() - 0.5) * 4)
+        let j = 0
+        for (let x = 0; x <= S; x += 64) { j += (rnd() - 0.5) * 2.8; g.lineTo(x, y + Math.max(-2.2, Math.min(2.2, j))) }
       } else {
         const x = i * step + 3 + rnd() * (step - 6)
         g.moveTo(x, 0)
-        for (let y = 0; y <= S; y += 32) g.lineTo(x + (rnd() - 0.5) * 4, y)
+        let j = 0
+        for (let y = 0; y <= S; y += 64) { j += (rnd() - 0.5) * 2.8; g.lineTo(x + Math.max(-2.2, Math.min(2.2, j)), y) }
       }
       g.stroke()
     }
@@ -139,6 +159,16 @@ export function plankCanvas(opts: PlankOptions): HTMLCanvasElement {
     g.fillStyle = seam
     if (along === 'h') g.fillRect(0, i * step, S, seamW)
     else g.fillRect(i * step, 0, seamW, S)
+
+    /*
+     * 端头接缝：一块板不可能有 36 米长。每列（along='v'）在随机 y 处断一刀，
+     * 错开成 brick 状 —— 这是"甲板"与"木地板"最直观的区别之一。
+     */
+    if (buttJoints && along === 'v') {
+      const by = Math.floor(rnd() * S)
+      g.fillStyle = seam
+      g.fillRect(i * step, by, step, Math.max(1.6, seamW * 0.9))
+    }
 
     // 钉子：靠缝、每隔一段一颗（近看才有信息量）
     if (wear > 0.2) {
