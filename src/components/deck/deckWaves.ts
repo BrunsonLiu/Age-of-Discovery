@@ -56,22 +56,30 @@ function terms(x: number, z: number, t: number): Term[] {
   return out
 }
 
-/** 某点水面高度（相对静止水面） */
-export function deckWaveHeight(x: number, z: number, t: number): number {
+/**
+ * 某点水面高度（相对静止水面）。
+ *
+ * `ampScale` 是**天气**给的整体浪高倍数（暴风雨 1.9，浓雾 1.05）。
+ * 必须与顶点着色器里的 `uWaveScale` 是同一个数，否则船会浮在浪面之外 ——
+ * 这正是"GPU 与 CPU 共用一组参数"这条规矩的原因。
+ */
+export function deckWaveHeight(x: number, z: number, t: number, ampScale = 1): number {
+  const a = Number.isFinite(ampScale) ? ampScale : 1
   let y = 0
-  for (const w of terms(x, z, t)) y += w.amp * w.sin
+  for (const w of terms(x, z, t)) y += w.amp * a * w.sin
   return y
 }
 
 /** 某点法线（未归一化前先按 steep 缩放竖向分量） */
-export function deckWaveNormal(x: number, z: number, t: number): { x: number; y: number; z: number } {
+export function deckWaveNormal(x: number, z: number, t: number, ampScale = 1): { x: number; y: number; z: number } {
+  const a = Number.isFinite(ampScale) ? ampScale : 1
   let nx = 0
   let ny = 1
   let nz = 0
   for (const w of terms(x, z, t)) {
-    nx -= w.dx * w.k * w.amp * w.cos
-    nz -= w.dz * w.k * w.amp * w.cos
-    ny -= w.steep * w.k * w.amp * w.sin
+    nx -= w.dx * w.k * w.amp * a * w.cos
+    nz -= w.dz * w.k * w.amp * a * w.cos
+    ny -= w.steep * w.k * w.amp * a * w.sin
   }
   const l = Math.hypot(nx, ny, nz) || 1
   return { x: nx / l, y: ny / l, z: nz / l }
@@ -84,11 +92,11 @@ export function deckWaveNormal(x: number, z: number, t: number): { x: number; y:
  * 船会像电梯一样"浮"在浪上。首尾差决定纵摇（pitch），左右差决定横摇（roll），
  * 两个都是玩家一眼能看出来的信号。
  */
-export function deckShipPose(t: number, halfLen = 0.55, halfBeam = 0.22) {
-  const bowY = deckWaveHeight(0, halfLen, t)
-  const sternY = deckWaveHeight(0, -halfLen, t)
-  const portY = deckWaveHeight(-halfBeam, 0, t)
-  const starY = deckWaveHeight(halfBeam, 0, t)
+export function deckShipPose(t: number, halfLen = 0.55, halfBeam = 0.22, ampScale = 1) {
+  const bowY = deckWaveHeight(0, halfLen, t, ampScale)
+  const sternY = deckWaveHeight(0, -halfLen, t, ampScale)
+  const portY = deckWaveHeight(-halfBeam, 0, t, ampScale)
+  const starY = deckWaveHeight(halfBeam, 0, t, ampScale)
   return {
     /** 船体中心高度（四点平均，比单点稳） */
     y: (bowY + sternY + portY + starY) / 4,

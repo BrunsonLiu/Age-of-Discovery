@@ -8,6 +8,10 @@ import { createDeckShip, type DeckShip } from './shipModel'
 import { DECK_WAVES, deckShipPose } from './deckWaves'
 import { findCoast, bearingWord, type CoastSighting } from './deckCoast'
 import { createDeckCoast } from './coastModel'
+import { createDeckRain, rainTiltFromWind } from './rainLayer'
+import {
+  approachLook, deckWeatherLook, lightningEnvelope, rainDropCount, type DeckWeatherLook,
+} from './deckWeather'
 import { calculateBearing } from '@/utils/navigation'
 
 /**
@@ -77,6 +81,7 @@ vec3 srgbEncode(vec3 c) {
 
 export default function DeckView() {
   const hudRef = useRef<HTMLDivElement>(null)
+  const flashRef = useRef<HTMLDivElement>(null)
   const open = useMapStore((s) => s.deckView)
   const setDeckView = useMapStore((s) => s.setDeckView)
   const viewMode = useMapStore((s) => s.viewMode)
@@ -146,6 +151,9 @@ export default function DeckView() {
         uMoonK: { value: 1 },
         uDusk: { value: 0 },
         uDuskColor: { value: DUSK_HORIZON.clone() },
+        uFogK: { value: 0 },
+        uDark: { value: 1 },
+        uFogColor: { value: new THREE.Color(0xb4bdc2) },
       },
       vertexShader: /* glsl */ `
         varying vec3 vDir;
@@ -162,6 +170,9 @@ export default function DeckView() {
         uniform float uMoonK;
         uniform float uDusk;
         uniform vec3 uDuskColor;
+        uniform float uFogK;
+        uniform float uDark;
+        uniform vec3 uFogColor;
         varying vec3 vDir;
         ${SRGB_ENCODE}
         void main() {
@@ -187,6 +198,12 @@ export default function DeckView() {
           col += uMoonColor * pow(m, 26.0) * 0.045 * uMoonK;
           // 黄昏整体压暗：日落时天比白天暗，不压的话"黄昏"会亮成一盏粉灯
           col *= 1.0 - 0.30 * uDusk;
+          /*
+           * 雾：越低空越被灰白吃掉（天空整体变白是"浓雾"最直接的信号）。
+           * 用仰角调制而不是整体混，否则天顶也会白成一块布。
+           */
+          col = mix(col, uFogColor, uFogK * (0.35 + 0.55 * smoothstep(0.45, 0.0, h)));
+          col *= uDark;
           gl_FragColor = vec4(srgbEncode(clamp(col, 0.0, 1.0)), 1.0);
         }
       `,
@@ -234,6 +251,12 @@ export default function DeckView() {
       uSky: { value: SKY_HORIZON_NIGHT.clone().multiplyScalar(0.9) },
       uMoon: { value: MOON_COLOR.clone() },
       uMoonK: { value: 1 },
+      uWaveScale: { value: 1 },
+      uFogNear: { value: 28 },
+      uFogFar: { value: 62 },
+      uFogK: { value: 0 },
+      uFogColor: { value: new THREE.Color(0xb4bdc2) },
+      uDark: { value: 1 },
       uAmp: { value: DECK_WAVES.map((w) => w.amp) },
       uLen: { value: DECK_WAVES.map((w) => w.len) },
       uSteep: { value: DECK_WAVES.map((w) => w.steep) },
@@ -248,6 +271,7 @@ export default function DeckView() {
         uniform float uAmp[4];
         uniform float uLen[4];
         uniform float uSteep[4];
+        uniform float uWaveScale;
         varying vec3 vWorld;
         varying vec3 vNormal;
         void main() {
@@ -258,11 +282,11 @@ export default function DeckView() {
             float k = 6.2831853 / uLen[i];
             float c = sqrt(9.8 / k);
             float f = k * dot(d, p.xz) - c * uTime - uFlow * uTime;
-            p.y += uAmp[i] * sin(f);
-            // 解析法线：与 deckWaves.deckWaveNormal 逐项对应
-            nrm.x -= d.x * k * uAmp[i] * cos(f);
-            nrm.z -= d.y * k * uAmp[i] * cos(f);
-            nrm.y -= uSteep[i] * k * uAmp[i] * sin(f);
+            p.y += uAmp[i] * uWaveScale * sin(f);
+            // 解析法线：与 deckWaves.deckWaveNormal 逐项对应（含 ampScale）
+            nrm.x -= d.x * k * uAmp[i] * uWaveScale * cos(f);
+            nrm.z -= d.y * k * uAmp[i] * uWaveScale * cos(f);
+            nrm.y -= uSteep[i] * k * uAmp[i] * uWaveScale * sin(f);
           }
           vNormal = normalize(nrm);
           vec4 world = modelMatrix * vec4(p, 1.0);
@@ -276,6 +300,11 @@ export default function DeckView() {
         uniform vec3 uSky;
         uniform vec3 uMoon;
         uniform float uMoonK;
+        uniform float uFogNear;
+        uniform float uFogFar;
+        uniform float uFogK;
+        uniform vec3 uFogColor;
+        uniform float uDark;
         varying vec3 vWorld;
         varying vec3 vNormal;
         ${SRGB_ENCODE}
@@ -308,7 +337,20 @@ export default function DeckView() {
           col += uSky * clamp(n.y - 0.97, 0.0, 1.0) * 0.8;
           // 远处收到天光色：与天空球的地平线接上，不出现一条硬边
           float d = length(vWorld.xz);
-          col = mix(col, uSky * 0.85, smoothstep(28.0, 62.0, d));
+          /*
+           * 远处混天光：晴天的起点是 28~62，浓雾时收到 6~24（只看得到船头）。
+           * 用 uniform 而不是写死，是因为雾天必须让"海面尽头"提前消失 ——
+           * 否则海与天的分界线还清清楚楚，与"能见度 100 米"自相矛盾。
+           */
+          /*
+           * 远处混的是**雾色**，不是天光色。
+           * 第一版只把 smoothstep 的区间收窄、目标色仍用 uSky（天蓝），结果浓雾天
+           * 海面远处变成"更蓝的天"，整张图看起来只是"天气变晴了"（实测截图：
+           * fogNear=7.9 生效，画面却毫无变化）。雾必须自己有一个颜色。
+           */
+          vec3 farCol = mix(uSky * 0.85, uFogColor, uFogK);
+          col = mix(col, farCol, smoothstep(uFogNear, uFogFar, d));
+          col *= uDark;
           gl_FragColor = vec4(srgbEncode(clamp(col, 0.0, 1.0)), 1.0);
         }
       `,
@@ -338,6 +380,24 @@ export default function DeckView() {
     scene.add(coast.group)
     // 取证句柄：巡检要能量岸线的可见性/坐标（与海图的 __map3d 同一做法）
     ;(window as unknown as { __deckScene?: THREE.Scene }).__deckScene = scene
+
+    /*
+     * ---- 雨 ----
+     * 位置更新在顶点着色器里算（见 rainLayer），CPU 只改两个 uniform。
+     * 整层跟着相机走，所以船开到哪都在"雨里"。
+     */
+    const rain = createDeckRain(6000)
+    scene.add(rain.mesh)
+
+    /*
+     * ---- 天气状态（平滑趋近）----
+     * 天气按天切换，直接跳会让雨"啪"地满、浪瞬间翻倍、船猛地一抬。
+     * 用 index 里那套"按天"的 weather.kind 作为目标值，1.5 秒走完 90%。
+     */
+    let look: DeckWeatherLook = deckWeatherLook(useGameStore.getState().weather?.kind)
+    let lastWeatherKind: string = useGameStore.getState().weather?.kind ?? 'clear'
+    let boltAge = 99
+    let boltCooldown = 1.5
 
     // ---- 光：月光主光 + 极低环境（夜里靠月亮，不靠补光）----
     const moon = new THREE.DirectionalLight(0xbfd6ff, 2.1)
@@ -373,9 +433,13 @@ export default function DeckView() {
     // ---- 帧循环 ----
     let raf = 0
     let frame = 0
+    let tPrev = performance.now() / 1000
     const tick = () => {
       frame++
       const t = performance.now() / 1000
+      // dt 钳在 0.1 秒：切后台回来时一帧可能是几十秒，会让平滑一步跳完
+      const dt = Math.min(0.1, Math.max(0, t - tPrev))
+      tPrev = t
       const st = useGameStore.getState()
       const skyInfo = skyAt(performance.now(), st.routeProgress ?? 0)
       const night = 1 - skyInfo.lit
@@ -387,6 +451,7 @@ export default function DeckView() {
       seaUniforms.uFlow.value = sailing ? 0.55 + (st.simSpeed ?? 1) * 0.55 : 0.06
       const lightMul = 0.42 + 0.58 * skyInfo.lit
       moon.intensity = 2.1 * lightMul
+      // 雾里看不到月亮：下面那处再乘一次 (1 − 雾)
       skyMat.uniforms.uMoonK.value = 0.06 + 0.94 * night
       /*
        * 补光也要跟着日相：白天船体在阳光下不该是全黑的。
@@ -396,7 +461,56 @@ export default function DeckView() {
       fill.intensity = 0.55 + 1.15 * skyInfo.lit
       ambient.intensity = 0.30 + 0.25 * skyInfo.lit
 
-      const pose = deckShipPose(t, 0.72, 0.26)
+      /*
+       * ---- 天气：平滑趋近 + 分发到四处 ----
+       * 雨量、雾、浪高、压暗、闪电频率全部来自 `deckWeatherLook(kind)` 这一张表，
+       * 这里的职责只是"把表里的数送到该去的地方"。天气种类变了不做任何动画切换，
+       * 由 approachLook 自己用 1.5 秒的指数趋近消化。
+       */
+      {
+        const kind = st.weather?.kind ?? 'clear'
+        if (kind !== lastWeatherKind) lastWeatherKind = kind
+        look = approachLook(look, deckWeatherLook(kind), dt)
+
+        // 海面的浪高必须与船的姿态用同一个倍数，否则船会浮在浪外
+        seaUniforms.uWaveScale.value = look.wave
+        // 雾：把"远处混天光"的起点收近
+        seaUniforms.uFogNear.value = 28 - 22 * look.fog
+        seaUniforms.uFogFar.value = 62 - 38 * look.fog
+        const dark = 1 - 0.45 * look.darken
+        seaUniforms.uDark.value = dark
+      seaUniforms.uFogK.value = look.fog
+      seaUniforms.uFogColor.value.copy(skyMat.uniforms.uFogColor.value)
+        skyMat.uniforms.uDark.value = dark
+        skyMat.uniforms.uFogK.value = look.fog * 0.9
+      // 雾与厚云都会遮月亮：暴雨夜里那轮月亮应该只剩一个模糊的亮斑
+      skyMat.uniforms.uMoonK.value *= (1 - look.fog) * (1 - 0.55 * look.darken)
+
+        rain.setAmount(rainDropCount(look, 6000))
+        rain.update(t, camera.position.x, camera.position.z)
+        // 雨的倾斜与风向同源：风向 90°（吹向东）时雨往 +x 斜
+        const tilt = look.tilt + rainTiltFromWind(st.weather?.windDir ?? 0, st.weather?.windSpeed ?? 0)
+        // tilt 通过 uniform 传进雨层（setAmount 内部只改 opacity/drawRange）
+        ;(rain.mesh.material as THREE.ShaderMaterial).uniforms.uTilt.value = tilt
+
+        // 闪电：按频率随机会触发一次，之后 0.6 秒衰减
+        boltAge += dt
+        boltCooldown -= dt
+        if (look.lightning > 0.01 && boltCooldown <= 0) {
+          boltAge = 0
+          // 间隔用指数分布（泊松过程），看起来才不像节拍器
+          boltCooldown = Math.max(0.6, -Math.log(1 - Math.random()) / look.lightning)
+        }
+      }
+      const flashK = look.lightning > 0.01 ? lightningEnvelope(boltAge) : 0
+      if (flashRef.current) flashRef.current.style.opacity = String(flashK * 0.55)
+      // 闪电照亮整片海：环境光与月光各提一档，画面才有"被闪到"的感觉
+      if (flashK > 0.01) {
+        ambient.intensity += flashK * 1.6
+        fill.intensity += flashK * 1.2
+      }
+
+      const pose = deckShipPose(t, 0.72, 0.26, look.wave)
       ship.position.y = pose.y
       // 船有自重：姿态只跟随浪的一部分，全跟随会像一片叶子
       ship.rotation.x = pose.pitch * 0.6
@@ -439,7 +553,7 @@ export default function DeckView() {
             : '远洋 · 视野内无陆地'
         }
       }
-      coast.update(t, night, skyMat.uniforms.uHorizon.value)
+      coast.update(t, night, skyMat.uniforms.uHorizon.value, look.fog, skyMat.uniforms.uFogColor.value)
 
       // 星空随夜色淡入（夜里才该看到星星）
       starMat.opacity = 0.12 + 0.68 * night
@@ -495,6 +609,7 @@ export default function DeckView() {
       })
       deckShip.dispose()
       coast.dispose()
+      rain.dispose()
       renderer.dispose()
       renderer.domElement.remove()
       delete (window as unknown as { __deckScene?: THREE.Scene }).__deckScene
@@ -520,6 +635,15 @@ export default function DeckView() {
   return (
     <div className="absolute inset-0 bg-[#03080e]" style={{ zIndex: Z_DECK }} data-testid="deck-view">
       <div ref={mountRef} className="absolute inset-0" />
+      {/*
+        闪电的整屏白闪：用 DOM 而不是 3D 里的 sprite —— 它必须**绝对覆盖**全屏
+        （包括 HUD 之外的边缘），且不该参与深度/雾/色调映射。opacity 由帧循环直改。
+      */}
+      <div
+        ref={flashRef}
+        aria-hidden
+        className="pointer-events-none absolute inset-0 bg-[#dfe9ff] opacity-0"
+      />
       {/* HUD：只留必要信息，别把海面盖住 */}
       <div className="pointer-events-none absolute left-4 top-4 rounded-md border border-gold-600/30 bg-black/35 px-3 py-2 text-parchment-100 backdrop-blur-sm">
         <div className="text-xs tracking-[0.3em] text-gold-400">DECK VIEW</div>

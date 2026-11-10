@@ -51,6 +51,9 @@ import { componentAreas, majorLand } from '../src/utils/shoreBand'
 import {
   findCoast, wrapDeg, coastLayout, coastScenePos, bearingWord,
 } from '../src/components/deck/deckCoast'
+import {
+  approachLook, deckWeatherLook, lightningEnvelope, rainDropCount,
+} from '../src/components/deck/deckWeather'
 import { surfaceDimMul } from '../src/utils/mapSurfaceDim'
 import {
   pointSizeForWorld, portLightPlan, portLightStrength,
@@ -8684,6 +8687,104 @@ console.log('\n== 天数口径守卫 ==')
       '不许再按方位旋转整组（会把岸转出视野）')
     assert(/setScalar\(tw\)/.test(coast),
       '灯塔要均匀缩放（非均匀矩阵会把 sprite 拉成一条竖带）')
+  }
+}
+
+/*
+ * ---- 船上视角的天气 ----
+ *
+ * 【守什么】天气是"五个数分发到四处"的结构（雨/雾/浪高/压暗/闪电），
+ * 错一处屏幕上都只是"看起来不太对"，没有任何报错。这里钉住三件事：
+ * ① 每种天气的参数不许退化成一样（否则"五个天气"其实只有一个）；
+ * ② 平滑趋近必须收敛且单调，不能把 0.1 秒的 dt 放大成一次跳变；
+ * ③ 雨量到滴数的换算：0 就是 0（不付顶点），满就是满。
+ */
+{
+  // ---- ① 每种天气的参数表 ----
+  const clear = deckWeatherLook('clear')
+  assert(clear.rain === 0 && clear.fog === 0 && clear.wave === 1, '晴天：不雨不雾、浪是基准')
+  const storm = deckWeatherLook('storm')
+  assert(storm.rain === 1, '暴风雨的雨量是满的')
+  assert(storm.wave > 1.8, `暴风雨浪高接近两倍（实测 ${storm.wave}）`)
+  assert(storm.darken > deckWeatherLook('rain').darken, '暴风雨比下雨更暗')
+  assert(deckWeatherLook('fog').fog > 0.85, '浓雾的雾值接近 1')
+  assert(deckWeatherLook('fog').rain === 0, '浓雾不下雨')
+  assert(deckWeatherLook('rain').rain > 0 && deckWeatherLook('rain').rain < 1,
+    '下雨是"半满"，不是暴风雨')
+  // 五种天气的浪高必须互不相同（否则玩家感觉不到天气）
+  const waves = (['clear', 'cloudy', 'rain', 'storm', 'fog'] as const).map(k => deckWeatherLook(k).wave)
+  assert(new Set(waves).size === 5, `五种天气的浪高各不相同（实测 ${waves.join('/')}）`)
+  // 未知/空值退回晴天，不能算出 NaN 让画面卡死
+  assert(deckWeatherLook('nonsense').rain === 0, '未知天气退回晴天')
+  assert(deckWeatherLook(null).wave === 1, 'null 退回晴天')
+
+  // ---- ② 平滑趋近 ----
+  {
+    let cur = clear
+    const target = storm
+    let prev = cur.rain
+    for (let i = 0; i < 200; i++) {
+      cur = approachLook(cur, target, 1 / 60)
+      assert(cur.rain >= prev - 1e-9, '单调趋近（不许回头）')
+      prev = cur.rain
+    }
+    assert(Math.abs(cur.rain - 1) < 0.01, `3.3 秒后基本到位（实测 ${cur.rain.toFixed(3)}）`)
+    assert(Math.abs(cur.wave - target.wave) < 0.02, '浪高同样收敛')
+    // 一次巨大的 dt（切后台回来）不许一步跳完
+    const jump = approachLook(clear, storm, 30)
+    assert(jump.rain < 0.2, `dt 被钳住，不会一步到位（实测 ${jump.rain.toFixed(2)}）`)
+    // NaN 的 dt 不许把状态污染成 NaN
+    const bad = approachLook(clear, storm, NaN)
+    assert(Number.isFinite(bad.rain), 'NaN 的 dt 不会污染参数')
+  }
+
+  // ---- ③ 雨量 → 滴数 ----
+  assert(rainDropCount(clear, 6000) === 0, '不下雨时一滴都不画')
+  assert(rainDropCount(storm, 6000) === 6000, '暴风雨画满')
+  assert(rainDropCount(deckWeatherLook('rain'), 6000) > 2000, '下雨至少要有两千滴（否则看不见）')
+  assert(rainDropCount({ rain: NaN, fog: 0, wave: 1, darken: 0, tilt: 0, lightning: 0 }, 6000) === 0,
+    'NaN 雨量返回 0')
+  assert(rainDropCount({ rain: 5, fog: 0, wave: 1, darken: 0, tilt: 0, lightning: 0 }, 6000) === 6000,
+    '超过 1 的雨量钳在满')
+
+  // ---- ④ 闪电包络 ----
+  assert(lightningEnvelope(-1) === 0, '负年龄不闪')
+  assert(lightningEnvelope(99) === 0, '很久以前的不闪')
+  assert(lightningEnvelope(0.05) > 0.85, '刚击中时接近满亮')
+  assert(lightningEnvelope(0.5) < 0.1, '半秒后基本消失')
+  assert(Number.isFinite(lightningEnvelope(NaN)) , 'NaN 年龄不产生 NaN 亮度')
+
+  // ---- ⑤ 接线与三条反回退守卫 ----
+  {
+    const view = readFileSync(join(process.cwd(), 'src', 'components', 'deck', 'DeckView.tsx'), 'utf8')
+    // 浪高：海面 shader 与船姿态必须用**同一个** look.wave
+    assert(/seaUniforms\.uWaveScale\.value = look\.wave/.test(view), '海面用天气的浪高')
+    assert(/deckShipPose\(t, 0\.72, 0\.26, look\.wave\)/.test(view),
+      '船的姿态用同一个浪高（否则船会浮在浪外）')
+    // 雾：海面混的是雾色而不是天光色
+    assert(/vec3 farCol = mix\(uSky \* 0\.85, uFogColor, uFogK\)/.test(view),
+      '海面远处混雾色（只收窄区间不够）')
+    // 压暗：两个 shader 都要乘
+    assert((view.match(/col \*= uDark;/g) || []).length >= 2, '天空与海面都要压暗')
+
+    const rain = readFileSync(join(process.cwd(), 'src', 'components', 'deck', 'rainLayer.ts'), 'utf8')
+    /*
+     * 【为什么守这一条】setAmount 第一版收 0..1 比例，而调用方传的是滴数，
+     * 每个非零值都被 clamp 到 1 —— 小雨与暴风雨的雨幕一模一样，且不报错。
+     */
+    assert(/setAmount\(drops: number\)/.test(rain), 'setAmount 的参数是滴数')
+    assert(!/setAmount\(k: number\)/.test(rain), '不许退回 0..1 比例语义')
+    // 雨滴的倾斜必须在**两端点**上（只平移整滴的话雨永远是竖直的）
+    assert(/aEnd \* aLen \* skew/.test(rain), '雨丝的两端要错开（否则雨是竖直的）')
+
+    const coast = readFileSync(join(process.cwd(), 'src', 'components', 'deck', 'coastModel.ts'), 'utf8')
+    /*
+     * 雾对发光物的削弱必须在所有基础赋值**之后**：写在前面会被后面的
+     * `winMat.opacity = ...` 覆盖回去，雾里窗光与滩线一点都不淡。
+     */
+    const iBase = coast.indexOf('winMat.opacity = 0.06')
+    const iFog = coast.indexOf('const glowFade')
+    assert(iBase > 0 && iFog > iBase, '雾的削弱写在基础赋值之后')
   }
 }
 

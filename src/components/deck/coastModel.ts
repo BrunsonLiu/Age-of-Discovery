@@ -38,7 +38,7 @@ function buildRidgeGeometry(segments: number): THREE.BufferGeometry {
     pos.push(x, 0, 0.06)
     pos.push(x, h, -0.05)
     // 水线偏暗（湿岩），脊线稍亮（受天光）
-    col.push(0.72, 0.76, 0.72)
+    col.push(0.52, 0.56, 0.52)
     col.push(1, 1, 1)
     if (i < segments) {
       const a = i * 2
@@ -113,8 +113,12 @@ export interface DeckCoast {
   group: THREE.Group
   /** null = 看不见（远洋） */
   setSighting(s: CoastSighting | null): void
-  /** 每帧：night 0..1；horizon 用来做大气透视（远岸要往天色里退） */
-  update(t: number, night: number, horizon: THREE.Color): void
+  /**
+   * 每帧：night 0..1；horizon 做大气透视（远岸往天色里退）；
+   * fogK 0..1 + fogColor：浓雾时岸线要**真的淡出**（否则"能见度 100 米"的
+   * 时候 7 海里外的灯塔还清清楚楚，与文字读数自相矛盾）。
+   */
+  update(t: number, night: number, horizon: THREE.Color, fogK: number, fogColor: THREE.Color): void
   dispose(): void
 }
 
@@ -171,18 +175,18 @@ export function createDeckCoast(): DeckCoast {
   const tower = new THREE.Group()
   group.add(tower)
 
-  const rockMat = new THREE.MeshBasicMaterial({ color: 0x11161c })
+  const rockMat = new THREE.MeshBasicMaterial({ color: 0x11161c, transparent: true })
   const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(1, 0), rockMat)
   rock.scale.set(0.30, 0.15, 0.24)
   tower.add(rock)
 
-  const wallMat = new THREE.MeshBasicMaterial({ color: 0x2b3038 })
+  const wallMat = new THREE.MeshBasicMaterial({ color: 0x2b3038, transparent: true })
   const wall = new THREE.Mesh(new THREE.CylinderGeometry(0.085, 0.135, 1, 10), wallMat)
   wall.position.y = 0.5
   tower.add(wall)
 
   // 舱室：真正的发光体（不受光照影响，直接给亮色）
-  const lampMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(2.6, 1.9, 1.1) })
+  const lampMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(2.6, 1.9, 1.1), transparent: true })
   const lamp = new THREE.Mesh(new THREE.CylinderGeometry(0.105, 0.12, 0.09, 10), lampMat)
   lamp.position.y = 1.03
   tower.add(lamp)
@@ -345,7 +349,7 @@ export function createDeckCoast(): DeckCoast {
       lastPort = s.port.id
       void lastPort
     },
-    update(t, night, horizon) {
+    update(t, night, horizon, fogK, fogColor) {
       if (!cur) return
       /*
        * 岸色：白天偏绿的暗调，夜里几乎是黑的（比夜空更深，读作剪影）。
@@ -360,6 +364,38 @@ export function createDeckCoast(): DeckCoast {
       wallMat.color.lerp(horizon, 0.22 * far)
 
       /*
+       * 雾：颜色退到雾色 + 整体降不透明度。
+       * 只退颜色不够 —— 浓雾里岸的**边缘**也不该清楚，所以两个一起做。
+       */
+      const fog = Math.min(1, Math.max(0, Number.isFinite(fogK) ? fogK : 0))
+      if (fog > 0.01) {
+        const k = fog * 0.92
+        ridgeMat.color.lerp(fogColor, k * 0.85)
+        rockMat.color.lerp(fogColor, k * 0.9)
+        wallMat.color.lerp(fogColor, k * 0.8)
+        /*
+         * 1.05 而不是 0.75：岸线几何的**水线那一排顶点**比脊线亮（模拟湿岩反光），
+         * 保留 25% 不透明度时它在灰雾里会读成"海面上几条白色短线"（实测截图 3× 放大）。
+         * 浓雾本来就该看不见岸。
+         */
+        ridgeMat.opacity = Math.max(0, 1 - fog * 1.05)
+        /*
+         * 灯塔尤其要淡：它是**纯白塔身**，在灰雾里比在晴天还显眼 ——
+         * 而"浓雾里 7 海里外的灯塔"恰恰应该看不见。颜色退到雾色不够，
+         * 它的亮度和雾差太多，必须一起降不透明度。
+         */
+        const towerFade = Math.max(0, 1 - fog * 1.25)
+        wallMat.opacity = towerFade
+        rockMat.opacity = towerFade
+        lampMat.opacity = Math.max(0.15, 1 - fog)
+      } else {
+        ridgeMat.opacity = 1
+        wallMat.opacity = 1
+        rockMat.opacity = 1
+        lampMat.opacity = 1
+      }
+
+      /*
        * 灯：夜里才亮，但**不能全灭**——白天远看灯塔也该有个白色塔身，
        * 只是在日光下灯不是光源。所以舱室给一点常亮，光晕与光束跟夜色走。
        */
@@ -370,6 +406,20 @@ export function createDeckCoast(): DeckCoast {
       winMat.opacity = 0.06 + 0.8 * night
       foamMat.opacity = 0.10 + 0.30 * (1 - night)
       lampLight.intensity = 6 * night
+      /*
+       * 雾对"发光物"的削弱必须放在**所有基础赋值之后**。
+       * 第一版写在颜色那一段里（在 winMat/foamMat/haloMat 赋值之前），
+       * 结果每帧都被后面的 base 值覆盖回去 —— 雾里窗光与滩线一点没淡，
+       * 屏幕上只剩"海面上几段白色短线 + 一排暖点"（3× 放大才看清是它们）。
+       */
+      if (fog > 0.01) {
+        const glowFade = Math.max(0, 1 - fog * 1.4)
+        winMat.opacity *= glowFade
+        foamMat.opacity *= glowFade
+        haloMat.opacity *= Math.max(0, 1 - fog)
+        beamMat.opacity *= Math.max(0, 1 - fog)
+      }
+
       // 光束缓慢旋转：真实灯塔是转的，这一条让画面"活着"
       beam.rotation.y = t * 0.55
     },
