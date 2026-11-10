@@ -8788,5 +8788,43 @@ console.log('\n== 天数口径守卫 ==')
   }
 }
 
+/*
+ * ---- 船上视角接后处理（辉光）----
+ *
+ * 【上一轮的误判】当时判定"共用 post 在极暗场景里会把整体提亮 +55"，
+ * 于是没接。真正的根因是船上视角的 shader **缺 sRGB 编码**：直出把线性值
+ * 当 sRGB 写（偏暗），而 post 在合成末尾做了正确编码 —— "接了反而正常亮"，
+ * 看起来像 post 提亮了暗部。第 61 轮补上编码后两条路径值域一致。
+ *
+ * 这里守三件事：① 确实走 post；② 两个场景的阈值/强度**分开**；
+ * ③ setBloom 必须直接写 uniform（改局部变量不会进 shader）。
+ */
+{
+  const view = readFileSync(join(process.cwd(), 'src', 'components', 'deck', 'DeckView.tsx'), 'utf8')
+  assert(/post\.render\(scene, camera\)/.test(view), '船上视角要走后处理')
+  assert(!/^\s*renderer\.render\(scene, camera\)/m.test(view), '不许留一条绕过 post 的渲染路径')
+  assert(/post\.setThreshold\(/.test(view), '阈值要按场景单独设定')
+  /*
+   * 船上视角的阈值必须高于海图：这里的"亮部"包含海面的月光反射带
+   * （线性 0.5~0.9），用海图的 0.45 会把整条反光带捞进去、模糊后叠成
+   * 一条"白公路"（实测截图）。
+   */
+  const m = view.match(/post\.setThreshold\(([\d.]+)\)/)
+  assert(m !== null, '阈值是显式数字')
+  const deckThreshold = Number(m![1])
+  assert(deckThreshold > 0.6, `船上视角的阈值高于 0.6（实测 ${deckThreshold}）`)
+
+  const post = readFileSync(join(process.cwd(), 'src', 'components', 'map3d', 'post.ts'), 'utf8')
+  assert(/setThreshold\(t: number\): void/.test(post), 'post 暴露 setThreshold')
+  assert(/setBloom\(strength: number\): void/.test(post), 'post 暴露 setBloom（A/B 用）')
+  // setBloom 必须写 uniform，不能只改局部变量
+  assert(/compositeMat\.uniforms\.uBloom\.value =/.test(post),
+    'setBloom 直接写 uniform（改局部变量不会进 shader）')
+  assert(/brightMat\.uniforms\.uThreshold\.value =/.test(post),
+    'setThreshold 直接写 uniform')
+  // 关掉辉光仍走合成 —— 这条判据的像素级验证在 probe-deck-post.mjs
+  assert(/uBloom\.value = Number\.isFinite\(strength\)/.test(post), 'setBloom 挡住 NaN')
+}
+
 console.log(`\n最终结果：${passed} 通过 / ${failed} 失败`)
 if (failed > 0) process.exit(1)

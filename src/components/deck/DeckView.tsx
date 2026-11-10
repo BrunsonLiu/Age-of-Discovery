@@ -8,6 +8,7 @@ import { createDeckShip, type DeckShip } from './shipModel'
 import { DECK_WAVES, deckShipPose } from './deckWaves'
 import { findCoast, bearingWord, type CoastSighting } from './deckCoast'
 import { createDeckCoast } from './coastModel'
+import { createMap3DPost, type Map3DPost } from '@/components/map3d/post'
 import { createDeckRain, rainTiltFromWind } from './rainLayer'
 import {
   approachLook, deckWeatherLook, lightningEnvelope, rainDropCount, type DeckWeatherLook,
@@ -194,8 +195,14 @@ export default function DeckView() {
           float band = smoothstep(0.30, 0.0, h);
           col = mix(col, uDuskColor, uDusk * 0.55 * band);
           col += uMoonColor * smoothstep(0.99988, 0.99994, m) * (0.10 + 2.10 * uMoonK);
-          col += uMoonColor * pow(m, 240.0) * 0.20 * uMoonK;
-          col += uMoonColor * pow(m, 26.0) * 0.045 * uMoonK;
+          /*
+           * 月亮的两圈光晕。指数越大半径越小：
+           * 240/26 时外圈直径约 300px，夜里读成"月亮周围一大块灰白"（截图实测）；
+           * 收到 300/70 之后外圈剩约 120px，剩下的柔光交给后处理的辉光去补 ——
+           * 光晕画在天空里是**死的**（不随亮度变化），交给 bloom 才自然。
+           */
+          col += uMoonColor * pow(m, 300.0) * 0.16 * uMoonK;
+          col += uMoonColor * pow(m, 70.0) * 0.030 * uMoonK;
           // 黄昏整体压暗：日落时天比白天暗，不压的话"黄昏"会亮成一盏粉灯
           col *= 1.0 - 0.30 * uDusk;
           /*
@@ -332,7 +339,7 @@ export default function DeckView() {
            * 第一版没乘 uMoonK，正午截图里那条白亮带横贯海面，读作"水面反光过曝"。
            */
           float spec = pow(max(dot(n, h), 0.0), 420.0);
-          col += uMoon * spec * 0.85 * uMoonK;
+          col += uMoon * spec * 0.45 * uMoonK;
           // 浪脊的微弱提亮：让相邻浪面之间有层次，不然海面是一块布
           col += uSky * clamp(n.y - 0.97, 0.0, 1.0) * 0.8;
           // 远处收到天光色：与天空球的地平线接上，不出现一条硬边
@@ -416,6 +423,19 @@ export default function DeckView() {
     const fill = new THREE.DirectionalLight(0x9db6cf, 0.85)
     fill.position.set(-6, 4, -7)
     scene.add(fill)
+
+    // 后处理（辉光）：用海图那一份实现，参数共享一套
+    const post: Map3DPost = createMap3DPost(renderer)
+    /*
+     * 船上视角的辉光要另调两个数：
+     *  · 阈值 0.78（海图是 0.45）：这里的"亮部"包括**海面的月光反射带**
+     *    （线性 0.5~0.9），用 0.45 会把整条反光带捞进去、模糊后叠成一条白公路。
+     *  · 强度 0.45（海图 0.62）：镜头贴着水面，光斑在画面里占的比例大得多。
+     */
+    post.setThreshold(0.78)
+    post.setBloom(0.38)
+    // 取证句柄：探针要能开/关辉光做同帧 A/B
+    ;(window as unknown as { __deckPost?: unknown }).__deckPost = post
 
     /** 上一帧算出的"海面该反射的天光色"（含一点黄昏暖），给 uSky 用 */
     const lastSeaSky = new THREE.Color()
@@ -579,7 +599,12 @@ export default function DeckView() {
       lastSeaSky.copy(SKY_HORIZON_NIGHT).lerp(SKY_HORIZON_DAY, dayK).lerp(DUSK_HORIZON, 0.45 * dusk)
       skyMat.uniforms.uDusk.value = dusk
       seaUniforms.uDeep.value.copy(SEA_DEEP_NIGHT).lerp(SEA_DEEP_DAY, dayK).multiplyScalar(1 - 0.22 * dusk)
-      seaUniforms.uSky.value.copy(lastSeaSky).multiplyScalar(0.72)
+      /*
+       * 0.55 而不是 0.72：相机贴着水面时几乎整片海都是掠射角（菲涅尔接近上限），
+       * 天光色的权重被放得很大，夜海会读成"浅灰的地板"。压到 0.55 之后
+       * 近处才有水色、远处才反天光。
+       */
+      seaUniforms.uSky.value.copy(lastSeaSky).multiplyScalar(0.55)
       seaUniforms.uMoonK.value = 0.04 + 0.96 * night
 
       /*
@@ -589,7 +614,20 @@ export default function DeckView() {
        * 属于那条合成链路的遗留问题，不能带着上船。先把场景做对，辉光留给下一轮
        * 单独修（判据：关掉辉光时逐像素等于直出）。
        */
-      renderer.render(scene, camera)
+      /*
+       * ---- 后处理：只做辉光 ----
+       *
+       * 【上一轮为什么没接】当时的判断是"共用 post 在极暗场景里会把整体提亮 +55"
+       * （夜空 rgb(16,27,40) → rgb(71,92,111)）。**那个诊断是错的** ——
+       * 真正的原因是船上视角的天空/海面 shader 当时**缺 sRGB 编码**：
+       * 直出把线性值直接写成 sRGB（画面偏暗），而 post 在合成末尾做了正确的编码，
+       * 于是"接了 post 反而正常亮"，看起来像 post 提亮了暗部。
+       * 第 61 轮补上 srgbEncode 之后，两条路径的值域一致，可以接了。
+       *
+       * 判据（写死在这里）：关掉辉光（uBloom=0）时与直出**逐像素一致**，
+       * 由 `.workbuddy/probe-deck-post.mjs` 验。
+       */
+      post.render(scene, camera)
       raf = requestAnimationFrame(tick)
     }
     raf = requestAnimationFrame(tick)
@@ -610,6 +648,7 @@ export default function DeckView() {
       deckShip.dispose()
       coast.dispose()
       rain.dispose()
+      post.dispose()
       renderer.dispose()
       renderer.domElement.remove()
       delete (window as unknown as { __deckScene?: THREE.Scene }).__deckScene

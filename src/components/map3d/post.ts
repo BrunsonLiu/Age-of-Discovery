@@ -31,10 +31,27 @@ export interface Map3DPost {
   readonly debugSceneRT: THREE.WebGLRenderTarget
   setEnabled(on: boolean): void
   readonly enabled: boolean
+  /**
+   * 设置辉光强度（0 = 只走合成、不加光晕）。
+   *
+   * 【为什么需要这个入口】"关掉辉光必须等于直出"是本文件的核心判据，
+   * 而 `setEnabled(false)` 是**绕开整条链路**，验不出合成里的色彩转换是否对。
+   * 只有把强度降到 0、仍走合成，才能逐像素对账。
+   */
+  setBloom(strength: number): void
+  /**
+   * 设置亮部阈值（线性口径）。
+   *
+   * 【为什么需要按场景调】海图的"亮"是港口灯火与月亮（很亮的点光源），
+   * 阈值 0.45 正好只捞它们；而船上视角里**海面的月光反射**本身就是一条
+   * 高光带（线性值 0.5~0.9），0.45 会把它整条捞进去、模糊后叠成一条白公路。
+   * 两个场景的"亮部"分布不同，阈值就不能共用一个。
+   */
+  setThreshold(t: number): void
   dispose(): void
 }
 
-/** 辉光强度（改动这一个数就能整体加减"电影感"） */
+/** 辉光强度的默认值（`setBloom` 可以临时改它做 A/B） */
 const BLOOM_STRENGTH = 0.62
 /**
  * 亮部阈值（**线性口径**，场景缓冲是线性 HalfFloat）。
@@ -223,6 +240,13 @@ export function createMap3DPost(renderer: THREE.WebGLRenderer): Map3DPost {
   return {
     get enabled() {
       return on
+    },
+    setBloom(strength) {
+      // 直接写 uniform：改一个局部变量不会传进 shader（第一版就是这么错的）
+      compositeMat.uniforms.uBloom.value = Number.isFinite(strength) ? Math.max(0, strength) : 0
+    },
+    setThreshold(t) {
+      brightMat.uniforms.uThreshold.value = Number.isFinite(t) ? Math.max(0, Math.min(1, t)) : BLOOM_THRESHOLD
     },
     get debugSceneRT() {
       return sceneRT
