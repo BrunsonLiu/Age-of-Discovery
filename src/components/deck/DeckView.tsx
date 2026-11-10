@@ -831,17 +831,18 @@ export default function DeckView() {
        */
       /*
        * 去掉双重 sRGB 编码之后，同样的灯光参数看起来亮了一大截（甲板成了平涂的
-       * 橘色，实测截图）。这组数按"线性色直接进后处理"重调：白天总光量降约 30%，
-       * 甲板才有明暗层次，而不是一块发亮的木板。
+       * 橘色），但第一版"降 30%"又矫枉过正：正午甲板读成一块深巧克力色、舷墙内侧
+       * 全黑（实测截图）。这组数是第三次校：白天 fill 1.85 / ambient 0.56 /
+       * hemi 0.48 —— 比"平涂"那次低一点，比"过暗"那次高四成。
        */
-      fill.intensity = 0.5 + 0.75 * skyInfo.lit
+      fill.intensity = 0.5 + 1.35 * skyInfo.lit
       fill.color.copy(FILL_NIGHT).lerp(FILL_DAY, skyInfo.lit)
-      ambient.intensity = 0.26 + 0.16 * skyInfo.lit
+      ambient.intensity = 0.26 + 0.30 * skyInfo.lit
       /*
        * 半球光夜里给得多、白天给得少：白天有方向光（fill 涨到 1.7），
        * 再叠一层环境光会把船壳照成平涂；夜里则需要它撑住甲板的可读性。
        */
-      hemi.intensity = 0.72 - 0.34 * skyInfo.lit
+      hemi.intensity = 0.72 - 0.24 * skyInfo.lit
 
       /*
        * ---- 天气：平滑趋近 + 分发到四处 ----

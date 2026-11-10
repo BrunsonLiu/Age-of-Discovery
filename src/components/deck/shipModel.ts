@@ -62,8 +62,10 @@ export function createDeckShip(): DeckShip {
    * 一小段短线，密密麻麻排在板缝旁，整片甲板读成"砖砌地面"（放大截图实测）。
    */
   const deckCanvas = plankCanvas({
-    seed: 9917, along: 'v', rows: 24, base: [122, 90, 58], seamW: 2.4,
-    grain: 0, wear: 0.15, size: 1024, buttJoints: true,
+    // 底色 [150, 112, 74]：晒过的柚木甲板；[122,90,58] 在正确编码下读作深巧克力
+    seed: 9917, along: 'v', rows: 24, base: [150, 112, 74], seamW: 2.4,
+    // grain 0.4：一点点木纹就够；0 的时候近看是一块平涂的板（放大截图）
+    grain: 0.4, wear: 0.15, size: 1024, buttJoints: true,
   })
   const hullTex = texFrom(hullCanvas, true)
   const hullNormal = normalFromCanvas(hullCanvas, 2.2)
@@ -87,7 +89,12 @@ export function createDeckShip(): DeckShip {
    * 时主桅是一根贯穿画面的黑柱子（实测截图），读作"穿模的圆柱"而不是木桅。
    * 焦油涂过的木头是深棕，不是黑。
    */
-  const mastMat = new THREE.MeshStandardMaterial({ color: 0x33251a, roughness: 0.85, metalness: 0.08 })
+  /*
+   * 桅杆 0x33251a → 0x4a3826：站到甲板上抬头，主桅是一根贯穿画面的黑柱子 —— 它
+   * 只吃环境光（fill 从镜头后方打，桅杆朝镜头那面在背光里），深棕在 ACES 下就黑了。
+   * 抬到 0x4a3826 才读得出是"焦油木"，而不是一根穿模的杆。
+   */
+  const mastMat = new THREE.MeshStandardMaterial({ color: 0x4a3826, roughness: 0.85, metalness: 0.08 })
 
   // ---------------- 船体放样 ----------------
   // 几何在 `shipHull.ts` 里生成（纯数组、可单测）；这里只负责贴到 BufferGeometry 上
@@ -338,6 +345,47 @@ export function createDeckShip(): DeckShip {
   }
   group.add(wheel)
 
+  /*
+   * ---------------- 甲板零碎：系缆桩 / 盘好的缆绳 / 木桶 ----------------
+   * 站到甲板上时，三米以内的地面原本空得发慌（只有木纹）。这些零碎不参与玩法，
+   * 但它们给了**尺度参照**：一根缆桩的高度、一只桶的体积，让"人眼 1.7 米"有了
+   * 可比较的东西，甲板才不是一块无限大的地板。
+   */
+  {
+    // 系缆桩：沿舷墙内侧一排小木桩（控帆索就拴在这上面）
+    const pinGeo = new THREE.CylinderGeometry(0.055, 0.075, 0.62, 6)
+    for (const sgn of [-1, 1]) {
+      for (let k = 0; k < 9; k++) {
+        const z = -10 + k * 2.4
+        const x = sgn * (shipDeckHalfWidthAt(z) - 0.12)
+        const pin = new THREE.Mesh(pinGeo, woodMid)
+        pin.position.set(x, shipDeckAt(z) + 0.4, z)
+        pin.rotation.x = sgn * 0.16
+        group.add(pin)
+      }
+    }
+    // 盘在甲板上的缆绳：三圈大小不同的环，层层叠起来才像"盘好的"
+    const ropeMat = new THREE.MeshStandardMaterial({ color: 0x6a5a3c, roughness: 0.95 })
+    for (const [r, y] of [[0.62, 0.06], [0.48, 0.13], [0.32, 0.19]] as const) {
+      const coil = new THREE.Mesh(new THREE.TorusGeometry(r, 0.075, 5, 20), ropeMat)
+      coil.position.set(-1.5, shipDeckAt(-2.6) + y, -2.6)
+      coil.rotation.x = Math.PI / 2
+      group.add(coil)
+    }
+    // 两只木桶（箍是深色的一圈，近看才有"桶"而不只是"圆柱"）
+    for (const [bx, bz] of [[1.7, 2.4], [2.1, 1.2]] as const) {
+      const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.28, 0.82, 10), woodMid)
+      barrel.position.set(bx, shipDeckAt(bz) + 0.41, bz)
+      group.add(barrel)
+      for (const hy of [-0.22, 0.22]) {
+        const hoop = new THREE.Mesh(new THREE.TorusGeometry(0.33, 0.028, 4, 12), ironMat)
+        hoop.position.set(bx, shipDeckAt(bz) + 0.41 + hy, bz)
+        hoop.rotation.x = Math.PI / 2
+        group.add(hoop)
+      }
+    }
+  }
+
   // 绞盘：主桅后面一个，纯装饰（但它是"甲板上有活儿"的信号）
   {
     const capstan = new THREE.Group()
@@ -528,10 +576,12 @@ export function createDeckShip(): DeckShip {
          */
         float ex = smoothstep(0.0, 0.17, vMapUv.x) * smoothstep(0.0, 0.17, 1.0 - vMapUv.x);
         float ey = smoothstep(0.0, 0.10, vMapUv.y) * smoothstep(0.0, 0.24, 1.0 - vMapUv.y);
-        diffuseColor.rgb *= 0.70 + 0.30 * min(ex, ey);
+        diffuseColor.rgb *= 0.58 + 0.42 * min(ex, ey);
         float seam = abs(fract(vMapUv.x * 4.0 + 0.5) - 0.5);
-        diffuseColor.rgb *= 1.0 - 0.11 * smoothstep(0.055, 0.0, seam);
-        diffuseColor.rgb *= 1.0 + 0.12 * smoothstep(0.6, 0.0, vMapUv.y);
+        diffuseColor.rgb *= 1.0 - 0.16 * smoothstep(0.06, 0.0, seam);
+        diffuseColor.rgb *= 1.0 + 0.16 * smoothstep(0.6, 0.0, vMapUv.y);
+        // 布面整体有一点点自上而下的明暗（帆桁上沿最暗）
+        diffuseColor.rgb *= 0.94 + 0.06 * smoothstep(0.0, 0.7, vMapUv.y);
       `)
     }
     sailMats.push(mat)

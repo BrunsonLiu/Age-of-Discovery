@@ -21,28 +21,54 @@ function hash01(i: number): number {
   return x - Math.floor(x)
 }
 
-/** 单位空间的山脊：沿 x 从 −0.5 到 0.5，两条边（水线与脊线） */
+/**
+ * 单位空间的山脊：沿 x 从 −0.5 到 0.5。
+ *
+ * 【为什么要三排顶点，不是两排】最早只有"水线 + 脊线"两条边，整座岸是一块
+ * 由下往上渐亮的单色板 —— 白天是一块贴着海面的绿纸片（实测截图）。
+ * 真实的海岸从海往上看至少有三层：**湿岩/沙滩 → 草坡 → 树线**，颜色一层比一层深，
+ * 而且每层都该有横向的不均匀。这里按 y = 0 / 0.55h / h 排三排，逐段给色，
+ * 再叠一个低频的"岬角"起伏，山脊就有前后层次而不是一条轮廓线。
+ */
 function buildRidgeGeometry(segments: number): THREE.BufferGeometry {
   const pos: number[] = []
   const col: number[] = []
   const idx: number[] = []
+  /*
+   * 五排色带：湿沙 → 干沙 → 草坡 → 灌丛 → 树线。
+   * 三排那次在 30 单位的距离上读成了"三条横纹蛇皮"（实测截图）—— 色带太宽、
+   * 层间没有过渡。排数加到五、且越往上越窄，才像坡面而不是等高线。
+   */
+  const BANDS: readonly [number, [number, number, number]][] = [
+    [0.0, [0.5, 0.53, 0.48]],
+    [0.16, [0.78, 0.78, 0.66]],
+    [0.46, [1.02, 1.06, 0.94]],
+    [0.74, [0.84, 0.9, 0.76]],
+    [1.0, [0.68, 0.76, 0.66]],
+  ]
+  const ROWS = BANDS.length
   for (let i = 0; i <= segments; i++) {
     const u = i / segments
     const x = u - 0.5
     // 三层起伏叠加：大屿 + 小山 + 碎丘；两端压低，岸线才不像被裁断
     const edgeFade = Math.sin(Math.PI * u) ** 0.6
+    // 低频岬角：让岸线有几处明显的高地，不然整条岸像一条正弦波
+    const cape = 0.22 * Math.sin(u * Math.PI * 3.1 + 1.3) * Math.sin(u * Math.PI * 1.7)
     const h =
-      (0.62 + 0.26 * hash01(i * 3.1) + 0.15 * hash01(i * 7.7 + 11) + 0.08 * hash01(i * 13.3 + 29))
+      (0.62 + 0.26 * hash01(i * 3.1) + 0.15 * hash01(i * 7.7 + 11) + 0.08 * hash01(i * 13.3 + 29) + cape)
       * edgeFade
-    // 水线与脊线：脊线略往后（z 越小越远），读作一道斜坡而不是一堵墙
-    pos.push(x, 0, 0.06)
-    pos.push(x, h, -0.05)
-    // 水线偏暗（湿岩），脊线稍亮（受天光）
-    col.push(0.52, 0.56, 0.52)
-    col.push(1, 1, 1)
+    // 每段的横向色差：同一层里也有一块块深浅（草地/裸岩/树丛）
+    const patch = 0.9 + 0.12 * hash01(i * 5.3 + 7)
+    for (let r = 0; r < ROWS; r++) {
+      const [t, c] = BANDS[r]
+      pos.push(x, h * t, 0.06 - 0.11 * t)
+      col.push(c[0] * patch, c[1] * patch, c[2] * patch)
+    }
     if (i < segments) {
-      const a = i * 2
-      idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2)
+      const a = i * ROWS
+      for (let r = 0; r < ROWS - 1; r++) {
+        idx.push(a + r, a + r + 1, a + ROWS + r, a + r + 1, a + ROWS + r + 1, a + ROWS + r)
+      }
     }
   }
   const geo = new THREE.BufferGeometry()
