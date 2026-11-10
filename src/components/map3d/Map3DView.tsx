@@ -890,12 +890,33 @@ export default function Map3DView() {  const mountRef = useRef<HTMLDivElement>(n
           lidMat.userData.toneInjected = shader.fragmentShader.includes(anchor)
           if (!lidMat.userData.toneInjected) return
           shader.uniforms.uParchMix = { value: anchoropts.mix }
-          shader.fragmentShader = shader.fragmentShader
+          /*
+           * 【为什么要另建一个 varying 传几何 uv】`vMapUv` 是**贴图矩阵变换后**的 uv
+           * （repeat/offset 乘在里面）。冰盖贴图那块 canvas 带着自己的变换，于是
+           * vMapUv.y 在极区并不等于"0.95 的纬度"，按它写 smoothstep 永远不触发 ——
+           * 实测：同一段补丁把陆地涂成纯蓝有效（证明补丁进了编译），但按 vMapUv.y
+           * 做的暗角一个像素都不变。这里直接传几何 uv（v=0 北极、v=1 南极）。
+           */
+          shader.vertexShader = 'varying vec2 vLandUv;\n'
+            + shader.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n  vLandUv = uv;')
+          shader.fragmentShader = 'varying vec2 vLandUv;\n' + shader.fragmentShader
             .replace(
               '#include <map_fragment>',
               `#include <map_fragment>
               // 只动色相/明度，不动 alpha；羊皮纸色与 2D 的纸纹同源
               diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.859, 0.773, 0.616), uParchMix);
+              /*
+               * ---- 极区裁断边的暗角 ----
+               * land.geojson 在极圈附近是被**直接切断**的：南极那一整片陆地在海图
+               * 最南端是一条笔直的边（用户报了很久的"白色楔形"就是它）。
+               * 试过往海色 mix —— 太弱：陆地被太阳方向光照得很亮，albedo 混掉 50%
+               * 之后仍是一块亮面（实测截图看不出来）。改成**乘性压暗到近黑**：
+               * 最后 4% 的纬度压掉 95%，读作"海图在极区收进暗处"，边界就消失，
+               * 而且和羊皮纸老图"四角压暗"的语言一致。
+               */
+              float edgeS = smoothstep(0.935, 0.998, vLandUv.y);
+              float edgeN = smoothstep(0.02, 0.002, vLandUv.y);
+              diffuseColor.rgb *= 1.0 - 0.97 * max(edgeS, edgeN);
 `,
             )
             .replace('#include <common>', '#include <common>\nuniform float uParchMix;')

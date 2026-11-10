@@ -9060,5 +9060,24 @@ console.log('\n== 天数口径守卫 ==')
   assert(Number.isFinite(clampElevation(Number.NaN, Number.NaN)), 'NaN 输入也给出有限值')
 }
 
+/*
+ * ---- 海图极区"裁断边"的暗角 ----
+ *
+ * 【守什么】land.geojson 在极圈附近被直接切断，南极那片陆地在海图最南端是一条
+ * 笔直的边（用户报了很久的"白色楔形"）。修法是在陆板材质的 map_fragment 里按
+ * **几何 uv** 压暗——注意不能用 vMapUv：它是"贴图矩阵变换后"的 uv，冰盖贴图带着
+ * 自己的变换，值域不是 0..1（实测按它写 smoothstep 一个像素都不变，查了两轮）。
+ */
+{
+  const view = readFileSync(join(process.cwd(), 'src', 'components', 'map3d', 'Map3DView.tsx'), 'utf8')
+  assert(/vLandUv = uv/.test(view), '顶点着色器要传出几何 uv（vLandUv）')
+  assert(/smoothstep\(0\.9[0-9]+, 0\.99[0-9]+, vLandUv\.y\)/.test(view),
+    '南端按几何 uv 做压暗（vLandUv.y 接近 1）')
+  assert(!/smoothstep\([^)]*vMapUv\.y\)/.test(view),
+    '极区压暗不许用 vMapUv（贴图矩阵变换后的 uv，值域不是 0..1）')
+  assert(/diffuseColor\.rgb \*= 1\.0 - 0\.9[0-9] \* max\(edgeS, edgeN\)/.test(view),
+    '暗角是乘性压暗（往海色 mix 太弱：陆地被方向光照得很亮）')
+}
+
 console.log(`\n最终结果：${passed} 通过 / ${failed} 失败`)
 if (failed > 0) process.exit(1)
