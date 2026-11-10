@@ -182,6 +182,32 @@ export function createDeckCoast(): DeckCoast {
   group.add(foamLine)
 
   /*
+   * ---- 山脊上的月光轮廓 ----
+   * 夜里岸就是一块纯黑剪影，与夜空几乎没有边界（实测截图：岸"消失"了，只剩窗光
+   * 和灯塔悬在黑暗里）。真实的夜里，山脊会被月光勾出一条细边 —— 极弱的一条线，
+   * 但它让"岸在哪里"重新成立，而且不破坏剪影的暗。
+   * 用加法混合 + 只随夜色淡入，白天完全不出现。
+   */
+  const rimGeo = new THREE.BufferGeometry()
+  {
+    const hs = ridgeHeights(72)
+    const pts: number[] = []
+    for (let i = 0; i < hs.length; i++) pts.push(i / 72 - 0.5, hs[i], -0.05)
+    rimGeo.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3))
+  }
+  const rimMat = new THREE.LineBasicMaterial({
+    // 0.42/0.52/0.62 时它像沿着岸拉了一根灰色电线；压到 0.26/0.33/0.42 才只是"月光的边"
+    color: new THREE.Color(0.26, 0.33, 0.42),
+    transparent: true,
+    opacity: 0,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  })
+  const rim = new THREE.Line(rimGeo, rimMat)
+  rim.name = 'deck-coast-rim'
+  group.add(rim)
+
+  /*
    * ---- 岸上的树 ----
    *
    * 【为什么要有】远岸只要一条色带就够了，但船**开近**（7 海里以内）时，岸上
@@ -287,6 +313,7 @@ export function createDeckCoast(): DeckCoast {
   const beamGeo = new THREE.PlaneGeometry(1.9, 0.2, 1, 1)
   beamGeo.translate(0.95, 0, 0)
   const beam = new THREE.Group()
+  beam.name = 'deck-beam'
   beam.position.y = 1.03
   // 两片交叉：单片面片在侧视时会变成一条线
   const beamA = new THREE.Mesh(beamGeo, beamMat)
@@ -366,6 +393,14 @@ export function createDeckCoast(): DeckCoast {
   let cur: CoastSighting | null = null
   let layout = coastLayout(0)
 
+  /*
+   * 光束扫掠：灯塔的光是转的。
+   * 【为什么值得做】静态的两片交叉面片在夜里就是"贴着塔的一道亮痕"，看两秒就死；
+   * 让它绕塔轴慢慢转（约 12 秒一圈），画面立刻有"有人在守着这片海"的意思，
+   * 而且转动时两条光带交替正对镜头，亮度会自然呼吸 —— 不用额外做动画曲线。
+   */
+  const BEAM_RAD_PER_SEC = (Math.PI * 2) / 12
+
   return {
     group,
     setSighting(s) {
@@ -392,6 +427,7 @@ export function createDeckCoast(): DeckCoast {
       group.rotation.y = 0
 
       ridge.scale.set(layout.width, layout.ridgeHeight, layout.width * 0.14)
+      rim.scale.copy(ridge.scale)
       // 灯塔：放在岸线偏一侧（正中会挡住船），高度随景别
       const tw = layout.towerHeight
       tower.position.set(layout.width * 0.1, 0, layout.width * 0.02)
@@ -447,6 +483,7 @@ export function createDeckCoast(): DeckCoast {
     },
     update(t, night, horizon, fogK, fogColor) {
       if (!cur) return
+      beam.rotation.y = t * BEAM_RAD_PER_SEC
       /*
        * 岸色：白天偏绿的暗调，夜里几乎是黑的（比夜空更深，读作剪影）。
        * 再用 horizon 做大气透视——远岸往天色里退，近岸保留自身颜色。
@@ -503,6 +540,8 @@ export function createDeckCoast(): DeckCoast {
       const lampK = 0.25 + 0.75 * night
       lampMat.color.setRGB(2.6 * lampK, 1.9 * lampK, 1.1 * lampK)
       haloMat.opacity = 0.02 + 0.68 * night
+      // 月光轮廓：只在夜里出现，浓雾时也一起退掉（否则"雾里的山脊"会自己发光）
+      rimMat.opacity = 0.24 * night * Math.max(0, 1 - fogK)
       beamMat.opacity = 0.22 * night * night
       winMat.opacity = 0.06 + 0.8 * night
       foamMat.opacity = 0.10 + 0.30 * (1 - night)
@@ -540,6 +579,8 @@ export function createDeckCoast(): DeckCoast {
       wallMat.dispose()
       lampMat.dispose()
       beamA.geometry.dispose()
+      rimGeo.dispose()
+      rimMat.dispose()
       // 岸树（实例化）与礁石的材质也要释放；几何由 sceneDispose 统一收
       treeMat.dispose()
       shoreMat.dispose()
