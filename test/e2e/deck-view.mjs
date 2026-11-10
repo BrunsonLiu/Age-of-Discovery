@@ -217,6 +217,32 @@ if (crow.text) {
 await page.evaluate(() => [...document.querySelectorAll('button')].find((b) => /收起/.test(b.textContent || ''))?.click())
 await sleep(400)
 
+// ---- ⑤c 海鸟层：样式在位，且"远洋必须没有鸟"----
+const birdLayer = await page.evaluate(() => {
+  const o = window.__deckScene?.getObjectByName('deck-birds')
+  if (!o) return null
+  const p = o.geometry.attributes.position
+  return {
+    verts: p.count,
+    opacity: o.material.opacity,
+    finite: Array.from({ length: Math.min(48, p.count) }).every((_, i) => Number.isFinite(p.getY(i))),
+    info: window.__deckBirds ?? null,
+  }
+})
+check(!!birdLayer, '船上视角有海鸟层（deck-birds）')
+check(birdLayer && birdLayer.verts === 48, `海鸟层 12 只 × 4 顶点（实测 ${birdLayer?.verts}）`)
+check(birdLayer && birdLayer.finite, '海鸟顶点没有 NaN（否则整批消失）')
+// 远洋：没有陆地 → 一只鸟都不许有。这条与时相无关，所以不会随「跑测试的时刻」变红。
+await page.evaluate(() => {
+  const st = window.__gameStore.getState()
+  window.__gameStore.setState({ shipPosition: [10, -150], waypoint: null, fleet: { ...st.fleet, isSailing: false, currentPortId: null } })
+})
+await sleep(1600)
+const offshore = await page.evaluate(() => window.__deckBirds ?? null)
+check(!!offshore && offshore.count === 0, `远洋（太平洋中部）没有海鸟（实测 ${offshore?.count} 只）`)
+check(await page.evaluate(() => window.__deckScene.getObjectByName('deck-birds').material.opacity === 0),
+  '没有鸟的时候整层不透明度是 0（不是"画在原点"）')
+
 // ---- ⑥ 回海图：场景要真的被拆掉（不能留一个跑着的 rAF）----
 await page.evaluate(() => document.querySelector('[data-testid=deck-view-close]')?.click())
 await sleep(1200)

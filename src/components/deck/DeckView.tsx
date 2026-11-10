@@ -12,6 +12,7 @@ import { deckEyeY, stepWalk, WALK_SPEED_M, type WalkPos } from './deckWalk'
 import { SHIP_DRAFT_LIFT } from './shipShape'
 import { createMap3DPost, type Map3DPost } from '@/components/map3d/post'
 import { createDeckRain, rainTiltFromWind } from './rainLayer'
+import { BIRD_MAX, deckBirdFlock, deckBirdPose } from './deckBirds'
 import {
   approachLook, deckWeatherLook, lightningEnvelope, rainDropCount, type DeckWeatherLook,
 } from './deckWeather'
@@ -527,6 +528,23 @@ export default function DeckView() {
       `,
       fragmentShader: /* glsl */ `
         uniform vec3 uMoonDir;
+        /*
+         * 值噪声（哈希 + 双线性 + smoothstep 插值）。只给"月光的碎光"用。
+         * 为什么不用纹理：海面没有 uv（位置在顶点里算），而且 0.3 单位级的噪声
+         * 用 4 个 sin 就够，省一张贴图的带宽与采样。
+         */
+        float hash21(vec2 p) {
+          return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+        }
+        float vnoise(vec2 p) {
+          vec2 i = floor(p);
+          vec2 f = fract(p);
+          vec2 u = f * f * (3.0 - 2.0 * f);
+          return mix(
+            mix(hash21(i), hash21(i + vec2(1.0, 0.0)), u.x),
+            mix(hash21(i + vec2(0.0, 1.0)), hash21(i + vec2(1.0, 1.0)), u.x),
+            u.y);
+        }
         uniform vec3 uDeep;
         uniform vec3 uSky;
         uniform vec3 uMoon;
@@ -571,8 +589,19 @@ export default function DeckView() {
            * 注意：它只进高光，不动顶点位移，所以船不会浮在浪外，也不会变成布纹。
            */
           vec3 nn = n;
-          nn.x += sin(vWorld.x * 6.3 + uTime * 1.7) * 0.035 + sin(vWorld.z * 9.7 - uTime * 2.1) * 0.022;
-          nn.z += sin(vWorld.z * 5.9 + uTime * 1.3) * 0.035 + sin(vWorld.x * 11.3 - uTime * 1.6) * 0.018;
+          /*
+           * 【为什么从"两个正弦相加"改成"两个乘积"】
+           * 相加的两个正弦在屏幕上是一条条**互相平行又能干涉的条纹**（波长约 1 单位
+           * = 20 米），高光被它们切成一段段的波浪带 —— 实测夜航截图里月光道是一条
+           * 边缘起伏的白绸带，读作"贴在水面上的一块布"。
+           * 取**乘积**再叠三个互不成比例的方向（41.3/23.9/17.3 互质、波长 3~5 米），
+           * 得到的是斑点状的亮点（正正得正、正负得负），高光碎成鳞片。
+           * 幅度 0.055 也比原来的 0.035 大：指数 900 很窄，法线只晃 0.05 就足以
+           * 让高光与浪错开，幅度再小就几乎看不出变化。
+           */
+          vec2 q = vWorld.xz;
+          nn.x += (vnoise(q * 2.7) - 0.5) * 0.075 + (vnoise(q * 7.1 + 13.0) - 0.5) * 0.035;
+          nn.z += (vnoise(q * 2.7 + 41.0) - 0.5) * 0.075 + (vnoise(q * 7.1 + 71.0) - 0.5) * 0.035;
           nn = normalize(nn);
           vec3 h = normalize(uMoonDir + v);
           /*
@@ -591,7 +620,15 @@ export default function DeckView() {
            * 一个多边形（实测截图：像一条折线的路）。收窄高光半径，碎光才像水面上
            * 的鳞片，剩下的柔光交给后处理辉光。
            */
-          float spec = pow(max(dot(nn, h), 0.0), 900.0);
+          /*
+           * 【为什么还要乘一个噪声门】只抖法线时，月光道是"一整条被揉皱的带子" ——
+           * 几何网格一格 0.7 单位（14 米），相邻几格的法线都接近镜面角，高光连成片。
+           * 真实的水面是**一块块独立的小镜面**，有亮有暗、中间会断。
+           * 乘一个 0.2~1.8 的噪声门，高光才被切成一颗颗独立的亮点（中间真的暗下去，
+           * 不是"蒙了一层灰"）。
+           */
+          float gate = 0.2 + 1.7 * vnoise(vWorld.xz * 3.6 + 7.0);
+          float spec = pow(max(dot(nn, h), 0.0), 900.0) * gate;
           col += uMoon * spec * 0.34 * uMoonK;
           // 浪脊的微弱提亮：让相邻浪面之间有层次，不然海面是一块布
           col += uSky * clamp(n.y - 0.985, 0.0, 1.0) * 0.35;
@@ -667,6 +704,27 @@ export default function DeckView() {
      */
     const rain = createDeckRain(6000)
     scene.add(rain.mesh)
+
+    /*
+     * ---- 海鸟（近岸时出现）----
+     *
+     * 每只鸟 = 2 段线（一个浅浅的 V 字），12 只一共 48 个顶点，逐帧在 CPU 上写。
+     * 【为什么用线不用网格】20 单位（400 米）外的一只 2 米翼展的海鸟只有几个像素，
+     * 这时候"两根斜线构成的 V"就是它真实的样子；给两只三角面反而会因为面朝不对
+     * 而闪。线不受光、不受雾，颜色固定为深灰——它在画面里永远是剪影。
+     *
+     * 数量、方位、出现时机全部来自 `deckBirds` 的纯函数（可单测），这里只负责抄顶点。
+     */
+    const birdPos = new Float32Array(BIRD_MAX * 4 * 3)
+    const birdGeo = new THREE.BufferGeometry()
+    birdGeo.setAttribute('position', new THREE.BufferAttribute(birdPos, 3))
+    const birdMat = new THREE.LineBasicMaterial({
+      color: 0x161a1d, transparent: true, opacity: 0, depthWrite: false,
+    })
+    const birds = new THREE.LineSegments(birdGeo, birdMat)
+    birds.name = 'deck-birds'
+    birds.frustumCulled = false
+    scene.add(birds)
 
     /*
      * ---- 天气状态（平滑趋近）----
@@ -1135,6 +1193,62 @@ export default function DeckView() {
       }
       coast.update(t, night, skyMat.uniforms.uHorizon.value, look.fog, skyMat.uniforms.uFogColor.value)
 
+      /*
+       * ---- 海鸟：位置由纯函数给，这里只抄顶点 ----
+       * `sightingRef.current` 是每 8 帧算一次的那个最近陆地（与 HUD 同一次计算），
+       * 所以鸟群的方向永远等于"岸在哪边"——两条线索不可能各说各话。
+       */
+      {
+        const sight = sightingRef.current
+        const flock = deckBirdFlock(
+          sight ? sight.distNm : null,
+          skyInfo.lit,
+          st.weather?.kind,
+          sight ? sight.relBearingDeg : 0,
+        )
+        // 0.62：深灰的线在亮天上够清楚，又不至于像"一串飘在空中的黑线"
+        birdMat.opacity = flock.count ? 0.62 : 0
+        for (let i = 0; i < BIRD_MAX; i++) {
+          const o = i * 12
+          if (i >= flock.count) {
+            /*
+             * 多余的鸟藏到水下 80 单位。**不能只把 opacity 设 0** —— 那样它们仍在
+             * 原点附近、仍在被绘制；也不能把顶点留在上一帧的位置（换群时会有一两只
+             * "卡"在天上）。
+             */
+            for (let k = 0; k < 12; k += 3) {
+              birdPos[o + k] = 0
+              birdPos[o + k + 1] = -80
+              birdPos[o + k + 2] = 0
+            }
+            continue
+          }
+          const p = deckBirdPose(i, t, flock)
+          // 翼尖上下扑：±0.55 个翼展，鸟在远处就是"两点抬落"
+          const tip = p.wing * p.span * 0.55
+          birdPos[o] = p.x - p.span
+          birdPos[o + 1] = p.y + tip
+          birdPos[o + 2] = p.z
+          birdPos[o + 3] = p.x
+          birdPos[o + 4] = p.y
+          birdPos[o + 5] = p.z
+          birdPos[o + 6] = p.x
+          birdPos[o + 7] = p.y
+          birdPos[o + 8] = p.z
+          birdPos[o + 9] = p.x + p.span
+          birdPos[o + 10] = p.y + tip
+          birdPos[o + 11] = p.z
+        }
+        birdGeo.attributes.position.needsUpdate = true
+        // 取证句柄：巡检要能量"这一帧有几只鸟、在哪"
+        ;(window as unknown as { __deckBirds?: unknown }).__deckBirds = {
+          count: flock.count,
+          headingDeg: flock.headingDeg,
+          dist: flock.dist,
+          sprite: birdPos.length,
+        }
+      }
+
       // 星空随夜色淡入（夜里才该看到星星）
       starMat.opacity = 0.12 + 0.68 * night
       // 天亮时海色与天光一起抬起来，不让"白天还是深夜的蓝"
@@ -1216,6 +1330,8 @@ export default function DeckView() {
       window.removeEventListener('pointerup', onPointerUp)
       skyGeo.dispose()
       skyMat.dispose()
+      birdGeo.dispose()
+      birdMat.dispose()
       starGeo.dispose()
       starMat.dispose()
       seaGeo.dispose()

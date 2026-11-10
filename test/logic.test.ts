@@ -56,6 +56,7 @@ import {
 } from '../src/components/deck/shipShape'
 import { DECK_WAVES } from '../src/components/deck/deckWaves'
 import { compassWord, ridgeHeightAt, ridgeHeights } from '../src/components/deck/deckCoast'
+import { BIRD_MAX, deckBirdFlock, deckBirdPose } from '../src/components/deck/deckBirds'
 import { clampElevation, EL_MAX, EL_MIN, EL_TIGHTEN_FROM, minElevationAt } from '../src/components/map3d/cameraLimits'
 import {
   findCoast, wrapDeg, coastLayout, coastScenePos, bearingWord,
@@ -9160,6 +9161,101 @@ console.log('\n== 天数口径守卫 ==')
   const upperFoot = main[1].y - main[1].h
   assert(nestY > lowerYard && nestY < upperFoot,
     `瞭望台（${nestY}）必须在下帆桁（${lowerYard}）与上帆脚（${upperFoot}）之间`)
+}
+
+/*
+ * ---- 海鸟：什么时候有、有几只、朝哪飞 ----
+ *
+ * 【守什么】海鸟是这条船上唯一的"活物"，同时是一条真实的导航线索（顺着鸟飞的方向
+ * 找陆地）。所以它的出现条件必须与"能不能看见陆地"**同源**：远洋不能有鸟、
+ * 夜里不能有鸟、暴风雨与浓雾里不能有鸟；群飞方向必须等于最近陆地的方位。
+ * 这些规则一旦有人手滑改成常量，整条线索就变成了"天上永远有几只鸟"。
+ */
+{
+  // 没有陆地 → 没有鸟
+  assert(deckBirdFlock(null, 1, 'clear').count === 0, '视野里没有陆地就没有鸟')
+  assert(deckBirdFlock(60, 1, 'clear').count === 0, '60 海里外（远洋）没有鸟')
+  assert(deckBirdFlock(26.5, 1, 'clear').count === 0, '刚出 26 海里就没有鸟')
+  assert(deckBirdFlock(26, 1, 'clear').count > 0, '26 海里内开始有鸟')
+
+  // 越近越多，且有上限
+  const near = deckBirdFlock(4, 1, 'clear').count
+  const far = deckBirdFlock(24, 1, 'clear').count
+  assert(near > far, `越近鸟越多（4 海里 ${near} 只 vs 24 海里 ${far} 只）`)
+  assert(near <= BIRD_MAX && far >= 1, `数量在 1..${BIRD_MAX}`)
+  for (let nm = 0; nm <= 26; nm += 1) {
+    const c = deckBirdFlock(nm, 1, 'clear').count
+    assert(c >= 1 && c <= BIRD_MAX, `${nm} 海里有 ${c} 只（应在 1..${BIRD_MAX}）`)
+  }
+  // 单调：距离变大时数量不增加
+  let prev = 99
+  for (let nm = 2; nm <= 26; nm += 1) {
+    const c = deckBirdFlock(nm, 1, 'clear').count
+    assert(c <= prev, `${nm} 海里的鸟不多于更近处（${c} ≤ ${prev}）`)
+    prev = c
+  }
+
+  // 夜里 / 暴风雨 / 浓雾 → 没有鸟
+  assert(deckBirdFlock(8, 0.1, 'clear').count === 0, '夜里没有鸟（归巢）')
+  assert(deckBirdFlock(8, 1, 'storm').count === 0, '暴风雨里没有鸟')
+  assert(deckBirdFlock(8, 1, 'fog').count === 0, '浓雾里没有鸟')
+  assert(deckBirdFlock(8, 1, 'rain').count > 0, '小雨里还有鸟')
+
+  // 群飞方向 = 传入的陆地方位（由调用方从 findCoast 的结果给）
+  assert(deckBirdFlock(8, 1, 'clear', -78).headingDeg === -78, '群飞方位原样透传')
+
+  /*
+   * 姿态：鸟不能飞进海里、不能飞进船体、不能叠成一只。
+   * 船体半长 0.9 世界单位 —— 所以鸟离原点必须远大于它。
+   */
+  const flock = deckBirdFlock(8, 1, 'clear', -78)
+  const seen = new Set<string>()
+  let minY = 99
+  let maxY = -99
+  for (let i = 0; i < flock.count; i++) {
+    const p = deckBirdPose(i, 3.7, flock)
+    assert(Number.isFinite(p.x) && Number.isFinite(p.y) && Number.isFinite(p.z), `第 ${i} 只坐标有限`)
+    /*
+     * 【为什么下限是 0.4 而不是 0】眼睛在海面上方 0.27 世界单位，鸟若贴着水面飞，
+     * 从甲板看过去就是"海平线上的一排黑点"（实测过）。给 0.4 的下限，保证它们在
+     * 视线上方，读作"在天上飞"。
+     */
+    assert(p.y > 0.4 && p.y < 2.2, `第 ${i} 只的高度 ${p.y.toFixed(2)} 在 0.4..2.2 之间`)
+    minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y)
+    assert(Math.hypot(p.x, p.z) > 4, `第 ${i} 只离船 ≥4 单位（不飞进船舱）`)
+    assert(Math.abs(p.wing) <= 1.0001, '翅膀在 −1..1')
+    assert(p.span > 0.05 && p.span < 0.2, `翼展 ${p.span.toFixed(3)} 在合理范围`)
+    seen.add(`${p.x.toFixed(1)},${p.z.toFixed(1)}`)
+  }
+  assert(seen.size === flock.count, `每只鸟的位置都不同（${seen.size}/${flock.count}）`)
+  assert(maxY - minY > 0.5, `一群鸟的高度有层次（${(maxY - minY).toFixed(2)} 单位）`)
+
+  /*
+   * 群在"朝陆地那一侧"。
+   *
+   * 方位约定（与 `coastScenePos` 同一套）：相机看 +z，所以**右舷是 −x、左舷是 +x**。
+   * 方位 −78°（左舷偏前）→ 群心应当在 +x、+z；方位 0° → 群心在正前方。
+   * 判据看的是**整群的平均位置**而不是第 0 只：每只鸟有自己的侧向散布，
+   * 单挑一只既可能被散布推过中线（第一版就是这么写错的），也测不出"群朝哪边"。
+   *
+   * 写反的后果是所有海鸟朝背离陆地的方向飞 —— 那比没有鸟更糟：它会把玩家往反方向指。
+   */
+  const meanPos = (heading: number) => {
+    const f = deckBirdFlock(8, 1, 'clear', heading)
+    let sx = 0, sz = 0
+    for (let i = 0; i < f.count; i++) { const p = deckBirdPose(i, 1.1, f); sx += p.x; sz += p.z }
+    return { x: sx / f.count, z: sz / f.count }
+  }
+  const left = meanPos(-78)
+  assert(left.x > 2 && left.z > 0,
+    `方位 −78°（左舷偏前）的群心在左前方（实测 x=${left.x.toFixed(1)}, z=${left.z.toFixed(1)}）`)
+  assert(left.x > left.z, '群心以横向为主（−78° 接近正横）')
+  const ahead = meanPos(0)
+  assert(ahead.z > 5 && Math.abs(ahead.x) < 1.6,
+    `方位 0° 的群心在正前方（实测 x=${ahead.x.toFixed(1)}, z=${ahead.z.toFixed(1)}）`)
+  // 右舷：方位 +78° 时群心在 −x（右舷）
+  const right = meanPos(78)
+  assert(right.x < -2, `方位 +78° 的群心在右舷（实测 x=${right.x.toFixed(1)}）`)
 }
 
 console.log(`\n最终结果：${passed} 通过 / ${failed} 失败`)
