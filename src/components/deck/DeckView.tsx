@@ -6,7 +6,7 @@ import { useMapStore } from '@/store/useMapStore'
 import { skyAt } from '@/utils/skyClock'
 import { createDeckShip, type DeckShip } from './shipModel'
 import { DECK_WAVES, deckShipPose } from './deckWaves'
-import { findCoast, bearingWord, type CoastSighting } from './deckCoast'
+import { findCoast, bearingWord, wrapDeg, type CoastSighting } from './deckCoast'
 import { createDeckCoast } from './coastModel'
 import { deckEyeY, stepWalk, WALK_SPEED_M, type WalkPos } from './deckWalk'
 import { SHIP_DRAFT_LIFT } from './shipShape'
@@ -700,6 +700,11 @@ export default function DeckView() {
      *   D 主桅后方朝前 ← 现在这一档：甲板成透视带、主桅在画面中轴、下帆在头顶、
      *     舷墙与船首外海岸（塞维利亚的灯塔）都在框里，一眼知道"我站在一条船上"。
      */
+    /** 上一次的航向目标（用来判断"改航向了"）与舵轮脉冲 */
+    let lastWpKey = ''
+    let helmPulse = 0
+    let helmSign = 1
+    let lastBearing: number | null = null
     let walkPos: WalkPos = { x: 1.55, z: -5.2 }
     /*
      * 取证/调试句柄：甲板行走的位置与朝向原本是 effect 里的闭包变量，外面读不到，
@@ -914,7 +919,34 @@ export default function DeckView() {
       ship.rotation.z = pose.roll * 0.55
       // 极慢的艏向摆动，让画面"活着"但不打断观察
       ship.rotation.y = Math.sin(t * 0.09) * 0.012
-      deckShip.update(t)
+      /*
+       * ---- 舵轮的两个动作（都来自真实事件，不是随机摆动）----
+       * ① 改航向：waypoint 变了就给一个 1.2 秒的转角脉冲（水手在转舵）；
+       * ② 航行中：随涌浪做 ±5° 的微调（船在浪里走，舵手一直在修）。
+       * 系泊时舵轮不动 —— 停在港里没人握着舵。
+       */
+      {
+        const wp = st.waypoint
+        const key = wp ? `${wp.latitude.toFixed(3)},${wp.longitude.toFixed(3)}` : 'none'
+        const pos = st.shipPosition
+        // 到目标的真方位：航向变化的方向决定舵轮往哪边打
+        const bearing = wp && pos
+          ? calculateBearing(pos[0], pos[1], wp.latitude, wp.longitude)
+          : null
+        if (key !== lastWpKey) {
+          if (lastWpKey !== '' && key !== 'none') helmPulse = 1
+          if (bearing != null && lastBearing != null) {
+            const d = wrapDeg(bearing - lastBearing)
+            if (Math.abs(d) > 2) helmSign = d > 0 ? 1 : -1
+          }
+          lastWpKey = key
+        }
+        lastBearing = bearing
+        helmPulse = Math.max(0, helmPulse - dt / 1.2)
+        const pulse = helmPulse * helmPulse * 1.1 * helmSign
+        const trim = st.fleet.isSailing ? Math.sin(t * 0.7) * 0.09 : 0
+        deckShip.update(t, pulse + trim, night)
+      }
 
       if (walkingRef.current) {
         /*

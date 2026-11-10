@@ -278,10 +278,44 @@ export function createDeckCoast(): DeckCoast {
   tower.add(wall)
 
   // 舱室：真正的发光体（不受光照影响，直接给亮色）
-  const lampMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(2.6, 1.9, 1.1), transparent: true })
+  const LAMP_DAY = new THREE.Color(0.55, 0.5, 0.42)
+  const LAMP_NIGHT = new THREE.Color(2.6, 1.9, 1.1)
+  const lampMat = new THREE.MeshBasicMaterial({ color: LAMP_NIGHT.clone(), transparent: true })
   const lamp = new THREE.Mesh(new THREE.CylinderGeometry(0.105, 0.12, 0.09, 10), lampMat)
   lamp.position.y = 1.03
   tower.add(lamp)
+
+  /*
+   * 灯塔不能只是一根柱子加个盖（放大看就是一根插着黄饼的圆柱，实测）。
+   * 补三件小东西就成"塔"：观景廊（一圈挑出的栏杆）、灯室（比塔身细一点的玻璃罩）、
+   * 锥顶，再给塔身一道深色箍 —— 它们加起来不到 10 行，但剪影立刻可读。
+   */
+  {
+    const gallery = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 0.02, 12), wallMat)
+    gallery.position.y = 0.955
+    tower.add(gallery)
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2
+      const post = new THREE.Mesh(new THREE.BoxGeometry(0.008, 0.06, 0.008), wallMat)
+      post.position.set(Math.cos(a) * 0.142, 0.99, Math.sin(a) * 0.142)
+      tower.add(post)
+    }
+    const rail = new THREE.Mesh(new THREE.TorusGeometry(0.142, 0.006, 4, 14), wallMat)
+    rail.rotation.x = Math.PI / 2
+    rail.position.y = 1.018
+    tower.add(rail)
+    // 灯室：比塔身细，玻璃罩本身用灯材质（夜里就是光源）
+    const lanternRoom = new THREE.Mesh(new THREE.CylinderGeometry(0.098, 0.104, 0.11, 10), lampMat)
+    lanternRoom.position.y = 1.035
+    tower.add(lanternRoom)
+    const roof = new THREE.Mesh(new THREE.ConeGeometry(0.125, 0.1, 10), wallMat)
+    roof.position.y = 1.135
+    tower.add(roof)
+    // 塔身一道深色箍（红白相间的灯塔在远处只是"一道深色"）
+    const band = new THREE.Mesh(new THREE.CylinderGeometry(0.098, 0.102, 0.06, 10), rockMat)
+    band.position.y = 0.62
+    tower.add(band)
+  }
 
   const glowTex = makeGlowTexture()
   const haloMat = new THREE.SpriteMaterial({
@@ -540,11 +574,20 @@ export function createDeckCoast(): DeckCoast {
       const lampK = 0.25 + 0.75 * night
       lampMat.color.setRGB(2.6 * lampK, 1.9 * lampK, 1.1 * lampK)
       haloMat.opacity = 0.02 + 0.68 * night
+      /*
+       * 灯室的玻璃也要跟着日相：正午的灯塔应该是"一块暗玻璃 + 塔身"，
+       * 只有夜里才亮成一颗星。常数亮色等于白天点着灯（实测截图：正午塔顶一团黄）。
+       */
+      lampMat.color.copy(LAMP_DAY).lerp(LAMP_NIGHT, night)
       // 月光轮廓：只在夜里出现，浓雾时也一起退掉（否则"雾里的山脊"会自己发光）
       rimMat.opacity = 0.24 * night * Math.max(0, 1 - fogK)
       beamMat.opacity = 0.22 * night * night
       winMat.opacity = 0.06 + 0.8 * night
-      foamMat.opacity = 0.10 + 0.30 * (1 - night)
+      /*
+       * 碎浪：夜里更亮（黑底上的一条亮线才读得出来），正午收到 0.09 ——
+       * 0.16 的加法白线在正午读作"沿岸一排白色虚线"（实测截图）。
+       */
+      foamMat.opacity = 0.08 + 0.11 * night
       lampLight.intensity = 6 * night
       /*
        * 雾对"发光物"的削弱必须放在**所有基础赋值之后**。

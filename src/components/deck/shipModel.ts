@@ -37,8 +37,14 @@ const BULWARK = HULL_BULWARK
 
 export interface DeckShip {
   group: THREE.Group
-  /** 每帧推进：帆的摆动、灯笼的晃 */
-  update(t: number): void
+  /**
+   * 每帧推进。
+   * @param night 夜色 0..1：**灯要跟着日相亮/灭**（正午的船窗不该发光）
+   * @param helm 舵轮转角（弧度）。0 = 正舵；改航向时由调用方给一个脉冲，
+   *   航行中给一点随浪的微调。**它不代表真实舵角** —— 航向由 store 里的 waypoint
+   *   决定，这里只是让甲板上那件东西对"改向"这件事有反应。
+   */
+  update(t: number, helm?: number, night?: number): void
   dispose(): void
 }
 
@@ -198,12 +204,18 @@ export function createDeckShip(): DeckShip {
   cabinTop.position.y = 1.5
   cabin.add(cabinTop)
 
+  /** 所有"点着的灯"（窗户玻璃、灯笼玻璃）与它们的光晕 —— 白天要暗下去 */
+  const warmMats: THREE.MeshStandardMaterial[] = []
+  const warmGlows: THREE.Sprite[] = []
+  /** 灯笼里的实体点光：白天必须关掉（它是"夜里照亮甲板"的那盏灯） */
+  const warmLights: { light: THREE.PointLight, base: number }[] = []
   const windowMat = new THREE.MeshStandardMaterial({
     color: 0x1a1004,
     emissive: 0xffab5e,
     emissiveIntensity: 2.2,
     roughness: 0.35,
   })
+  warmMats.push(windowMat)
   for (let i = -1; i <= 1; i++) {
     const win = new THREE.Mesh(new THREE.PlaneGeometry(0.92, 0.78), windowMat)
     win.position.set(i * 1.55, 0.42, -2.62)
@@ -228,6 +240,7 @@ export function createDeckShip(): DeckShip {
     glow.scale.set(2.6, 2.6, 1)
     glow.position.set(i * 1.55, 0.45, -2.92)
     cabin.add(glow)
+    warmGlows.push(glow)
   }
   group.add(cabin)
 
@@ -344,6 +357,8 @@ export function createDeckShip(): DeckShip {
     wheel.add(hit)
   }
   group.add(wheel)
+  // 舵轮要能被逐帧转动（改航向时的回执），所以单独留一个引用
+  const wheelSpinner = wheel
 
   /*
    * ---------------- 甲板零碎：系缆桩 / 盘好的缆绳 / 木桶 ----------------
@@ -421,11 +436,9 @@ export function createDeckShip(): DeckShip {
     const body = new THREE.Group()
     body.position.y = -0.55
     pivot.add(body)
-    const glass = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.42, 0.52, 0.9, 8),
-      /* emissiveIntensity 1.15：3.2 在 ACES 下直接过曝成纯白圆角块，读不出"灯罩" */
-      new THREE.MeshStandardMaterial({ color: 0x3a2408, emissive: 0xffa64e, emissiveIntensity: 1.15, roughness: 0.45 }),
-    )
+    const glassMat = new THREE.MeshStandardMaterial({ color: 0x3a2408, emissive: 0xffa64e, emissiveIntensity: 1.15, roughness: 0.45 })
+    warmMats.push(glassMat)
+    const glass = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.52, 0.9, 8), glassMat)
     body.add(glass)
     for (let i = 0; i < 4; i++) {
       const a = (i / 4) * Math.PI * 2 + Math.PI / 4
@@ -457,6 +470,7 @@ export function createDeckShip(): DeckShip {
     }))
     glow.scale.setScalar(1.6)
     body.add(glow)
+    warmGlows.push(glow)
     if (withLight) {
       /*
        * 【distance 是世界单位，**不随 group.scale 缩放**】
@@ -466,6 +480,7 @@ export function createDeckShip(): DeckShip {
        */
       const l = new THREE.PointLight(0xffb066, 0.5, 0.5, 2)
       body.add(l)
+      warmLights.push({ light: l, base: 0.5 })
     }
     pivot.scale.setScalar(scale)
     lanternPivots.push(pivot)
@@ -615,7 +630,18 @@ export function createDeckShip(): DeckShip {
     for (let i = 0; i < pos.count; i++) {
       const x = pos.getX(i) / (sw / 2)
       const y = pos.getY(i) / (sh / 2)
+      /*
+       * ① 鼓胀：沿 z 按 cos 剖面推出去，中间最鼓（顺风鼓帆）。
+       * ② 收分（taper）：方帆上宽下窄 —— 帆顶绑在帆桁上、帆脚是自由的，
+       *    两侧的边（leech）向内收一点，剪影才不是一块矩形布（侧看尤其明显：
+       *    原来整张帆是一个规整的四边形，像挂在晾衣绳上的床单）。
+       * ③ 帆脚弧（roach）：底边中间略微上收，布不会像被剪过一样平直。
+       */
+      const taper = 1 - 0.13 * (1 - (y + 1) / 2)
+      pos.setX(i, pos.getX(i) * taper)
+      const foot = y < -0.55 ? -0.06 * (1 - Math.abs(x)) * sh : 0
       pos.setZ(i, Math.cos(x * Math.PI * 0.5) * Math.cos(y * Math.PI * 0.5) * (sw * 0.11))
+      pos.setY(i, pos.getY(i) + foot)
     }
     pos.needsUpdate = true
     sailGeo.computeVertexNormals()
@@ -755,8 +781,23 @@ export function createDeckShip(): DeckShip {
 
   return {
     group,
-    update(t: number) {
+    update(t: number, helm = 0, night = 0) {
       sailTime.value = t
+      wheelSpinner.rotation.z = helm
+      /*
+       * 灯：白天几乎不亮（0.12），夜里满亮。
+       * 【为什么必须有】正午截图里，船尾六扇窗是六块发光的黄板，灯笼也在发光 ——
+       * 那是"夜里的船"贴在白天的海上，一眼假。灯是"有没有人在这条船上"的信号，
+       * 白天它应该只是深色的玻璃。
+       */
+      const litK = 0.12 + 0.88 * night
+      windowMat.emissiveIntensity = 2.2 * litK
+      for (const m of warmMats) if (m !== windowMat) m.emissiveIntensity = 1.15 * litK
+      for (const w of warmLights) w.light.intensity = w.base * litK
+      for (const g of warmGlows) {
+        const mat = g.material as THREE.SpriteMaterial
+        mat.opacity = (g.scale.x > 2 ? 0.30 : 0.48) * litK
+      }
       // 灯笼晃：吊灯本来就随船摇，幅度小、周期不同（两盏不同相）
       for (let i = 0; i < lanternPivots.length; i++) {
         lanternPivots[i].rotation.z = Math.sin(t * 0.9 + i * 1.7) * 0.06
