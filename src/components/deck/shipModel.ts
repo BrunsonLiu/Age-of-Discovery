@@ -377,6 +377,17 @@ export function createDeckShip(): DeckShip {
       const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.28, 0.82, 10), woodMid)
       barrel.position.set(bx, shipDeckAt(bz) + 0.41, bz)
       group.add(barrel)
+      /*
+       * 桶盖：单独一片端面木色。整只桶用同一个材质时，俯视看到的顶盖会因为法线
+       * 朝上、只吃到半球光的冷色而读成一块黑圆片（放大截图）。端面用更浅的木色，
+       * 与桶身形成"盖子 vs 桶板"的对比。
+       */
+      const lid = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.345, 0.345, 0.05, 10),
+        new THREE.MeshStandardMaterial({ color: 0x8a6a48, roughness: 0.95 }),
+      )
+      lid.position.set(bx, shipDeckAt(bz) + 0.8, bz)
+      group.add(lid)
       for (const hy of [-0.22, 0.22]) {
         const hoop = new THREE.Mesh(new THREE.TorusGeometry(0.33, 0.028, 4, 12), ironMat)
         hoop.position.set(bx, shipDeckAt(bz) + 0.41 + hy, bz)

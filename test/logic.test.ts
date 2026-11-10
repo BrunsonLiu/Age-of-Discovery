@@ -55,6 +55,7 @@ import {
   shipDeckAt, shipKeelAt,
 } from '../src/components/deck/shipShape'
 import { DECK_WAVES } from '../src/components/deck/deckWaves'
+import { ridgeHeightAt, ridgeHeights } from '../src/components/deck/deckCoast'
 import {
   findCoast, wrapDeg, coastLayout, coastScenePos, bearingWord,
 } from '../src/components/deck/deckCoast'
@@ -8997,6 +8998,39 @@ console.log('\n== 天数口径守卫 ==')
   const view = readFileSync(join(process.cwd(), 'src', 'components', 'deck', 'DeckView.tsx'), 'utf8')
   assert(/ship\.position\.y = pose\.y \+ SHIP_DRAFT_LIFT/.test(view),
     '船的 y 必须是 pose.y + SHIP_DRAFT_LIFT（写死数字会与测试脱钩）')
+}
+
+/*
+ * ---- 岸上的树必须站在坡面上 ----
+ *
+ * 【守什么】远岸的树是"到岸了"唯一可以贴近看的实物。它们的 y 必须由**山脊几何
+ * 同一份高度剖面**插值而来 —— 两处各写一遍公式，树就会浮在半空或者埋进坡里，
+ * 而这种错在截图上很难一眼看出来（树本来就只是几个像素）。
+ */
+{
+  const hs = ridgeHeights(72)
+  assert(hs.length === 73, `山脊剖面 73 个采样（实测 ${hs.length}）`)
+  assert(hs.every((h) => h >= 0 && h < 1.3), '剖面高度都在 0..1.3 之间')
+  // 两端压低：岸线不能在画面边缘被"裁断"
+  assert(hs[0] < 0.1 && hs[72] < 0.1, '岸线两端压到接近 0')
+
+  // 插值连续：相邻采样之间的中点必须落在两端之间（不能跳变）
+  for (let i = 0; i < 72; i++) {
+    const mid = ridgeHeightAt((i + 0.5) / 72)
+    assert(mid >= Math.min(hs[i], hs[i + 1]) - 1e-9 && mid <= Math.max(hs[i], hs[i + 1]) + 1e-9,
+      `u=${i} 与 u=${i + 1} 之间的插值不越界`)
+  }
+  // 端点精确
+  assert(Math.abs(ridgeHeightAt(0) - hs[0]) < 1e-9, 'u=0 处等于剖面首项')
+  assert(Math.abs(ridgeHeightAt(1) - hs[72]) < 1e-6, 'u=1 处等于剖面末项（不越界）')
+
+  // 树的 y = 剖面高度 × t × 岸高：t=0 贴水线、t=1 正好在脊线上
+  const RH = 4.2
+  for (const u of [0.1, 0.35, 0.5, 0.77, 0.93]) {
+    const base = ridgeHeightAt(u) * RH
+    assert(Math.abs(base * 1 - base) < 1e-9 && base > 0 && base <= RH * 1.3,
+      `u=${u} 的脊线高度在岸高范围内（${base.toFixed(2)} / ${RH}）`)
+  }
 }
 
 console.log(`\n最终结果：${passed} 通过 / ${failed} 失败`)

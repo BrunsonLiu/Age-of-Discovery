@@ -1,5 +1,8 @@
 import * as THREE from 'three'
-import { COAST_HIDE_BEHIND_DEG, coastLayout, coastScenePos, wrapDeg, type CoastSighting } from './deckCoast'
+import {
+  COAST_HIDE_BEHIND_DEG, coastLayout, coastScenePos, hash01, ridgeHeightAt, ridgeHeights, wrapDeg,
+  type CoastSighting,
+} from './deckCoast'
 import { texFrom } from './shipTextures'
 
 /**
@@ -15,21 +18,6 @@ import { texFrom } from './shipTextures'
  * 而不是一块贴上去的黑板。
  */
 
-/** 山脊起伏（单位宽度 −0.5..0.5 上的采样，确定性的哈希，保证每次启动一致） */
-function hash01(i: number): number {
-  const x = Math.sin(i * 127.1 + 311.7) * 43758.5453
-  return x - Math.floor(x)
-}
-
-/**
- * 单位空间的山脊：沿 x 从 −0.5 到 0.5。
- *
- * 【为什么要三排顶点，不是两排】最早只有"水线 + 脊线"两条边，整座岸是一块
- * 由下往上渐亮的单色板 —— 白天是一块贴着海面的绿纸片（实测截图）。
- * 真实的海岸从海往上看至少有三层：**湿岩/沙滩 → 草坡 → 树线**，颜色一层比一层深，
- * 而且每层都该有横向的不均匀。这里按 y = 0 / 0.55h / h 排三排，逐段给色，
- * 再叠一个低频的"岬角"起伏，山脊就有前后层次而不是一条轮廓线。
- */
 function buildRidgeGeometry(segments: number): THREE.BufferGeometry {
   const pos: number[] = []
   const col: number[] = []
@@ -47,16 +35,11 @@ function buildRidgeGeometry(segments: number): THREE.BufferGeometry {
     [1.0, [0.68, 0.76, 0.66]],
   ]
   const ROWS = BANDS.length
+  const heights = ridgeHeights(segments)
   for (let i = 0; i <= segments; i++) {
     const u = i / segments
     const x = u - 0.5
-    // 三层起伏叠加：大屿 + 小山 + 碎丘；两端压低，岸线才不像被裁断
-    const edgeFade = Math.sin(Math.PI * u) ** 0.6
-    // 低频岬角：让岸线有几处明显的高地，不然整条岸像一条正弦波
-    const cape = 0.22 * Math.sin(u * Math.PI * 3.1 + 1.3) * Math.sin(u * Math.PI * 1.7)
-    const h =
-      (0.62 + 0.26 * hash01(i * 3.1) + 0.15 * hash01(i * 7.7 + 11) + 0.08 * hash01(i * 13.3 + 29) + cape)
-      * edgeFade
+    const h = heights[i]
     // 每段的横向色差：同一层里也有一块块深浅（草地/裸岩/树丛）
     const patch = 0.9 + 0.12 * hash01(i * 5.3 + 7)
     for (let r = 0; r < ROWS; r++) {
@@ -197,6 +180,58 @@ export function createDeckCoast(): DeckCoast {
   })
   const foamLine = new THREE.Line(foamGeo, foamMat)
   group.add(foamLine)
+
+  /*
+   * ---- 岸上的树 ----
+   *
+   * 【为什么要有】远岸只要一条色带就够了，但船**开近**（7 海里以内）时，岸上
+   * 什么都没有，读作"一块绿坡" —— 玩家看不到任何可以判断远近的实物。
+   * 树是海岸上最直观的尺度参照：一棵树的高度、成片的疏密，让人立刻知道"岸有多大"。
+   *
+   * 【为什么用 InstancedMesh】160 棵树逐个 Mesh 就是 160 次 draw call；实例化之后
+   * 只有 1 次。它们全是同一个锥体（用不着各自不同），只差位置与缩放。
+   */
+  const TREES = 160
+  const treeGeo = new THREE.ConeGeometry(1, 1, 6)
+  // 树的颜色跟山脊的树线接近，夜里一起变暗（不做光照：远处的小锥体不需要明暗）
+  const treeMat = new THREE.MeshBasicMaterial({ color: 0x2a3326 })
+  const trees = new THREE.InstancedMesh(treeGeo, treeMat, TREES)
+  trees.name = 'deck-coast-trees'
+  trees.frustumCulled = false
+  group.add(trees)
+  const treeSpots: { u: number, t: number, h: number, w: number }[] = []
+  {
+    // 用固定种子撒点：每次启动同一片林子（船在动、岸已定，树不该跳来跳去）
+    /*
+     * 【树必须长在**脊线上**】第一版把树撒在坡面中部（t 0.52~0.94）、高 0.16~0.46，
+     * 结果一颗都看不见：远岸的树是靠**打破天际线**才被认出来的，长在坡面中间
+     * 只是一块和草地同色的斑点（实测截图：岸还是那条光滑的绿坡）。改成 60% 站在
+     * 脊线上（t 0.9~1.0，会突出轮廓）、40% 在坡中，并且整体加大到 0.3~0.9，
+     * 颜色也压得更深，才读得出"岸上有林子"。
+     */
+    for (let k = 0; k < TREES; k++) {
+      const u = 0.06 + 0.88 * hash01(k * 3.7 + 1)
+      const onRidge = hash01(k * 2.9 + 7) < 0.6
+      const t = onRidge ? 0.9 + 0.1 * hash01(k * 7.9 + 5) : 0.55 + 0.3 * hash01(k * 7.9 + 5)
+      const h = onRidge ? 0.34 + 0.5 * hash01(k * 11.3 + 9) : 0.18 + 0.26 * hash01(k * 11.3 + 9)
+      const w = 0.7 + 0.7 * hash01(k * 5.1 + 3) // 冠幅
+      treeSpots.push({ u, t, h, w })
+    }
+  }
+
+  /*
+   * ---- 水线边的礁石 ----
+   * 岸与海之间如果是一条干净的直线，读作"纸剪的岸"。几块露出水面的黑石头
+   * 把两者缝在一起 —— 它们也提供近岸的尺度参照（石头比树更贴近水面）。
+   */
+  const shoreMat = new THREE.MeshBasicMaterial({ color: 0x22262b, transparent: true })
+  const rocksShore: THREE.Mesh[] = []
+  for (let k = 0; k < 7; k++) {
+    const r = new THREE.Mesh(new THREE.DodecahedronGeometry(1, 0), shoreMat)
+    r.name = 'deck-shore-rock'
+    group.add(r)
+    rocksShore.push(r)
+  }
 
   /*
    * ---- 灯塔 ----
@@ -369,10 +404,40 @@ export function createDeckCoast(): DeckCoast {
        * 这里只做均匀缩放，sprite 与光束都不会变形。
        */
       tower.scale.setScalar(tw)
-      halo.scale.set(tw * 0.52, tw * 0.52, 1)
+      /*
+       * 0.52 → 0.38：夜里那个光晕被后处理的辉光再放大一次，整块变成一只大黄盘
+       * （实测截图：灯塔顶上顶着一轮"第二个太阳"，比灯还抢眼）。
+       */
+      halo.scale.set(tw * 0.38, tw * 0.38, 1)
       beam.scale.setScalar(tw)
       windows.scale.set(layout.width, layout.ridgeHeight, layout.width * 0.14)
       foamLine.scale.set(layout.width, 1, 1)
+
+      /*
+       * 树与礁石的位置随景别重算（岸的宽度/高度每次 setSighting 都可能不同）。
+       * 树高用**同一份高度剖面**插值，所以它们一定落在坡面上 —— 不会浮空、不会埋进去。
+       */
+      {
+        const depth = layout.width * 0.14
+        const m = new THREE.Matrix4()
+        for (let k = 0; k < treeSpots.length; k++) {
+          const sp = treeSpots[k]
+          // 与山脊几何共用同一份高度剖面：树一定落在坡面上
+          const y = ridgeHeightAt(sp.u) * layout.ridgeHeight * sp.t
+          m.makeScale(sp.w * 0.13, sp.h, sp.w * 0.13)
+          m.setPosition((sp.u - 0.5) * layout.width, y, (0.06 - 0.11 * sp.t) * depth - 0.02 * depth)
+          trees.setMatrixAt(k, m)
+        }
+        trees.instanceMatrix.needsUpdate = true
+        for (let k = 0; k < rocksShore.length; k++) {
+          const u = 0.14 + 0.72 * hash01(k * 13.7 + 2)
+          const sc = 0.16 + 0.30 * hash01(k * 9.3 + 4)
+          const r = rocksShore[k]
+          r.position.set((u - 0.5) * layout.width, -0.02 + 0.10 * hash01(k * 7.1), 0.075 * depth + 0.02 * depth * hash01(k * 3.3))
+          r.scale.set(sc * 1.5, sc * 0.8, sc)
+          r.rotation.y = hash01(k * 5.9) * Math.PI
+        }
+      }
       // 窗光尺寸按景别给（远处要让点可见，否则整排灯消失）
       winMat.size = Math.max(0.55, layout.radius * 0.011)
       for (const r of rocks) r.scale.multiplyScalar(1)
@@ -391,6 +456,11 @@ export function createDeckCoast(): DeckCoast {
       ridgeMat.color.lerp(horizon, 0.30 * far)
       rockMat.color.copy(ROCK_NIGHT).lerp(ROCK_DAY, 1 - night)
       rockMat.color.lerp(horizon, 0.26 * far)
+      // 岸树与礁石跟着一起退到天色里（否则远岸的树是"贴在雾上的黑点"）
+      treeMat.color.copy(RIDGE_NIGHT).lerp(RIDGE_DAY, 1 - night).multiplyScalar(0.42)
+      treeMat.color.lerp(horizon, 0.30 * far)
+      shoreMat.color.copy(ROCK_NIGHT).lerp(ROCK_DAY, 1 - night)
+      shoreMat.color.lerp(horizon, 0.26 * far)
       wallMat.color.copy(TOWER_NIGHT).lerp(TOWER_DAY, 1 - night)
       wallMat.color.lerp(horizon, 0.22 * far)
 
@@ -432,7 +502,7 @@ export function createDeckCoast(): DeckCoast {
        */
       const lampK = 0.25 + 0.75 * night
       lampMat.color.setRGB(2.6 * lampK, 1.9 * lampK, 1.1 * lampK)
-      haloMat.opacity = 0.02 + 0.92 * night
+      haloMat.opacity = 0.02 + 0.68 * night
       beamMat.opacity = 0.22 * night * night
       winMat.opacity = 0.06 + 0.8 * night
       foamMat.opacity = 0.10 + 0.30 * (1 - night)
@@ -470,6 +540,10 @@ export function createDeckCoast(): DeckCoast {
       wallMat.dispose()
       lampMat.dispose()
       beamA.geometry.dispose()
+      // 岸树（实例化）与礁石的材质也要释放；几何由 sceneDispose 统一收
+      treeMat.dispose()
+      shoreMat.dispose()
+      trees.dispose()
       sceneDispose(group)
     },
   }

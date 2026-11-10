@@ -160,3 +160,37 @@ export function bearingWord(relBearingDeg: number): string {
   if (abs < 125) return `${side}舷`
   return `${side}后方`
 }
+
+/** 山脊起伏（单位宽度 −0.5..0.5 上的采样，确定性的哈希，保证每次启动一致） */
+export function hash01(i: number): number {
+  const x = Math.sin(i * 127.1 + 311.7) * 43758.5453
+  return x - Math.floor(x)
+}
+
+/**
+ * 山脊高度剖面（每段一个值，0..约 1）。
+ *
+ * 【为什么放在这个纯模块里】岸上的树必须站在坡面上，"树不飘"这件事要能被单测
+ * 直接验：几何与植被读**同一份**采样，插值也走同一个函数（`ridgeHeightAt`）。
+ */
+export function ridgeHeights(segments = 72): number[] {
+  const out: number[] = []
+  for (let i = 0; i <= segments; i++) {
+    const u = i / segments
+    // 三层起伏叠加：大屿 + 小山 + 碎丘；两端压低，岸线才不像被裁断
+    const edgeFade = Math.sin(Math.PI * u) ** 0.6
+    // 低频岬角：让岸线有几处明显的高地，不然整条岸像一条正弦波
+    const cape = 0.22 * Math.sin(u * Math.PI * 3.1 + 1.3) * Math.sin(u * Math.PI * 1.7)
+    out.push((0.62 + 0.26 * hash01(i * 3.1) + 0.15 * hash01(i * 7.7 + 11) + 0.08 * hash01(i * 13.3 + 29) + cape) * edgeFade)
+  }
+  return out
+}
+
+/** 任意 u（0..1）处的山脊高度：在相邻两个采样点之间线性插值 */
+export function ridgeHeightAt(u: number, segments = 72): number {
+  const hs = ridgeHeights(segments)
+  const fi = Math.max(0, Math.min(segments - 1e-9, u * segments))
+  const i0 = Math.floor(fi)
+  const frac = fi - i0
+  return hs[i0] + (hs[Math.min(segments, i0 + 1)] - hs[i0]) * frac
+}
