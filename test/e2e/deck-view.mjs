@@ -243,6 +243,28 @@ check(!!offshore && offshore.count === 0, `远洋（太平洋中部）没有海�
 check(await page.evaluate(() => window.__deckScene.getObjectByName('deck-birds').material.opacity === 0),
   '没有鸟的时候整层不透明度是 0（不是"画在原点"）')
 
+// ---- ⑤d 甲板水手：人数必须等于 crew 推出来的那个数，清零后一个都不许剩 ----
+const crewNow = () => page.evaluate(() => {
+  const st = window.__gameStore.getState()
+  const flag = st.fleet.ships.find((x) => x.id === st.fleet.flagshipId) ?? st.fleet.ships[0]
+  const shown = []
+  window.__deckScene.traverse((o) => { if (/^ship-sailor-/.test(o.name) && o.visible) shown.push(o.name) })
+  return { crew: flag?.crew ?? 0, shown }
+})
+const c0 = await crewNow()
+// 与 deckCrew.sailorCount 同一套阈值：<8 → 1、<20 → 2、否则 3；0 人 → 0
+const want = c0.crew <= 0 ? 0 : c0.crew < 8 ? 1 : c0.crew < 20 ? 2 : 3
+check(c0.shown.length === want, `甲板上的水手数 = crew ${c0.crew} 推出的 ${want}（实测 ${c0.shown.length}）`)
+// 清零：甲板上不该还站着人（空船飘在海上比什么都说明问题）
+await page.evaluate(() => {
+  const st = window.__gameStore.getState()
+  const flag = st.fleet.ships.find((x) => x.id === st.fleet.flagshipId) ?? st.fleet.ships[0]
+  window.__gameStore.setState({ fleet: { ...st.fleet, ships: st.fleet.ships.map((s) => (s.id === flag.id ? { ...s, crew: 0 } : s)) } })
+})
+await sleep(1200)
+const c1 = await crewNow()
+check(c1.shown.length === 0, `船员清零后甲板上没人（实测 ${c1.shown.length} 个还在）`)
+
 // ---- ⑥ 回海图：场景要真的被拆掉（不能留一个跑着的 rAF）----
 await page.evaluate(() => document.querySelector('[data-testid=deck-view-close]')?.click())
 await sleep(1200)

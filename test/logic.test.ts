@@ -52,11 +52,12 @@ import { clampToDeck, deckEyeY, deckWalkHalfWidth, isOnDeck, stepWalk } from '..
 import { buildHullGeo } from '../src/components/deck/shipHull'
 import {
   HULL_ARC, HULL_BULWARK, SHIP_DRAFT_LIFT, SHIP_HALF_LENGTH, SHIP_SCALE,
-  shipDeckAt, shipKeelAt,
+  shipDeckAt, shipDeckHalfWidthAt, shipKeelAt,
 } from '../src/components/deck/shipShape'
 import { DECK_WAVES } from '../src/components/deck/deckWaves'
 import { compassWord, ridgeHeightAt, ridgeHeights } from '../src/components/deck/deckCoast'
 import { BIRD_MAX, deckBirdFlock, deckBirdPose } from '../src/components/deck/deckBirds'
+import { SAILOR_STATIONS, sailorCount } from '../src/components/deck/deckCrew'
 import { clampElevation, EL_MAX, EL_MIN, EL_TIGHTEN_FROM, minElevationAt } from '../src/components/map3d/cameraLimits'
 import {
   findCoast, wrapDeg, coastLayout, coastScenePos, bearingWord,
@@ -9256,6 +9257,80 @@ console.log('\n== 天数口径守卫 ==')
   // 右舷：方位 +78° 时群心在 −x（右舷）
   const right = meanPos(78)
   assert(right.x < -2, `方位 +78° 的群心在右舷（实测 x=${right.x.toFixed(1)}）`)
+}
+
+/*
+ * ---- 甲板水手：人数由真实船员数决定，站位必须在甲板上 ----
+ *
+ * 【守什么】甲板上站着几个人，是玩家唯一能"看见"船员数的窗口（HUD 上只有数字）。
+ * 所以它必须严格由 `fleet.ships[].crew` 决定：空船不能还站着水手，人也绝不能
+ * 站在舷墙外面或桅杆里面 —— 这两种错在截图里都很难一眼看出来。
+ */
+{
+  // 人数分档
+  assert(sailorCount(0) === 0, '船员 0 → 甲板上没人')
+  assert(sailorCount(-3) === 0, '负数按 0 处理')
+  assert(sailorCount(Number.NaN) === 0, 'NaN 不产生水手')
+  assert(sailorCount(1) === 1, '1 人 → 1 个水手')
+  assert(sailorCount(7) === 1, '7 人 → 1 个水手')
+  assert(sailorCount(8) === 2, '8 人 → 2 个水手')
+  assert(sailorCount(15) === 2, '15 人（初始小船）→ 2 个水手')
+  assert(sailorCount(20) === 3, '20 人 → 3 个水手')
+  assert(sailorCount(40) === 3, '40 人 → 3 个水手（上限就是三个站位）')
+  // 单调不减
+  let prev = -1
+  for (let c = 0; c <= 45; c += 1) {
+    const n = sailorCount(c)
+    assert(n >= prev && n <= SAILOR_STATIONS.length, `${c} 人 → ${n}（单调且不超过站位数量）`)
+    prev = n
+  }
+
+  /*
+   * 站位：必须在甲板面以内（`shipDeckHalfWidthAt` 是甲板的半宽），
+   * 且不能站在桅杆里（三根桅在 z = 11 / 1 / −8，桅杆半径 0.36）。
+   */
+  for (const st of SAILOR_STATIONS) {
+    const halfW = shipDeckHalfWidthAt(st.z)
+    assert(Math.abs(st.x) < halfW - 0.25,
+      `${st.kind} 站位（x=${st.x}）在甲板半宽 ${halfW.toFixed(2)} 以内`)
+    assert(st.z > -15 && st.z < 17, `${st.kind} 的 z=${st.z} 在船体内`)
+    for (const mastZ of [11, 1, -8]) {
+      assert(Math.hypot(st.x, st.z - mastZ) > 0.6,
+        `${st.kind} 不站在桅杆里（离 z=${mastZ} 的桅杆 ${Math.hypot(st.x, st.z - mastZ).toFixed(2)}）`)
+    }
+  }
+  // 三个站位互不重叠（间距 > 1 米，否则两个人会长在一起）
+  for (let i = 0; i < SAILOR_STATIONS.length; i++) {
+    for (let j = i + 1; j < SAILOR_STATIONS.length; j++) {
+      const a = SAILOR_STATIONS[i], b = SAILOR_STATIONS[j]
+      assert(Math.hypot(a.x - b.x, a.z - b.z) > 1,
+        `${a.kind} 与 ${b.kind} 相距 ${Math.hypot(a.x - b.x, a.z - b.z).toFixed(2)} 米`)
+    }
+  }
+  // 舵手必须站在"舵轮（z=−10.9）与船尾楼前壁（z=−12.0）之间那条缝"里
+  const helm = SAILOR_STATIONS.find((s) => s.kind === 'helm')!
+  assert(helm.z < -10.9 && helm.z > -12.0,
+    `舵手（z=${helm.z}）站在舵轮与船尾楼之间`)
+}
+
+/*
+ * ---- 舵轮不能埋进船尾楼；白天窗玻璃不能发光 ----
+ *
+ * 两条都是这轮实测出来的真错：
+ *  ① 船尾楼中心 z=−14.6、进深 5.2 ⇒ 前壁在 −12.0，而舵轮原来在 −12.2（墙里 20 厘米），
+ *    从甲板回头看只有一块黑方板；
+ *  ② 窗玻璃白天自发光 2.2×0.12=0.26 → 出来 147/102/69，比舱壁（55/47/43）亮 2.7 倍，
+ *    正午的舱门小窗像一盏点着的铜灯。
+ */
+{
+  const ship = readFileSync(join(process.cwd(), 'src', 'components', 'deck', 'shipModel.ts'), 'utf8')
+  const wheelZ = Number((ship.match(/wheel\.position\.set\(0, shipDeckAt\((-?[\d.]+)\)/) || [])[1])
+  assert(Number.isFinite(wheelZ), '找得到舵轮的 z')
+  assert(wheelZ > -12.0, `舵轮（z=${wheelZ}）必须在船尾楼前壁（−12.0）之前`)
+  const litK = ship.match(/const litK = ([\d.]+) \+ ([\d.]+) \* night/)
+  assert(!!litK, '灯的白天地板值是常量表达式')
+  assert(Number(litK![1]) <= 0.05, `灯在白天的地板值 ${litK![1]} ≤ 0.05（0.12 时正午的窗还是亮的）`)
+  assert(Math.abs(Number(litK![1]) + Number(litK![2]) - 1) < 1e-9, '夜里 litK 必须是 1')
 }
 
 console.log(`\n最终结果：${passed} 通过 / ${failed} 失败`)

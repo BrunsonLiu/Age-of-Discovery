@@ -245,9 +245,16 @@ export function sailCanvas(seed = 7): HTMLCanvasElement {
   g.fillStyle = '#e6ddc4'
   g.fillRect(0, 0, S, S)
 
-  // 织纹：两组正交细线（横/纵），模拟经纬
-  g.globalAlpha = 0.16
-  for (let i = 0; i < S; i += 3) {
+  /*
+   * 织纹：两组正交细线（横/纵），模拟经纬。
+   *
+   * 【间距 3px → 5px】512 的贴图铺满一张 10 米宽的帆，3px 一格约合 6 厘米 ——
+   * 站在 10 米外看，这个周期正好落进屏幕像素的混叠区：帆面上出现一层会随视角
+   * 移动的**网格摩尔纹**（实测截图：整张帆像罩了一块纱窗）。5px（约 10 厘米）
+   * 仍读作帆布，但落在奈奎斯特频率以外。透明度也从 0.16 收到 0.13。
+   */
+  g.globalAlpha = 0.13
+  for (let i = 0; i < S; i += 5) {
     g.strokeStyle = i % 6 === 0 ? '#cdc2a4' : '#f1e9d2'
     g.lineWidth = 1
     g.beginPath()

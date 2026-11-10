@@ -13,6 +13,7 @@ import { SHIP_DRAFT_LIFT } from './shipShape'
 import { createMap3DPost, type Map3DPost } from '@/components/map3d/post'
 import { createDeckRain, rainTiltFromWind } from './rainLayer'
 import { BIRD_MAX, deckBirdFlock, deckBirdPose } from './deckBirds'
+import { sailorCount } from './deckCrew'
 import {
   approachLook, deckWeatherLook, lightningEnvelope, rainDropCount, type DeckWeatherLook,
 } from './deckWeather'
@@ -1089,6 +1090,10 @@ export default function DeckView() {
          *   0.35     47/54/56 —— 看得出布在透光，又没脱离"夜"。
          * 取 0.35。
          */
+        {
+          const flag = st.fleet.ships.find((x) => x.id === st.fleet.flagshipId) ?? st.fleet.ships[0]
+          deckShip.setCrew(sailorCount(flag?.crew ?? 0))
+        }
         deckShip.setBacklight(fill.position, fill.color, 0.30 * fill.intensity)
         deckShip.update(t, pulse + trim, night)
       }

@@ -6,6 +6,7 @@ import {
   shipDeckAt, shipDeckHalfWidthAt, shipHalfWidthAt, shipKeelAt,
 } from './shipShape'
 import { buildHullGeo } from './shipHull'
+import { SAILOR_STATIONS } from './deckCrew'
 
 /*
  * 形状与缩放的定义搬到了 `shipShape.ts`（纯数字，可在单测里跑），这里转出去，
@@ -50,6 +51,11 @@ export interface DeckShip {
    * @param color 透出的光色；@param k 强度（0 = 完全不透）
    */
   setBacklight(dir: THREE.Vector3, color: THREE.Color, k: number): void
+  /**
+   * 甲板上露几个水手（0..3）。由 `fleet.ships[].crew` 经 `sailorCount` 得来 ——
+   * **船上没人就不该有人站在甲板上**，这是画面与数字一致性的一部分。
+   */
+  setCrew(n: number): void
   dispose(): void
 }
 
@@ -253,6 +259,75 @@ export function createDeckShip(): DeckShip {
     cabin.add(glow)
     warmGlows.push(glow)
   }
+  /*
+   * ---- 船尾楼朝向甲板的那一面：门 + 两扇小窗 ----
+   *
+   * 【为什么必须补】船尾楼的六扇窗全在**艉板**上（朝船尾、朝海）。于是站在甲板上
+   * 回头看，看到的是一整块 6.6×2.7 米的空木墙 —— 又黑又空，是甲板上最没有信息
+   * 的一块面（实测截图）。真实的船尾楼front 有舱门（通往船长室/储藏）、两侧有
+   * 采光小窗：补上之后，那面墙才读得出"这里能进去"，也给夜里的甲板多加两个光源。
+   *
+   * 位置用局部坐标：船尾楼中心在 z=−14.6、进深 5.2，所以**前壁在局部 z=+2.6**。
+   */
+  {
+    const doorMat = new THREE.MeshStandardMaterial({ color: 0x3f2c1b, roughness: 0.92 })
+    const door = new THREE.Mesh(new THREE.BoxGeometry(0.95, 1.95, 0.08), doorMat)
+    door.name = 'ship-cabin-door'
+    door.position.set(0, -0.37, 2.6)
+    cabin.add(door)
+    // 门框：两根铜立柱 + 一道门楣（与艉窗同一种铜，读作同一条船）
+    for (const sx of [-1, 1]) {
+      const post = new THREE.Mesh(new THREE.BoxGeometry(0.09, 2.12, 0.13), brassMat)
+      post.position.set(sx * 0.52, -0.33, 2.6)
+      cabin.add(post)
+    }
+    const lintel = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.09, 0.13), brassMat)
+    lintel.position.set(0, 0.73, 2.6)
+    cabin.add(lintel)
+    // 门上的小窗（夜里会透出灯光，白天是深色玻璃）
+    /*
+     * z 偏移必须拉开：门板厚 0.08（2.56~2.64），玻璃若贴在 2.645 就只有 5 毫米余量，
+     * 深度缓冲在这个距离上会打架（实测：玻璃上出现一片脏粉色斑）。给到 2.70。
+     */
+    const doorWin = new THREE.Mesh(new THREE.PlaneGeometry(0.46, 0.38), windowMat)
+    doorWin.position.set(0, 0.28, 2.70)
+    cabin.add(doorWin)
+    /*
+     * 这三扇朝甲板的窗也要有光晕：艉窗那边一直有，而新加的窗若只有一块亮玻璃，
+     * 夜里读作"墙上贴了一张黄纸"（实测截图）。光晕是加法 sprite，走同一个
+     * `warmGlows` 列表，白天一起被压掉。
+     */
+    const addGlow = (x: number, y: number, size: number) => {
+      const sp = new THREE.Sprite(new THREE.SpriteMaterial({
+        map: glowTex, color: 0xffa958, transparent: true, opacity: 0,
+        depthWrite: false, blending: THREE.AdditiveBlending,
+      }))
+      sp.scale.set(size, size, 1)
+      sp.position.set(x, y, 2.95)
+      cabin.add(sp)
+      warmGlows.push(sp)
+      return sp
+    }
+    addGlow(0, 0.28, 1.5)
+    // 铜把手
+    const knob = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.12, 8), brassMat)
+    knob.position.set(0.33, -0.42, 2.68)
+    knob.rotation.x = Math.PI / 2
+    cabin.add(knob)
+    // 两侧采光窗：比艉窗小一半，位置对着舱内的工作台高度
+    for (const sx of [-1, 1]) {
+      const w = new THREE.Mesh(new THREE.PlaneGeometry(0.52, 0.44), windowMat)
+      w.position.set(sx * 2.15, 0.36, 2.66)
+      cabin.add(w)
+      addGlow(sx * 2.15, 0.36, 1.6)
+      for (const [ox, oy, bw, bh] of [[0, 0.27, 0.62, 0.07], [0, -0.27, 0.62, 0.07], [0.31, 0, 0.07, 0.6], [-0.31, 0, 0.07, 0.6]] as const) {
+        const f = new THREE.Mesh(new THREE.BoxGeometry(bw, bh, 0.1), brassMat)
+        f.position.set(sx * 2.15 + ox, 0.36 + oy, 2.6)
+        cabin.add(f)
+      }
+    }
+  }
+
   group.add(cabin)
 
   // ---------------- 船尾回廊 ----------------
@@ -329,7 +404,13 @@ export function createDeckShip(): DeckShip {
    */
   const wheel = new THREE.Group()
   wheel.name = 'ship-wheel-group'
-  wheel.position.set(0, shipDeckAt(-12.2) + 0.03, -12.2)
+  /*
+   * 【舵轮曾经埋在船尾楼的墙里】船尾楼（cabin）中心 z=−14.6、进深 5.2，于是它的
+   * **前壁在 z=−12.0**；而舵轮原来摆在 z=−12.2 —— 整整 20 厘米在墙里面，只留
+   * 半个轮缘露在外面。从甲板回头看，那里只有一块黑方板，"舵轮"根本读不出来
+   * （实测截图）。挪到 −10.9：塔前留 1.1 米，正好是舵手站的位置。
+   */
+  wheel.position.set(0, shipDeckAt(-10.9) + 0.03, -10.9)
   {
     const stand = new THREE.Mesh(new THREE.BoxGeometry(0.5, 1.1, 0.5), woodDark)
     stand.position.y = 0.55
@@ -370,6 +451,94 @@ export function createDeckShip(): DeckShip {
   group.add(wheel)
   // 舵轮要能被逐帧转动（改航向时的回执），所以单独留一个引用
   const wheelSpinner = wheel
+
+  /*
+   * ---------------- 甲板上的水手 ----------------
+   *
+   * 【为什么这轮加人】前几轮把船做得很细（帆、索具、舱口、舵轮、灯火），但它是
+   * **一条没人的船**：所有该由人做的动作（掌舵、看货、望路）都只有物件自己在动。
+   * 三个人站在三个岗位上，甲板立刻从"模型"变成"有人的地方"，而且他们的位置本身
+   * 就在指路：轮盘边的人在掌舵、舱口边的人在清点、船首的人在望。
+   *
+   * 【为什么不做走路动画】走路要骨骼/IK，成本远高于收益；而且**站定的人**在船上
+   * 才是常态（水手大多在某个位置干某件事）。这里只做极轻的呼吸式摇晃（振幅 1cm、
+   * 三人相位不同），让它不像三尊雕塑。
+   *
+   * 【几何全部共享】三个人的腿/躯干/头/手臂是同一批 geometry 与材质，只有 Group
+   * 不同 —— 18 个 mesh 但只有 6 份几何。
+   */
+  /*
+   * 配色与比例（第一版是"一枚深色棋子"，实测放大截图：一根黑柱子顶着一个球）：
+   *  · 上衣 0x2a3242 → 0x39425a：ACES 下深蓝会压成纯黑，抬一档才看得出是件衣服；
+   *  · 躯干窄到 0.36，手臂外移到 ±0.245 —— 第一版手臂贴着躯干，整块糊成一个方箱；
+   *  · 腿从"一根细棍"改成两条（间隙 ±0.12、半径 0.085）+ 一双靴子；
+   *  · 加一条浅色腰带：人眼在这个尺寸上认"人"靠的就是腰线，不是脸。
+   */
+  const sailorMat = new THREE.MeshStandardMaterial({ color: 0x39425a, roughness: 0.94, metalness: 0.02 })
+  const skinMat = new THREE.MeshStandardMaterial({ color: 0x9a7150, roughness: 0.86 })
+  const hatMat = new THREE.MeshStandardMaterial({ color: 0x1c1a18, roughness: 0.9 })
+  const beltMat = new THREE.MeshStandardMaterial({ color: 0x6b5232, roughness: 0.9 })
+  const legGeo = new THREE.CylinderGeometry(0.076, 0.09, 0.76, 6)
+  const bootGeo = new THREE.BoxGeometry(0.15, 0.1, 0.24)
+  const torsoGeo = new THREE.BoxGeometry(0.36, 0.56, 0.24)
+  const beltGeo = new THREE.BoxGeometry(0.38, 0.075, 0.26)
+  const neckGeo = new THREE.CylinderGeometry(0.055, 0.06, 0.09, 6)
+  const headGeo = new THREE.SphereGeometry(0.112, 8, 6)
+  const armGeo = new THREE.CylinderGeometry(0.062, 0.072, 0.56, 5)
+  const hatGeo = new THREE.CylinderGeometry(0.132, 0.122, 0.1, 8)
+  disposables.push(sailorMat, skinMat, hatMat, beltMat, legGeo, bootGeo, torsoGeo, beltGeo, neckGeo, headGeo, armGeo, hatGeo)
+
+  const sailors: THREE.Group[] = []
+  for (const st of SAILOR_STATIONS) {
+    const g = new THREE.Group()
+    g.name = `ship-sailor-${st.kind}`
+    g.position.set(st.x, shipDeckAt(st.z), st.z)
+    g.rotation.y = st.yaw
+    // 腿 + 靴：两根分开站，脚底在 y=0（甲板面）
+    for (const sx of [-1, 1]) {
+      const leg = new THREE.Mesh(legGeo, hatMat)
+      leg.position.set(sx * 0.115, 0.38, 0)
+      g.add(leg)
+      const boot = new THREE.Mesh(bootGeo, hatMat)
+      boot.position.set(sx * 0.115, 0.05, 0.03)
+      g.add(boot)
+    }
+    // 躯干：略窄的方箱（人不是圆桶），上缘对齐肩
+    const torso = new THREE.Mesh(torsoGeo, sailorMat)
+    torso.position.set(0, 1.08, 0)
+    g.add(torso)
+    // 腰带：这个尺寸上"人"是靠腰线认出来的
+    const belt = new THREE.Mesh(beltGeo, beltMat)
+    belt.position.set(0, 0.82, 0)
+    g.add(belt)
+    // 手臂：外移到躯干轮廓之外，张开一点点，读作"站着"而不是"立正"
+    for (const sx of [-1, 1]) {
+      const arm = new THREE.Mesh(armGeo, sailorMat)
+      arm.position.set(sx * 0.245, 1.05, 0.01)
+      arm.rotation.z = sx * 0.16
+      g.add(arm)
+    }
+    // 脖子：一小截，头才不会直接坐在肩上
+    const neck = new THREE.Mesh(neckGeo, skinMat)
+    neck.position.set(0, 1.4, 0)
+    g.add(neck)
+    const head = new THREE.Mesh(headGeo, skinMat)
+    head.position.set(0, 1.5, 0)
+    g.add(head)
+    // 帽子：一顶矮圆帽，从远处也能认出"这是个人"
+    const hat = new THREE.Mesh(hatGeo, hatMat)
+    hat.position.set(0, 1.6, 0)
+    g.add(hat)
+    /*
+     * 水手也参与"能不能点"？**不参与**。甲板上可点的三件东西（舱口 / 舵轮 / 瞭望台）
+     * 各自对应一组真实数字；点一个人却只能说一句废话，那会稀释另外三个的意义。
+     */
+    group.add(g)
+    sailors.push(g)
+  }
+
+  /** 当前露出的水手数（默认 3，DeckView 每帧用真实船员数覆盖） */
+  let crewShown = -1
 
   /*
    * ---------------- 甲板零碎：系缆桩 / 盘好的缆绳 / 木桶 ----------------
@@ -916,6 +1085,13 @@ export function createDeckShip(): DeckShip {
      * @param color 透出来的光色（夜里是月光的冷白，白天是天光的暖白）
      * @param k 强度倍率（0 = 完全不透光）
      */
+    setCrew(n: number) {
+      const shown = Math.max(0, Math.min(sailors.length, Math.round(n)))
+      // 只在变化时改（每帧改 visible 会让 three 重算场景图）
+      if (shown === crewShown) return
+      crewShown = shown
+      for (let i = 0; i < sailors.length; i++) sailors[i].visible = i < shown
+    },
     setBacklight(dir: THREE.Vector3, color: THREE.Color, k: number) {
       sailLightDir.value.copy(dir).normalize()
       sailGlow.value.copy(color).multiplyScalar(k)
@@ -929,7 +1105,15 @@ export function createDeckShip(): DeckShip {
        * 那是"夜里的船"贴在白天的海上，一眼假。灯是"有没有人在这条船上"的信号，
        * 白天它应该只是深色的玻璃。
        */
-      const litK = 0.12 + 0.88 * night
+      /*
+       * 白天的地板值 0.12 → 0.03。
+       *
+       * 【为什么】0.12 时窗玻璃的自发光是 2.2×0.12=0.26，出来是 147/102/69 —— 比同
+       * 一帧的舱壁（55/47/43）亮 2.7 倍，正午的舱门小窗像一盏点着的铜灯（实测像素）。
+       * 上一轮把「白天窗还在发光」当成修好了，其实只修到"不再是黄板"，没量到这个
+       * 程度。0.03 → 约 74/61/41，读作"深色玻璃里有一点暖"，与舱壁只差一档。
+       */
+      const litK = 0.03 + 0.97 * night
       windowMat.emissiveIntensity = 2.2 * litK
       for (const m of warmMats) if (m !== windowMat) m.emissiveIntensity = 1.15 * litK
       for (const w of warmLights) w.light.intensity = w.base * litK
@@ -937,6 +1121,19 @@ export function createDeckShip(): DeckShip {
         const mat = g.material as THREE.SpriteMaterial
         mat.opacity = (g.scale.x > 2 ? 0.30 : 0.48) * litK
       }
+      /*
+       * 水手的呼吸式摇晃：振幅 1cm、周期 4~6 秒，三人相位不同。
+       * 【为什么不随船摇】船体的横摇已经通过 group 的 quaternion 传给他们了
+       * （他们是 group 的子节点）；这里只补"人在站着时也会动"的那一点。
+       */
+      for (let i = 0; i < sailors.length; i++) {
+        const g = sailors[i]
+        if (!g.visible) continue
+        const st = SAILOR_STATIONS[i]
+        g.rotation.y = st.yaw + Math.sin(t * 0.45 + st.phase) * 0.07
+        g.position.y = shipDeckAt(st.z) + Math.sin(t * 0.95 + st.phase) * 0.01
+      }
+
       // 灯笼晃：吊灯本来就随船摇，幅度小、周期不同（两盏不同相）
       for (let i = 0; i < lanternPivots.length; i++) {
         lanternPivots[i].rotation.z = Math.sin(t * 0.9 + i * 1.7) * 0.06
