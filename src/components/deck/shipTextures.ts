@@ -371,3 +371,67 @@ export function sailAlphaCanvas(seed = 11): HTMLCanvasElement {
   }
   return c
 }
+
+/**
+ * 贴着船体的水沫带贴图（白，alpha 里断续）。
+ *
+ * u = 从船体到外侧（0 亮 1 淡）、v = 沿船长（0 船首 1 船尾）。
+ *
+ * 【为什么用像素级生成而不是 drawImage】要的是"絮"：一团团边缘毛糙的白沫，
+ * 每团之间会断开。canvas 的椭圆 + 模糊出来的是糖霜，缺"被水搓开"的那种碎裂感。
+ * 这里直接对每个像素算 alpha = 横向衰减 × 值噪声阈值 × 两端淡出，一次成型。
+ */
+export function foamStripCanvas(seed = 4417): HTMLCanvasElement {
+  const W = 128
+  const H = 512
+  const [c, g] = canvas(W, H)
+  const img = g.createImageData(W, H)
+  const rnd = rng(seed)
+  // 预生成 4 张哈希表（值噪声用）
+  const T = 64
+  const tbl: number[][] = Array.from({ length: 4 }, () => Array.from({ length: T * T }, () => rnd()))
+  const hash = (k: number, ix: number, iy: number) => tbl[k][((iy % T) + T) % T * T + (((ix % T) + T) % T)]
+  const noise = (k: number, x: number, y: number): number => {
+    const ix = Math.floor(x)
+    const iy = Math.floor(y)
+    const fx = x - ix
+    const fy = y - iy
+    const ux = fx * fx * (3 - 2 * fx)
+    const uy = fy * fy * (3 - 2 * fy)
+    const a = hash(k, ix, iy)
+    const b = hash(k, ix + 1, iy)
+    const cc = hash(k, ix, iy + 1)
+    const d = hash(k, ix + 1, iy + 1)
+    return (a + (b - a) * ux) * (1 - uy) + (cc + (d - cc) * ux) * uy
+  }
+  for (let y = 0; y < H; y++) {
+    const v = y / H
+    // 沿船长：船首略强、船尾渐弱、两端各留一点淡出（不要一条硬切边）
+    const along = Math.min(1, v / 0.06) * Math.min(1, (1 - v) / 0.1) * (1.05 - 0.45 * v)
+    // 细的与粗的两级噪声：粗的切段、细的做毛边
+    const nCoarse = noise(0, v * 26, 0.5)
+    const nFine = noise(1, v * 120, 1.5)
+    const nEdge = noise(2, v * 46, 3.5)
+    for (let x = 0; x < W; x++) {
+      const u = x / W
+      // 横向衰减：紧贴船体的一半最亮，外侧淡出
+      const lateral = Math.pow(1 - u, 1.5) * (0.7 + 0.3 * nEdge)
+      // 断续：粗噪声决定"这一段有没有沫"，细噪声把边缘啃碎
+      const gate = Math.min(1, Math.max(0, (nCoarse * 0.72 + nFine * 0.28 - 0.26) / 0.3))
+      let a = lateral * along * Math.pow(gate, 1.4)
+      /*
+       * 整体抬 1.55 倍：第一版乘 1.15 时，alpha 峰值只有 0.3 左右 —— 贴到海上
+       * 叠加后就消失了（实测截图：船底一条白都没有，像悬空）。白沫在物理上本来就
+       * 接近"不透明的白"，只是面积碎。
+       */
+      a = Math.min(1, a * 2.2)
+      const i = (y * W + x) * 4
+      img.data[i] = 255
+      img.data[i + 1] = 255
+      img.data[i + 2] = 255
+      img.data[i + 3] = Math.round(a * 255)
+    }
+  }
+  g.putImageData(img, 0, 0)
+  return c
+}

@@ -1,12 +1,15 @@
 import * as THREE from 'three'
 import { createGlowTexture } from '@/components/map3d/models'
-import { normalFromCanvas, plankCanvas, sailAlphaCanvas, sailCanvas, texFrom } from './shipTextures'
+import { foamStripCanvas, normalFromCanvas, plankCanvas, sailAlphaCanvas, sailCanvas, texFrom } from './shipTextures'
 import {
   HULL_BULWARK, HULL_STATIONS, SHIP_HALF_LENGTH,
   shipDeckAt, shipDeckHalfWidthAt, shipHalfWidthAt, shipKeelAt,
 } from './shipShape'
 import { buildHullGeo } from './shipHull'
 import { SAILOR_STATIONS } from './deckCrew'
+import { chartCourse } from './deckChart'
+import { WATERLINE_Y_M, WAKE_SEGMENTS } from './deckWake'
+import { bearingDelta, FLAG_BASE_H_M, FLAG_LEN_M, FLAG_SEG_X, FLAG_SEG_Y, flagOffset, pennantYaw } from './deckFlag'
 
 /*
  * 形状与缩放的定义搬到了 `shipShape.ts`（纯数字，可在单测里跑），这里转出去，
@@ -56,6 +59,22 @@ export interface DeckShip {
    * **船上没人就不该有人站在甲板上**，这是画面与数字一致性的一部分。
    */
   setCrew(n: number): void
+  /**
+   * 风（`weather.windDir` = **风吹去**的罗盘方位、`weather.windSpeed` = 节）。
+   * 旗子按它转向与甩动 —— 于是"风往哪吹"这件决定航程天数的事，第一次在画面里可读。
+   */
+  setWind(bearingDeg: number, speedKnots: number): void
+  /**
+   * 航迹：强度 0..1、船首 V 浪张角（弧度）、船首浪长度（模型米，0 = 没在走）。
+   * 这三个数全部由 `deckWake` 的纯函数从"是否航行 + 船速"算出来。
+   */
+  setWake(strength: number, spreadRad: number, bowLenM: number, waveAmp?: number): void
+  /**
+   * 海图桌上那张图上的航线（**真实方位与剩余距离**）。
+   * @param bearingDeg 到下一站的真方位；@param remainNm 剩余海里。
+   * 任一为 null = 没有航路（图上不画线）。
+   */
+  setCourse(bearingDeg: number | null, remainNm: number | null): void
   dispose(): void
 }
 
@@ -287,6 +306,8 @@ export function createDeckShip(): DeckShip {
   let cabinWindowLamp: THREE.PointLight | null = null
   /** 舱内那三扇窗的玻璃：**不受光**，直接用天空色（白天亮、夜里暗） */
   let cabinGlassMat: THREE.MeshBasicMaterial | null = null
+  /** 往海图上画航线（方位 + 剩余距离）；未进舱时为 null */
+  let paintCourse: ((b: number | null, nm: number | null) => void) | null = null
   const windowMat = new THREE.MeshStandardMaterial({
     color: 0x1a1004,
     emissive: 0xffab5e,
@@ -528,21 +549,85 @@ export function createDeckShip(): DeckShip {
     }
     // 0xd9c79c → 0xc2ad80：正对着挂灯，原色在 0.5 米处被照到接近纯白（实测截图）
     // 0xc2ad80 → 0xa89268：挂灯就在桌子正上方 1.3 米，原色被照到接近纯白（实测截图）
-    const chartMat = new THREE.MeshLambertMaterial({ color: 0xa89268 })
-    const chart = new THREE.Mesh(new THREE.PlaneGeometry(1.25, 0.82), chartMat)
+    /*
+     * ---- 海图：一张会画"你正在往哪走"的 canvas ----
+     * 图面（羊皮纸 + 两道海岸墨线 + 一条航线）画在一张 256×170 的 canvas 上，
+     * 航线的方位与长度由 `setCourse` 用**真实数据**重画（见 deckChart.ts）。
+     * 不用静态贴图：静态图只能当装饰，而这张图是甲板上唯一"会跟着你变"的东西。
+     */
+    const CHART_W = 256
+    const CHART_H = 170
+    const chartCanvas = document.createElement('canvas')
+    chartCanvas.width = CHART_W
+    chartCanvas.height = CHART_H
+    const chartTex = new THREE.CanvasTexture(chartCanvas)
+    chartTex.colorSpace = THREE.SRGBColorSpace
+    disposables.push(chartTex)
+
+    /** 重画整张图（底图 + 海岸 + 航线）。只在方位/距离变化超过阈值时调用。 */
+    const paintChart = (bearingDeg: number | null, remainNm: number | null) => {
+      const g = chartCanvas.getContext('2d')!
+      // 羊皮纸底
+      g.fillStyle = '#c9b184'
+      g.fillRect(0, 0, CHART_W, CHART_H)
+      // 两道海岸墨线：不画真实地理，只给"这是一张海图"的语汇
+      g.strokeStyle = 'rgba(92,74,48,0.75)'
+      g.lineWidth = 2
+      for (const pts of [
+        [[-10, 120], [40, 96], [78, 104], [120, 74], [168, 62], [210, 40]],
+        [[30, 170], [62, 148], [96, 150], [140, 132], [200, 130], [266, 108]],
+      ] as const) {
+        g.beginPath()
+        pts.forEach(([x, y], i) => (i ? g.lineTo(x, y) : g.moveTo(x, y)))
+        g.stroke()
+      }
+      // 罗盘：一圈细线 + 十字
+      const cx = 78
+      const cy = 86
+      g.strokeStyle = 'rgba(92,74,48,0.5)'
+      g.lineWidth = 1
+      g.beginPath(); g.arc(cx, cy, 22, 0, Math.PI * 2); g.stroke()
+      g.beginPath(); g.moveTo(cx - 28, cy); g.lineTo(cx + 28, cy); g.moveTo(cx, cy - 28); g.lineTo(cx, cy + 28); g.stroke()
+
+      const course = chartCourse(bearingDeg, remainNm)
+      if (course) {
+        const len = Math.min(CHART_W, CHART_H) * 0.5 * course.lengthFrac * 2
+        const x1 = cx + Math.cos(course.angleRad) * len
+        const y1 = cy + Math.sin(course.angleRad) * len
+        // 航线：一笔实线 + 端头一个小三角（"往这边走"）
+        g.strokeStyle = 'rgba(120,42,28,0.92)'
+        g.lineWidth = 2.4
+        g.setLineDash([7, 5])
+        g.beginPath(); g.moveTo(cx, cy); g.lineTo(x1, y1); g.stroke()
+        g.setLineDash([])
+        g.fillStyle = 'rgba(120,42,28,0.95)'
+        g.beginPath()
+        g.arc(x1, y1, 3.2, 0, Math.PI * 2)
+        g.fill()
+        // 船位：一个实心小点（起点）
+        g.fillStyle = 'rgba(60,44,26,0.95)'
+        g.beginPath(); g.arc(cx, cy, 3.6, 0, Math.PI * 2); g.fill()
+      }
+      chartTex.needsUpdate = true
+    }
+    paintChart(null, null)
+
+    const chart = new THREE.Mesh(new THREE.PlaneGeometry(1.25, 0.82), new THREE.MeshLambertMaterial({ map: chartTex }))
     chart.rotation.x = -Math.PI / 2
     chart.position.set(0, topY + 0.04, 0.15)
+    chart.name = 'ship-cabin-chart'
     cabin.add(chart)
-    // 海图上的两笔墨线（罗盘线/海岸线，不写具体地理，避免与真实地图打架）
-    for (const [x0, z0, x1, z1] of [[-0.42, -0.18, -0.1, 0.24], [0.06, -0.26, 0.38, 0.05]] as const) {
-      const len = Math.hypot(x1 - x0, z1 - z0)
-      const ink = new THREE.Mesh(new THREE.PlaneGeometry(len, 0.012), new THREE.MeshBasicMaterial({ color: 0x5c4a30 }))
-      ink.rotation.x = -Math.PI / 2
-      ink.rotation.z = -Math.atan2(z1 - z0, x1 - x0)
-      ink.position.set((x0 + x1) / 2, topY + 0.045, 0.15 + (z0 + z1) / 2)
-      cabin.add(ink)
+    disposables.push(tableMat)
+    /** 上一次画进去的方位/距离：变化不到阈值就不重画（每帧重画 canvas 很贵） */
+    let lastCourse: { b: number | null; nm: number | null } = { b: null, nm: null }
+    paintCourse = (b, nm) => {
+      const changed = (lastCourse.b == null) !== (b == null)
+        || (b != null && lastCourse.b != null && Math.abs(b - lastCourse.b) > 3)
+        || (nm != null && lastCourse.nm != null && Math.abs(nm - lastCourse.nm) > 80)
+      if (!changed) return
+      lastCourse = { b, nm }
+      paintChart(b, nm)
     }
-    disposables.push(tableMat, chartMat)
     // 凳子
     // 接触暗部：舱内没有阴影贴图，家具与地板之间必须有一点暗，否则全是"贴纸"
     addShadow(cabin, 0, -halfH + 0.012, 0.15, 1.05, 0.72)
@@ -550,9 +635,11 @@ export function createDeckShip(): DeckShip {
     stool.position.set(0.95, -halfH + 0.23, 0.1)
     addShadow(cabin, 0.95, -halfH + 0.012, 0.1, 0.3, 0.3)
     cabin.add(stool)
-    // 卷起来的备用海图（两根纸筒）
+    // 卷起来的备用海图（两根纸筒）：用羊皮纸色的 Lambert（与桌上的图同一个色系）
+    const rollMat = new THREE.MeshLambertMaterial({ color: 0xa89268 })
+    disposables.push(rollMat)
     for (const [cx, cz] of [[-0.62, 0.55], [-0.5, 0.66]] as const) {
-      const roll = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.6, 6), chartMat)
+      const roll = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.6, 6), rollMat)
       roll.rotation.z = Math.PI / 2
       roll.position.set(cx, topY + 0.09, cz)
       cabin.add(roll)
@@ -1026,6 +1113,229 @@ export function createDeckShip(): DeckShip {
   }
 
   /*
+   * ---------------- 主桅顶的长三角旗（pennant） ----------------
+   *
+   * 【为什么是三角旗、为什么在主桅】方旗（旗面宽高比接近 1）在远处只是一个色块，
+   * 而更长的三角旗**指向下风侧**：一眼就能读出"风往哪吹"。挂在主桅最高处是因为
+   * 它是全船受风最干净的位置（不被帆与索具挡住），也正是真实帆船挂长旗的地方。
+   *
+   * 几何一次建好（三角旗：沿 x 收成一个尖），逐帧只改顶点的 z/y 偏移 ——
+   * 偏移由 `deckFlag` 的纯函数给（旗根不动、旗尾甩得最凶、风小则垂下来）。
+   */
+  const flagGeo = new THREE.BufferGeometry()
+  {
+    const pos: number[] = []
+    const idx: number[] = []
+    const cols = FLAG_SEG_X + 1
+    const rows = FLAG_SEG_Y + 1
+    for (let iy = 0; iy < rows; iy++) {
+      const v = (iy / FLAG_SEG_Y) * 2 - 1 // −1 上边 … +1 下边
+      for (let ix = 0; ix < cols; ix++) {
+        const u = ix / FLAG_SEG_X
+        // 三角旗：半高随 u 线性收到 0（旗尾是一个尖）
+        const halfH = (FLAG_BASE_H_M / 2) * (1 - u)
+        pos.push(u * FLAG_LEN_M, v * halfH, 0)
+      }
+    }
+    for (let iy = 0; iy < FLAG_SEG_Y; iy++) {
+      for (let ix = 0; ix < FLAG_SEG_X; ix++) {
+        const a = iy * cols + ix
+        idx.push(a, a + 1, a + cols, a + 1, a + cols + 1, a + cols)
+      }
+    }
+    flagGeo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
+    flagGeo.setIndex(idx)
+    flagGeo.computeVertexNormals()
+    flagGeo.setAttribute('uv', new THREE.Float32BufferAttribute(new Array((cols * rows) * 2).fill(0), 2))
+  }
+  const flagBase = Float32Array.from(flagGeo.attributes.position.array as Float32Array)
+  /*
+   * 旗布用 Lambert + 两面可见：夜里它只是一个暗色的形状（正确 —— 灯照不到桅顶），
+   * 白天它吃到天光。红底加一条浅色边是"船籍旗"最省的画法，两种颜色在远处就能分开。
+   */
+  const flagMat = new THREE.MeshLambertMaterial({
+    color: 0x8f2b22, side: THREE.DoubleSide, emissive: 0x140806, emissiveIntensity: 0.5,
+  })
+  const flagMesh = new THREE.Mesh(flagGeo, flagMat)
+  flagMesh.name = 'ship-pennant'
+  const mainMast = mastData[1]
+  flagMesh.position.set(0, mainMast.top + 2.05, mainMast.z)
+  // 旗杆：一根细杆，旗子要有东西可挂
+  const flagPole = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.028, 1.1, 5), mastMat)
+  // 杆立在桅尖（top+0.7 ± 0.8 → 顶端 29.5）之上：29.5 ~ 30.6
+  flagPole.position.set(0, mainMast.top + 2.3, mainMast.z)
+  group.add(flagPole)
+  // 旗子整体挂在一个 group 上：group 只负责按风向转，顶点在局部空间里被甩
+  const flagPivot = new THREE.Group()
+  flagPivot.name = 'ship-pennant-pivot'
+  flagPivot.position.copy(flagMesh.position)
+  flagMesh.position.set(0, 0, 0)
+  flagPivot.add(flagMesh)
+  group.add(flagPivot)
+  disposables.push(flagGeo, flagMat)
+  /*
+   * 风的两个状态：`windTarget` 是 store 里的真值（每帧由 DeckView 写进来），
+   * `flagWind` 是画面用的平滑值（一阶跟随）。风向做平滑不是为了好看 ——
+   * 天气切换时 windDir 会跳，旗子若跟着跳会像"被人突然扯了一下"。
+   */
+  /**
+   * 航迹的三个参数（强度 / 张角 / 船首浪长）。由 DeckView 每帧按 store 里的真实
+   * 航行状态写进来 —— 系泊时强度只有 0.14、船首浪长度为 0（船首不该有 V 浪）。
+   */
+  const wakeState = { strength: 0.26, spread: 0.42, bowLen: 0, waveAmp: 1 }
+  const windTarget = { bearing: Number.NaN, speed: Number.NaN }
+  const flagWind = { bearing: Number.NaN, speed: Number.NaN }
+  let lastFlagT = 0
+  let flagNormalTick = 0
+
+  /*
+   * ---------------- 贴着船体的水沫带 + 船首 V 浪 ----------------
+   *
+   * 【为什么必须做】这一条补的是"船与海之间有交换"：船体把水推开，水在船侧留下
+   * 一条断续的白沫。没有它，船是贴在画上的一片纸 —— 尤其从船后看，船体与海之间
+   * 完全没有过渡。
+   *
+   * 【水面在哪里】船被抬高了 `SHIP_DRAFT_LIFT`（0.12 世界单位），而它本身随浪起伏
+   * （`deckShipPose` 的 y），所以**水面在船体局部坐标里是个变动的常数**：
+   *   y_local = −group.position.y / SHIP_SCALE
+   * 每帧现算并写进 `wakeGroup.position.y`。第一版把它写死在 −2.4，于是船在浪上
+   * 起伏时白沫带一会儿浮在半空、一会儿沉到水里（一帧对一帧错地闪）。
+   */
+  const foamTex = texFrom(foamStripCanvas())
+  const foamMat = new THREE.MeshBasicMaterial({
+    map: foamTex, transparent: true, opacity: 0.4, depthWrite: false,
+    side: THREE.DoubleSide, color: new THREE.Color(0.95, 0.97, 1),
+  })
+  disposables.push(foamTex, foamMat)
+  const wakeGroup = new THREE.Group()
+  wakeGroup.name = 'ship-wake'
+  group.add(wakeGroup)
+
+  /**
+   * 任意高度处的船体半宽：截面是半椭圆（与炮门、放样用同一个公式），
+   * 给定 y 反解出该高度的 x。→ 水线泡沫带与湿痕都靠它贴到船壳上。
+   */
+  const hullHalfWidthAtY = (z: number, y: number): number => {
+    const deck = shipDeckAt(z)
+    const keel = shipKeelAt(z)
+    const cosA = (deck - y) / (deck + keel)
+    return shipHalfWidthAt(z) * Math.sqrt(Math.max(0, 1 - cosA * cosA))
+  }
+
+  /*
+   * ---------------- 水线带：下半白沫、上半湿痕（都贴在船壳上） ----------------
+   *
+   * 【为什么贴在船壳上、不画在水面上】泡沫带原来是水平铺在船侧的水面上，
+   * 但两件事让它完全看不见：
+   *   ① 从船后上方看船时，船侧的水面被**船体自己**挡住（涂红 + 关深度测试才
+   *      确认它位置是对的）；
+   *   ② 更致命的是浪：船体跟随浪高，而浪面的空间起伏是 ±0.13 世界单位
+   *      （±2.6 模型米）——水平的一条带子必然一半在水下，被不透明海面切掉。
+   * 改成贴在船壳外表面上就都解决了：它随船倾斜、永远在船体的可见面上，
+   * 而且"泡沫爬到船壳上"本来就是真的（船在走时，白沫会沿着船壳往上溅）。
+   *
+   * 宽度用**模型米**但必须够大：1 世界单位 = 0.05 模型米，而 chase 机位在 12
+   * 世界单位外 —— 0.65 米的带子在屏幕上只有 4 像素（第一版就是这样，量了世界
+   * 坐标才发现"它在那儿，只是看不见"）。
+   */
+  {
+    const WET_TOP_M = WATERLINE_Y_M + 2.4
+    const FOAM_TOP_M = WATERLINE_Y_M + 0.9
+    /*
+     * 颜色 0x1a0f07 + opacity 0.5 → 压在深棕船壳上**完全看不出来**（实测：
+     * 把同一个材质染成纯红才确认它一直都在、位置完全正确）。真实船的水线是深青绿
+     * 的（水藻 + 湿木），换个色相才读得出来 —— 不是加深，是换色。
+     */
+    const wetMat = new THREE.MeshBasicMaterial({
+      color: 0x2c3a32, transparent: true, opacity: 0.72, depthWrite: false, side: THREE.DoubleSide,
+    })
+    disposables.push(wetMat)
+    for (const side of [-1, 1]) {
+      // ① 湿痕（深色，水线往上 1.7 米）
+      {
+        const pos: number[] = []
+        const idx: number[] = []
+        for (let i = 0; i <= WAKE_SEGMENTS; i++) {
+          const t = i / WAKE_SEGMENTS
+          const z = SHIP_HALF_LENGTH * 0.96 - SHIP_HALF_LENGTH * 1.9 * t
+          // 1.012 = 贴船壳外侧 1.2%（约 5 厘米），太低会与船壳 z-fighting
+          pos.push(side * hullHalfWidthAtY(z, FOAM_TOP_M) * 1.012, FOAM_TOP_M, z)
+          pos.push(side * hullHalfWidthAtY(z, WET_TOP_M) * 1.012, WET_TOP_M, z)
+          if (i < WAKE_SEGMENTS) {
+            const a = i * 2
+            idx.push(a, a + 2, a + 1, a + 1, a + 2, a + 3)
+          }
+        }
+        const g = new THREE.BufferGeometry()
+        g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
+        g.setIndex(idx)
+        const m = new THREE.Mesh(g, wetMat)
+        m.name = `ship-wetline-${side > 0 ? 'port' : 'stbd'}`
+        m.raycast = () => {}
+        group.add(m)
+        disposables.push(g)
+      }
+      // ② 白沫（贴在水线往上 0.55 米，用同一张泡沫贴图，uv 的 v 沿船长）
+      {
+        const pos: number[] = []
+        const uv: number[] = []
+        const idx: number[] = []
+        for (let i = 0; i <= WAKE_SEGMENTS; i++) {
+          const t = i / WAKE_SEGMENTS
+          const z = SHIP_HALF_LENGTH * 0.96 - SHIP_HALF_LENGTH * 1.9 * t
+          pos.push(side * hullHalfWidthAtY(z, WATERLINE_Y_M) * 1.014, WATERLINE_Y_M, z)
+          pos.push(side * hullHalfWidthAtY(z, FOAM_TOP_M) * 1.014, FOAM_TOP_M, z)
+          uv.push(0, t, 1, t)
+          if (i < WAKE_SEGMENTS) {
+            const a = i * 2
+            idx.push(a, a + 2, a + 1, a + 1, a + 2, a + 3)
+          }
+        }
+        const g = new THREE.BufferGeometry()
+        g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
+        g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2))
+        g.setIndex(idx)
+        const m = new THREE.Mesh(g, foamMat)
+        m.name = `ship-wake-side-${side > 0 ? 'port' : 'stbd'}`
+        m.raycast = () => {}
+        group.add(m)
+        disposables.push(g)
+      }
+    }
+  }
+
+  /*
+   * 船首 V 浪：两条从船首向外张开的梯形片。长度与张角由 `deckWake` 的纯函数给
+   * （快船张角小、慢船张角大 —— 慢船把水慢慢挤到两边，快船把浪推到正前方）。
+   * 几何按"1 单位长"建，运行时用 scale.z 拉伸，避免每帧重建。
+   */
+  const bowGroups: THREE.Group[] = []
+  {
+    const bw = 1.7
+    const pos = [
+      0, 0, 0, bw, 0, 0, 0, 0, -1,
+      bw, 0, 0, bw * 0.18, 0, -1, 0, 0, -1,
+    ]
+    const uv = [0, 0, 1, 0, 0, 1, 1, 0, 1, 1, 0, 1]
+    const g = new THREE.BufferGeometry()
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
+    g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2))
+    g.computeVertexNormals()
+    disposables.push(g)
+    for (const side of [-1, 1]) {
+      const pivot = new THREE.Group()
+      pivot.name = `ship-bowwave-${side > 0 ? 'port' : 'stbd'}`
+      pivot.position.set(side * 0.5, 0, SHIP_HALF_LENGTH * 0.9)
+      pivot.rotation.y = -side * 0.4
+      const m = new THREE.Mesh(g, foamMat)
+      m.raycast = () => {}
+      pivot.add(m)
+      wakeGroup.add(pivot)
+      bowGroups.push(pivot)
+    }
+  }
+
+  /*
    * ---------------- 桅顶瞭望台（crow's nest / top） ----------------
    *
    * 【为什么是"主桅下桁之上"这个位置】这不是随便挑的高度：真实帆船的"桅盘"就
@@ -1417,6 +1727,19 @@ export function createDeckShip(): DeckShip {
      * @param color 透出来的光色（夜里是月光的冷白，白天是天光的暖白）
      * @param k 强度倍率（0 = 完全不透光）
      */
+    setCourse(bearingDeg: number | null, remainNm: number | null) {
+      paintCourse?.(bearingDeg, remainNm)
+    },
+    setWake(strength: number, spreadRad: number, bowLenM: number, waveAmp = 1) {
+      wakeState.strength = strength
+      wakeState.spread = spreadRad
+      wakeState.bowLen = bowLenM
+      wakeState.waveAmp = waveAmp
+    },
+    setWind(bearingDeg: number, speedKnots: number) {
+      windTarget.bearing = bearingDeg
+      windTarget.speed = speedKnots
+    },
     setCrew(n: number) {
       const shown = Math.max(0, Math.min(sailors.length, Math.round(n)))
       // 只在变化时改（每帧改 visible 会让 three 重算场景图）
@@ -1472,6 +1795,75 @@ export function createDeckShip(): DeckShip {
         const st = SAILOR_STATIONS[i]
         g.rotation.y = st.yaw + Math.sin(t * 0.45 + st.phase) * 0.07
         g.position.y = shipDeckAt(st.z) + Math.sin(t * 0.95 + st.phase) * 0.01
+      }
+
+      /*
+       * ---- 航迹 ----
+       * 水面在船体局部坐标里的高度每帧现算（船随浪起伏，这个值会变 ±1.9 米）；
+       * 泡沫带的 y 跟着它，才不会浮在半空或沉进水里。
+       */
+      {
+        /*
+         * 泡沫带的 y 是几何里定死的（水面之上 0.3 米，见 WAKE_Y_M 的注释）；
+         * 只有船首 V 浪需要每帧采样 —— 它在船首那一侧，与船中的水面差得最远。
+         */
+        wakeGroup.position.y = 0
+        /*
+         * 白沫不是自发光：夜里它是灰的（月光下没有纯白的沫）。所以颜色随夜色压，
+         * 而不是只调 opacity —— 只调 opacity 的话黑海上的沫会变成一块"透明的白"，
+         * 反而更亮眼。
+         */
+        const litW = 0.16 + 0.84 * (1 - night)
+        foamMat.opacity = wakeState.strength * litW
+        for (const p of bowGroups) {
+          const on = wakeState.bowLen > 0.05
+          p.visible = on
+          if (!on) continue
+          p.scale.set(1, 1, wakeState.bowLen)
+          p.rotation.y = -Math.sign(p.position.x) * wakeState.spread
+          /*
+           * 与泡沫带同一个高度：水面之上 0.3 米（模型）。**不按点采样浪高** ——
+           * CPU 与 GPU 的相位差 2~5 厘米，采出来的高度会让 V 浪一会儿沉进水面、
+           * 一会儿浮起来（一帧对一帧错地闪），比"整体略高 0.3 米"难看得多。
+           */
+          p.position.y = WATERLINE_Y_M + 0.5
+        }
+      }
+
+      /*
+       * ---- 三角旗 ----
+       * 顶点每帧重写（波在跑），法线每 4 帧算一次 —— `computeVertexNormals` 会重建
+       * 整个 normal 数组，每帧调是在制造 GC 垃圾；4 帧一次肉眼看不出来。
+       */
+      if (flagGeo.attributes.position) {
+        const dt = Math.min(0.05, Math.max(0.001, t - lastFlagT))
+        lastFlagT = t
+        if (Number.isFinite(windTarget.bearing)) {
+          if (!Number.isFinite(flagWind.bearing)) {
+            flagWind.bearing = windTarget.bearing
+            flagWind.speed = windTarget.speed
+          } else {
+            const a = Math.min(1, dt * 1.2)
+            flagWind.bearing += bearingDelta(flagWind.bearing, windTarget.bearing) * a
+            flagWind.speed += (windTarget.speed - flagWind.speed) * a
+          }
+        }
+        flagPivot.rotation.y = pennantYaw(flagWind.bearing)
+        const attr = flagGeo.attributes.position as THREE.BufferAttribute
+        const arr = attr.array as Float32Array
+        for (let iy = 0; iy <= FLAG_SEG_Y; iy++) {
+          const v = (iy / FLAG_SEG_Y) * 2 - 1
+          for (let ix = 0; ix <= FLAG_SEG_X; ix++) {
+            const u = ix / FLAG_SEG_X
+            const i = (iy * (FLAG_SEG_X + 1) + ix) * 3
+            const off = flagOffset(u, v, t, flagWind.speed)
+            arr[i] = flagBase[i]
+            arr[i + 1] = flagBase[i + 1] + off.y
+            arr[i + 2] = off.z
+          }
+        }
+        attr.needsUpdate = true
+        if (++flagNormalTick % 4 === 0) flagGeo.computeVertexNormals()
       }
 
       // 灯笼晃：吊灯本来就随船摇，幅度小、周期不同（两盏不同相）

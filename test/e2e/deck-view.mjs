@@ -334,6 +334,51 @@ if (doorPt) {
   check(!out.badge, '回甲板后「船长室」提示消失')
 }
 
+// ---- ⑤f 桅顶三角旗：数量、方向跟着 windDir 转；水线带贴在船壳上 ----
+const pennant = await page.evaluate(() => {
+  const o = window.__deckScene.getObjectByName('ship-pennant')
+  const pivot = window.__deckScene.getObjectByName('ship-pennant-pivot')
+  if (!o || !pivot) return null
+  const pos = o.geometry.attributes.position
+  let maxZ = 0
+  for (let i = 0; i < pos.count; i++) maxZ = Math.max(maxZ, Math.abs(pos.getZ(i)))
+  return { verts: pos.count, yaw: pivot.rotation.y, maxZ, finite: Number.isFinite(maxZ) }
+})
+check(!!pennant, '桅顶有三角旗（ship-pennant）')
+check(pennant && pennant.verts === 68, `三角旗 17×4 个顶点（实测 ${pennant?.verts}）`)
+check(pennant && pennant.finite && pennant.maxZ > 0.01, '旗面真的在甩（有横向位移）')
+
+// 风力 0 → 风向 90：旗子必须转过去（一阶平滑，等 2.4 秒到位）
+const yawAt = async (dir) => {
+  await page.evaluate((d) => {
+    const st = window.__gameStore.getState()
+    window.__gameStore.setState({ weather: { ...st.weather, windDir: d, windSpeed: 20 } })
+  }, dir)
+  await sleep(2400)
+  return page.evaluate(() => window.__deckScene.getObjectByName('ship-pennant-pivot').rotation.y)
+}
+const yawNorth = await yawAt(0)
+const yawEast = await yawAt(90)
+check(Math.abs(yawNorth - yawEast) > 0.6,
+  `风向变了旗子跟着转（北 ${yawNorth.toFixed(2)} → 东 ${yawEast.toFixed(2)} rad）`)
+// 转到位之后应接近 −π/2 − B
+check(Math.abs(Math.abs(yawEast - (-Math.PI / 2 - Math.PI / 2)) % (Math.PI * 2)) < 0.5
+  || Math.abs(Math.abs(yawEast) - Math.PI) < 0.5,
+  `风向 90° 时旗子指向右舷（yaw=${yawEast.toFixed(2)}）`)
+
+// 水线带：两条（左右舷），贴在船壳上，顶点数 = 2×(28+1)
+const wet = await page.evaluate(() => {
+  const out = {}
+  for (const n of ['ship-wetline-port', 'ship-wetline-stbd', 'ship-wake-side-port']) {
+    const o = window.__deckScene.getObjectByName(n)
+    out[n] = o ? { verts: o.geometry.attributes.position.count, vis: o.visible } : null
+  }
+  return out
+})
+check(!!wet['ship-wetline-port'] && !!wet['ship-wetline-stbd'], '左右舷都有水线湿痕带')
+check(wet['ship-wetline-port']?.verts === 58, `湿痕带 29×2 个顶点（实测 ${wet['ship-wetline-port']?.verts}）`)
+check(!!wet['ship-wake-side-port'], '船壳上有白沫带（不是水面上的水平带）')
+
 // ---- ⑥ 回海图：场景要真的被拆掉（不能留一个跑着的 rAF）----
 await page.evaluate(() => document.querySelector('[data-testid=deck-view-close]')?.click())
 await sleep(1200)

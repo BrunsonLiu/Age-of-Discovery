@@ -5,7 +5,7 @@ import { useGameStore } from '@/store/useGameStore'
 import { useMapStore } from '@/store/useMapStore'
 import { skyAt } from '@/utils/skyClock'
 import { createDeckShip, type DeckShip } from './shipModel'
-import { DECK_WAVES, deckShipPose } from './deckWaves'
+import { DECK_WAVES, deckShipPose, deckWaveHeight } from './deckWaves'
 import { findCoast, bearingWord, compassWord, wrapDeg, type CoastSighting } from './deckCoast'
 import { createDeckCoast } from './coastModel'
 import { deckEyeY, stepWalk, WALK_SPEED_M, type WalkPos } from './deckWalk'
@@ -15,6 +15,7 @@ import { createMap3DPost, type Map3DPost } from '@/components/map3d/post'
 import { createDeckRain, rainTiltFromWind } from './rainLayer'
 import { BIRD_MAX, deckBirdFlock, deckBirdPose } from './deckBirds'
 import { sailorCount } from './deckCrew'
+import { bowWaveLength, bowWaveSpread, wakeStrength } from './deckWake'
 import {
   approachLook, deckWeatherLook, lightningEnvelope, rainDropCount, type DeckWeatherLook,
 } from './deckWeather'
@@ -279,6 +280,12 @@ export default function DeckView() {
    * 不需要为了一个弹窗再跑一遍 haversine，也不会出现"HUD 与面板各算一遍"。
    */
   const sightingRef = useRef<CoastSighting | null>(null)
+  /*
+   * 帧循环里要读"下一站剩多少海里"，但 hook 不能在循环里调用 —— 每帧把最新的
+   * `useVoyageNext()` 结果写进 ref。**里程仍然只有这一个来源**（不在这里另算
+   * 大圆距离，否则海图上的线会和出航计划面板对不上）。
+   */
+  const nextRef = useRef<ReturnType<typeof useVoyageNext> | null>(null)
   /** 移动端方向键与键盘共用这一份状态（effect 里读、JSX 里写） */
   const keysRef = useRef({ f: false, b: false, l: false, r: false })
   const setWalk = (v: boolean) => {
@@ -300,6 +307,7 @@ export default function DeckView() {
   const fleet = useGameStore((s) => s.fleet)
   const weather = useGameStore((s) => s.weather)
   const next = useVoyageNext()
+  nextRef.current = next
   const setDeckView = useMapStore((s) => s.setDeckView)
   const viewMode = useMapStore((s) => s.viewMode)
   const mountRef = useRef<HTMLDivElement>(null)
@@ -667,15 +675,25 @@ export default function DeckView() {
            * 把沫打碎成条带（不是均匀的一层白霜）。uFoam 由天气给（晴天 0.16、
            * 暴雨 0.5），所以风暴天海面自己会"翻白"。
            */
+          /*
+           * 【尺度是这里唯一的难点】第一版用两组正弦相乘打碎白沫：波长 2π/9.1 ≈ 0.69
+           * 世界单位 = **14 米见方**，于是整片海是一块块灰蓝的大斑（实测截图：像水
+           * 面上的油污，而不是白沫）。沫的物理尺度是几米，而且只长在**接近破碎的
+           * 浪尖**上 —— 所以这里做两件事：
+           *   ① 阈值抬到 0.80~1.06（原来 0.62 起）：只有浪峰才有沫；
+           *   ② 用哈希值噪声（波长 1/7 单位 ≈ 2.9 米）打碎，而不是正弦。
+           * 代价是又一个 vnoise 采样（4 个 hash）—— 海面片元总共约 24 个 sin，可接受。
+           */
           float crestK = clamp(vCrest / 0.13, 0.0, 1.5);
-          float grain = sin(vWorld.x * 9.1 + uTime * 0.9) * sin(vWorld.z * 7.7 - uTime * 0.7);
-          float foam = smoothstep(0.62, 1.12, crestK) * smoothstep(-0.15, 0.55, grain + 0.18);
+          float fn = vnoise(vWorld.xz * 7.0 + 3.0);
+          float foam = smoothstep(0.80, 1.06, crestK) * smoothstep(0.42, 0.78, fn);
           /*
            * 【白沫必须跟着光照走】第一版把白沫直接加到颜色上，结果夜里海面整片发白
            * （实测截图：黑天 + 淡灰色的海，像结冰）—— 沫是漫反射，不是自发光。
            * uFoamLight 由日相给（白天 1、夜里 0.18），天越黑沫越沉。
            */
-          col += vec3(0.72, 0.78, 0.80) * foam * uFoam * uFoamLight;
+          // 沫本身要更白一点（0.86/0.90/0.92）：面积小了，靠对比度才读得出"浪碎了"
+          col += vec3(0.86, 0.90, 0.92) * foam * uFoam * uFoamLight;
           col *= uDark;
           gl_FragColor = vec4(clamp(col, 0.0, 1.0), 1.0);
         }
@@ -1084,8 +1102,16 @@ export default function DeckView() {
        * （实测：关掉 deck-sea 那块就消失；把甲板涂红则红面完整，几何没洞）。
        * 抬起 0.12 世界单位（2.4 模型米）= 真实干舷 ≈ 4 米/36 米船，甲板才在海面之上。
        */
+      /*
+       * 【船的 y 必须**精确**等于它所在位置的浪高】原来用 `pose.y`（合成浪高的
+       * 0.72 倍）—— 那个值只表达了"船在起伏"，与该点的真实水面差 2~6 厘米世界
+       * 单位（1~2.5 模型米）。差这一点，船就一会儿悬在水上、一会儿扎进水里，
+       * 而水线泡沫带也跟着一半沉在水下被遮住（实测：中段顶点比水面低 1.5 厘米）。
+       * 现在直接用 GPU 用的同一个 `deckWaveHeight` 采船位的水面高度。
+       */
       const pose = deckShipPose(t, 0.72, 0.26, look.wave)
-      ship.position.y = pose.y + SHIP_DRAFT_LIFT
+      const seaAtShip = deckWaveHeight(0, 0, t, look.wave)
+      ship.position.y = seaAtShip + SHIP_DRAFT_LIFT
       // 船有自重：姿态只跟随浪的一部分，全跟随会像一片叶子
       ship.rotation.x = pose.pitch * 0.6
       ship.rotation.z = pose.roll * 0.55
@@ -1132,6 +1158,41 @@ export default function DeckView() {
         {
           const flag = st.fleet.ships.find((x) => x.id === st.fleet.flagshipId) ?? st.fleet.ships[0]
           deckShip.setCrew(sailorCount(flag?.crew ?? 0))
+        }
+        /*
+         * 海图桌上那条线：方位 = 到 waypoint 的真方位，长度按剩余海里。
+         * 两者都来自既有单一来源（`calculateBearing` / `useVoyageNext`），
+         * 所以"桌上的图"和"出航计划面板"永远说同一件事。
+         */
+        /*
+         * 旗子：风向直接取 `weather.windDir`（**风吹去**的罗盘方位）。不在这里做
+         * 任何"顺风/逆风"的换算 —— 那是 `calculateSailingDays` 的事，旗子只负责
+         * 把同一个数画出来，两处一旦各算一遍就必然对不上。
+         */
+        deckShip.setWind(st.weather.windDir, st.weather.windSpeed)
+        /*
+         * 航迹：船速取旗舰的 `speed`（节），是否在走取 `fleet.isSailing`。
+         * 三个数都在 `deckWake` 里算（可单测）—— 系泊时强度 0.14、船首浪长 0，
+         * 所以"停着"与"在走"在画面上是两件明显不同的事。
+         */
+        {
+          const flag = st.fleet.ships.find((x) => x.id === st.fleet.flagshipId) ?? st.fleet.ships[0]
+          const knots = flag?.speed ?? 0
+          deckShip.setWake(
+            wakeStrength(st.fleet.isSailing, knots),
+            bowWaveSpread(knots),
+            bowWaveLength(st.fleet.isSailing, knots),
+            look.wave,
+          )
+        }
+        {
+          const wpt = st.waypoint
+          const pos = st.shipPosition
+          const remain = nextRef.current?.suggest?.distanceNm ?? null
+          const brg = wpt && pos
+            ? calculateBearing(pos[0], pos[1], wpt.latitude, wpt.longitude)
+            : null
+          deckShip.setCourse(brg, remain)
         }
         deckShip.setBacklight(fill.position, fill.color, 0.30 * fill.intensity)
         deckShip.update(t, pulse + trim, night)

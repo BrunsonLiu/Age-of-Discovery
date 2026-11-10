@@ -39,10 +39,26 @@ export function shipHalfWidthAt(z: number): number {
     : (BEAM / 2) * (1 - 0.42 * Math.pow(t, 1.9))
 }
 
-/** 某站位处龙骨深度（水线往下） */
+/**
+ * 某站位处龙骨深度（模型米）。
+ *
+ * 【为什么从 3.1 加深到 5.4】这是"船浮在水面上"这件事的根：船被抬高
+ * `SHIP_DRAFT_LIFT`(0.12 世界单位) 才不被浪淹，于是
+ *   吃水 = 龙骨深度 × SHIP_SCALE − SHIP_DRAFT_LIFT
+ * 3.1 时吃水只有 0.035 世界单位（0.7 米）—— 36 米长的船几乎整条漂在水上，
+ * 从船后看船底是一条悬空的弧线（实测截图：船像被抠图贴在海面上）。
+ * 5.4 时吃水 0.15 世界（3 米）、干舷 0.186 世界（3.7 米），才是一艘商船的比例。
+ *
+ * 顺带修好了船体截面：最大半宽在甲板高度、水线处只有 0.55w，看起来是"刀片插水"。
+ * 加深龙骨后水线处约 0.88w —— 水线附近最宽，这才是船的截面。
+ */
+const KEEL_DEPTH = 5.4
+
 export function shipKeelAt(z: number): number {
   const t = Math.min(1, Math.abs(z) / HALF)
-  return z > 0 ? 3.1 * (1 - 0.62 * Math.pow(t, 1.35)) : 3.1 * (1 - 0.28 * Math.pow(t, 1.5))
+  return z > 0
+    ? KEEL_DEPTH * (1 - 0.62 * Math.pow(t, 1.35))
+    : KEEL_DEPTH * (1 - 0.28 * Math.pow(t, 1.5))
 }
 
 /** 某站位处甲板面高度（有舷弧：船首尾比船中高） */

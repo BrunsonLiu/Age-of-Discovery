@@ -58,6 +58,9 @@ import { DECK_WAVES } from '../src/components/deck/deckWaves'
 import { compassWord, ridgeHeightAt, ridgeHeights } from '../src/components/deck/deckCoast'
 import { BIRD_MAX, deckBirdFlock, deckBirdPose } from '../src/components/deck/deckBirds'
 import { SAILOR_STATIONS, sailorCount } from '../src/components/deck/deckCrew'
+import { chartCourse, CHART_MAX_NM } from '../src/components/deck/deckChart'
+import { bearingDelta, FLAG_SEG_X, flagOffset, pennantYaw, windK } from '../src/components/deck/deckFlag'
+import { bowWaveLength, bowWaveSpread, wakeStrength } from '../src/components/deck/deckWake'
 import { CABIN_BOUNDS, CABIN_ENTER, CABIN_EXIT, cabinEyeY, cabinFloorY, clampToCabin, isInCabin, stepInCabin } from '../src/components/deck/deckCabin'
 import { clampElevation, EL_MAX, EL_MIN, EL_TIGHTEN_FROM, minElevationAt } from '../src/components/map3d/cameraLimits'
 import {
@@ -9007,8 +9010,17 @@ console.log('\n== 天数口径守卫 ==')
   assert(freeboardRatio > 0.06 && freeboardRatio < 0.2,
     `干舷/船长 = ${(freeboardRatio * 100).toFixed(1)}%，应在 6%~20%`)
   const view = readFileSync(join(process.cwd(), 'src', 'components', 'deck', 'DeckView.tsx'), 'utf8')
-  assert(/ship\.position\.y = pose\.y \+ SHIP_DRAFT_LIFT/.test(view),
-    '船的 y 必须是 pose.y + SHIP_DRAFT_LIFT（写死数字会与测试脱钩）')
+  /*
+   * 船的 y 必须是"该点真实浪高 + 吃水抬升"。
+   * 【为什么不能用 pose.y】`pose.y` 是合成浪高的 0.72 倍，与该点真实水面差
+   * 2~6 厘米世界单位 —— 船会一半悬空一半入水，水线泡沫带也跟着被海面遮住。
+   */
+  assert(/ship\.position\.y = seaAtShip \+ SHIP_DRAFT_LIFT/.test(view),
+    '船的 y 必须是 seaAtShip + SHIP_DRAFT_LIFT（写死数字会与测试脱钩）')
+  assert(/const seaAtShip = deckWaveHeight\(0, 0, t, look\.wave\)/.test(view),
+    'seaAtShip 用与 GPU 同一个 deckWaveHeight 采船位的水面')
+  assert(!/ship\.position\.y = pose\.y/.test(view),
+    '船的 y 不许用 pose.y（它只表达起伏，不等于水面高度）')
 }
 
 /*
@@ -9423,6 +9435,165 @@ console.log('\n== 天数口径守卫 ==')
   assert(uses >= 8, `至少 8 处用了接触暗部（实测 ${uses}，含函数定义）`)
   assert(/addShadow\(g, 0, 0\.008, 0\.06, 0\.42, 0\.34\)/.test(ship), '水手脚下也有')
   assert(/addShadow\(cabin,/.test(ship), '舱内家具也有')
+}
+
+/*
+ * ---- 海图上的航线：方位要画对，不能画反 ----
+ *
+ * 【守什么】海图是"上北下南"的平面图，而 canvas 的 y 轴向下。方位 0°（北）必须
+ * 画成**向上**、90°（东）画成**向右** —— 写反一次，玩家低头看到的是一条指向
+ * 反方向的航线，而且它"看起来完全正常"。
+ */
+{
+  const up = chartCourse(0, 1000)!
+  // 向上 = −90°（canvas 角度）
+  assert(Math.abs(up.angleRad + Math.PI / 2) < 1e-9, `方位 0° → 向上（实测 ${(up.angleRad * 180 / Math.PI).toFixed(1)}°）`)
+  const right = chartCourse(90, 1000)!
+  assert(Math.abs(right.angleRad) < 1e-9, '方位 90°（东）→ 向右')
+  const down = chartCourse(180, 1000)!
+  assert(Math.abs(down.angleRad - Math.PI / 2) < 1e-9, '方位 180°（南）→ 向下')
+  /*
+   * 西向：−π 与 +π 是同一个方向，判据要比**单位向量**而不是比角度值
+   * （第一版写 `angleRad + PI ≈ 0`，实际返回 +π，测试当场红了）。
+   */
+  const left = chartCourse(270, 1000)!
+  assert(Math.abs(Math.cos(left.angleRad) + 1) < 1e-9 && Math.abs(Math.sin(left.angleRad)) < 1e-9,
+    `方位 270°（西）→ 向左（cos=${Math.cos(left.angleRad).toFixed(3)}）`)
+
+  // 长度：越远越长，且始终留边（0.18~0.82）
+  const near = chartCourse(45, 10)!
+  const far = chartCourse(45, CHART_MAX_NM)!
+  const over = chartCourse(45, CHART_MAX_NM * 5)!
+  // 下限只在 remainNm → 0 时才取到，而 0 已被判为"没有航路" —— 所以是"略大于 0.18"
+  assert(near.lengthFrac > 0.18 && near.lengthFrac < 0.2,
+    `很近时贴着下限（实测 ${near.lengthFrac.toFixed(4)}）`)
+  assert(far.lengthFrac > near.lengthFrac, '越远线越长')
+  assert(Math.abs(over.lengthFrac - far.lengthFrac) < 1e-12, '超过上限不再变长（不会画到图框外）')
+  for (const nm of [1, 100, 500, 1500, 3000, 9000]) {
+    const c = chartCourse(123, nm)!
+    // 0.18 + 0.64 = 0.8200000000000001（浮点），判据带 1e-9 容差
+    assert(c.lengthFrac >= 0.18 && c.lengthFrac <= 0.82 + 1e-9,
+      `${nm} 海里的长度 ${c.lengthFrac} 在 0.18~0.82`)
+  }
+
+  // 没有航路 → 不画线
+  assert(chartCourse(null, 500) === null, '没有方位就不画')
+  assert(chartCourse(90, null) === null, '没有距离就不画')
+  assert(chartCourse(90, 0) === null, '已经在目的地（0 海里）不画线')
+  assert(chartCourse(Number.NaN, 100) === null, 'NaN 不画')
+  assert(chartCourse(90, Number.NaN) === null, 'NaN 距离不画')
+}
+
+/*
+ * ---- 三角旗：它是一张"风向的可视化"，方向绝不能反 ----
+ *
+ * 【守什么】`weather.windDir` 决定航程天数（顺风/逆风），而玩家在船上唯一能直接
+ * 看到风向的就是桅顶这面旗。旗面沿局部 +x 伸出，`flagYaw` 负责把它转到"风吹去"
+ * 的方位上；写反一次，玩家会照着反方向规划航线 —— 而且画面上"完全正常"。
+ *
+ * 判据用**旋转后的单位向量**而不是角度值：−π 与 +π 是同一个方向，比角度会假红
+ * （这条在 chartCourse 那组测试里踩过）。
+ */
+{
+  // 方位 0（吹向北，= 船首 +z）
+  const dirOf = (deg: number) => {
+    const yaw = pennantYaw(deg)
+    // 绕 y 轴转 yaw：(1,0,0) → (cos yaw, 0, −sin yaw)
+    return { x: Math.cos(yaw), z: -Math.sin(yaw) }
+  }
+  const north = dirOf(0)
+  assert(Math.abs(north.z - 1) < 1e-9 && Math.abs(north.x) < 1e-9,
+    `风向 0° → 旗指向船首 +z（实测 ${north.x.toFixed(2)}, ${north.z.toFixed(2)}）`)
+  const east = dirOf(90)
+  assert(Math.abs(east.x + 1) < 1e-9 && Math.abs(east.z) < 1e-9,
+    '风向 90°（东）→ 旗指向右舷 −x')
+  const west = dirOf(270)
+  assert(Math.abs(west.x - 1) < 1e-9, '风向 270°（西）→ 旗指向左舷 +x')
+  const south = dirOf(180)
+  assert(Math.abs(south.z + 1) < 1e-9, '风向 180° → 旗指向船尾 −z')
+  // 任意方位：四个方向都要与 (sin B, cos B) 那一套符号约定一致
+  for (const deg of [15, 45, 135, 200, 315]) {
+    const d = dirOf(deg)
+    const rad = (deg * Math.PI) / 180
+    assert(Math.abs(d.x + Math.sin(rad)) < 1e-9 && Math.abs(d.z - Math.cos(rad)) < 1e-9,
+      `风向 ${deg}° 的旗向 = (−sin, cos)`)
+  }
+  // 非法输入不产生 NaN
+  assert(Number.isFinite(pennantYaw(Number.NaN)), 'NaN 方位也给有限角度')
+}
+
+/*
+ * ---- 旗面：旗根不动、旗尾甩、风小下垂 ----
+ *
+ * 【守什么】三角旗的波是 CPU 逐顶点算的（`flagOffset`）。三条不变量：
+ *  ① 旗根（u=0）必须**完全不动** —— 动了就是"整面旗在平移"，像一块塑料板；
+ *  ② 旗尾的横向甩动必须随风速增大；
+ *  ③ 风小时旗子要垂下来（这是"没风"最直观的信号）。
+ */
+{
+  for (const v of [-1, 0, 1]) {
+    const root = flagOffset(0, v, 3.3, 20)
+    assert(Math.abs(root.z) < 1e-12 && Math.abs(root.y) < 1e-12, '旗根（u=0）不位移')
+  }
+  // 旗尾：风越大甩得越开（取一个相位，避免正好落在零点）
+  const tailCalm = Math.abs(flagOffset(1, 0, 1.7, 6).z)
+  const tailWindy = Math.abs(flagOffset(1, 0, 1.7, 24).z)
+  assert(tailWindy > tailCalm, `风大时旗尾甩得更开（${tailWindy.toFixed(3)} > ${tailCalm.toFixed(3)}）`)
+  // 下垂：风越小，旗尾越低
+  const droopCalm = flagOffset(1, 1, 0, 0).y
+  const droopWindy = flagOffset(1, 1, 0, 25).y
+  assert(droopCalm < droopWindy, `风小时旗子更低（${droopCalm.toFixed(2)} < ${droopWindy.toFixed(2)}）`)
+  assert(droopCalm < -0.3, `无风时明显下垂（实测 ${droopCalm.toFixed(2)} 米）`)
+  // 所有采样都有限（NaN 会让整个几何消失）
+  for (let i = 0; i <= FLAG_SEG_X; i++) {
+    const o = flagOffset(i / FLAG_SEG_X, 1, 2, 12)
+    assert(Number.isFinite(o.z) && Number.isFinite(o.y), `第 ${i} 段有限`)
+  }
+  // 风速归一化
+  assert(windK(0) === 0 && windK(5) === 0, '5 节以下算无风')
+  assert(windK(25) === 1, '25 节满')
+  assert(windK(100) === 1, '超过上限钳到 1')
+  let prevK = -1
+  for (let v = 0; v <= 30; v += 1) {
+    const k = windK(v)
+    assert(k >= prevK, `风速 ${v} 的 k 不回落`)
+    prevK = k
+  }
+  // 角差：350 → 10 是 +20，不是 −340
+  assert(Math.abs(bearingDelta(350, 10) - 20) < 1e-9, '350→10 转 +20')
+  assert(Math.abs(bearingDelta(10, 350) + 20) < 1e-9, '10→350 转 −20')
+  assert(bearingDelta(90, 90) === 0, '同向差 0')
+}
+
+/*
+ * ---- 航迹：系泊与航行必须是两件事 ----
+ *
+ * 【守什么】航迹是"我在动"的可视化：系泊时船侧只有一道淡痕、船首**没有** V 浪；
+ * 航行时才有白沫与 V 浪，而且越快越明显。三条都容易在调参时被抹平成常量。
+ */
+{
+  assert(Math.abs(wakeStrength(false, 0) - 0.26) < 1e-9, '系泊时强度 0.26（不是 0，也不是满）')
+  assert(Math.abs(wakeStrength(false, 12) - 0.26) < 1e-9, '系泊时与船速无关')
+  assert(wakeStrength(true, 4) >= 0.42, '刚起步就有白沫')
+  assert(Math.abs(wakeStrength(true, 12) - 1) < 1e-9, '12 节满强度')
+  assert(wakeStrength(true, 40) === 1, '超过上限钳到 1')
+  let prevS = -1
+  for (let v = 0; v <= 20; v += 1) {
+    const s = wakeStrength(true, v)
+    assert(s >= prevS, `船速 ${v} 的强度不回落`)
+    prevS = s
+  }
+  // 船首 V 浪：系泊时长度为 0（必须完全消失），航行时随速度变长
+  assert(bowWaveLength(false, 10) === 0, '系泊时没有船首浪')
+  assert(bowWaveLength(true, 4) > 0, '航行时船首浪存在')
+  assert(bowWaveLength(true, 12) > bowWaveLength(true, 4), '越快船首浪越长')
+  // 张角：慢船张得开、快船推成正前
+  const slow = bowWaveSpread(4)
+  const fast = bowWaveSpread(12)
+  assert(slow > fast, `慢船张角更大（${(slow * 180 / Math.PI).toFixed(0)}° > ${(fast * 180 / Math.PI).toFixed(0)}°）`)
+  assert(slow < 0.6 && fast > 0.15, '张角在合理区间（15°~34°）')
+  assert(Number.isFinite(bowWaveSpread(Number.NaN)), 'NaN 船速也给出有限张角')
+  assert(bowWaveLength(true, Number.NaN) > 0, 'NaN 船速仍有船首浪（按最慢算）')
 }
 
 console.log(`\n最终结果：${passed} 通过 / ${failed} 失败`)
