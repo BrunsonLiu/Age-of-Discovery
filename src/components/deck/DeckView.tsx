@@ -10,7 +10,7 @@ import { findCoast, bearingWord, compassWord, wrapDeg, type CoastSighting } from
 import { createDeckCoast } from './coastModel'
 import { deckEyeY, stepWalk, WALK_SPEED_M, type WalkPos } from './deckWalk'
 import { CABIN_ENTER, CABIN_EXIT, cabinEyeY, stepInCabin } from './deckCabin'
-import { SHIP_DRAFT_LIFT } from './shipShape'
+import { SHIP_DRAFT_LIFT, SHIP_HALF_LENGTH, SHIP_SCALE } from './shipShape'
 import { createMap3DPost, type Map3DPost } from '@/components/map3d/post'
 import { createDeckRain, rainTiltFromWind } from './rainLayer'
 import { BIRD_MAX, deckBirdFlock, deckBirdPose } from './deckBirds'
@@ -504,6 +504,13 @@ export default function DeckView() {
       uDark: { value: 1 },
       uFoam: { value: 0.16 },
       uFoamLight: { value: 1 },
+      /*
+       * 开尔文波的三个人参：船首 z、船尾 z、强度。前两个是**世界坐标**（船在原点、
+       * 船首朝 +z、半长 1.8 → 船首 0.83、船尾 −0.83），第三个由航迹强度给。
+       */
+      uBowZ: { value: 0.83 },
+      uSternZ: { value: -0.83 },
+      uWakeK: { value: 0 },
       uAmp: { value: DECK_WAVES.map((w) => w.amp) },
       uLen: { value: DECK_WAVES.map((w) => w.len) },
       uSteep: { value: DECK_WAVES.map((w) => w.steep) },
@@ -578,10 +585,40 @@ export default function DeckView() {
         uniform float uFoam;
         uniform float uFoamLight;
         uniform float uTime;
+        uniform float uBowZ;
+        uniform float uSternZ;
+        uniform float uWakeK;
         varying vec3 vWorld;
         varying vec3 vNormal;
         varying float vCrest;
         ${SRGB_ENCODE}
+        /*
+         * 开尔文波 + 船尾尾迹的强度场（与 deckWake.kelvinStrength 同一套公式）。
+         * 船首朝 +z、船在世界原点；船首之后是 z < uBowZ。
+         * 两条 V 脊的判据是 |x|/d ≈ tan(19.47°) —— 这是开尔文波的理论半角，
+         * 不是随手挑的斜率。
+         */
+        float wakeField(vec2 p) {
+          float d = uBowZ - p.y;
+          if (d <= 0.9 || uWakeK <= 0.01) return 0.0;
+          float r = abs(p.x) / d;
+          // 波脊（V 的两条边）：宽度 0.035 + 0.003d，收窄之后才像"脊"而不是"带"
+          float w = 0.045 + 0.0035 * d;
+          float ridge = exp(-pow((r - 0.354) / w, 2.0));
+          float decay = exp(-d * 0.095);
+          /*
+           * V 形**内部**的横向波列：真实开尔文波不是两条线，而是两线之间一片
+           * 有横向波纹的扰动区（波长几米、峰线大致平行于两条边）。
+           * 用 d 与 |x| 的组合做一组斜向条纹，强度只有波脊的 1/4 —— 它给的是
+           * "水被搅过"的质地，不是另一条亮线。
+           */
+          float inside = step(r, 0.354) * decay;
+          float ripples = 0.5 + 0.5 * sin((d * 5.2 - abs(p.x) * 2.4) * 6.2831);
+          float stern = p.y < uSternZ
+            ? exp(-pow(abs(p.x) / (0.45 + 0.02 * (uSternZ - p.y)), 2.0)) * exp(-(uSternZ - p.y) * 0.03)
+            : 0.0;
+          return clamp((ridge * decay * 0.95 + inside * ripples * 0.22 + stern * 0.8) * uWakeK, 0.0, 1.0);
+        }
         void main() {
           vec3 n = normalize(vNormal);
           vec3 v = normalize(cameraPosition - vWorld);
@@ -668,6 +705,23 @@ export default function DeckView() {
            */
           vec3 farCol = mix(uSky * 0.85, uFogColor, uFogK);
           col = mix(col, farCol, smoothstep(uFogNear, uFogFar, d));
+          /*
+           * ---- 开尔文波（船首 V 脊）与船尾尾迹 ----
+           * 【为什么在雾之前算】波脊是水面上的浅浮雕，它应该随雾一起退掉；
+           * 放在雾之后会变成"雾里两道亮线"（与船体自身的雾化不一致）。
+           * 强度乘 uFoamLight：夜里波脊不该是白的（月光下的波脊只是比周围亮一档）。
+           */
+          {
+            float kw = wakeField(vWorld.xz);
+            /*
+             * 【必须打碎】第一版直接按强度加亮，两条波脊是**两条连续的灰白带**，
+             * 读作拖拉机履带（实测截图）。真实波脊被浪与风打断成一段段。
+             * 用与月光碎光同一个值噪声调幅（0.2~1.3），它才"断得开"。
+             * 亮度也压到 0.42：波脊只是比周围亮一档，不是白色。
+             */
+            kw *= 0.35 + 1.0 * vnoise(vWorld.xz * 2.6 + 11.0);
+            col += vec3(0.48, 0.55, 0.60) * kw * 0.5 * uFoamLight;
+          }
           /*
            * ---- 浪尖白沫 ----
            * 没有白沫的海面读作"一块会动的塑料"：浪有形状、没有碎裂。
@@ -1063,6 +1117,18 @@ export default function DeckView() {
        */
       seaUniforms.uFoam.value = 0.12 + 0.34 * look.darken * look.wave
       seaUniforms.uFoamLight.value = 0.18 + 0.82 * (1 - night)
+      /*
+       * 开尔文波：船首/船尾的世界 z 取船的**实际**位置（船在原点，但船首随船长
+       * 与 SHIP_SCALE 决定），强度与船壳上的白沫同源（`wakeStrength`）——
+       * 系泊时 0.26（只有极淡的一点），航行时涨到 1。
+       */
+      const halfLenWorld = SHIP_HALF_LENGTH * SHIP_SCALE
+      seaUniforms.uBowZ.value = halfLenWorld * 0.92
+      seaUniforms.uSternZ.value = -halfLenWorld * 0.88
+      seaUniforms.uWakeK.value = wakeStrength(
+        st.fleet.isSailing,
+        (st.fleet.ships.find((x) => x.id === st.fleet.flagshipId) ?? st.fleet.ships[0])?.speed ?? 0,
+      )
       seaUniforms.uFogK.value = look.fog
       seaUniforms.uFogColor.value.copy(skyMat.uniforms.uFogColor.value)
         skyMat.uniforms.uDark.value = dark

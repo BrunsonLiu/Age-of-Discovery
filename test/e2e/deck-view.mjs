@@ -379,6 +379,33 @@ check(!!wet['ship-wetline-port'] && !!wet['ship-wetline-stbd'], '左右舷都有
 check(wet['ship-wetline-port']?.verts === 58, `湿痕带 29×2 个顶点（实测 ${wet['ship-wetline-port']?.verts}）`)
 check(!!wet['ship-wake-side-port'], '船壳上有白沫带（不是水面上的水平带）')
 
+// ---- ⑤g 开尔文波：船首/船尾的 z 与强度必须跟着 store 走 ----
+const kelvinNow = () => page.evaluate(() => {
+  const u = window.__deckScene.getObjectByName('deck-sea').material.uniforms
+  return { bowZ: u.uBowZ.value, sternZ: u.uSternZ.value, k: u.uWakeK.value, has: !!u.uBowZ }
+})
+const kelvin = await kelvinNow()
+check(kelvin.has, '海面材质有开尔文波的三个 uniform')
+check(kelvin.bowZ > 0.4 && kelvin.sternZ < -0.4,
+  `船首 z（${kelvin.bowZ?.toFixed(2)}）在船前、船尾 z（${kelvin.sternZ?.toFixed(2)}）在船后`)
+check(kelvin.bowZ - kelvin.sternZ > 1.2,
+  `首尾间距 ${(kelvin.bowZ - kelvin.sternZ).toFixed(2)} ≈ 船长（1.5 世界单位）`)
+// 系泊 → 航行：强度必须涨（而且系泊时不是 0，船停着也有一点点水痕）
+check(Math.abs(kelvin.k - 0.26) < 0.02, `系泊时强度 0.26（实测 ${kelvin.k?.toFixed(2)}）`)
+await page.evaluate(() => {
+  const st = window.__gameStore.getState()
+  window.__gameStore.setState({ fleet: { ...st.fleet, isSailing: true } })
+})
+await sleep(900)
+const kelvinSail = await kelvinNow()
+check(kelvinSail.k > kelvin.k + 0.1,
+  `航行时波脊强度涨上去（${kelvin.k?.toFixed(2)} → ${kelvinSail.k?.toFixed(2)}）`)
+await page.evaluate(() => {
+  const st = window.__gameStore.getState()
+  window.__gameStore.setState({ fleet: { ...st.fleet, isSailing: false } })
+})
+await sleep(500)
+
 // ---- ⑥ 回海图：场景要真的被拆掉（不能留一个跑着的 rAF）----
 await page.evaluate(() => document.querySelector('[data-testid=deck-view-close]')?.click())
 await sleep(1200)

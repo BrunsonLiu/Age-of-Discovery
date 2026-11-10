@@ -60,7 +60,7 @@ import { BIRD_MAX, deckBirdFlock, deckBirdPose } from '../src/components/deck/de
 import { SAILOR_STATIONS, sailorCount } from '../src/components/deck/deckCrew'
 import { chartCourse, CHART_MAX_NM } from '../src/components/deck/deckChart'
 import { bearingDelta, FLAG_SEG_X, flagOffset, pennantYaw, windK } from '../src/components/deck/deckFlag'
-import { bowWaveLength, bowWaveSpread, wakeStrength } from '../src/components/deck/deckWake'
+import { bowWaveLength, bowWaveSpread, KELVIN_TAN, kelvinStrength, wakeStrength } from '../src/components/deck/deckWake'
 import { CABIN_BOUNDS, CABIN_ENTER, CABIN_EXIT, cabinEyeY, cabinFloorY, clampToCabin, isInCabin, stepInCabin } from '../src/components/deck/deckCabin'
 import { clampElevation, EL_MAX, EL_MIN, EL_TIGHTEN_FROM, minElevationAt } from '../src/components/map3d/cameraLimits'
 import {
@@ -9594,6 +9594,53 @@ console.log('\n== 天数口径守卫 ==')
   assert(slow < 0.6 && fast > 0.15, '张角在合理区间（15°~34°）')
   assert(Number.isFinite(bowWaveSpread(Number.NaN)), 'NaN 船速也给出有限张角')
   assert(bowWaveLength(true, Number.NaN) > 0, 'NaN 船速仍有船首浪（按最慢算）')
+}
+
+/*
+ * ---- 开尔文波：V 形波脊的几何 ----
+ *
+ * 【守什么】水面上的那两条斜纹不是装饰：它的半角必须是**开尔文波的理论值
+ * 19.47°**（tan = 0.354），而不是"看起来差不多"的某个斜率。这个数写错，V 会
+ * 张得过开（像喷气尾迹）或过窄（像两条平行线）—— 两种都很像"画的"，但都不对。
+ * 另外三条：左右对称（船不歪）、船首之前没有波、强度 0 时整片消失。
+ */
+{
+  const A = { bowZ: 0.83, sternZ: -0.83, strength: 1 }
+  // ① 峰值落在 |x| = tan(19.47°) × d 上
+  for (const d of [3, 6, 12]) {
+    const onRidge = kelvinStrength(KELVIN_TAN * d, A.bowZ - d, A)
+    const inside = kelvinStrength(KELVIN_TAN * d * 0.5, A.bowZ - d, A)
+    const outside = kelvinStrength(KELVIN_TAN * d * 2.2, A.bowZ - d, A)
+    assert(onRidge > 0.2, `d=${d} 的波脊上强度足够（实测 ${onRidge.toFixed(2)}）`)
+    assert(onRidge > inside * 1.5, `d=${d} 的波脊比 V 内侧亮（${onRidge.toFixed(2)} vs ${inside.toFixed(2)}）`)
+    assert(onRidge > outside * 2, `d=${d} 的波脊比外侧亮（${onRidge.toFixed(2)} vs ${outside.toFixed(2)}）`)
+  }
+  // ② 左右对称
+  for (const [x, z] of [[1.2, -2], [2.6, -7], [-3.1, -9]]) {
+    const a = kelvinStrength(x, z, A)
+    const b = kelvinStrength(-x, z, A)
+    assert(Math.abs(a - b) < 1e-12, `(±${x}, ${z}) 左右对称（${a.toFixed(4)} vs ${b.toFixed(4)}）`)
+  }
+  // ③ 船首之前没有波（d ≤ 0.9 一律 0）
+  assert(kelvinStrength(0.2, 1.5, A) === 0, '船首前方没有波')
+  assert(kelvinStrength(0.35, 0.5, A) === 0, '船首正上方没有波')
+  // ④ 强度为 0 / 非法输入 → 整片消失（不能留一条"幽灵线"）
+  assert(kelvinStrength(1.77, -4.17, { ...A, strength: 0 }) === 0, '系泊强度 0 时没有波')
+  assert(kelvinStrength(1.77, -4.17, { ...A, strength: Number.NaN }) === 0, 'NaN 强度没有波')
+  assert(kelvinStrength(Number.NaN, -4, A) === 0, 'NaN 坐标没有波')
+  // ⑤ 随距离衰减（脊上同一相对位置，越远越弱）
+  const near = kelvinStrength(KELVIN_TAN * 4, A.bowZ - 4, A)
+  const far = kelvinStrength(KELVIN_TAN * 16, A.bowZ - 16, A)
+  assert(near > far, `越远越弱（d=4: ${near.toFixed(3)} > d=16: ${far.toFixed(3)}）`)
+  assert(far < 0.26, `16 单位外已经明显变淡（实测 ${far.toFixed(3)}）`)
+  // ⑥ 值域
+  for (const [x, z] of [[0, -3], [1.8, -5], [4, -8], [0, -20], [-2, -1]]) {
+    const v = kelvinStrength(x, z, A)
+    assert(v >= 0 && v <= 1, `(${x}, ${z}) 的强度在 0..1（实测 ${v.toFixed(3)}）`)
+  }
+  // ⑦ 船尾中线有尾迹（船正后方那条白带）
+  const sternWake = kelvinStrength(0, A.sternZ - 1.5, A)
+  assert(sternWake > 0.3, `船尾后方中线有尾迹（实测 ${sternWake.toFixed(2)}）`)
 }
 
 console.log(`\n最终结果：${passed} 通过 / ${failed} 失败`)
