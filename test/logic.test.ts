@@ -56,6 +56,7 @@ import {
 } from '../src/components/deck/shipShape'
 import { DECK_WAVES } from '../src/components/deck/deckWaves'
 import { ridgeHeightAt, ridgeHeights } from '../src/components/deck/deckCoast'
+import { clampElevation, EL_MAX, EL_MIN, EL_TIGHTEN_FROM, minElevationAt } from '../src/components/map3d/cameraLimits'
 import {
   findCoast, wrapDeg, coastLayout, coastScenePos, bearingWord,
 } from '../src/components/deck/deckCoast'
@@ -9031,6 +9032,32 @@ console.log('\n== 天数口径守卫 ==')
     assert(Math.abs(base * 1 - base) < 1e-9 && base > 0 && base <= RH * 1.3,
       `u=${u} 的脊线高度在岸高范围内（${base.toFixed(2)} / ${RH}）`)
   }
+}
+
+/*
+ * ---- 2.5D 海图的相机仰角下限 ----
+ *
+ * 【守什么】海图是一块有限大的板。相机能"拉到 40 单位远 + 压到 9°"时是贴着板边看，
+ * 南极一侧的板缘会露出来（用户报了很久的"白色楔形"）。现在仰角下限随距离收紧：
+ * 近处仍可平视（贴海平视是重要的观察视角），远处必须俯视。
+ */
+{
+  assert(Math.abs(minElevationAt(3) - EL_MIN) < 1e-9, '近处（dist=3）允许最低仰角')
+  assert(Math.abs(minElevationAt(EL_TIGHTEN_FROM) - EL_MIN) < 1e-9, '收紧起点处仍是 0.16')
+  assert(minElevationAt(40) > 0.6, `最远处最小仰角 > 0.6 弧度（实测 ${minElevationAt(40).toFixed(2)}）`)
+  // 单调：越远越不允许平视
+  let prev = -1
+  for (let d = 3; d <= 40; d += 1) {
+    const m = minElevationAt(d)
+    assert(m >= prev - 1e-9, `dist=${d} 的下限不回落`)
+    assert(m <= EL_MAX + 1e-9, `dist=${d} 的下限不超过上限`)
+    prev = m
+  }
+  // 钳制：低于下限抬到下限，高于上限压到上限，非法输入不产生 NaN
+  assert(clampElevation(40, 0.16) > 0.6, '拉远后平视会被抬起来')
+  assert(Math.abs(clampElevation(3, 0.16) - 0.16) < 1e-9, '近处平视不受影响')
+  assert(Math.abs(clampElevation(10, 9) - EL_MAX) < 1e-9, '超大仰角钳到上限')
+  assert(Number.isFinite(clampElevation(Number.NaN, Number.NaN)), 'NaN 输入也给出有限值')
 }
 
 console.log(`\n最终结果：${passed} 通过 / ${failed} 失败`)

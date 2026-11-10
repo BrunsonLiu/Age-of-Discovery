@@ -16,6 +16,7 @@ import {
   MAP_WORLD_SIZE, lonToWorldX, latToWorldZ, worldXToLon, worldZToLat,
 } from '@/utils/mapProjection'
 import { buildLandGeometry, PLATE_THICKNESS } from './landGeometry'
+import { clampElevation } from './cameraLimits'
 import { buildGrainCanvas } from '@/utils/landGrain'
 import { birdPose } from '@/utils/portLife'
 import { buildCloudShadowCanvas, cloudBlobs } from '@/utils/cloudShadow'
@@ -894,7 +895,8 @@ export default function Map3DView() {  const mountRef = useRef<HTMLDivElement>(n
               '#include <map_fragment>',
               `#include <map_fragment>
               // 只动色相/明度，不动 alpha；羊皮纸色与 2D 的纸纹同源
-              diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.859, 0.773, 0.616), uParchMix);`,
+              diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.859, 0.773, 0.616), uParchMix);
+`,
             )
             .replace('#include <common>', '#include <common>\nuniform float uParchMix;')
         }
@@ -971,9 +973,16 @@ export default function Map3DView() {  const mountRef = useRef<HTMLDivElement>(n
        * UV 保留在几何里：以后若把板块加厚（或做"近岸悬崖"局部加厚），
        * 这张图就能直接用，不必再改几何。
        */
+      /*
+       * 【必须命名】构图出问题（例如拉到最远时露出的"板块边缘"）时，唯一可靠的
+       * 定位手段是从屏幕某点发一条射线读命中的是谁。这四个大网格原先全无名，
+       * 探针只能报 "Mesh"，分不出陆面 / 侧壁 / 浅水带。
+       */
       const lidMesh = new THREE.Mesh(land.lid, lidMat)
+      lidMesh.name = 'map3d-land'
       lidMesh.castShadow = true; lidMesh.receiveShadow = true
       const wallMesh = new THREE.Mesh(land.wall, wallMat)
+      wallMesh.name = 'map3d-land-wall'
       wallMesh.castShadow = true; wallMesh.receiveShadow = true
       scene.add(lidMesh, wallMesh)
       disposables.push(land.lid, land.wall, lidMat, wallMat)
@@ -1696,6 +1705,7 @@ export default function Map3DView() {  const mountRef = useRef<HTMLDivElement>(n
           // 手指张开 → d 变大 → 比值 <1 → dist 变小 = 拉近。
           // 与地图 App 的习惯一致（张开放大/拉近），不是反向。
           camState.dist = Math.min(40, Math.max(3, camState.dist * (pinchDist / d)))
+          camState.el = clampElevation(camState.dist, camState.el)
         }
         pinchDist = d
       }
@@ -1727,7 +1737,11 @@ export default function Map3DView() {  const mountRef = useRef<HTMLDivElement>(n
         const dx = e.clientX - lastX, dy = e.clientY - lastY
         lastX = e.clientX; lastY = e.clientY
         camState.az -= dx * 0.005
-        camState.el = Math.min(1.35, Math.max(0.16, camState.el + dy * 0.004))
+        /*
+         * 仰角下限随距离收紧（见 cameraLimits）：拉到最远时不允许贴着海面看，
+         * 否则会露出海图板块的南缘 —— 那条笔直的浅色边就是老"白色楔形"。
+         */
+        camState.el = clampElevation(camState.dist, camState.el + dy * 0.004)
       }
       const onPointerUp = (e: PointerEvent) => {
         const wasSingle = pointers.size === 1
@@ -1758,6 +1772,8 @@ export default function Map3DView() {  const mountRef = useRef<HTMLDivElement>(n
       const onWheel = (e: WheelEvent) => {
         e.preventDefault()
         camState.dist = Math.min(40, Math.max(3, camState.dist * (1 + e.deltaY * 0.0012)))
+        // 拉远之后原来的仰角可能已经越界，立刻收紧（否则要等下一次拖拽才生效）
+        camState.el = clampElevation(camState.dist, camState.el)
       }
       el.addEventListener('pointerdown', onPointerDown)
       el.addEventListener('pointermove', onPointerMove)
@@ -2740,7 +2756,7 @@ export default function Map3DView() {  const mountRef = useRef<HTMLDivElement>(n
       // （生产构建会被 tree-shake 掉，实测生产包 0 命中）。
       if (import.meta.env?.DEV && typeof window !== 'undefined') {
         // post 也挂出来：取证脚本要能同帧 A/B（太阳在动，跨次截图没法比）
-        ;(window as unknown as { __map3d?: unknown }).__map3d = { scene, camera, renderer, post }
+        ;(window as unknown as { __map3d?: unknown }).__map3d = { scene, camera, renderer, post, THREE }
       }
     }
 
