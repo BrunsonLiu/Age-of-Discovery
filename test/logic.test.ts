@@ -48,6 +48,8 @@ import {
 import { shipNearZoomScale, SHIP_NEAR_ZOOM_MIN } from '../src/utils/shipZoom'
 import { iceStrengthAt, iceEdgeShift, ICE_SEASON_SHIFT_DEG } from '../src/utils/polarIce'
 import { componentAreas, majorLand } from '../src/utils/shoreBand'
+import { clampToDeck, deckEyeY, deckWalkHalfWidth, isOnDeck, stepWalk } from '../src/components/deck/deckWalk'
+import { shipDeckAt } from '../src/components/deck/shipModel'
 import {
   findCoast, wrapDeg, coastLayout, coastScenePos, bearingWord,
 } from '../src/components/deck/deckCoast'
@@ -8824,6 +8826,76 @@ console.log('\n== 天数口径守卫 ==')
     'setThreshold 直接写 uniform')
   // 关掉辉光仍走合成 —— 这条判据的像素级验证在 probe-deck-post.mjs
   assert(/uBloom\.value = Number\.isFinite\(strength\)/.test(post), 'setBloom 挡住 NaN')
+}
+
+/*
+ * ---- 甲板行走的几何 ----
+ *
+ * 【守什么】甲板行走最容易错的是**单位**：船模型半长 18、船宽 10（米），
+ * 整体缩到世界 0.05。任何一处把"米"当成世界单位，人就会比桅杆高 20 倍；
+ * 反过来把米制的坐标再乘一次缩放，相机就会被拉到龙骨里（实测：
+ * 屏幕上是"从船体内部看出去的一堆木纹"，而且看着还挺像有内容）。
+ */
+{
+  // ---- ① 人眼高度：甲板 + 1.7 米 ----
+  {
+    const eye0 = deckEyeY(0)
+    assert(Math.abs(eye0 - (shipDeckAt(0) + 1.7)) < 1e-9, `人眼 = 甲板 + 1.7（实测 ${eye0}）`)
+    assert(eye0 > 2.5 && eye0 < 4.2, '人眼在甲板上方 1.7 米（不是 1.7 世界单位）')
+    // 船首的甲板更高（舷弧），人眼也跟着抬
+    assert(deckEyeY(16) > deckEyeY(0), '船首甲板更高')
+  }
+
+  // ---- ② 可行走宽度随船体收窄 ----
+  {
+    const mid = deckWalkHalfWidth(0)
+    const bow = deckWalkHalfWidth(16)
+    assert(mid > bow, `船首比船中窄（中 ${mid.toFixed(2)} / 首 ${bow.toFixed(2)}）`)
+    assert(mid > 3 && mid < 5, '船中可走半宽 3~5 米')
+    assert(bow >= 0, '不会算出负宽度')
+  }
+
+  // ---- ③ 边界：船首尾与左右 ----
+  {
+    const clamped = clampToDeck(100, 100)
+    assert(clamped.z <= 16 && clamped.z >= -13, `z 被钳进船体（实测 ${clamped.z}）`)
+    assert(Math.abs(clamped.x) <= deckWalkHalfWidth(clamped.z) + 1e-9, 'x 不超过该处半宽')
+    assert(isOnDeck(clamped.x, clamped.z), '钳完之后一定在甲板上')
+    // 船中外侧的点会被拉回来
+    const outside = clampToDeck(20, 0)
+    assert(isOnDeck(outside.x, outside.z), '船外 20 米被拉回甲板内')
+  }
+
+  // ---- ④ 一步移动：不会穿出船体，也不会卡在桅杆里 ----
+  {
+    let p = { x: 0, z: -10 }
+    // 朝船首走 40 米（远超船长）：必须停在船首
+    for (let i = 0; i < 200; i++) p = stepWalk(p, 0, 0.4)
+    assert(p.z <= 16, `一直往前走到船首就停（实测 z=${p.z.toFixed(1)}）`)
+    assert(isOnDeck(p.x, p.z), '停下时仍在甲板上')
+
+    // 横着撞桅杆：从 (0, 11−3) 往 +z 走到主桅，必须被推开而不是穿过
+    let q = { x: 0, z: 1 - 3 }
+    for (let i = 0; i < 60; i++) q = stepWalk(q, 0, 0.15)
+    // 桅杆在 z=1；走完之后要么绕过去，要么被挡在它前面，不能正好在圆心
+    assert(!(Math.abs(q.x) < 0.5 && Math.abs(q.z - 1) < 0.5),
+      `不会停在桅杆圆心（实测 ${q.x.toFixed(2)}, ${q.z.toFixed(2)}）`)
+    assert(isOnDeck(q.x, q.z), '被推开后仍在甲板上')
+  }
+
+  // ---- ⑤ 接线：三处必须存在的用法 ----
+  {
+    const view = readFileSync(join(process.cwd(), 'src', 'components', 'deck', 'DeckView.tsx'), 'utf8')
+    // 局部坐标交给 localToWorld —— 不许再乘一次 SHIP_SCALE（会缩两次）
+    assert(/const eye = new THREE\.Vector3\(walkPos\.x, deckEyeY\(walkPos\.z\), walkPos\.z\)/.test(view),
+      '相机用米制局部坐标交给 localToWorld（不要再乘 SHIP_SCALE）')
+    assert(/ship\.localToWorld\(eye\)/.test(view), '船体的摇摆要传到相机')
+    assert(/dir\.applyQuaternion\(ship\.quaternion\)/.test(view),
+      '视线方向也要乘船的姿态（否则船一摇相机像浮在船外）')
+    assert(/walkPos = stepWalk\(walkPos, dx, dz\)/.test(view), '移动走 stepWalk（分轴 + 桅杆推离）')
+    // 键盘与移动端按钮共用 keysRef；用 state 会每帧重渲染整个组件
+    assert(/keysRef\.current\[dir\] = true/.test(view), '移动端方向键写进 keysRef')
+  }
 }
 
 console.log(`\n最终结果：${passed} 通过 / ${failed} 失败`)

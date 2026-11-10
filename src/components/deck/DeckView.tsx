@@ -1,6 +1,6 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
-import { Anchor, X } from 'lucide-react'
+import { Anchor, Footprints, X } from 'lucide-react'
 import { useGameStore } from '@/store/useGameStore'
 import { useMapStore } from '@/store/useMapStore'
 import { skyAt } from '@/utils/skyClock'
@@ -8,6 +8,7 @@ import { createDeckShip, type DeckShip } from './shipModel'
 import { DECK_WAVES, deckShipPose } from './deckWaves'
 import { findCoast, bearingWord, type CoastSighting } from './deckCoast'
 import { createDeckCoast } from './coastModel'
+import { deckEyeY, stepWalk, WALK_SPEED_M, type WalkPos } from './deckWalk'
 import { createMap3DPost, type Map3DPost } from '@/components/map3d/post'
 import { createDeckRain, rainTiltFromWind } from './rainLayer'
 import {
@@ -83,6 +84,21 @@ vec3 srgbEncode(vec3 c) {
 export default function DeckView() {
   const hudRef = useRef<HTMLDivElement>(null)
   const flashRef = useRef<HTMLDivElement>(null)
+  /*
+   * 甲板行走开关。
+   *
+   * 【为什么用 ref + 一个只读 state】effect 的依赖是 `[open]`：把 walking 放进
+   * 依赖会让整个 3D 场景（船的几何、雨、岸线）在切换时重建一次 —— 那是几百毫秒
+   * 的黑屏。ref 存"真正生效的开关"，state 只负责让按钮文案与 HUD 重渲染。
+   */
+  const walkingRef = useRef(false)
+  const [walking, setWalking] = useState(false)
+  /** 移动端方向键与键盘共用这一份状态（effect 里读、JSX 里写） */
+  const keysRef = useRef({ f: false, b: false, l: false, r: false })
+  const setWalk = (v: boolean) => {
+    walkingRef.current = v
+    setWalking(v)
+  }
   const open = useMapStore((s) => s.deckView)
   const setDeckView = useMapStore((s) => s.setDeckView)
   const viewMode = useMapStore((s) => s.viewMode)
@@ -387,6 +403,8 @@ export default function DeckView() {
     scene.add(coast.group)
     // 取证句柄：巡检要能量岸线的可见性/坐标（与海图的 __map3d 同一做法）
     ;(window as unknown as { __deckScene?: THREE.Scene }).__deckScene = scene
+    ;(window as unknown as { __deckCam?: THREE.Camera }).__deckCam = camera
+    ;(window as unknown as { __THREE?: unknown }).__THREE = THREE
 
     /*
      * ---- 雨 ----
@@ -449,6 +467,77 @@ export default function DeckView() {
       camera.updateProjectionMatrix()
     }
     window.addEventListener('resize', onResize)
+
+    /*
+     * ---- 甲板行走的输入状态 ----
+     * effect 内部的普通变量：切换甲板行走不该重建场景，所以不放进 React state。
+     */
+    // 朝船头：船体局部 +z 是船首，所以 yaw=0 就朝船头
+    const viewRef = { current: { yaw: 0.22, pitch: -0.30 } }
+    /*
+     * 初始位置：**前桅右前方、略偏右舷**（x=1.4, z=9.5，米），视角略微低头、
+     * 朝向船首偏右 20°。
+     *
+     * 试过三处：船尾楼前沿（z=−11.5）后桅帆压头顶；主桅与前桅之间（z=6.5）
+     * 与船首（z=13.2）都只剩海 —— 前者被帆挡、后者船首结构在视野下边缘之外，
+     * 第一眼像"站在海面上"。这一档能同时看到甲板、前桅的索具、舷墙与右前方的海。
+     */
+    let walkPos: WalkPos = { x: 0.6, z: 8.2 }
+    let bobPhase = 0
+
+    const onKey = (e: KeyboardEvent, down: boolean) => {
+      if (!walkingRef.current) return
+      const k = e.key.toLowerCase()
+      const set = (name: 'f' | 'b' | 'l' | 'r') => {
+        keysRef.current[name] = down
+        e.preventDefault()
+      }
+      if (k === 'w' || k === 'arrowup') set('f')
+      else if (k === 's' || k === 'arrowdown') set('b')
+      else if (k === 'a' || k === 'arrowleft') set('l')
+      else if (k === 'd' || k === 'arrowright') set('r')
+    }
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key.toLowerCase() === 'f') {
+        setWalk(!walkingRef.current)
+        return
+      }
+      onKey(e, true)
+    }
+    const onKeyUp = (e: KeyboardEvent) => onKey(e, false)
+
+    /*
+     * 转头的拖拽：不用 Pointer Lock（那会让 Esc 行为变得不可控，且移动端没有）。
+     * 灵敏度 0.0032 rad/px —— 手拖 300px 约转 55°。
+     */
+    let dragging = false
+    let lastX = 0
+    let lastY = 0
+    const onPointerDown = (e: PointerEvent) => {
+      if (!walkingRef.current) return
+      dragging = true
+      lastX = e.clientX
+      lastY = e.clientY
+      ;(e.target as HTMLElement).setPointerCapture?.(e.pointerId)
+    }
+    const onPointerMove = (e: PointerEvent) => {
+      if (!dragging || !walkingRef.current) return
+      const dx = e.clientX - lastX
+      const dy = e.clientY - lastY
+      lastX = e.clientX
+      lastY = e.clientY
+      viewRef.current.yaw -= dx * 0.0032
+      // 俯仰钳在 ±75°：翻过来会看到船体内部
+      viewRef.current.pitch = Math.max(-1.3, Math.min(1.3, viewRef.current.pitch - dy * 0.0032))
+    }
+    const onPointerUp = () => {
+      dragging = false
+    }
+    window.addEventListener('keydown', onKeyDown)
+    window.addEventListener('keyup', onKeyUp)
+    renderer.domElement.addEventListener('pointerdown', onPointerDown)
+    window.addEventListener('pointermove', onPointerMove)
+    window.addEventListener('pointerup', onPointerUp)
 
     // ---- 帧循环 ----
     let raf = 0
@@ -539,10 +628,73 @@ export default function DeckView() {
       ship.rotation.y = Math.sin(t * 0.09) * 0.012
       deckShip.update(t)
 
-      // 相机：贴着船尾缓慢横移，读作"站在船上"而不是"在看模型"
-      camera.position.x = -2.5 + Math.sin(t * 0.11) * 0.2
-      camera.position.y = 1.75 + Math.sin(t * 0.07 + 1.3) * 0.06 + pose.y * 0.35
-      camera.lookAt(-0.25, 1.15, 1.4)
+      if (walkingRef.current) {
+        /*
+         * ---- 甲板行走：第一人称站在船上 ----
+         *
+         * 位置存在**船体局部坐标（米）**里，每帧乘 SHIP_SCALE 再用 ship.localToWorld
+         * 变到世界 —— 于是船的纵摇/横摇/航向会完整地传到"站在甲板上的人"，
+         * 不需要另写一套摇摆。
+         *
+         * 朝向也乘 ship.quaternion：否则船一摇，人的视线还钉在世界坐标上，
+         * 读作"相机浮在船外面"。
+         */
+        const speed = WALK_SPEED_M * dt
+        let fwd = 0
+        let side = 0
+        const k = keysRef.current
+        if (k.f) fwd += 1
+        if (k.b) fwd -= 1
+        if (k.r) side += 1
+        if (k.l) side -= 1
+        if (fwd !== 0 && side !== 0) {
+          // 斜着走不该比直着快
+          const inv = Math.SQRT1_2
+          fwd *= inv
+          side *= inv
+        }
+        if (fwd !== 0 || side !== 0) {
+          const sy = Math.sin(viewRef.current.yaw)
+          const cy = Math.cos(viewRef.current.yaw)
+          // 前向 = (sin yaw, cos yaw)，右向 = (cos yaw, -sin yaw)
+          const dx = (fwd * sy + side * cy) * speed
+          const dz = (fwd * cy - side * sy) * speed
+          walkPos = stepWalk(walkPos, dx, dz)
+          bobPhase += dt * 7.5
+        }
+
+        ship.updateMatrixWorld(true)
+        /*
+         * 【绝不能再乘一次 SHIP_SCALE】`ship.localToWorld` 应用的是完整的
+         * 世界矩阵，**已经包含 0.05 的缩放**。第一版把米制坐标先乘了 SHIP_SCALE
+         * 再交给 localToWorld，等于缩了两次（1/400）：相机被拉到龙骨附近，
+         * 屏幕上是"从船体内部往外看"的一堆木纹 —— 而且看起来还挺像有内容的，
+         * 只有对照"人应该站在甲板上"才知道错了。
+         */
+        const eye = new THREE.Vector3(walkPos.x, deckEyeY(walkPos.z), walkPos.z)
+        ship.localToWorld(eye)
+        // 走路时相机轻微上下起伏（幅度 2cm）：没有它走起来像滑冰
+        eye.y += Math.sin(bobPhase) * 0.006
+        camera.position.copy(eye)
+        const v = viewRef.current
+        const cp = Math.cos(v.pitch)
+        const dir = new THREE.Vector3(Math.sin(v.yaw) * cp, Math.sin(v.pitch), Math.cos(v.yaw) * cp)
+        dir.applyQuaternion(ship.quaternion)
+        camera.lookAt(eye.clone().add(dir))
+        if (camera.fov !== 56) {
+          camera.fov = 56
+          camera.updateProjectionMatrix()
+        }
+      } else {
+        // 相机：贴着船尾缓慢横移，读作"站在船上"而不是"在看模型"
+        camera.position.x = -2.5 + Math.sin(t * 0.11) * 0.2
+        camera.position.y = 1.75 + Math.sin(t * 0.07 + 1.3) * 0.06 + pose.y * 0.35
+        camera.lookAt(-0.25, 1.15, 1.4)
+        if (camera.fov !== 42) {
+          camera.fov = 42
+          camera.updateProjectionMatrix()
+        }
+      }
 
       /*
        * ---- 近岸：每 8 帧算一次 ----
@@ -635,6 +787,11 @@ export default function DeckView() {
     return () => {
       cancelAnimationFrame(raf)
       window.removeEventListener('resize', onResize)
+      window.removeEventListener('keydown', onKeyDown)
+      window.removeEventListener('keyup', onKeyUp)
+      renderer.domElement.removeEventListener('pointerdown', onPointerDown)
+      window.removeEventListener('pointermove', onPointerMove)
+      window.removeEventListener('pointerup', onPointerUp)
       skyGeo.dispose()
       skyMat.dispose()
       starGeo.dispose()
@@ -688,15 +845,26 @@ export default function DeckView() {
         <div className="text-xs tracking-[0.3em] text-gold-400">DECK VIEW</div>
         <div className="mt-0.5 text-sm tracking-widest">船上 · 贴着海面</div>
       </div>
-      <button
-        type="button"
-        onClick={() => setDeckView(false)}
-        className="absolute right-4 top-4 flex items-center gap-1.5 rounded-full border border-gold-600/50 bg-black/40 px-3 py-2 text-xs text-parchment-100 backdrop-blur transition hover:bg-black/60"
-        data-testid="deck-view-close"
-      >
-        <X size={14} />
-        回海图
-      </button>
+      <div className="absolute right-4 top-4 flex gap-2">
+        <button
+          type="button"
+          onClick={() => setWalk(!walking)}
+          className="flex items-center gap-1.5 rounded-full border border-gold-600/50 bg-black/40 px-3 py-2 text-xs text-parchment-100 backdrop-blur transition hover:bg-black/60"
+          data-testid="deck-walk-toggle"
+        >
+          <Footprints size={14} />
+          {walking ? '回看船' : '上甲板'}
+        </button>
+        <button
+          type="button"
+          onClick={() => setDeckView(false)}
+          className="flex items-center gap-1.5 rounded-full border border-gold-600/50 bg-black/40 px-3 py-2 text-xs text-parchment-100 backdrop-blur transition hover:bg-black/60"
+          data-testid="deck-view-close"
+        >
+          <X size={14} />
+          回海图
+        </button>
+      </div>
       <div
         ref={hudRef}
         data-testid="deck-coast-hud"
@@ -704,9 +872,46 @@ export default function DeckView() {
       >
         远洋 · 视野内无陆地
       </div>
-      <div className="pointer-events-none absolute bottom-4 left-1/2 -translate-x-1/2 text-xs tracking-wider text-parchment-200/70">
-        V / Esc 回海图
-      </div>
+      {walking ? (
+        <>
+          <div className="pointer-events-none absolute bottom-4 left-1/2 -translate-x-1/2 text-xs tracking-wider text-parchment-200/70">
+            WASD 走动 ｜ 拖拽转头 ｜ F 回看船
+          </div>
+          {/*
+            移动端方向键：与键盘共用 keysRef（不是 state —— 按住要连续生效，
+            state 每帧 setState 会把整个组件重渲染一次）。
+          */}
+          <div className="absolute bottom-16 right-4 grid grid-cols-3 gap-1.5 md:hidden">
+            {([['', 'f', ''], ['l', '', 'r'], ['', 'b', '']] as const).map((row, ri) =>
+              row.map((dir, ci) => {
+                if (!dir) return <span key={`${ri}-${ci}`} />
+                const label = dir === 'f' ? '↑' : dir === 'b' ? '↓' : dir === 'l' ? '←' : '→'
+                return (
+                  <button
+                    key={`${ri}-${ci}`}
+                    type="button"
+                    aria-label={dir}
+                    className="h-12 w-12 rounded-lg border border-gold-600/40 bg-black/45 text-lg text-parchment-100 backdrop-blur active:bg-black/70"
+                    onPointerDown={(e) => {
+                      keysRef.current[dir] = true
+                      e.currentTarget.setPointerCapture(e.pointerId)
+                    }}
+                    onPointerUp={() => { keysRef.current[dir] = false }}
+                    onPointerCancel={() => { keysRef.current[dir] = false }}
+                    onPointerLeave={() => { keysRef.current[dir] = false }}
+                  >
+                    {label}
+                  </button>
+                )
+              }),
+            )}
+          </div>
+        </>
+      ) : (
+        <div className="pointer-events-none absolute bottom-4 left-1/2 -translate-x-1/2 text-xs tracking-wider text-parchment-200/70">
+          V / Esc 回海图 ｜ F 上甲板
+        </div>
+      )}
     </div>
   )
 }

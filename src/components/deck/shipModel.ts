@@ -21,13 +21,19 @@ import { normalFromCanvas, plankCanvas, sailAlphaCanvas, sailCanvas, texFrom } f
  * 剪影与细节都对得上"帆船"这个物件。
  */
 
+/**
+ * 船体的模型尺度（**甲板行走也用这一套**，不要再写一遍）。
+ * 半长 18、船宽 10；调用方整体缩到场景里（`SHIP_SCALE` 0.05 → 总长 1.8 单位）。
+ */
 const HALF = 18
 const BEAM = 10
+/** 船模型 → 世界单位的统一缩放（甲板行走要用它换算人眼高度与步速） */
+export const SHIP_SCALE = 0.05
 const STATIONS = 30
 const ARC = 10
 const BULWARK = 0.95
 
-function widthAt(z: number): number {
+export function shipHalfWidthAt(z: number): number {
   const t = Math.min(1, Math.abs(z) / HALF)
   return z > 0
     ? (BEAM / 2) * (1 - 0.78 * Math.pow(t, 2.6))
@@ -37,7 +43,7 @@ function keelAt(z: number): number {
   const t = Math.min(1, Math.abs(z) / HALF)
   return z > 0 ? 3.1 * (1 - 0.62 * Math.pow(t, 1.35)) : 3.1 * (1 - 0.28 * Math.pow(t, 1.5))
 }
-function deckAt(z: number): number {
+export function shipDeckAt(z: number): number {
   const t = Math.min(1, Math.abs(z) / HALF)
   return 1.32 + 0.62 * Math.pow(t, 2.4)
 }
@@ -81,9 +87,9 @@ export function createDeckShip(): DeckShip {
   const sectionCount = ARC + 2
   for (let i = 0; i <= STATIONS; i++) {
     const z = -HALF + 2 * HALF * (i / STATIONS)
-    const w = widthAt(z)
+    const w = shipHalfWidthAt(z)
     const depth = keelAt(z)
-    const dy = deckAt(z)
+    const dy = shipDeckAt(z)
     verts.push(-w * 0.965, dy + BULWARK, z)
     uvs.push(0, i / STATIONS)
     for (let k = 0; k <= ARC; k++) {
@@ -104,7 +110,7 @@ export function createDeckShip(): DeckShip {
   // 首尾封板：从中心点扇形连到该站位的截面
   const cap = (stationIndex: number, atZ: number) => {
     const base = stationIndex * sectionCount
-    const dy = deckAt(atZ)
+    const dy = shipDeckAt(atZ)
     const centerIndex = verts.length / 3
     verts.push(0, dy * 0.1 - keelAt(atZ) * 0.45, atZ)
     uvs.push(0.5, 1)
@@ -140,8 +146,8 @@ export function createDeckShip(): DeckShip {
   const di: number[] = []
   for (let i = 0; i <= STATIONS; i++) {
     const z = -HALF + 2 * HALF * (i / STATIONS)
-    const w = widthAt(z) * 0.94
-    const y = deckAt(z) + 0.03
+    const w = shipHalfWidthAt(z) * 0.94
+    const y = shipDeckAt(z) + 0.03
     dv.push(-w, y, z, w, y, z)
     du.push(0, i / STATIONS, 1, i / STATIONS)
   }
@@ -158,7 +164,11 @@ export function createDeckShip(): DeckShip {
     color: 0xffffff,
     map: deckTex,
     normalMap: deckNormal,
-    normalScale: new THREE.Vector2(1.15, 1.15),
+    /*
+     * 法线强度 0.62（原 1.15）：人眼高度看甲板是**极掠射角**，法线被放得很大，
+     * 板缝读成"一条条凸起十厘米的木条"（截图实测），像堆叠的台阶。
+     */
+    normalScale: new THREE.Vector2(0.62, 0.62),
     emissiveMap: deckTex,
     emissive: 0x6a4a2a,
     emissiveIntensity: 0.3,
@@ -176,7 +186,7 @@ export function createDeckShip(): DeckShip {
     const pts: THREE.Vector3[] = []
     for (let i = 0; i <= STATIONS; i++) {
       const z = -HALF + 2 * HALF * (i / STATIONS)
-      pts.push(new THREE.Vector3(s * widthAt(z) * 0.99, deckAt(z) + BULWARK + 0.02, z))
+      pts.push(new THREE.Vector3(s * shipHalfWidthAt(z) * 0.99, shipDeckAt(z) + BULWARK + 0.02, z))
     }
     const g = new THREE.BufferGeometry().setFromPoints(pts)
     group.add(new THREE.Line(g, railMat))
@@ -185,7 +195,7 @@ export function createDeckShip(): DeckShip {
   disposables.push(railMat)
 
   // ---------------- 船尾楼 ----------------
-  const sternDeck = deckAt(-15)
+  const sternDeck = shipDeckAt(-15)
   const cabin = new THREE.Group()
   cabin.position.set(0, sternDeck + 1.35, -14.6)
   const cabinBox = new THREE.Mesh(new THREE.BoxGeometry(6.6, 2.7, 5.2), woodMid)
@@ -326,9 +336,9 @@ export function createDeckShip(): DeckShip {
 
   // ---------------- 桅杆 / 帆桁 ----------------
   const mastData = [
-    { z: 11, baseDeck: deckAt(11), top: 23 },
-    { z: 1, baseDeck: deckAt(1), top: 28 },
-    { z: -8, baseDeck: deckAt(-8), top: 19 },
+    { z: 11, baseDeck: shipDeckAt(11), top: 23 },
+    { z: 1, baseDeck: shipDeckAt(1), top: 28 },
+    { z: -8, baseDeck: shipDeckAt(-8), top: 19 },
   ]
   for (const m of mastData) {
     const h = m.top - m.baseDeck
@@ -443,7 +453,7 @@ export function createDeckShip(): DeckShip {
   const foreTop = new V(0, mastData[0].top, 11)
   const mainTop = new V(0, mastData[1].top, 1)
   const mizTop = new V(0, mastData[2].top, -8)
-  const bowTip = new V(0, deckAt(17) + 6.1, 26.2)
+  const bowTip = new V(0, shipDeckAt(17) + 6.1, 26.2)
   curve(foreTop, bowTip, 0.9, false)
   curve(foreTop, mainTop, 0.7, false)
   curve(mainTop, mizTop, 0.55, false)
@@ -455,7 +465,7 @@ export function createDeckShip(): DeckShip {
   for (const m of mastData) {
     for (const s of [-1, 1]) {
       for (const dz of [-1.6, 0, 1.6]) {
-        curve(new V(0, m.top - 1.2, m.z), new V(s * widthAt(m.z + dz) * 0.92, deckAt(m.z + dz) + BULWARK, m.z + dz), 0.25, false)
+        curve(new V(0, m.top - 1.2, m.z), new V(s * shipHalfWidthAt(m.z + dz) * 0.92, shipDeckAt(m.z + dz) + BULWARK, m.z + dz), 0.25, false)
       }
     }
   }
