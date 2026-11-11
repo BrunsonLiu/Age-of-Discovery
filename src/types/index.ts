@@ -520,7 +520,29 @@ export interface GameState {
    * 所以它进存档（与遗物同一档），刷新之后仍然算数。
    */
   knownPassages: string[]
+  /**
+   * 开局国别（见 data/nations）：决定了出发港、船上的人、以及追哪一个传说。
+   *
+   * 【为什么进存档】它不是"开场选完之后就没用的标签"：
+   * 传说海域只在你的国别下存在于海面上，靠它判定；
+   * 刷新之后若丢了，那条传说会重新变成"没兑现"，玩家会以为自己白跑一趟。
+   */
+  nation: NationId | null
+  /**
+   * 已兑现的传说（id，见 data/nations 的 legend.id）。
+   *
+   * 每国一条、一次性：开进 90 海里内就兑现，之后海图上不再显示那个点。
+   * 与 `collectedRelics` 同一档——都是"这一局真的发生过"。
+   */
+  collectedLegends: string[]
 }
+
+/**
+ * 开局国别 id（与 data/nations 的 NationId 是同一个联合类型）。
+ *
+ * 放在 types 里而不是直接从 data 引，是为了不让 types 反过来依赖 data（会成环）。
+ */
+export type NationId = 'portugal' | 'spain' | 'england' | 'netherlands'
 
 /**
  * 玩法模式（见 GameState.gameMode）。

@@ -4,7 +4,7 @@ import type {
   Fleet, Ship, GameState, GameEvent, EventOutcome, EventLogEntry,
   Route, PanelType, CargoItem, Waypoint, GameStats, RouteIntel, OfficerId, Rival, RivalNews,
   FactionId, CrewCharId, CrewMember, NotorietyAxis, StanceId, GameMode,
-  VictoryClaim,
+  VictoryClaim, NationId,
 } from '@/types'
 import { ports, portGoods, localDemands } from '@/data/ports'
 import { events } from '@/data/events'
@@ -37,15 +37,16 @@ import {
 import { advanceDebris } from '@/utils/seaDebris'
 import { debrisGain, DEBRIS_INFO, type DebrisSpot } from '@/data/debris'
 import { findRelic, relicDistanceNm, relicInSeason, RELIC_PICKUP_NM } from '@/data/relics'
+import { nationById, legendPending, DEFAULT_NATION } from '@/data/nations'
 import { phenomenonAt, phenomenonEventBias, SEA_PHENOMENA } from '@/data/seaPhenomena'
 import { newlyReached } from '@/data/voyageMilestones'
 import { appendLogbook, findClueFor, makeArrivalEntry, makeEchoEntry, makeTitleEntry, markAllRead } from '@/data/logbook'
 import { SAVE_KEY, SAVE_VERSION } from '@/utils/saveFile'
 
-const createStartingShip = (): Ship => ({
+const createStartingShip = (name = '圣玛利亚号'): Ship => ({
   id: 1,
   ...shipTemplates.caravel,
-  name: '圣玛利亚号',
+  name,
 })
 
 /**
@@ -68,24 +69,43 @@ const EVENT_SCENE_CUE: Record<string, CueName> = {
   siren: 'bell',
 }
 
-const createStartingFleet = (): Fleet => ({
-  id: 1,
-  name: '无敌舰队',
-  gold: 500,
-  fame: 0,
-  morale: 70,
-  food: 100,
-  water: 100,
-  currentPortId: 6,
-  isSailing: false,
-  day: 1,
-  ships: [createStartingShip()],
-  cargo: [],
-  flagshipId: 1,
-  trait: null,
-  /** 磨损累进余数（满 1 点才真正扣船，见 types/index.ts 的说明） */
-  durabilityCarry: 0,
-})
+/**
+ * 开局舰队。
+ *
+ * 【国别只改四样东西：出发港、船名、士气、船员】
+ * 不改金币、不改船型、不改载重——用户的方向是**不再扩展金钱/数值玩法**。
+ * 四种国别的"强度"因此几乎相等，差别在**起点在哪片海、船上是什么人、
+ * 起手谁认你**（`start.faction`，那一条在 initGame 里单独写）。
+ *
+ * 默认参数 = 老版本的塞维利亚开局，所以没选国别的路径（存档升级、测试、
+ * 参观模式）看到的世界与从前一模一样。
+ */
+const createStartingFleet = (nationId?: NationId | null): Fleet => {
+  const nation = nationId ? nationById(nationId) : null
+  const portId = nation?.portId ?? 6
+  const ship = createStartingShip(nation?.shipName)
+  if (nation) {
+    ship.crew = Math.min(ship.maxCrew, ship.crew + nation.start.crew)
+  }
+  return {
+    id: 1,
+    name: '无敌舰队',
+    gold: 500,
+    fame: nation?.start.fame ?? 0,
+    morale: Math.min(100, 70 + (nation?.start.morale ?? 0)),
+    food: 100,
+    water: 100,
+    currentPortId: portId,
+    isSailing: false,
+    day: 1,
+    ships: [ship],
+    cargo: [],
+    flagshipId: 1,
+    trait: null,
+    /** 磨损累进余数（满 1 点才真正扣船，见 types/index.ts 的说明） */
+    durabilityCarry: 0,
+  }
+}
 
 const createInitialStats = (): GameStats => ({
   daysSailed: 0,
@@ -247,6 +267,10 @@ const initialGameState: GameState = {
   collectedDebris: [],
   collectedRelics: [],
   knownPassages: [],
+  /** 开局国别（见 data/nations）；initGame(nationId) 写入 */
+  nation: null,
+  /** 已兑现的传说（见 data/nations 的 legend.id） */
+  collectedLegends: [],
 }
 
 interface GameStore extends GameState {
@@ -350,7 +374,8 @@ interface GameStore extends GameState {
    * @param trait  天赋 id
    * @param mode   玩法模式：captain = 完整玩法；visitor = 只逛逛（不被迫）
    */
-  initGame: (trait?: string, mode?: GameMode) => void
+  /** 开新局：天赋 + 玩法模式 + 开局国别（见 data/nations）。不传国别 = 老的塞维利亚开局 */
+  initGame: (trait?: string, mode?: GameMode, nationId?: NationId) => void
   setGamePhase: (phase: GameState['gamePhase']) => void
   setCurrentEvent: (event: GameEvent) => void
   clearCurrentEvent: () => void
@@ -1232,10 +1257,17 @@ export const useGameStore = create<GameStore>()(
         }
       }),
 
-      initGame: (trait, mode = 'captain') => {
-        const startPort = ports.find(p => p.id === 6)
+      initGame: (trait, mode = 'captain', nationId) => {
+        /*
+         * 开局国别：出发港、船名、士气、船员写在 `createStartingFleet(nation)` 里；
+         * 这里补两件**只能在这一层做**的事：
+         *   ① `discoveredPorts` 必须是你的母港（否则地图上你的家是"未发现"）；
+         *   ② 起手声望（`start.faction`）——王室认葡萄牙、兄弟会认英格兰。
+         */
+        const nation = nationById(nationId ?? DEFAULT_NATION)
+        const startPort = ports.find(p => p.id === nation.portId) ?? ports.find(p => p.id === 6)
         set({
-          fleet: { ...createStartingFleet(), trait: trait ?? DEFAULT_TRAIT },
+          fleet: { ...createStartingFleet(nation.id), trait: trait ?? DEFAULT_TRAIT },
           currentRoute: null,
           routeProgress: 0,
           routeOrigin: null,
@@ -1250,7 +1282,7 @@ export const useGameStore = create<GameStore>()(
           completedTasks: [],
           activeTasks: [],
           eventLog: [],
-          discoveredPorts: [6],
+          discoveredPorts: [nation.portId],
           currentEvent: null,
           gamePhase: 'playing',
           activePanel: null,
@@ -1273,12 +1305,14 @@ export const useGameStore = create<GameStore>()(
           rivals: RIVALS.map(r => ({ ...r })),
           rivalNews: [],
           officers: [],
-          factionRep: createInitialFactionRep(),
+          factionRep: { ...createInitialFactionRep(), ...nation.start.faction },
           crewRoster: [],
           notoriety: createInitialNotoriety(),
           weather: createInitialWeather(),
           dialogueSeen: [],
           gameMode: mode,
+          nation: nation.id,
+          collectedLegends: [],
         })
       },
 
@@ -1675,6 +1709,46 @@ export const useGameStore = create<GameStore>()(
           }]
         }
 
+        /*
+         * ---- 传说海域：开进 90 海里就兑现一次 ----
+         *
+         * 【为什么放在日结算里，而不是"点一下"】传说是**一片海**，不是一个物件：
+         * 玩家不会去点"圣布伦丹岛"，他只会朝那个方向开。所以判定的是
+         * "这一天结束时，船在不在圈里"，兑现一次就记账（`collectedLegends`）。
+         *
+         * 【给的是名号与士气，不给金币】与遗物同一条规矩：卖的是航路与见闻。
+         *
+         * 【只在你自己的国别下存在】`legendPending` 读的是 `state.nation`：
+         * 英格兰船长在好望角不会遇见飞行的荷兰人——那是荷兰人的海。
+         */
+        let newCollectedLegends = state.collectedLegends
+        const pendingLegend = legendPending(state.nation, state.collectedLegends)
+        const herePos = state.shipPosition
+        if (pendingLegend && herePos
+          && haversineNm(herePos[0], herePos[1], pendingLegend.lat, pendingLegend.lng) <= pendingLegend.radiusNm) {
+          newCollectedLegends = [...state.collectedLegends, pendingLegend.id]
+          newFleet = {
+            ...newFleet,
+            fame: newFleet.fame + pendingLegend.gain.fame,
+            morale: Math.max(0, Math.min(100, newFleet.morale + pendingLegend.gain.morale)),
+          }
+          newNotifications = [...newNotifications, {
+            id: `legend-${pendingLegend.id}`,
+            type: 'discovery' as const,
+            title: `传说 · ${pendingLegend.name}`,
+            message: pendingLegend.line,
+            timestamp: Date.now(),
+          }]
+          useFxStore.getState().fx(
+            {
+              kind: 'banner', tone: 'gold',
+              text: `传说 · ${pendingLegend.name}`,
+              sub: `名号 +${pendingLegend.gain.fame} · 士气 +${pendingLegend.gain.morale}`,
+            },
+            'milestone',
+          )
+        }
+
         set(withAchievements({ ...state, fleet: newFleet, stats: newStats }, {
           fleet: newFleet,
           gamePhase: newGamePhase,
@@ -1700,6 +1774,7 @@ export const useGameStore = create<GameStore>()(
             ? [...state.claimedVictories, ...claims.map(c => c.key)]
             : state.claimedVictories,
           victoryDay: claims.length > 0 ? (state.victoryDay ?? newDay) : state.victoryDay,
+          collectedLegends: newCollectedLegends,
         }))
       },
 
@@ -2700,6 +2775,16 @@ export const useGameStore = create<GameStore>()(
             pState.gamePhase = 'playing'
           }
         }
+        /*
+         * v16→v17: 开局国别与它那条传说。
+         * 老存档**不补成默认国别**：那等于给一个已经跑了三十天的船长
+         * 凭空换国籍、白送「起手声望」，还会在海图上多出一个他没听说过的传说点。
+         * 补 null = "这一局没有国别故事"，其余一切照旧。
+         */
+        if (version < 17) {
+          if (pState.nation === undefined) pState.nation = null
+          if (!Array.isArray(pState.collectedLegends)) pState.collectedLegends = []
+        }
         return persistedState
       },
       partialize: (state) => ({
@@ -2742,6 +2827,8 @@ export const useGameStore = create<GameStore>()(
         collectedDebris: state.collectedDebris,
         collectedRelics: state.collectedRelics,
         knownPassages: state.knownPassages,
+        nation: state.nation,
+        collectedLegends: state.collectedLegends,
       }),
       // 存档软锁修复：存档里若停在事件阶段但事件未持久化，重开时落回 playing
       merge: (persisted, current) => {
@@ -2753,6 +2840,14 @@ export const useGameStore = create<GameStore>()(
         if (merged.gamePhase === 'helm' && !merged.pendingHelm) {
           merged.gamePhase = 'playing'
         }
+        /*
+         * 老存档没有国别（这一层是 2026-11-12 才有的）：
+         * 补成 null 而不是默认西班牙——`nation: null` 表示"这一局没有国别故事"，
+         * 传说判定那边会直接跳过。**不许**在读取时偷偷把老存档改成西班牙：
+         * 那会给一个已经在海上跑了 30 天的玩家凭空换来一份王室声望。
+         */
+        merged.nation = merged.nation ?? null
+        merged.collectedLegends = merged.collectedLegends ?? []
         return merged
       },
     }

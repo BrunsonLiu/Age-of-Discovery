@@ -35,6 +35,7 @@
     "test:e2e:logbook": "node test/e2e/logbook.mjs",
     "test:e2e:harbor": "node test/e2e/harbor-view.mjs",
     "test:e2e:firstrun": "node test/e2e/first-run.mjs",
+    "test:e2e:nation": "node test/e2e/nation-start.mjs",
     "test:e2e:visitor": "node test/e2e/visitor-mode.mjs",
     "test:e2e:font": "node test/e2e/font-coverage.mjs",
     "test:e2e:smalltext": "node test/e2e/small-text-audit.mjs",

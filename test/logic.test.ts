@@ -63,6 +63,7 @@ import {
   climateGapCenter, climateLabelPx, climateRuns, OBLIQUITY_DEG, POLAR_CIRCLE_DEG,
 } from '../src/utils/climateLines'
 import { climateZoneAt, cursorLabel, readoutPlacement } from '../src/utils/cursorReadout'
+import { DEFAULT_NATION, legendPending, NATION_COUNT, NATIONS, nationById } from '../src/data/nations'
 import {
   SURF_PERIOD_PX, SURF_WIND_FULL, SURF_WIND_MIN, surfDash, surfOpacity, surfStrength, surfWeight,
 } from '../src/utils/surf'
@@ -10677,6 +10678,145 @@ console.log('\n== 天数口径守卫 ==')
   assert(/text-\[12px\]/.test(cc), '读数用 12px（项目下限）')
   assert(/offsetWidth/.test(cc), '翻边按真实宽度算（字数变了宽度也变）')
   assert(/movestart/.test(cc) && /zoomstart/.test(cc), '拖动/缩放时先藏起来（避免读数停在旧位置）')
+}
+
+
+/*
+ * ---- 开局国别：换一面旗 = 换港口、换船上的人、换一个传说 ----
+ *
+ * 【守什么】用户 2026-11-12 的方向是"开局选国家，不同国家有不同的故事，
+ * 可以结合神话和传说"。这一层最容易做成"只换了开场那段文字"——
+ * 玩家选完发现世界一模一样。所以下面四件事都要用**真状态**验：
+ *  ① 母港真的换了（`fleet.currentPortId` 与 `discoveredPorts` 都换）；
+ *  ② 船上真的换了（船名、船员数、士气、名号）；
+ *  ③ 起手真的有人认你（`factionRep`）；
+ *  ④ 传说坐标真的在海上（真 geojson），而且只在你自己的国别下存在。
+ * 另加一条**方向性**约束：开局包里不许有金币（这条线不再靠钱堆强度）。
+ */
+{
+  // ① 四个国别：母港不同、船名不同
+  assert(NATION_COUNT === 4 && new Set(NATIONS.map(n => n.id)).size === 4,
+    `四个国别，id 不重复（${NATIONS.map(n => n.id).join(' / ')}）`)
+  assert(new Set(NATIONS.map(n => n.portId)).size === 4, '四个母港互不相同（不能两个人挤一个码头）')
+  assert(new Set(NATIONS.map(n => n.shipName)).size === 4, `四条座船各有名字（${NATIONS.map(n => n.shipName).join(' / ')}）`)
+  for (const n of NATIONS) {
+    const p = ports.find(x => x.id === n.portId)
+    assert(!!p, `${n.name}的母港 id=${n.portId} 真的在 data/ports 里`)
+    assert(p?.region === 'europe', `${n.name}从欧洲的母港出发（${p?.nameCn}）`)
+  }
+  // 历史上的港口不能写串：里斯本给葡萄牙、塞维利亚给西班牙、伦敦给英格兰、阿姆斯特丹给荷兰
+  const portOf = (id: string) => ports.find(p => p.id === nationById(id).portId)?.nameCn
+  assert(portOf('portugal') === '里斯本', `葡萄牙的母港是里斯本（实测 ${portOf('portugal')}）`)
+  assert(portOf('spain') === '塞维利亚', `西班牙的母港是塞维利亚（实测 ${portOf('spain')}）`)
+  assert(portOf('england') === '伦敦', `英格兰的母港是伦敦（实测 ${portOf('england')}）`)
+  assert(portOf('netherlands') === '阿姆斯特丹', `荷兰的母港是阿姆斯特丹（实测 ${portOf('netherlands')}）`)
+
+  // ② 开局包里没有金币（这条线卖的是航路、名号、见闻）
+  for (const n of NATIONS) {
+    assert(!('gold' in n.start), `${n.name}的开局包里没有金币字段`)
+    assert(n.start.morale >= 0 && n.start.crew >= 0 && n.start.fame >= 0, `${n.name}的加成都不是负数`)
+  }
+  const nationsSrc = readFileSync(join(process.cwd(), 'src', 'data', 'nations.ts'), 'utf8')
+  assert(!/\bgold\b/.test(nationsSrc), 'nations.ts 里没有 gold（不给金币开口子）')
+
+  // ③ 传说坐标真的在海上（与遗物同一套真 geojson 校验）
+  {
+    const gj = JSON.parse(readFileSync(join(process.cwd(), 'public', 'data', 'land.geojson'), 'utf8'))
+    registerLandGeojson(gj)
+    for (const n of NATIONS) {
+      const L = n.legend
+      assert(!isOnLand(L.lat, L.lng), `「${L.name}」在海里（${L.lat}, ${L.lng}）—— 画在陆地上就开不到`)
+      assert(L.radiusNm >= 60 && L.radiusNm <= 120, `「${L.name}」的触发半径 ${L.radiusNm} 海里（既不能隔空领、也不能窄到开不进去）`)
+      assert(L.gain.fame > 0 && L.gain.morale >= 0, `「${L.name}」给名号/士气（不给钱）`)
+    }
+    assert(new Set(NATIONS.map(n => n.legend.id)).size === NATION_COUNT, '四个传说的 id 互不相同')
+    assert(new Set(NATIONS.map(n => n.legend.name)).size === NATION_COUNT, '四个传说的名字互不相同')
+  }
+
+  // ④ legendPending：没选国别 / 没兑现 / 已兑现
+  assert(legendPending(null, []) === null, '没有国别 → 没有传说（老存档不会凭空多出一个点）')
+  assert(legendPending('portugal', [])?.id === 'sao-brandao', '葡萄牙船长的传说是圣布伦丹岛')
+  assert(legendPending('portugal', ['sao-brandao']) === null, '兑现之后就不再出现（一次性）')
+  assert(legendPending('england', ['sao-brandao'])?.id === 'hy-brasil',
+    '英格兰船长不会去追葡萄牙人的岛（各国只认自己那条）')
+
+  // ⑤ 真跑一次开局：出发港、船、士气、船员、名号、声望
+  const init = (id?: string) => {
+    useGameStore.getState().initGame('merchant', 'captain', id as never)
+    return useGameStore.getState()
+  }
+  const pt = init('portugal')
+  assert(pt.nation === 'portugal', `initGame 记住了国别（${pt.nation}）`)
+  assert(pt.fleet.currentPortId === 7, `葡萄牙从里斯本出发（currentPortId=${pt.fleet.currentPortId}）`)
+  assert(JSON.stringify(pt.discoveredPorts) === '[7]', `母港是"已发现"的（${JSON.stringify(pt.discoveredPorts)}）`)
+  assert(pt.shipPosition?.[0] === ports.find(p => p.id === 7)?.latitude, '船位在母港坐标上')
+  assert(pt.fleet.ships[0].name === '圣加布里埃尔号', `座船名（${pt.fleet.ships[0].name}）`)
+  assert(pt.fleet.morale === 78, `士气 70 + 8 = ${pt.fleet.morale}`)
+  assert(pt.factionRep.crown === 14, `王室起手声望 ${pt.factionRep.crown}`)
+  assert(pt.fleet.gold === 500, `金币仍是 500（国别不改钱）`)
+
+  const es = init('spain')
+  assert(es.fleet.currentPortId === 6 && es.fleet.ships[0].crew === 20,
+    `西班牙：塞维利亚 + 船员 ${es.fleet.ships[0].crew}/20（15 + 5）`)
+  assert(es.factionRep.crown === 10, `西班牙王室声望 +10（${es.factionRep.crown}）`)
+
+  const en = init('england')
+  assert(en.fleet.currentPortId === 8 && en.fleet.fame === 12,
+    `英格兰：伦敦 + 起手名号 ${en.fleet.fame}（私掠名声）`)
+  assert(en.factionRep.brethren === 12, `英格兰起手兄弟会 ${en.factionRep.brethren}`)
+
+  const nl = init('netherlands')
+  assert(nl.fleet.currentPortId === 15 && nl.factionRep.guild === 16,
+    `荷兰：阿姆斯特丹 + 商会声望 ${nl.factionRep.guild}`)
+  assert(nl.fleet.ships[0].crew === 17, `荷兰船员 +2（${nl.fleet.ships[0].crew}）`)
+
+  // 不传国别 = 老版本的塞维利亚开局（存档升级/参观模式走这条路）
+  const plain = init()
+  assert(plain.fleet.currentPortId === 6 && plain.nation === DEFAULT_NATION,
+    `不传国别 → 塞维利亚（${plain.nation}），与从前一样`)
+
+  // ⑥ 开进传说圈：真的兑现一次，且只兑现一次
+  {
+    const pt2 = init('portugal')
+    const legend = nationById('portugal').legend
+    useGameStore.setState({
+      fleet: { ...pt2.fleet, day: 9 },
+      gamePhase: 'playing',
+      waypoint: null,
+      currentRoute: null,
+      shipPosition: [legend.lat, legend.lng],
+      collectedLegends: [],
+    })
+    useGameStore.getState().advanceDay()
+    const after = useGameStore.getState()
+    assert(after.collectedLegends.includes(legend.id),
+      `开进「${legend.name}」→ 记进 collectedLegends（${JSON.stringify(after.collectedLegends)}）`)
+    assert(after.fleet.fame === legend.gain.fame,
+      `名号 +${legend.gain.fame}（实测 ${after.fleet.fame}）`)
+    // 第二天仍在原地：不许再兑现一次
+    const fameOnce = after.fleet.fame
+    useGameStore.getState().advanceDay()
+    const after2 = useGameStore.getState()
+    assert(after2.fleet.fame === fameOnce,
+      `传说只兑现一次（第二次 ${after2.fleet.fame} = 第一次 ${fameOnce}）`)
+    assert(legendPending(after2.nation, after2.collectedLegends) === null, '兑现后不再有"待发现"的传说')
+  }
+
+  // ⑦ 存档白名单与老存档兜底
+  const storeSrc = readFileSync(join(process.cwd(), 'src', 'store', 'useGameStore.ts'), 'utf8')
+  assert(/nation: state\.nation/.test(storeSrc) && /collectedLegends: state\.collectedLegends/.test(storeSrc),
+    '国别与传说进了存档白名单（刷新后还在）')
+  assert(/merged\.nation = merged\.nation \?\? null/.test(storeSrc),
+    '老存档把国别补成 null（不偷偷给玩家换国籍、不白送声望）')
+
+  // ⑧ 界面守卫：选国卡片真的在，且选中的国别会传给 initGame
+  const introSrc = readFileSync(join(process.cwd(), 'src', 'components', 'intro', 'IntroScreen.tsx'), 'utf8')
+  assert(/data-nation=\{n\.id\}/.test(introSrc), '开局界面有四张国别卡（带 data-nation 便于取证）')
+  assert(/initGame\(selectedTrait, gameMode, selectedNation\)/.test(introSrc),
+    '选中的国别真的交给了 initGame（不是只在界面上高亮）')
+  const legendSrc = readFileSync(join(process.cwd(), 'src', 'components', 'map', 'NationLegend.tsx'), 'utf8')
+  assert(/legendPending\(nation/.test(legendSrc), '传说标记按国别与已兑现列表过滤')
+  assert(/pointer-events: none !important/.test(legendSrc), '传说标记不吃点击（压在海图上的浮层不许吃指针）')
 }
 
 

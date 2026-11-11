@@ -24,6 +24,7 @@ import NpcShips2D from './NpcShips2D'
 import { MapOverlays } from './MapOverlays'
 import MapClickHandler from './MapClickHandler'
 import { CursorCoords } from './CursorCoords'
+import NationLegend from './NationLegend'
 import OceanLabels from './OceanLabels'
 import RhumbLines from './RhumbLines'
 import VintageMapOverlay from './VintageMapOverlay'
@@ -631,6 +632,8 @@ export default function MapView() {
               {/* 光标读数：指哪儿读哪儿（度分 + 气候带）。只改 DOM 不进 state —— 
                   mousemove 逐像素来，重渲染会把航速帧率吃掉 */}
               <CursorCoords />
+              {/* 传说海域：开局国别对应的那一个神话坐标（开到附近就兑现一次） */}
+              <NationLegend />
               <OceanLabels />
               <RouteLine />
               <PortMarker />

@@ -2,6 +2,9 @@ import { useEffect, useRef, useState } from 'react'
 import { useGameStore } from '@/store/useGameStore'
 import { startAmbience } from '@/utils/audio'
 import { traits, DEFAULT_TRAIT } from '@/data/traits'
+import { NATIONS, DEFAULT_NATION, nationById } from '@/data/nations'
+import { ports } from '@/data/ports'
+import type { NationId } from '@/types'
 import { BG_ASSETS } from '@/data/envAssets'
 import Badge from '@/components/ui/Badge'
 import { UI_ASSETS } from '@/data/uiAssets'
@@ -53,6 +56,12 @@ export default function IntroScreen() {
   const [fade, setFade] = useState(true)
   const [selectedTrait, setSelectedTrait] = useState<string>(DEFAULT_TRAIT)
   const [gameMode, setGameMode] = useState<GameMode>('captain')
+  /*
+   * 【为什么默认选西班牙】四张卡和「模式」「天赋」是同一套交互：默认选中一张，
+   * 想好了的人直接按「继续」。默认值取老版本的开局（塞维利亚），
+   * 所以"不想选"的人看到的世界与从前一样。
+   */
+  const [selectedNation, setSelectedNation] = useState<NationId>(DEFAULT_NATION)
   const initGame = useGameStore(s => s.initGame)
   const fadeTimerRef = useRef<number | null>(null)
 
@@ -63,6 +72,10 @@ export default function IntroScreen() {
       }
     }
   }, [])
+
+  /* 选中的国别与它的母港：叙事页、座船卡、initGame 三处都读这一份 */
+  const chosenNation = nationById(selectedNation)
+  const originPort = ports.find(p => p.id === chosenNation.portId)
 
   const pages = [
     {
@@ -85,27 +98,77 @@ export default function IntroScreen() {
     {
       content: (
         <>
-          <h2 className="pirate-title text-3xl text-gold-300 mb-6">1492年，塞维利亚港</h2>
-          <div className="space-y-4 font-serif text-gold-200 text-base leading-relaxed max-w-md">
-            <p>
-              大航海时代的序幕已经拉开。西班牙与葡萄牙两大海上帝国正竞相寻找通往东方的新航路，无数冒险者怀揣梦想驶向未知的深蓝。
-            </p>
-            <p>
-              你是一位年轻的船长，刚刚从西班牙王室手中接过一封私掠许可证。这封信赋予了你探索未知海域、开辟新贸易航线的使命与荣耀。
-            </p>
-            <p>
-              你的座船"圣玛利亚号"正停泊在塞维利亚港，帆布已升，补给已足，只待一声令下，便可扬帆远航。
-            </p>
+          <h2 className="pirate-title text-2xl sm:text-3xl text-gold-300 mb-2">你为谁出海？</h2>
+          <p className="hidden sm:block font-serif text-gold-200 text-sm leading-relaxed max-w-md mb-3">
+            1492 年前后，四个国家的船正往四个方向去。选一面旗，船就停在那个港里。
+          </p>
+          {/*
+            【为什么小屏也要两列】一列四张卡在 375×667 上把面板顶到 907px
+            （实测 y=-120，顶上那截还因为 flex 居中而滚不到）。
+            两列把四张卡压成两行，省下 150 多像素；窄到 145px 时说明文字会多折两行，
+            但那正是可以折的东西 —— 国名与港口在顶行，一眼能认。
+          */}
+          <div className="grid grid-cols-2 gap-1.5 sm:gap-2 w-full max-w-md">
+            {NATIONS.map(n => {
+              const selected = selectedNation === n.id
+              const port = ports.find(p => p.id === n.portId)
+              return (
+                <button
+                  key={n.id}
+                  onClick={() => setSelectedNation(n.id)}
+                  data-nation={n.id}
+                  aria-pressed={selected}
+                  className={`relative overflow-hidden text-left rounded-lg border p-1.5 sm:p-2.5 transition-all inlay ${
+                    selected
+                      ? 'border-gold-200 shadow-[inset_0_0_0_1px_rgba(240,216,138,0.35),0_0_16px_rgba(212,168,56,0.22)]'
+                      : 'border-gold-700/30 hover:border-gold-500/50'
+                  }`}
+                >
+                  {selected && (
+                    <span aria-hidden="true"
+                      className="absolute left-0 top-2 bottom-2 w-[3px] rounded-full bg-gold-200" />
+                  )}
+                  {/*
+                    【国名与港口分两行，而且都不许折行】375 宽的两列卡只有 147px，
+                    原来"徽章 + 国名 + 港口"挤在一行：国名被折成「葡萄/牙」、
+                    港口被折成「里斯/本」——一个标题拆成两行是排版上最刺眼的一种错。
+                    现在第一行只有徽章与国名（nowrap），港口单独一行。
+                  */}
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    {/* 单字徽章：四个国名在窄卡上排两行反而不像"旗"，
+                        一个字更像印在箱子上的火印 */}
+                    <span aria-hidden="true"
+                      className={`flex h-6 w-6 sm:h-7 sm:w-7 shrink-0 items-center justify-center rounded-full border font-pirate text-sm sm:text-base
+                        ${selected ? 'border-gold-200 text-gold-100' : 'border-gold-700/50 text-gold-300'}`}>
+                      {n.short}
+                    </span>
+                    <span className={`pirate-title text-base sm:text-lg whitespace-nowrap ${selected ? 'text-gold-100' : 'text-gold-200'}`}>{n.name}</span>
+                  </div>
+                  <div className="text-gold-300 text-xs font-serif mt-0.5 whitespace-nowrap">{port?.nameCn}</div>
+                  <p className="text-gold-200 text-[12px] font-serif mt-1 leading-relaxed">{n.perk}</p>
+                </button>
+              )
+            })}
           </div>
           {/*
-            【为什么这一行并进来了】
-            原来它单独占一屏（标题「你的航程」，66 字，四条带图标的玩法）。
-            但"你是谁的叙事"和"这个游戏能做什么"是同一件事的两半，
-            拆两屏只是为了排版——代价是新玩家多看一次动画、多点一次。
-            合成一行短语后信息一点没少（自由探索 / 低买高卖 / 风暴奇遇 / 冒险线索），
-            开局少一次点击。
+            【为什么把这页和"你的故事"合成一屏】
+            原来计划是两屏：一屏选旗、一屏讲你的出身。但开局的屏数有一条硬上限
+            （「开局是 4 屏」那条断言），每多一屏就多一次点击——而这两屏其实
+            在做同一件事：选谁，就是在选哪段故事。合成一屏之后，玩家每点一张卡，
+            下面那三行字**当场换成另一个国家的故事**，比翻页更能说明"这真的不一样"。
+            信息一条没少：国史一句、你是谁一句、船与传说一句。
           */}
-          <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1.5 text-gold-300 font-serif text-xs mt-6 max-w-md">
+          <div className="mt-2 sm:mt-3 w-full max-w-md rounded-lg border border-gold-700/25 bg-ocean-900/30 px-2.5 sm:px-3 py-1.5 sm:py-2 text-left space-y-1">
+            <div className="hidden sm:block text-gold-300 text-xs font-serif tracking-wide">
+              {`1492年 · ${originPort?.nameCn ?? '塞维利亚'}港`}
+            </div>
+            <p className="text-gold-200 text-[12px] sm:text-[13px] font-serif leading-snug sm:leading-relaxed">{chosenNation.history}</p>
+            <p className="text-gold-200 text-[12px] sm:text-[13px] font-serif leading-snug sm:leading-relaxed">{chosenNation.origin}</p>
+            <p className="text-gold-200 text-[12px] sm:text-[13px] font-serif leading-snug sm:leading-relaxed">
+              {`座船「${chosenNation.shipName}」就泊在这里。临行前有人说起过${chosenNation.legend.name}——那片海在图上是一片空白。`}
+            </p>
+          </div>
+          <div className="hidden sm:flex flex-wrap items-center justify-center gap-x-4 gap-y-1.5 text-gold-300 font-serif text-xs mt-3 max-w-md">
             <span className="flex items-center gap-1"><Map size={11} aria-hidden="true" />自由探索</span>
             <span className="flex items-center gap-1"><Coins size={11} aria-hidden="true" />低买高卖</span>
             <span className="flex items-center gap-1"><CloudLightning size={11} aria-hidden="true" />风暴奇遇</span>
@@ -276,8 +339,8 @@ export default function IntroScreen() {
               onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none' }}
             />
             <div className="min-w-0 text-left">
-              <div className="text-gold-300">「圣玛利亚号」</div>
-              <div className="text-gold-300 text-xs">卡拉维尔帆船 · 泊于塞维利亚港</div>
+              <div className="text-gold-300">{`「${chosenNation.shipName}」`}</div>
+              <div className="text-gold-300 text-xs">{`卡拉维尔帆船 · 泊于${originPort?.nameCn ?? '塞维利亚'}港`}</div>
             </div>
           </div>
         </>
@@ -288,7 +351,7 @@ export default function IntroScreen() {
 
   const page = pages[currentPage]
   if (!page) {
-    initGame(selectedTrait, gameMode)
+    initGame(selectedTrait, gameMode, selectedNation)
     return null
   }
 
@@ -306,12 +369,12 @@ export default function IntroScreen() {
     } else {
       // 用户手势中启动环境音（满足浏览器自动播放策略）
       startAmbience()
-      initGame(selectedTrait, gameMode)
+      initGame(selectedTrait, gameMode, selectedNation)
     }
   }
 
   return (
-    <div data-testid="intro-screen" className="fixed inset-0 flex items-center justify-center bg-ocean-900/95 backdrop-blur-md overflow-y-auto py-6" style={{ zIndex: 9999 }}>
+    <div data-testid="intro-screen" className="fixed inset-0 flex items-start sm:items-center justify-center bg-ocean-900/95 backdrop-blur-md overflow-y-auto py-4 sm:py-6" style={{ zIndex: 9999 }}>
       {/* 主标题背景（H1）：母港夜景与银河，衬在航海日志卡片之后 */}
       <img
         src={BG_ASSETS.title}
