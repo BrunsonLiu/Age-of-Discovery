@@ -14,6 +14,7 @@ import { SeaPhenomena } from './SeaPhenomena'
 import MiniMap from './MiniMap'
 import { ScaleBar } from './ScaleBar'
 import { VoyageRings } from './VoyageRings'
+import { Graticule } from './Graticule'
 import { buildMajorLand, featureArea } from '@/utils/terrainDecor'
 import { RouteLine } from './RouteLine'
 import { ShipAnimation } from './ShipAnimation'
@@ -595,6 +596,10 @@ export default function MapView() {
                 <GeoJSON key="borders" data={geoData.borders} style={bordersStyle} interactive={false} />
               )}
 
+              {/* 经纬网 + 边缘度数：自带 z=340 的 pane（网线）与 z=520（度数）。
+                  挂在等角线**之前**：线在同一片海上但更淡 —— 先有经纬度，
+                  玩家才知道自己站在哪个风带里（风带分界就是 ±30°）。 */}
+              <Graticule />
               {/* 等角航线网：自带 z=380 的 pane，低于 overlayPane(400) 的陆地填充，
                   所以压到陆地上的那半截会被自动盖住，只留海面部分 */}
               <RhumbLines />

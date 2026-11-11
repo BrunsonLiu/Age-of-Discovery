@@ -55,6 +55,9 @@ import { pickScale, SCALE_MAX_PX, SCALE_MIN_PX, SCALE_STEPS, scaleHint } from '.
 import {
   circleLatLngs, MIN_RING_NM, pickRingDays, RING_DAY_CANDIDATES, RING_MAX_PX, RING_MIN_PX, RING_SEGMENTS, ringRadii,
 } from '../src/utils/voyageRings'
+import {
+  degreeLabel, GRATICULE_STEPS, graticuleValues, MIN_LINE_GAP_PX, pickGraticuleStep,
+} from '../src/utils/graticule'
 import { buildHullGeo } from '../src/components/deck/shipHull'
 import {
   HULL_ARC, HULL_BULWARK, SHIP_DRAFT_LIFT, SHIP_HALF_LENGTH, SHIP_SCALE,
@@ -10328,6 +10331,94 @@ console.log('\n== 天数口径守卫 ==')
   assert(/dailyDistanceNm\(/.test(ring), '圈半径来自 dailyDistanceNm')
   assert(/STANCES\.steady\.speedMul/.test(ring), '方针口径与出航计划一致（按部就班）')
   assert(/interactive: false/.test(ring), '圈不吃点击')
+}
+
+
+/*
+ * ---- 经纬网：步长跟着缩放走、度数不带错字 ----
+ *
+ * 【守什么】经纬网只有两个失效方式，都会让玩家读到错的经纬度：
+ *  ① 步长写死 → 开局线挤成一张网、放大后整屏一根线都没有；
+ *  ② 度数格式错（0°N / 180°E / -0°）→ 玩家照着报的坐标是错的。
+ * 另守一条几何恒等式：**经度每度的像素 ≥ 纬度每度的像素**（墨卡托里横向被
+ * 1/cos φ 拉伸），所以只要纬度方向的间距够 72px，经度方向一定更松 ——
+ * 这是"标签永不自相重叠"的根据，不靠运气。
+ */
+{
+  // ① 不可用时不给网（宁可不画，也不画一张度数乱掉的网）
+  assert(pickGraticuleStep(0) === 0 && pickGraticuleStep(-3) === 0,
+    '像素/度 不可用时返回 0（不画）')
+  assert(pickGraticuleStep(Number.NaN) === 0 && pickGraticuleStep(Infinity) === 0,
+    'NaN / Infinity 不画')
+
+  /*
+   * ② 游戏真实的 9 个缩放级（minZoom 2 .. maxZoom 10）逐级验：
+   *    墨卡托里 1 度 ≈ 256·2^z / 360 像素（与实测一致：z=5 时 22.75）
+   */
+  const steps = new Set<number>(GRATICULE_STEPS as readonly number[])
+  let prevStep = 0
+  for (let z = 2; z <= 10; z++) {
+    const pxPerDeg = (256 * 2 ** z) / 360
+    const step = pickGraticuleStep(pxPerDeg)
+    assert(steps.has(step), `zoom ${z} 的步长 ${step} 来自候选表`)
+    assert(step * pxPerDeg >= MIN_LINE_GAP_PX,
+      `zoom ${z} 的 ${step}° 线间距 ${(step * pxPerDeg).toFixed(0)}px ≥ ${MIN_LINE_GAP_PX}`)
+    // 它必须是"够宽的最小档"：再小一档就该不够宽了
+    const idx = (GRATICULE_STEPS as readonly number[]).indexOf(step)
+    if (idx > 0) {
+      const finer = GRATICULE_STEPS[idx - 1] as number
+      assert(finer * pxPerDeg < MIN_LINE_GAP_PX,
+        `zoom ${z} 没选更细的 ${finer}°（它只有 ${(finer * pxPerDeg).toFixed(0)}px，会挤）`)
+    }
+    // 放大只会更细（步长单调不增）
+    assert(step <= prevStep || prevStep === 0, `zoom ${z} 的步长 ${step} 不大于 zoom ${z - 1} 的 ${prevStep}`)
+    prevStep = step
+  }
+  // 具体三例（写出来当"如果这里变了要知道"的锚）
+  assert(pickGraticuleStep(22.75) === 5, `zoom 5（22.75px/度）用 5° 网格`)
+  assert(pickGraticuleStep(91) === 1, `zoom 7（91px/度）用 1° 网格`)
+  assert(pickGraticuleStep(2.84) === 30, `zoom 2（2.84px/度）用 30° 网格`)
+
+  // ③ 经度方向一定比纬度方向松（cos φ ≤ 1）—— 标签不会横向挤在一起
+  for (const lat of [0, 20, 40, 60, 75, 85]) {
+    const latPx = 22.75
+    const lngPx = latPx / Math.cos((lat * Math.PI) / 180)
+    assert(lngPx >= latPx - 1e-9, `${lat}° 处经度像素 ${lngPx.toFixed(1)} ≥ 纬度 ${latPx}`)
+  }
+
+  // ④ 取整数倍：边界、跨 0、负值、退化输入
+  assert(JSON.stringify(graticuleValues(-12, 12, 5)) === JSON.stringify([-10, -5, 0, 5, 10]),
+    `[-12,12] 步长 5 → ${graticuleValues(-12, 12, 5).join(',')}`)
+  assert(graticuleValues(-90, 90, 30).includes(0), '南北半球之间的网格含 0°（赤道）')
+  assert(graticuleValues(-90, 90, 30).every((v) => Number.isInteger(v)), '网格值都是整数（不出现 -89.99999）')
+  assert(graticuleValues(0, 10, 0).length === 0 && graticuleValues(10, 0, 5).length === 0,
+    '步长 0 / 上下界颠倒 → 空（不画）')
+  assert(graticuleValues(Number.NaN, 10, 5).length === 0, 'NaN 上界 → 空')
+  // 参数错到离谱时不许把浏览器卡死（四百条以上直接放弃）
+  assert(graticuleValues(-90, 90, 0.0001).length === 0, '步长小到会画几百万条 → 直接返回空')
+
+  // ⑤ 度数格式
+  assert(degreeLabel('lat', 30) === '30°N', `北纬 30 → ${degreeLabel('lat', 30)}`)
+  assert(degreeLabel('lat', -15) === '15°S', `南纬 15 → ${degreeLabel('lat', -15)}`)
+  assert(degreeLabel('lat', 0) === '0°', '赤道写 0°（不是 0°N）')
+  assert(degreeLabel('lng', 120) === '120°E', '东经 120')
+  assert(degreeLabel('lng', -45) === '45°W', '西经 45')
+  assert(degreeLabel('lng', 0) === '0°', '本初子午线写 0°（不是 0°E）')
+  assert(degreeLabel('lng', 180) === '180°' && degreeLabel('lng', -180) === '180°',
+    '180° 不带 E/W（它既是东经也是西经）')
+  // -0 不能漏出去（浮点算出来的 -0.0000001 会进来）
+  assert(!degreeLabel('lat', -0.0000001).includes('-'), `-1e-7 度不产生负号（${degreeLabel('lat', -0.0000001)}）`)
+  assert(degreeLabel('lat', Number.NaN) === '', 'NaN 给空串（不画字）')
+
+  // ⑥ 源码守卫：量屏幕、分 pane、不吃点击、字号不低于 12px
+  const g = readFileSync(join(process.cwd(), 'src', 'components', 'map', 'Graticule.tsx'), 'utf8')
+  assert(/latLngToContainerPoint/.test(g), '纬线位置是量容器像素得来的（不是按 zoom 推算）')
+  assert(/pickGraticuleStep\(/.test(g), '步长走 pickGraticuleStep（不在组件里写死）')
+  assert(/zIndex = '340'/.test(g) && /zIndex = '520'/.test(g),
+    '网线在陆地以下(340)、度数在陆地以上港口以下(520)')
+  assert(/pointerEvents = 'none'/.test(g), 'pane 不吃指针事件（否则点海面出航会被网格挡住）')
+  assert(/font-size:12px/.test(g), '度数用 12px（项目下限；再小在高分屏上读不出）')
+  assert(/as unknown as/.test(g) === false, '没有残留的类型强转')
 }
 
 console.log(`\n最终结果：${passed} 通过 / ${failed} 失败`)
