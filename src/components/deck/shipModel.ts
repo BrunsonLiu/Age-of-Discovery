@@ -9,7 +9,11 @@ import { buildHullGeo } from './shipHull'
 import { SAILOR_POSES, SAILOR_STATIONS } from './deckCrew'
 import { chartCourse } from './deckChart'
 import { WATERLINE_Y_M, WAKE_SEGMENTS } from './deckWake'
-import { bearingDelta, FLAG_BASE_H_M, FLAG_LEN_M, FLAG_SEG_X, FLAG_SEG_Y, flagOffset, pennantYaw } from './deckFlag'
+import { bearingDelta, FLAG_BASE_H_M, FLAG_LEN_M, FLAG_SEG_X, FLAG_SEG_Y, flagOffset, pennantYaw, windK } from './deckFlag'
+import {
+  BRACE_SEGMENTS, braceYaw, rotateAboutYaw, SAIL_DROP, SAIL_TAPER, SAIL_Z_OFF,
+  sailClew, sheetSag, sheetSway, SHEET_SEGMENTS, writeSheetPoints,
+} from './deckRigging'
 
 /*
  * 形状与缩放的定义搬到了 `shipShape.ts`（纯数字，可在单测里跑），这里转出去，
@@ -1328,6 +1332,8 @@ export function createDeckShip(): DeckShip {
   const flagWind = { bearing: Number.NaN, speed: Number.NaN }
   let lastFlagT = 0
   let flagNormalTick = 0
+  /** 动索自己的帧间隔（转桁角的平滑用） */
+  let lastRigT = 0
 
   /*
    * ---------------- 贴着船体的水沫带 + 船首 V 浪 ----------------
@@ -1689,12 +1695,74 @@ export function createDeckShip(): DeckShip {
     return mat
   }
 
-  for (const yd of yardData) {
+  /*
+   * ---------------- 帆桁 / 帆：挂在"可转"的枢轴上 ----------------
+   *
+   * 【为什么要多一层 pivot】转桁索把帆桁绕桅转（见 `deckRigging.braceYaw`）——
+   * 桁和帆必须一起转。直接把帆的 rotation.y 写在 mesh 上是不行的：帆面在 z 上
+   * 偏离桅杆 0.42 米（`SAIL_Z_OFF`），绕自己转会让整张帆平移出去；真正的转轴
+   * 是**桅杆轴线**，所以 pivot 放在 (0, 桁高, 桅的 z)、桁与帆都塞进去。
+   * 桁的世界坐标因此在 pivot 转角为 0 时与原来完全一致（名字、位置都不变）。
+   */
+  interface YardRig {
+    /** 帆桁的 z（pivot 的中心，转轴） */
+    z: number
+    pivot: THREE.Group
+    /** 桁臂半长（米，局部 +x） */
+    armX: number
+    /** 当前转桁角（平滑后的实际值，绳与帆共用这一个数） */
+    yaw: number
+    seed: number
+    /** 左右两根帆脚索 */
+    sheets: {
+      side: 1 | -1
+      attr: THREE.BufferAttribute
+      arr: Float32Array
+      /** 帆角（未转的局部坐标） */
+      clew: { x: number; y: number; z: number }
+      /**
+       * 索尾：`yard >= 0` 时绑在那根**下桁的桁臂**上（上帆的脚索就是这么走的），
+       * `yard < 0` 时绑在舷墙上。
+       */
+      anchorYard: number
+      anchor: { x: number; y: number; z: number }
+      seed: number
+    }[]
+    /** 两根转桁索（只有下桁有）：从桁臂拉到甲板后方 */
+    braces: {
+      side: 1 | -1
+      attr: THREE.BufferAttribute
+      arr: Float32Array
+      tip: { x: number; y: number; z: number }
+      anchor: { x: number; y: number; z: number }
+    }[]
+    /** 上下桁配对：本桁的上帆脚索要绑到的那根（−1 = 没有更低的桁） */
+    lower: number
+  }
+  const yardRigs: YardRig[] = []
+  /** 同一根桅上"更低的桁"的下标（上帆的脚索绑到它上面） */
+  const lowerYardOf = (i: number) => {
+    let best = -1
+    for (let j = 0; j < yardData.length; j++) {
+      if (j === i) continue
+      if (yardData[j].z !== yardData[i].z) continue
+      if (yardData[j].y >= yardData[i].y) continue
+      if (best < 0 || yardData[j].y > yardData[best].y) best = j
+    }
+    return best
+  }
+
+  for (let yi = 0; yi < yardData.length; yi++) {
+    const yd = yardData[yi]
+    const pivot = new THREE.Group()
+    pivot.position.set(0, yd.y, yd.z)
+    pivot.name = `ship-yard-pivot-${yd.seed}`
+    group.add(pivot)
+
     const yard = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.13, yd.len, 6), mastMat)
     yard.name = `ship-yard-${yd.seed}`
     yard.rotation.z = Math.PI / 2
-    yard.position.set(0, yd.y, yd.z)
-    group.add(yard)
+    pivot.add(yard)
 
     const sw = yd.len * yd.sailW
     const sh = yd.sailH
@@ -1712,7 +1780,7 @@ export function createDeckShip(): DeckShip {
        *    原来整张帆是一个规整的四边形，像挂在晾衣绳上的床单）。
        * ③ 帆脚弧（roach）：底边中间略微上收，布不会像被剪过一样平直。
        */
-      const taper = 1 - 0.13 * (1 - (y + 1) / 2)
+      const taper = 1 - SAIL_TAPER * (1 - (y + 1) / 2)
       pos.setX(i, pos.getX(i) * taper)
       const foot = y < -0.55 ? -0.06 * (1 - Math.abs(x)) * sh : 0
       pos.setZ(i, Math.cos(x * Math.PI * 0.5) * Math.cos(y * Math.PI * 0.5) * (sw * 0.11))
@@ -1720,12 +1788,161 @@ export function createDeckShip(): DeckShip {
     }
     pos.needsUpdate = true
     sailGeo.computeVertexNormals()
-    // 帆挂在帆桁下方：几何中心下移半个帆高
+    // 帆挂在帆桁下方：几何中心下移半个帆高（相对 pivot）
     const sail = new THREE.Mesh(sailGeo, makeSailMaterial(yd.seed, new THREE.Vector3(0, 0, 1), 1))
     sail.name = `ship-sail-${yd.seed}`
-    sail.position.set(0, yd.y - sh / 2 - 0.2, yd.z + 0.42)
-    group.add(sail)
+    sail.position.set(0, -sh / 2 - SAIL_DROP, SAIL_Z_OFF)
+    pivot.add(sail)
+
+    const rig: YardRig = {
+      z: yd.z, pivot, armX: yd.len / 2, yaw: 0, seed: yd.seed,
+      sheets: [], braces: [], lower: lowerYardOf(yi),
+    }
+    yardRigs.push(rig)
   }
+
+  /*
+   * ---------------- 动索：帆脚索（sheet）+ 转桁索（brace） ----------------
+   *
+   * 【为什么这一轮的绳才叫"动索"】静索（前后支索、侧支索）是结构，绑死不动；
+   * 动索是**被操作**的：帆脚索拉紧帆脚，转桁索把帆桁绕桅转。船上视角里它们让
+   * "风"这件事从旗子上的一个角度，变成"帆在追风、索在抽动"的连续动作。
+   *
+   * 【线的画法】`THREE.Line`（连续折线，不是 LineSegments）—— 一根索是一个整体，
+   * 顶点每帧重写。`frustumCulled = false` 是必须的：动态顶点的包围球算在初始
+   * （全 0）位置上，视锥剔除会把整根索剔掉（"绳都没了"，而且不报错）。
+   */
+  const mkRope = (color: number, opacity: number, n: number) => {
+    const arr = new Float32Array((n + 1) * 3)
+    const g = new THREE.BufferGeometry()
+    g.setAttribute('position', new THREE.BufferAttribute(arr, 3))
+    const m = new THREE.LineBasicMaterial({ color, transparent: true, opacity })
+    const line = new THREE.Line(g, m)
+    line.frustumCulled = false
+    group.add(line)
+    disposables.push(g, m)
+    return { line, g, m, attr: g.attributes.position as THREE.BufferAttribute, arr }
+  }
+  for (let yi = 0; yi < yardRigs.length; yi++) {
+    const rig = yardRigs[yi]
+    const yd = yardData[yi]
+    const sw = yd.len * yd.sailW
+    const sh = yd.sailH
+    for (const side of [-1, 1] as const) {
+      const clew = sailClew(sw, sh, yd.y, yd.z, side)
+      /*
+       * 索尾绑在哪：
+       *  · 上帆（有下桁）：绑在**下桁的桁臂**上 —— 真实的脚索就是这么走的，
+       *    直接从 8 米高的帆角拉到舷边会穿过下帆（穿模）。
+       *  · 下帆：拉到后方 3.4 米的舷墙内侧。
+       */
+      let anchorYard = -1
+      let anchor: { x: number; y: number; z: number }
+      if (rig.lower >= 0) {
+        const lo = yardData[rig.lower]
+        anchorYard = rig.lower
+        anchor = { x: side * (lo.len / 2) * 0.94, y: lo.y, z: lo.z }
+      } else {
+        const zb = yd.z - 3.4
+        anchor = {
+          x: side * shipHalfWidthAt(zb) * 0.9,
+          y: shipDeckAt(zb) + HULL_BULWARK - 0.15,
+          z: zb,
+        }
+      }
+      const rope = mkRope(0x6b5a3d, 0.75, SHEET_SEGMENTS)
+      rope.line.name = `ship-sheet-${yd.seed}-${side > 0 ? 'port' : 'stbd'}`
+      rig.sheets.push({ side, attr: rope.attr, arr: rope.arr, clew, anchorYard, anchor, seed: yd.seed * 7 + (side > 0 ? 1.3 : 4.9) })
+    }
+    /*
+     * 转桁索：只给三根**下桁**（上桁的转桁索在真实船上也有，但那是第四层绳子，
+     * 画面上已经看不出层次）。从桁臂斜拉到甲板后方。
+     * 桅在最尾那根（z=−8）时，"后方 5.4 米"会落进船尾楼里，所以夹到 −10.8。
+     */
+    if (rig.lower < 0) {
+      const zb = Math.max(yd.z - 5.4, -10.8)
+      for (const side of [-1, 1] as const) {
+        const rope = mkRope(0x584a33, 0.6, BRACE_SEGMENTS)
+        rope.line.name = `ship-brace-${yd.seed}-${side > 0 ? 'port' : 'stbd'}`
+        rig.braces.push({
+          side,
+          attr: rope.attr,
+          arr: rope.arr,
+          tip: { x: side * (yd.len / 2) * 0.97, y: yd.y, z: yd.z },
+          anchor: {
+            x: side * shipHalfWidthAt(zb) * 0.86,
+            y: shipDeckAt(zb) + HULL_BULWARK - 0.1,
+            z: zb,
+          },
+        })
+      }
+    }
+  }
+
+  /*
+   * 动索的每帧更新（建模型时也先跑一次）。
+   *
+   * 三个数决定一切，且都来自**已有的单一来源**：
+   *  · 转桁角 ← `windTarget.bearing`（与旗子、`calculateSailingDays` 同一个风向）
+   *  · 松紧   ← `windK(windTarget.speed)`（与旗子同一个归一化）
+   *  · 摆动的相位 ← 每根索自己的 seed
+   * 帆与索读的是**同一个平滑后的 `rig.yaw`** —— 帆转了 8°、索还留在 0°，
+   * 绳头就会从帆角上"脱开"（这是本轮最容易犯的错，所以只有这一份角度）。
+   */
+  const updateRigging = (t: number, k: number) => {
+    const dt = Math.min(0.2, Math.max(0.001, t - lastRigT))
+    lastRigT = t
+    const target = braceYaw(windTarget.bearing, k)
+    for (const rig of yardRigs) {
+      // 时间常数约 1 秒：风一变，帆不是"啪"地转过去，而是慢慢吃上劲
+      rig.yaw += (target - rig.yaw) * Math.min(1, dt * 0.9)
+      rig.pivot.rotation.y = rig.yaw
+    }
+    for (const rig of yardRigs) {
+      for (const sheet of rig.sheets) {
+        const top = rotateAboutYaw(sheet.clew.x, sheet.clew.z, rig.z, rig.yaw)
+        let bx = sheet.anchor.x
+        let bz2 = sheet.anchor.z
+        if (sheet.anchorYard >= 0) {
+          // 上帆的索尾绑在下桁臂上：下桁自己也在转，索尾要跟着它走
+          const ar = yardRigs[sheet.anchorYard]
+          const p = rotateAboutYaw(sheet.anchor.x, sheet.anchor.z, ar.z, ar.yaw)
+          bx = p.x
+          bz2 = p.z
+        }
+        /*
+         * 上帆的脚索只跨一层桁（2~3 米），垂不了 1.4 米 —— 按 0.45 缩，
+         * 否则那几根短索会垂成一个夸张的 U 形（像晾衣绳）。
+         */
+        const short = sheet.anchorYard >= 0
+        const sag = sheetSag(t, sheet.seed, k) * (short ? 0.45 : 1)
+        const sway = sheetSway(t, sheet.seed, k) * (short ? 0.4 : 1)
+        writeSheetPoints(
+          sheet.arr,
+          top.x, sheet.clew.y, top.z,
+          bx, sheet.anchor.y, bz2,
+          sag, sway, SHEET_SEGMENTS,
+        )
+        sheet.attr.needsUpdate = true
+      }
+      for (const brace of rig.braces) {
+        const tip = rotateAboutYaw(brace.tip.x, brace.tip.z, rig.z, rig.yaw)
+        /*
+         * 转桁索是**绷紧**的（它要拉住整根桁），所以垂度只有 0.3 米上下，
+         * 但会随风速轻轻抖（绷得越紧抖得越少）。
+         */
+        const sag = 0.34 - 0.12 * k + 0.04 * Math.sin(t * 0.7 + rig.seed)
+        writeSheetPoints(
+          brace.arr,
+          tip.x, brace.tip.y, tip.z,
+          brace.anchor.x, brace.anchor.y, brace.anchor.z,
+          sag, 0.02, BRACE_SEGMENTS,
+        )
+        brace.attr.needsUpdate = true
+      }
+    }
+  }
+  updateRigging(0, 0)
 
   /*
    * ---------------- 船首斜桅（bowsprit） ----------------
@@ -2016,6 +2233,13 @@ export function createDeckShip(): DeckShip {
         attr.needsUpdate = true
         if (++flagNormalTick % 4 === 0) flagGeo.computeVertexNormals()
       }
+
+      /*
+       * ---- 动索 ----
+       * 建模型时也调一次（t=0、无风），否则第一帧之前那十八根索的顶点全是 0，
+       * 会从船心拉出十八根射线（只闪一帧，但截图里就是一团黑线）。
+       */
+      updateRigging(t, windK(windTarget.speed))
 
       // 灯笼晃：吊灯本来就随船摇，幅度小、周期不同（两盏不同相）
       for (let i = 0; i < lanternPivots.length; i++) {

@@ -60,6 +60,10 @@ import { BIRD_MAX, deckBirdFlock, deckBirdPose } from '../src/components/deck/de
 import { SAILOR_POSES, SAILOR_STATIONS, sailorCount } from '../src/components/deck/deckCrew'
 import { chartCourse, CHART_MAX_NM } from '../src/components/deck/deckChart'
 import { bearingDelta, FLAG_SEG_X, flagOffset, pennantYaw, windK } from '../src/components/deck/deckFlag'
+import {
+  BRACE_SEGMENTS, braceYaw, rotateAboutYaw, SAIL_TAPER, sailClew,
+  sheetSag, sheetSway, SHEET_SEGMENTS, writeSheetPoints,
+} from '../src/components/deck/deckRigging'
 import { bowWaveLength, bowWaveSpread, KELVIN_TAN, kelvinStrength, wakeStrength } from '../src/components/deck/deckWake'
 import { CABIN_BOUNDS, CABIN_ENTER, CABIN_EXIT, cabinEyeY, cabinFloorY, clampToCabin, isInCabin, stepInCabin } from '../src/components/deck/deckCabin'
 import { clampElevation, EL_MAX, EL_MIN, EL_TIGHTEN_FROM, minElevationAt } from '../src/components/map3d/cameraLimits'
@@ -9331,6 +9335,118 @@ console.log('\n== 天数口径守卫 ==')
   const helm = SAILOR_STATIONS.find((s) => s.kind === 'helm')!
   assert(helm.z < -10.9 && helm.z > -12.0,
     `舵手（z=${helm.z}）站在舵轮与船尾楼之间`)
+}
+
+/*
+ * ---- 动索：帆脚索的垂度 / 帆角的位置 / 转桁角 ----
+ *
+ * 【守什么】这一整块只有一件事会出错：**绳子和帆分家**。
+ *  · 帆角的坐标若与帆的变形公式不一致 → 索头悬在布外面 5~20 厘米；
+ *  · 贝塞尔控制点如果按"sag"直接给（而不是 2×），单测说垂 1 米、画面上只有 0.5 米；
+ *  · 转桁角的方向搞反 → 帆转到背风侧，"追风"变成"躲风"；
+ *  · 相位不分 → 左右两根索像连在一起，同时抽。
+ * 这些都是算得出来的，不必靠看截图。
+ */
+{
+  const A = { x: 0, y: 10, z: 0 }
+  const B = { x: 6, y: 2, z: 0 }
+  const n = SHEET_SEGMENTS
+  const flat = new Float32Array((n + 1) * 3)
+  writeSheetPoints(flat, A.x, A.y, A.z, B.x, B.y, B.z, 0, 0, n)
+  assert(flat.length === (n + 1) * 3, `顶点数 = (${n}+1)×3`)
+  assert(Math.abs(flat[0] - A.x) < 1e-9 && Math.abs(flat[1] - A.y) < 1e-9 && Math.abs(flat[2] - A.z) < 1e-9,
+    '第一点就是绳头（帆角）')
+  const last = n * 3
+  assert(Math.abs(flat[last] - B.x) < 1e-9 && Math.abs(flat[last + 1] - B.y) < 1e-9 && Math.abs(flat[last + 2] - B.z) < 1e-9,
+    '最后一点就是绳尾（舷边）')
+
+  // sag 是"中点的实际下垂"，不是控制点偏移
+  const sag = 1.4
+  writeSheetPoints(flat, A.x, A.y, A.z, B.x, B.y, B.z, sag, 0, n)
+  const midI = (n / 2) * 3
+  const wantMidY = (A.y + B.y) / 2 - sag
+  assert(Math.abs(flat[midI + 1] - wantMidY) < 1e-6,
+    `中点垂到 y=${wantMidY.toFixed(2)}（实测 ${flat[midI + 1].toFixed(2)}）—— sag 不会被贝塞尔砍掉一半`)
+  assert(flat[midI] > A.x && flat[midI] < B.x, '中点在两端之间（没有甩出绳外）')
+  // 单调：每一段都往下走，绳不会出现"波浪"
+  let prevY = Infinity
+  let monotonic = true
+  for (let i = 0; i <= n; i++) {
+    if (flat[i * 3 + 1] > prevY + 1e-9) monotonic = false
+    prevY = flat[i * 3 + 1]
+  }
+  assert(monotonic, '从帆角到舷边单调下垂（没有回勾）')
+
+  // 侧摆：沿水平垂线（A→B 沿 z 时，垂线是 x）
+  const flat2 = new Float32Array((n + 1) * 3)
+  writeSheetPoints(flat2, 0, 10, 0, 0, 2, 10, 0, 0.5, n)
+  assert(Math.abs(flat2[midI] - -0.5) < 1e-6, `侧摆 0.5 米落在 −x 方向（实测 x=${flat2[midI].toFixed(3)}）`)
+  assert(Math.abs(flat2[midI + 2] - 5) < 1e-6, '侧摆不改变沿绳方向的中间位置')
+
+  /*
+   * 帆角：必须就是帆面变形之后下缘两端的那个点。
+   * 这里按 `shipModel` 里同一套变形重算一遍（收分 + 帆脚弧 + 鼓胀在角上都是 0）。
+   */
+  const sw = 14.5 * 0.86
+  const sh = 6.4
+  const clew = sailClew(sw, sh, 13.6, 11, 1)
+  assert(Math.abs(clew.x - (sw / 2) * (1 - SAIL_TAPER)) < 1e-9,
+    `帆角在收分后的帆缘上（x=${clew.x.toFixed(2)}，帆桁半长 ${(14.5 / 2).toFixed(2)}）`)
+  assert(Math.abs(clew.x) < 14.5 / 2, '帆角在帆桁长度以内（布不会比桁还宽）')
+  assert(Math.abs(clew.y - (13.6 - sh - 0.2)) < 1e-9,
+    `帆角在帆脚下方 0.2 米处的挂点（y=${clew.y.toFixed(2)}）`)
+  assert(clew.y < 13.6 - sh * 0.8, '帆角接近帆的下缘（不是帆的一半高）')
+  const clewL = sailClew(sw, sh, 13.6, 11, -1)
+  assert(Math.abs(clewL.x + clew.x) < 1e-9, '左右帆角对称')
+
+  /*
+   * 垂度：风小的时候垂得下去、风大的时候几乎绷直；而且**必须真的在动**
+   * （只靠"值不同"是不够的，要看时间序列的振幅）。
+   */
+  const series = (k: number) => {
+    const vals: number[] = []
+    for (let t = 0; t <= 20; t += 0.05) vals.push(sheetSag(t, 1.3, k))
+    return vals
+  }
+  const calm = series(0)
+  const fresh = series(1)
+  const amp = (v: number[]) => Math.max(...v) - Math.min(...v)
+  assert(Math.max(...calm) > 1.0, `无风时垂得下去（最深 ${Math.max(...calm).toFixed(2)} 米）`)
+  assert(Math.max(...fresh) < 0.35, `强风时几乎绷直（最深 ${Math.max(...fresh).toFixed(2)} 米）`)
+  assert(amp(calm) > 0.15, `无风时索在抽动（振幅 ${amp(calm).toFixed(2)} 米）`)
+  assert(amp(fresh) < 0.06, `强风时几乎不动（振幅 ${amp(fresh).toFixed(2)} 米）`)
+  assert(Math.min(...calm) > 0, '垂度永远为正（索不会穿到绳的另一侧）')
+  assert(sheetSag(Number.NaN, 1, 0.5) > 0, 'NaN 时间也给一个有限值')
+  assert(sheetSag(5, 1.3, Number.NaN) > 0, 'NaN 风速退回无风')
+  // 相位不同：左右两根索不能同时抽
+  assert(Math.abs(sheetSag(5, 1.3, 0.4) - sheetSag(5, 4.9, 0.4)) > 1e-3,
+    '两根索的相位不同（不会像连在一起）')
+  assert(Math.abs(sheetSway(5, 1.3, 0) - sheetSway(5, 4.9, 0)) > 1e-3, '侧摆相位也各自独立')
+  assert(Math.abs(sheetSway(3, 1, 0)) <= 0.31 && Math.abs(sheetSway(3, 1, 1)) <= 0.05,
+    '侧摆：松时 0.30 米、紧时 0.04 米')
+
+  /*
+   * 转桁：风沿船首尾吹不转，横风转得最多（上限 15°），方向是"帆迎向风"。
+   * 方向判据：风从右舷（方位 90°）来时，+x 那一端必须转向船首（z 变大）。
+   */
+  assert(Math.abs(braceYaw(0, 1)) < 1e-9, '风从正后方来 → 帆桁不转')
+  assert(Math.abs(braceYaw(180, 1)) < 1e-9, '风从正前方来 → 帆桁不转')
+  assert(Math.abs(braceYaw(NaN, 1)) < 1e-9, 'NaN 风向 → 不转')
+  assert(Math.abs(braceYaw(90, 0)) < 1e-9, '无风 → 不转（帆是垂的）')
+  assert(braceYaw(90, 1) < 0, '右舷来风 → 负向转')
+  assert(braceYaw(270, 1) > 0, '左舷来风 → 正向转')
+  for (const b of [0, 45, 90, 135, 180, 225, 270, 315]) {
+    assert(Math.abs(braceYaw(b, 1)) <= 0.26 + 1e-9, `方位 ${b}° 的转角不超过 15°`)
+  }
+  const yaw90 = braceYaw(90, 1)
+  const tipP = rotateAboutYaw(7.25, 11, 11, yaw90)
+  assert(tipP.z > 11, `右舷来风时 +x 桁臂转向船首（z ${11} → ${tipP.z.toFixed(2)}）`)
+  assert(Math.abs(Math.hypot(tipP.x, tipP.z - 11) - 7.25) < 1e-9, '转桁不改变桁臂长度（只是转）')
+  const still = rotateAboutYaw(3, 11, 11, 0)
+  assert(Math.abs(still.x - 3) < 1e-9 && Math.abs(still.z - 11) < 1e-9, '转角为 0 时点不动')
+  const onMast = rotateAboutYaw(0, 11, 11, 1.2)
+  assert(Math.abs(onMast.x) < 1e-9 && Math.abs(onMast.z - 11) < 1e-9, '桅轴线上的点转过之后还在轴上')
+  assert(BRACE_SEGMENTS >= 4 && SHEET_SEGMENTS >= 8, '分段数够圆滑')
 }
 
 /*

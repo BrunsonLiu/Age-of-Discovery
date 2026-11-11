@@ -501,6 +501,127 @@ check(poses.hatch && poses.hatch.lean > 0.4, `舱口的人弯着腰（lean=${pos
 check(poses.hatch && Math.abs(poses.hatch.arms[0] - poses.helm.arms[0]) > 0.3,
   '舱口的人手臂角度与舵手不同（各有各的动作）')
 
+// ---- ⑤j 动索：绳头必须在帆角上、索要真的在动 ----
+// 这一条不重写公式，而是**从帆自身的顶点**里找出那个角 —— 绳与布是否分家，
+// 只有拿真实几何对才测得出来（公式对公式会一起错）。
+const ropesCount = await page.evaluate(() => {
+  let sheets = 0
+  let braces = 0
+  window.__deckScene.traverse((o) => {
+    if (/^ship-sheet-/.test(o.name)) sheets++
+    if (/^ship-brace-/.test(o.name)) braces++
+  })
+  return { sheets, braces }
+})
+check(ropesCount.sheets === 12, `六张帆各两根脚索（实测 ${ropesCount.sheets} 根）`)
+check(ropesCount.braces === 6, `三根下桁各有两根转桁索（实测 ${ropesCount.braces} 根）`)
+
+const clewCheck = await page.evaluate(() => {
+  const scene = window.__deckScene
+  const pivot = scene.getObjectByName('ship-yard-pivot-1')
+  const sail = scene.getObjectByName('ship-sail-1')
+  const sheet = scene.getObjectByName('ship-sheet-1-port')
+  if (!pivot || !sail || !sheet) return null
+  const pos = sail.geometry.attributes.position
+  /*
+   * 从**帆自己的顶点**里找帆角，不重写收分公式：
+   *  · 帆顶不收分 ⇒ 全几何最大 |x| 就是半个帆宽；
+   *  · 帆面以中心为原点 ⇒ 最大 y 就是半个帆高；
+   *  · 帆角 = (半帆宽 × 收分, −半帆高)，再去顶点里找**离它最近的那个真顶点**，
+   *    用那个顶点当判据 —— 于是"索头贴着的必须是布上真有的点"，而不是我算出来的点。
+   */
+  let maxX = 0
+  let maxY = 0
+  for (let i = 0; i < pos.count; i++) {
+    maxX = Math.max(maxX, pos.getX(i))
+    maxY = Math.max(maxY, pos.getY(i))
+  }
+  const wantX = maxX * (1 - 0.13)
+  const wantY = -maxY
+  let corner = null
+  let bestD = Infinity
+  for (let i = 0; i < pos.count; i++) {
+    const d = Math.hypot(pos.getX(i) - wantX, pos.getY(i) - wantY)
+    if (d < bestD) { bestD = d; corner = { x: pos.getX(i), y: pos.getY(i), z: pos.getZ(i) } }
+  }
+  const sp = sail.position
+  // 帆角在 deck-ship 局部系（pivot 转角之后）。dx/dz 是**相对 pivot 的**偏移：
+  // 帆的挂点 z 已经是相对 pivot 的 0.42，再减一次 pivot.z 会把差距算成 −10.58
+  // （第一版就是这么错，量出来"差 11 米"，实际绳和布是贴着的）。
+  const yaw = pivot.rotation.y
+  const c = Math.cos(yaw)
+  const s = Math.sin(yaw)
+  const dx = corner.x + sp.x
+  const dz = corner.z + sp.z
+  const want = {
+    x: dx * c + dz * s,
+    y: corner.y + sp.y + pivot.position.y,
+    z: pivot.position.z + (-dx * s + dz * c),
+  }
+  const arr = sheet.geometry.attributes.position.array
+  const n = arr.length / 3 - 1
+  const midI = (n / 2) * 3
+  return {
+    yaw: +yaw.toFixed(3),
+    pivotY: +pivot.position.y.toFixed(2),
+    pivotZ: +pivot.position.z.toFixed(2),
+    gap: +Math.hypot(arr[0] - want.x, arr[1] - want.y, arr[2] - want.z).toFixed(3),
+    sag: +(((arr[1] + arr[n * 3 + 1]) / 2) - arr[midI + 1]).toFixed(3),
+    top: [+arr[0].toFixed(2), +arr[1].toFixed(2)],
+    want: [+want.x.toFixed(2), +want.y.toFixed(2)],
+    // 绳尾在下方（索是从帆角垂到舷边的）
+    drop: +(arr[1] - arr[n * 3 + 1]).toFixed(2),
+  }
+})
+check(!!clewCheck, '找得到帆桁枢轴 / 帆 / 帆脚索')
+check(clewCheck && clewCheck.gap < 0.02,
+  `帆脚索的头就在帆角上（差 ${clewCheck?.gap} 米：绳 ${clewCheck?.top} vs 角 ${clewCheck?.want}）`)
+check(clewCheck && clewCheck.drop > 3, `脚索从帆角垂到舷边（落差 ${clewCheck?.drop} 米）`)
+check(clewCheck && clewCheck.sag > 0.05, `索是垂的，不是一条直杆（中点低 ${clewCheck?.sag} 米）`)
+check(clewCheck && clewCheck.pivotY === 13.6 && clewCheck.pivotZ === 11,
+  `帆桁枢轴就在桁上（y=${clewCheck?.pivotY} z=${clewCheck?.pivotZ}，前桅下桁）`)
+
+// 索必须**真的在动**：连续采 6 次中点高度，看极差（不是"值不等"）
+const sagSeries = []
+for (let i = 0; i < 6; i++) {
+  sagSeries.push(await page.evaluate(() => {
+    const arr = window.__deckScene.getObjectByName('ship-sheet-3-port').geometry.attributes.position.array
+    const n = arr.length / 3 - 1
+    return arr[((n / 2) * 3) + 1]
+  }))
+  await sleep(320)
+}
+const sagSpan = Math.max(...sagSeries) - Math.min(...sagSeries)
+check(sagSpan > 0.004, `帆脚索的中点在一秒多里起伏了 ${(sagSpan * 100).toFixed(1)} 厘米（真的在抽动）`)
+
+// 转桁索的尾端必须跟着桁臂走（帆转了、索没转 = 绳从桁上脱开）
+const braceCheck = await page.evaluate(() => {
+  const scene = window.__deckScene
+  const out = []
+  for (const seed of [1, 3, 5]) {
+    const pivot = scene.getObjectByName(`ship-yard-pivot-${seed}`)
+    const yard = scene.getObjectByName(`ship-yard-${seed}`)
+    const brace = scene.getObjectByName(`ship-brace-${seed}-port`)
+    if (!pivot || !yard || !brace) { out.push(null); continue }
+    const half = yard.geometry.parameters.height / 2 * 0.97
+    const yaw = pivot.rotation.y
+    const c = Math.cos(yaw)
+    const s = Math.sin(yaw)
+    const want = { x: half * c, z: pivot.position.z - half * s, y: pivot.position.y }
+    const arr = brace.geometry.attributes.position.array
+    out.push({
+      seed,
+      yaw: +yaw.toFixed(3),
+      gap: +Math.hypot(arr[0] - want.x, arr[1] - want.y, arr[2] - want.z).toFixed(3),
+    })
+  }
+  return out
+})
+check(braceCheck.every((b) => b && b.gap < 0.02),
+  `三根转桁索的索头都咬在桁臂上（误差 ${braceCheck.map((b) => b?.gap).join(' / ')} 米）`)
+check(braceCheck.every((b) => b && Math.abs(b.yaw) <= 0.2601),
+  `转桁角都没超过 15°（${braceCheck.map((b) => b?.yaw).join(' / ')} rad）`)
+
 // ---- ⑥ 回海图：场景要真的被拆掉（不能留一个跑着的 rAF）----
 await page.evaluate(() => document.querySelector('[data-testid=deck-view-close]')?.click())
 await sleep(1200)
