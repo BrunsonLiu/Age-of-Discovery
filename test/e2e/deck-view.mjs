@@ -248,7 +248,7 @@ const crewNow = () => page.evaluate(() => {
   const st = window.__gameStore.getState()
   const flag = st.fleet.ships.find((x) => x.id === st.fleet.flagshipId) ?? st.fleet.ships[0]
   const shown = []
-  window.__deckScene.traverse((o) => { if (/^ship-sailor-/.test(o.name) && o.visible) shown.push(o.name) })
+  window.__deckScene.traverse((o) => { if (/^ship-sailor-(helm|hatch|bow)$/.test(o.name) && o.visible) shown.push(o.name) })
   return { crew: flag?.crew ?? 0, shown }
 })
 const c0 = await crewNow()
@@ -497,9 +497,82 @@ check(poses.helm && poses.helm.arms.length === 2, `舵手有两条手臂（实�
 check(poses.helm && poses.helm.arms[0] === poses.helm.arms[1],
   `舵手两臂对称（${poses.helm?.arms?.join(' / ')}）`)
 check(poses.helm && poses.helm.arms[0] < -1, `舵手手臂前伸到轮上（${poses.helm?.arms?.[0]} rad）`)
-check(poses.hatch && poses.hatch.lean > 0.4, `舱口的人弯着腰（lean=${poses.hatch?.lean}）`)
 check(poses.hatch && Math.abs(poses.hatch.arms[0] - poses.helm.arms[0]) > 0.3,
   '舱口的人手臂角度与舵手不同（各有各的动作）')
+
+/*
+ * ---- ⑤k 岗位小动作：弯腰的人会直起腰、舵手会推轮、头真的会抬/低 ----
+ *
+ * 【为什么要连采 5 秒】上一轮的判据是"lean > 0.4"这种**瞬时**值 —— 加了周期性
+ * 小动作之后，单点采样会在 0.21~0.55 之间随机命中，"有时绿有时红"是最糟的判据。
+ * 现在改成看**极差**：既守"他确实弯腰"（任何时刻 > 0.15），也守"他确实会动"
+ * （极差 > 0.1）。顺带守上一轮那条**躺着的死数据**：`headTilt` 之前从没被应用。
+ */
+const idleSeries = []
+for (let i = 0; i < 11; i++) {
+  idleSeries.push(await page.evaluate(() => {
+    const g = window.__deckScene.getObjectByName('ship-sailor-hatch')
+    const upper = g?.children.find((c) => c.type === 'Group')
+    const head = window.__deckScene.getObjectByName('ship-head-hatch')
+    return {
+      lean: upper ? upper.rotation.x : null,
+      headTilt: head ? head.rotation.x : null,
+      hatOnHead: head ? head.children.length : 0,
+    }
+  }))
+  await sleep(450)
+}
+const leans = idleSeries.map((s) => s.lean)
+const leanMin = Math.min(...leans)
+const leanMax = Math.max(...leans)
+check(leanMin > 0.15, `舱口的人任何时刻都前倾（最低 ${leanMin.toFixed(2)} rad > 0.15）`)
+check(leanMax - leanMin > 0.08, `他会直起腰再弯下去（5 秒里起伏 ${(leanMax - leanMin).toFixed(2)} rad）`)
+check(leanMax < 0.62, `不会趴得比姿势本身更弯（最高 ${leanMax.toFixed(2)} rad）`)
+const headTilts = idleSeries.map((s) => s.headTilt)
+check(headTilts.every((v) => v !== null && v < 0),
+  `头是"抬着看"的（俯仰 ${headTilts.map((v) => v.toFixed(2)).join(' ')} 全为负）`)
+check(Math.max(...headTilts) - Math.min(...headTilts) > 0.02,
+  `头跟着上身动（俯仰极差 ${(Math.max(...headTilts) - Math.min(...headTilts)).toFixed(2)} rad）`)
+check(idleSeries.every((s) => s.hatOnHead === 2), '头和帽子在同一个组里（低头时帽子不会悬空）')
+
+// 舵手：推轮时两臂同增量，5 秒内必须动过
+const helmSeries = []
+for (let i = 0; i < 11; i++) {
+  helmSeries.push(await page.evaluate(() => {
+    const g = window.__deckScene.getObjectByName('ship-sailor-helm')
+    const upper = g?.children.find((c) => c.type === 'Group')
+    const arms = (upper ? upper.children : []).filter(
+      (c) => c.isMesh && c.geometry?.type === 'CylinderGeometry' && c.geometry?.parameters?.height === 0.56,
+    )
+    return arms.map((a) => a.rotation.x)
+  }))
+  await sleep(400)
+}
+const helmSymmetric = helmSeries.every((a) => Math.abs(a[0] - a[1]) < 1e-6)
+const helmArms = helmSeries.map((a) => a[0])
+check(helmSymmetric, '舵手推轮时两臂始终同角（不会一只手离轮）')
+check(Math.max(...helmArms) - Math.min(...helmArms) > 0.03,
+  `舵手在推轮（4 秒里 ${(Math.max(...helmArms) - Math.min(...helmArms)).toFixed(2)} rad）`)
+check(Math.max(...helmArms) < -1.2, `推的时候手仍在轮上（最大 ${Math.max(...helmArms).toFixed(2)} rad）`)
+
+// 船首的人：举起的手会放下歇一会，但**始终举着**（垂手就不是瞭望了）
+const bowSeries = []
+for (let i = 0; i < 7; i++) {
+  bowSeries.push(await page.evaluate(() => {
+    const g = window.__deckScene.getObjectByName('ship-sailor-bow')
+    const upper = g?.children.find((c) => c.type === 'Group')
+    const arms = (upper ? upper.children : []).filter(
+      (c) => c.isMesh && c.geometry?.type === 'CylinderGeometry' && c.geometry?.parameters?.height === 0.56,
+    )
+    return arms.map((a) => a.rotation.x)
+  }))
+  await sleep(900)
+}
+const bowRight = bowSeries.map((a) => a[1])
+check(bowSeries.every((a) => Math.abs(a[0]) < 0.2), '船首的另一只手一直垂着（只有一只手在瞭望）')
+check(Math.max(...bowRight) - Math.min(...bowRight) > 0.1,
+  `瞭望的手会放下再举起（6 秒里 ${(Math.max(...bowRight) - Math.min(...bowRight)).toFixed(2)} rad）`)
+check(Math.max(...bowRight) <= -1.2, `放下之后仍然举着（最高 ${Math.max(...bowRight).toFixed(2)} rad）`)
 
 // ---- ⑤j 动索：绳头必须在帆角上、索要真的在动 ----
 // 这一条不重写公式，而是**从帆自身的顶点**里找出那个角 —— 绳与布是否分家，

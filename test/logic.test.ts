@@ -57,7 +57,7 @@ import {
 import { DECK_WAVES } from '../src/components/deck/deckWaves'
 import { compassWord, ridgeHeightAt, ridgeHeights } from '../src/components/deck/deckCoast'
 import { BIRD_MAX, deckBirdFlock, deckBirdPose } from '../src/components/deck/deckBirds'
-import { SAILOR_POSES, SAILOR_STATIONS, sailorCount } from '../src/components/deck/deckCrew'
+import { sailorIdle, SAILOR_POSES, SAILOR_STATIONS, sailorCount } from '../src/components/deck/deckCrew'
 import { chartCourse, CHART_MAX_NM } from '../src/components/deck/deckChart'
 import { bearingDelta, FLAG_SEG_X, flagOffset, pennantYaw, windK } from '../src/components/deck/deckFlag'
 import {
@@ -9847,6 +9847,119 @@ console.log('\n== 天数口径守卫 ==')
   assert(handZ > -10.95 && handZ < -10.75, `手在轮盘平面上（z=${handZ.toFixed(2)}，轮在 −10.9）`)
   assert(distToHub < 0.72, `手落在轮盘半径内（到轮心 ${distToHub.toFixed(2)} < 0.72）`)
 }
+
+/*
+ * ---- 岗位小动作：三个人不能是蜡像，但也不能变成另一个人 ----
+ *
+ * 【守什么】小动作是**增量**，所以真正的风险不是"不像"，而是"加起来越界"：
+ *  · 舵手推轮时两臂必须同一个增量（不对称的手扶不住轮，e2e 也在守这条）；
+ *  · 弯腰清点的人直起腰之后**仍然前倾**（0.55−0.34=0.21）—— 站直了就不是这个岗位；
+ *  · 瞭望的人放下手臂之后**仍然举着**（−1.95+0.55=−1.40）—— 垂手就成了散步；
+ *  · 头不能从"仰着看"变成"埋进胸口"。
+ * 这四条都是算得出来的，不必盯着截图猜。
+ */
+{
+  const kinds = ['helm', 'hatch', 'bow'] as const
+  const PHASES = [0, 2.1, 4.3]
+  // ① 任何时刻都不越界、不出 NaN（扫一遍，只报最坏值 —— 不逐点刷断言）
+  {
+    let worst = 0
+    let worstAt = ''
+    let bad = ''
+    for (const k of kinds) {
+      for (const ph of PHASES) {
+        for (let t = 0; t <= 40; t += 0.1) {
+          const d = sailorIdle(k, t, ph)
+          for (const [name, v] of Object.entries(d)) {
+            if (!Number.isFinite(v)) bad = `${k} t=${t.toFixed(2)} ${name}`
+            const a = Math.abs(v)
+            if (a > worst) { worst = a; worstAt = `${k} t=${t.toFixed(2)} ${name}` }
+          }
+        }
+      }
+    }
+    assert(!bad, `小动作任何时刻都不出 NaN（${bad}）`)
+    assert(worst < 0.7, `小动作最大幅度 ${worst.toFixed(2)} rad < 0.7（${worstAt}）`)
+  }
+  // ② 舵手：两臂同增量（对称），推的方向是"更向前"，且幅度小（不是打太极）
+  {
+    let maxPush = 0
+    let symOk = true
+    let armWorst = -99
+    for (let t = 0; t <= 20; t += 0.02) {
+      const d = sailorIdle('helm', t, 0)
+      if (d.armLX !== d.armRX) symOk = false
+      maxPush = Math.max(maxPush, -d.armLX)
+      armWorst = Math.max(armWorst, SAILOR_POSES.helm.armRX + d.armRX)
+    }
+    assert(symOk, '舵手两臂增量完全相同（不对称的手扶不住轮）')
+    assert(armWorst < -1.2, `推轮最远时手仍在轮上（armX 最大 ${armWorst.toFixed(2)} < −1.2）`)
+    assert(maxPush > 0.05, `舵手真的推了一下（最大 ${maxPush.toFixed(2)} rad）`)
+    assert(maxPush <= 0.12, `推的幅度不超过 0.12 rad（${maxPush.toFixed(2)}）`)
+  }
+  // ③ 舱口：直起腰的幅度够大，但永远回不到"站直"
+  {
+    let minLean = 99
+    let maxStand = 0
+    let tiltWorst = -99
+    let dirOk = true
+    for (let t = 0; t <= 20; t += 0.02) {
+      const d = sailorIdle('hatch', t, 2.1)
+      if (d.lean > 0) dirOk = false
+      minLean = Math.min(minLean, SAILOR_POSES.hatch.lean + d.lean)
+      maxStand = Math.max(maxStand, -d.lean)
+      tiltWorst = Math.max(tiltWorst, SAILOR_POSES.hatch.headTilt + d.headTilt)
+    }
+    assert(dirOk, '舱口的人只会往直里动（不会趴得更低）')
+    assert(maxStand > 0.25, `真的直起腰了（最大 ${maxStand.toFixed(2)} rad）`)
+    assert(minLean > 0.15, `直起腰之后仍然前倾（最低 ${minLean.toFixed(2)} rad > 0.15）`)
+    assert(minLean < 0.3, `直起腰的低点 ${minLean.toFixed(2)} < 0.3（看得出在起伏）`)
+    assert(tiltWorst <= 0, `直起腰时头不会埋进胸口（${tiltWorst.toFixed(2)} rad ≤ 0）`)
+  }
+  // ④ 船首：放下的那只手仍然举着，另一只手一动不动
+  {
+    let maxDrop = 0
+    let armWorst = -99
+    let otherMoved = false
+    for (let t = 0; t <= 60; t += 0.02) {
+      const d = sailorIdle('bow', t, 4.3)
+      if (d.armLX !== 0) otherMoved = true
+      maxDrop = Math.max(maxDrop, d.armRX)
+      armWorst = Math.max(armWorst, SAILOR_POSES.bow.armRX + d.armRX)
+    }
+    assert(!otherMoved, '船首的另一只手不参与小动作')
+    assert(maxDrop > 0.4, `真的放下去了（最大 ${maxDrop.toFixed(2)} rad）`)
+    assert(armWorst <= -1.2, `放下之后仍然举着（最高 ${armWorst.toFixed(2)} rad ≤ −1.2）`)
+  }
+  // ⑤ 三人的节奏不同（同相位也不该同步动）、相位真的有用
+  for (const k of kinds) {
+    /*
+     * 相位判据不能只看某一个 t：包络在谷底是**恒 0**（"平时不动"就是要把两个
+     * 相位都压在 0），单点比较会撞上 0 === 0 的假红。要看一整段时间里是否存在
+     * 差别。
+     */
+    let phaseSpread = 0
+    for (let t = 0; t <= 20; t += 0.05) {
+      phaseSpread = Math.max(phaseSpread, Math.abs(sailorIdle(k, t, 0).lean - sailorIdle(k, t, 2.1).lean))
+    }
+    assert(phaseSpread > 1e-3, `${k} 的小动作受相位影响（三人不会一起动，最大差 ${phaseSpread.toFixed(3)}）`)
+    const nan = sailorIdle(k, Number.NaN, Number.NaN)
+    for (const v of Object.values(nan)) assert(Number.isFinite(v), `${k} 的 NaN 时间不产生 NaN`)
+  }
+  /*
+   * ⑥ 源码守卫：`headTilt` 必须**真的被应用**。
+   * 这张表在上一轮就写好了、注释也写了"弯腰之后再低头脸会埋进胸口"，但当时
+   * 代码里没有任何人读这个数 —— 数据躺在表里、头一动不动。这类"注释说了、代码
+   * 没做"的错，单测不守就永远发现不了（截图上只是"那个人有点僵"）。
+   */
+  {
+    const ship = readFileSync(join(process.cwd(), 'src', 'components', 'deck', 'shipModel.ts'), 'utf8')
+    assert(/head\.rotation\.x = pose\.headTilt/.test(ship), '头的俯仰真的被写进场景（headTilt 不再是一张死表）')
+    assert(/headGroup\.add\(hat\)/.test(ship), '帽子挂在头组下面（低头时帽子跟着走）')
+    assert(/sailorIdle\(st\.kind, t, st\.phase\)/.test(ship), '每帧都在调小动作（不是只在建模型时调一次）')
+  }
+}
+
 
 console.log(`\n最终结果：${passed} 通过 / ${failed} 失败`)
 if (failed > 0) process.exit(1)

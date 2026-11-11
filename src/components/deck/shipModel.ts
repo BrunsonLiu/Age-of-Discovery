@@ -6,7 +6,7 @@ import {
   shipDeckAt, shipDeckHalfWidthAt, shipHalfWidthAt, shipKeelAt,
 } from './shipShape'
 import { buildHullGeo } from './shipHull'
-import { SAILOR_POSES, SAILOR_STATIONS } from './deckCrew'
+import { sailorIdle, SAILOR_POSES, SAILOR_STATIONS } from './deckCrew'
 import { chartCourse } from './deckChart'
 import { WATERLINE_Y_M, WAKE_SEGMENTS } from './deckWake'
 import { bearingDelta, FLAG_BASE_H_M, FLAG_LEN_M, FLAG_SEG_X, FLAG_SEG_Y, flagOffset, pennantYaw, windK } from './deckFlag'
@@ -1025,6 +1025,10 @@ export function createDeckShip(): DeckShip {
 
   /** 上身组（绕髋部前倾）：呼吸摇晃也要动它 */
   const sailorUppers: THREE.Group[] = []
+  /** 每人 [左臂, 右臂]（小动作改它们的 rotation.x） */
+  const sailorArms: THREE.Mesh[][] = []
+  /** 每人的头组（头 + 帽子，小动作改它的俯仰） */
+  const sailorHeads: THREE.Group[] = []
   const sailors: THREE.Group[] = []
   for (const st of SAILOR_STATIONS) {
     const pose = SAILOR_POSES[st.kind]
@@ -1060,9 +1064,9 @@ export function createDeckShip(): DeckShip {
     belt.position.set(0, 0.06 + dy, 0)
     upper.add(belt)
     /*
-     * 手臂：按岗位给角度（`SAILOR_POSES`）。几何已经把肩放在原点，
-     * 所以 armX 是"绕肩向前抬"、armZ 是"向外张"。
+     * 手臂与头都要留引用：小动作（`sailorIdle`）每帧改的是**它们的角度**。
      */
+    const arms: THREE.Mesh[] = []
     for (const [sx, ax, az] of [
       [-1, pose.armLX, pose.armLZ],
       [1, pose.armRX, pose.armRZ],
@@ -1072,19 +1076,39 @@ export function createDeckShip(): DeckShip {
       arm.rotation.x = ax
       arm.rotation.z = az
       upper.add(arm)
+      arms.push(arm)
     }
     // 脖子：一小截，头才不会直接坐在肩上
     const neck = new THREE.Mesh(neckGeo, skinMat)
     neck.position.set(0, 0.64 + dy, 0)
     upper.add(neck)
+    /*
+     * 头 + 帽子放进一个 head 组。
+     *
+     * 【为什么必须成组】`SAILOR_POSES.headTilt` 一直在表里躺着，但**从来没被应用**
+     * （注释写着"弯腰之后再低头脸会埋进胸口"，代码里却没人读这个数）——
+     * 这一轮补上。帽子必须跟着头转，否则"头低了帽子还悬在空中"，
+     * 所以帽子是 head 组的子节点，而不是 upper 的子节点。
+     */
+    const headGroup = new THREE.Group()
+    /*
+     * 名字**不能以 `ship-sailor-` 开头**：e2e 用 `/^ship-sailor-/` 数甲板上站着
+     * 几个人（人数必须等于 `sailorCount(crew)`），头组一多算，那条判据就从
+     * "2 个"变成"5 个"—— 这是加头组时当场踩到的假红。
+     */
+    headGroup.name = `ship-head-${st.kind}`
+    headGroup.position.set(0, 0.74 + dy, 0.01)
+    headGroup.rotation.x = pose.headTilt
+    upper.add(headGroup)
     const head = new THREE.Mesh(headGeo, skinMat)
-    head.position.set(0, 0.74 + dy, 0.01)
-    upper.add(head)
+    headGroup.add(head)
     // 帽子：一顶矮圆帽，从远处也能认出"这是个人"
     const hat = new THREE.Mesh(hatGeo, hatMat)
-    hat.position.set(0, 0.84 + dy, 0.01)
-    upper.add(hat)
+    hat.position.set(0, 0.10, 0)
+    headGroup.add(hat)
     sailorUppers.push(upper)
+    sailorArms.push(arms)
+    sailorHeads.push(headGroup)
     /*
      * 水手也参与"能不能点"？**不参与**。甲板上可点的三件东西（舱口 / 舵轮 / 瞭望台）
      * 各自对应一组真实数字；点一个人却只能说一句废话，那会稀释另外三个的意义。
@@ -2149,11 +2173,22 @@ export function createDeckShip(): DeckShip {
         g.rotation.y = st.yaw + Math.sin(t * 0.45 + st.phase) * 0.07
         g.position.y = shipDeckAt(st.z) + Math.sin(t * 0.95 + st.phase) * 0.01
         /*
-         * 呼吸式的上身起伏：**叠加在岗位姿态之上**（不是覆盖它）——
-         * 弯腰清点的人也在轻轻起伏，比"上半身一动不动"活得多。
+         * 呼吸式的上身起伏 + **岗位小动作**：两者都是"叠加在姿势上"的增量。
+         *  · 呼吸：振幅 1.8°，周期约 7 秒，三人相位不同；
+         *  · 小动作：舵手推轮 / 舱口的人直起腰 / 瞭望的人放下手（见 `sailorIdle`）。
+         * 增量永远不会把姿势翻过去（小动作幅度都小于对应的姿势角），所以"弯腰的人"
+         * 不会突然变成后仰的人 —— 这是纯函数单测守的。
          */
         const up = sailorUppers[i]
-        if (up) up.rotation.x = pose.lean + Math.sin(t * 0.9 + st.phase) * 0.018
+        const idle = sailorIdle(st.kind, t, st.phase)
+        if (up) up.rotation.x = pose.lean + idle.lean + Math.sin(t * 0.9 + st.phase) * 0.018
+        const arms = sailorArms[i]
+        if (arms) {
+          arms[0].rotation.x = pose.armLX + idle.armLX
+          arms[1].rotation.x = pose.armRX + idle.armRX
+        }
+        const head = sailorHeads[i]
+        if (head) head.rotation.x = pose.headTilt + idle.headTilt
       }
 
       /*

@@ -108,3 +108,67 @@ export const SAILOR_POSES: Record<SailorKind, SailorPose> = {
    */
   bow: { lean: 0.04, sink: 0, armLX: -0.08, armRX: -1.95, armLZ: 0.06, armRZ: 0.32, headTilt: -0.14 },
 }
+
+/**
+ * 岗位上的**周期性小动作**（纯函数，可单测）。
+ *
+ * 【为什么需要】上一轮三个人有了站姿，但站姿是**静止的**：截图看不出问题，
+ * 盯着看十秒就知道那是三尊蜡像 —— 人不会一动不动。真实的甲板上：
+ *  · 舵手隔几秒**推一下轮**（船偏了一点，修回来；同时上身压一下）；
+ *  · 清点货的人**直起腰**喘口气，再弯下去继续；
+ *  · 瞭望的人举着手看很久，累了**放下手臂**歇一会，再举起来。
+ *
+ * 【为什么是"叠加量"而不是"第二个姿势表"】岗位姿势（`SAILOR_POSES`）表达身份，
+ * 小动作表达"活着"。两套表会打架（改一边忘一边），所以这里只返回**增量**，
+ * 加到姿势上 —— 于是"弯腰清点的人直起腰"永远是 0.55 + 负增量，不可能算出个
+ * 后仰的人。
+ *
+ * 【包络用 `max(0,sin)^n`】想要"大部分时间保持原样、偶尔动一下"的节奏，
+ * 正弦本身是匀速来回（像节拍器）；取幂之后峰值变窄、谷底变平，才像"隔几秒动一次"。
+ * 幂次越大越"尖"（舵手推一下就回），越小越"缓"（瞭望的人慢慢放下手）。
+ */
+export interface SailorIdle {
+  /** 叠加到上身前倾（负 = 更直；舵手推轮时是正 = 更压） */
+  lean: number
+  /** 叠加到手臂前后摆（负 = 更向前抬） */
+  armLX: number
+  armRX: number
+  /** 叠加到头的俯仰（正 = 更低） */
+  headTilt: number
+}
+
+/** 周期性包络：0..1，谷底长时间为 0（"平时不动"），峰窄 */
+const pulse = (t: number, phase: number, rate: number, sharpness: number) => {
+  const tt = Number.isFinite(t) ? t : 0
+  const pp = Number.isFinite(phase) ? phase : 0
+  return Math.pow(Math.max(0, Math.sin(tt * rate + pp)), sharpness)
+}
+
+export function sailorIdle(kind: SailorKind, t: number, phase: number): SailorIdle {
+  if (kind === 'helm') {
+    /*
+     * 舵手修航向：约 7.5 秒一次。两臂**给同一个增量** —— 真实是双手在轮上一起推，
+     * 而且 e2e 有一条"两臂对称"的硬断言（不对称的手扶不住轮盘）。
+     * 幅度 0.10 rad（≈6°）：够看出"手在动"，又不至于读成"在打太极"。
+     */
+    const k = pulse(t, phase * 0.7, 0.84, 6)
+    return { lean: 0.05 * k, armLX: -0.10 * k, armRX: -0.10 * k, headTilt: 0.03 * k }
+  }
+  if (kind === 'hatch') {
+    /*
+     * 弯腰清点的人直起腰：约 5 秒一轮，峰值时上身直起 0.34 rad。
+     * 0.55 − 0.34 = 0.21：**仍然前倾**（他从没站直过），所以"弯腰看货"这个身份
+     * 不会因为小动作而消失；但看得出他在起伏。
+     * 头跟着抬（+0.15 把 −0.3 的仰视收回来一点），否则直起腰还把脸埋着。
+     */
+    const k = pulse(t, phase, 1.26, 3)
+    return { lean: -0.34 * k, armLX: 0.16 * k, armRX: 0.16 * k, headTilt: 0.15 * k }
+  }
+  /*
+   * 瞭望的人：约 20 秒一轮的"举手—放下"。
+   * 放下时 armRX 从 −1.95 收到 −1.40（仍举着，只是放低一档），**不会垂下来** ——
+   * 垂手就不是在瞭望了，那是另一个岗位。
+   */
+  const k = pulse(t, phase, 0.31, 1)
+  return { lean: -0.02 * k, armLX: 0, armRX: 0.55 * k, headTilt: 0.04 * k }
+}
