@@ -13,6 +13,7 @@ import SeaRelics from './SeaRelics'
 import { SeaPhenomena } from './SeaPhenomena'
 import MiniMap from './MiniMap'
 import { ScaleBar } from './ScaleBar'
+import { VoyageRings } from './VoyageRings'
 import { buildMajorLand, featureArea } from '@/utils/terrainDecor'
 import { RouteLine } from './RouteLine'
 import { ShipAnimation } from './ShipAnimation'
@@ -608,6 +609,8 @@ export default function MapView() {
               <MiniMap land={geoData.land} />
               {/* 右下角比例尺：长度从当前投影量出来（见 ScaleBar 的注释） */}
               <ScaleBar />
+              {/* 航程圈（底栏开关）：半径 = 每日航程 × 天数，与出航计划同一个函数 */}
+              <VoyageRings />
               <MapClickHandler />
               <OceanLabels />
               <RouteLine />

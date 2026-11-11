@@ -52,6 +52,9 @@ import { clampToDeck, deckEyeY, deckWalkHalfWidth, isOnDeck, stepWalk, WALK_RADI
 import { BOAT, BOAT_ARC, BOAT_STATIONS, boatHull, boatKeelLift, boatObstacle, boatRailGap } from '../src/components/deck/deckBoat'
 import { PEN, PEN_SPOTS, penLivestock, penObstacle } from '../src/components/deck/deckPen'
 import { pickScale, SCALE_MAX_PX, SCALE_MIN_PX, SCALE_STEPS, scaleHint } from '../src/utils/scaleBar'
+import {
+  circleLatLngs, MIN_RING_NM, pickRingDays, RING_DAY_CANDIDATES, RING_MAX_PX, RING_MIN_PX, RING_SEGMENTS, ringRadii,
+} from '../src/utils/voyageRings'
 import { buildHullGeo } from '../src/components/deck/shipHull'
 import {
   HULL_ARC, HULL_BULWARK, SHIP_DRAFT_LIFT, SHIP_HALF_LENGTH, SHIP_SCALE,
@@ -10246,10 +10249,85 @@ console.log('\n== 天数口径守卫 ==')
 
   // 源码守卫：比例尺必须真的量投影，而且不吃点击
   const bar = readFileSync(join(process.cwd(), 'src', 'components', 'map', 'ScaleBar.tsx'), 'utf8')
-  assert(/latLngToContainerPoint/.test(bar), '比例尺量的是容器像素（不是写死的长度）')
-  assert(/haversineNm/.test(bar), '海里数走 haversineNm（与航程同一个来源）')
+  assert(/pxPerNmAt\(map\)/.test(bar), '比例尺用共享的 pxPerNmAt（与航程圈同一份比例）')
+  const mapScale = readFileSync(join(process.cwd(), 'src', 'utils', 'mapScale.ts'), 'utf8')
+  assert(/latLngToContainerPoint/.test(mapScale), '比例是量容器像素得来的（不是写死的长度）')
+  assert(/haversineNm/.test(mapScale), '海里数走 haversineNm（与航程同一个来源）')
   assert(/pointer-events-none/.test(bar), '比例尺不吃点击')
   assert(/map\.on\('zoomend'/.test(bar), '缩放结束后重算')
+}
+
+/*
+ * ---- 航程圈：圈上每一点到本船的距离必须真的等于半径 ----
+ *
+ * 【守什么】航程圈唯一的用途就是"量够不够得着"。它有两种错法都致命：
+ *  ① 用平面近似算圆 → 高纬度圈被压扁，圈上距离不等于半径（玩家按它判断会翻车）；
+ *  ② 半径不来自 `dailyDistanceNm` → 圈和出航计划面板各说一套。
+ * 这里逐点用 haversine 量半径，并守住"半径 = 每日航程 × 天数"这条式子。
+ */
+{
+  // 60°N 处画一个 600 海里的圈：地球上任意纬度、任意方位，每点到圆心的距离都必须 = 600
+  for (const [lat, lng] of [[0, 0], [60, -9], [-35, 120], [78, 15]] as const) {
+    const pts = circleLatLngs(lat, lng, 600)
+    assert(pts.length === RING_SEGMENTS, `${lat}°N 的圈有 ${RING_SEGMENTS} 段（实测 ${pts.length}）`)
+    let worst = 0
+    for (const p of pts) worst = Math.max(worst, Math.abs(haversineNm(lat, lng, p[0], p[1]) - 600))
+    assert(worst < 1.2, `(${lat}, ${lng}) 的圈半径误差 ${worst.toFixed(2)} 海里 < 1.2（球面正算）`)
+  }
+  // 经度归一：跨 180° 经线时不能出现 181° 这种值
+  const across = circleLatLngs(0, 179.5, 300)
+  assert(across.every(([, lon]) => lon >= -180 && lon <= 180), '跨 180° 经线时经度已归一')
+  // 非法输入不画
+  assert(circleLatLngs(Number.NaN, 0, 100).length === 0, 'NaN 纬度 → 不画')
+  assert(circleLatLngs(0, 0, 0).length === 0, '半径 0 → 不画')
+  assert(circleLatLngs(0, 0, -5).length === 0, '负半径 → 不画')
+
+  // 半径 = 每日航程 × 天数；每日航程不可用时不画
+  assert(ringRadii(0).length === 0 && ringRadii(Number.NaN).length === 0, '每日航程无效 → 不画圈')
+  const rings = ringRadii(60)
+  assert(rings.length === RING_DAY_CANDIDATES.length, `60 海里/天 → 每个候选天数一圈（${rings.length}）`)
+  for (const r of rings) {
+    assert(Math.abs(r.nm - 60 * r.days) < 1e-9, `${r.days} 天圈半径 = 60 × ${r.days} = ${r.nm} 海里`)
+  }
+  /*
+   * 自适应天数：圈必须落在 70~320px 之间 —— 这是"看得见"的判据。
+   * 固定 5/10 天时，默认缩放（约 0.45 px/海里）下 10 天圈半径 860px，整圈在画面外。
+   */
+  {
+    const cases: [number, number][] = [[192, 0.45], [192, 1.2], [192, 3], [60, 0.45], [400, 0.2]]
+    for (const [nmPerDay, ppm] of cases) {
+      const days = pickRingDays(nmPerDay, ppm)
+      assert(days.length <= 2, `${nmPerDay} 海里/天 @ ${ppm}px → 最多两圈（${days.length}）`)
+      if (days.length === 0) {
+        // 连 1 天圈都超出上限：宁可一圈不画，也不画一个整圈跑到画面外的圈
+        assert(nmPerDay * 1 * ppm > RING_MAX_PX,
+          `不画圈时确实连 1 天圈都超过 ${RING_MAX_PX}px（${(nmPerDay * ppm).toFixed(0)}px）`)
+      }
+      for (const d of days) {
+        const px = nmPerDay * d * ppm
+        assert(px >= RING_MIN_PX - 1e-9 && px <= RING_MAX_PX + 1e-9,
+          `${d} 天圈在屏幕上 ${px.toFixed(0)}px，落在 ${RING_MIN_PX}..${RING_MAX_PX}`)
+      }
+      // 升序，且两圈之间不能挤在一起（否则读成双线）
+      if (days.length === 2) {
+        assert(days[0] < days[1], `${days[0]} 天在内圈、${days[1]} 天在外圈`)
+        assert(days[0] <= days[1] * 0.55 + 1e-9, `两圈拉开距离（${days[0]} vs ${days[1]}）`)
+      }
+    }
+    assert(pickRingDays(0, 0.45).length === 0 && pickRingDays(192, 0).length === 0, '参数无效 → 不画圈')
+  }
+
+  // 太小的圈不画（半径 ≤ MIN_RING_NM）
+  const tiny = ringRadii(1) // 1 海里/天：5 天圈只有 5 海里，10 天圈 10 海里
+  assert(tiny.every((r) => r.nm > MIN_RING_NM), `半径不大于 ${MIN_RING_NM} 海里的圈不画`)
+  assert(!tiny.some((r) => r.days === 5), '1 海里/天时 5 天圈（5 海里）被丢掉')
+  assert(tiny.some((r) => r.days === 10), '1 海里/天时 10 天圈（10 海里）仍然画')
+
+  // 源码守卫：半径必须来自 dailyDistanceNm（与出航计划同一个函数）
+  const ring = readFileSync(join(process.cwd(), 'src', 'components', 'map', 'VoyageRings.tsx'), 'utf8')
+  assert(/dailyDistanceNm\(/.test(ring), '圈半径来自 dailyDistanceNm')
+  assert(/STANCES\.steady\.speedMul/.test(ring), '方针口径与出航计划一致（按部就班）')
+  assert(/interactive: false/.test(ring), '圈不吃点击')
 }
 
 console.log(`\n最终结果：${passed} 通过 / ${failed} 失败`)

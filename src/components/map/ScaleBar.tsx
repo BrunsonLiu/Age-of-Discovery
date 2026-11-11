@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useMap } from 'react-leaflet'
-import { haversineNm } from '@/utils/navigation'
+import { pxPerNmAt } from '@/utils/mapScale'
 import { pickScale, scaleHint } from '@/utils/scaleBar'
 
 /**
@@ -24,15 +24,8 @@ function ScaleBarInner() {
 
   useEffect(() => {
     const update = () => {
-      const c = map.getCenter()
-      // 沿经线取 ±0.5°（= 1 度纬度 ≈ 60 海里），纬度极端处夹一下
-      const lat1 = Math.max(-85, c.lat - 0.5)
-      const lat2 = Math.min(85, c.lat + 0.5)
-      const a = map.latLngToContainerPoint([lat1, c.lng])
-      const b = map.latLngToContainerPoint([lat2, c.lng])
-      const px = a.distanceTo(b)
-      const nm = haversineNm(lat1, c.lng, lat2, c.lng)
-      setBar(pickScale(nm > 0 ? px / nm : 0))
+      // 比例 = 沿经线量 1 度纬度（见 utils/mapScale，与航程圈共用同一份）
+      setBar(pickScale(pxPerNmAt(map)))
     }
     update()
     map.on('zoomend', update)

@@ -18,6 +18,8 @@ interface MapState {
   showWindOverlay: boolean
   showCurrentOverlay: boolean
   showPirateZones: boolean
+  /** 航程圈（以本船为中心、5/10 天等距圈）：默认关，免得开局就糊住海图 */
+  showVoyageRings: boolean
   selectedPortId: number | null
   /**
    * 地图渲染模式：'2d' = Leaflet 矢量图（默认），'3d' = three.js 立体海图。
@@ -76,6 +78,7 @@ interface MapState {
   toggleWindOverlay: () => void
   toggleCurrentOverlay: () => void
   togglePirateZones: () => void
+  toggleVoyageRings: () => void
   setSelectedPortId: (id: number | null) => void
   setRenderMode: (mode: '2d' | '3d') => void
   setLandDataReady: (ready: boolean) => void
@@ -100,6 +103,7 @@ export const useMapStore = create<MapState>()(
       showWindOverlay: false,
       showCurrentOverlay: true,
       showPirateZones: true,
+      showVoyageRings: false,
       selectedPortId: null,
       renderMode: '2d',
       deckView: false,
@@ -112,6 +116,7 @@ export const useMapStore = create<MapState>()(
       toggleWindOverlay: () => set((s) => ({ showWindOverlay: !s.showWindOverlay })),
       toggleCurrentOverlay: () => set((s) => ({ showCurrentOverlay: !s.showCurrentOverlay })),
       togglePirateZones: () => set((s) => ({ showPirateZones: !s.showPirateZones })),
+      toggleVoyageRings: () => set((s) => ({ showVoyageRings: !s.showVoyageRings })),
       setSelectedPortId: (id) => set({ selectedPortId: id }),
       setRenderMode: (mode) => set({ renderMode: mode }),
       setDeckView: (v) => set({ deckView: v }),
@@ -126,6 +131,7 @@ export const useMapStore = create<MapState>()(
         showWindOverlay: state.showWindOverlay,
         showCurrentOverlay: state.showCurrentOverlay,
         showPirateZones: state.showPirateZones,
+        showVoyageRings: state.showVoyageRings,
       }),
     }
   )

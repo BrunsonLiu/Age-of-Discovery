@@ -68,9 +68,11 @@ export default function BottomBar() {
   const showWindOverlay = useMapStore((s) => s.showWindOverlay)
   const showCurrentOverlay = useMapStore((s) => s.showCurrentOverlay)
   const showPirateZones = useMapStore((s) => s.showPirateZones)
+  const showVoyageRings = useMapStore((s) => s.showVoyageRings)
   const toggleWindOverlay = useMapStore((s) => s.toggleWindOverlay)
   const toggleCurrentOverlay = useMapStore((s) => s.toggleCurrentOverlay)
   const togglePirateZones = useMapStore((s) => s.togglePirateZones)
+  const toggleVoyageRings = useMapStore((s) => s.toggleVoyageRings)
 
   const flagship = fleet.ships.find(sh => sh.id === fleet.flagshipId) ?? fleet.ships[0]
   /*
@@ -369,6 +371,23 @@ export default function BottomBar() {
               换成骷髅：形状辨识度高（两个眼窝 + 下颌），语义直接。
             */}
             <Skull size={15} aria-hidden="true" />
+          </button>
+          <button
+            onClick={toggleVoyageRings}
+            className={`p-1.5 rounded press transition-all ${
+              showVoyageRings ? 'bg-gold-700/40 text-gold-200' : 'text-gold-400 hover:text-gold-200'
+            }`}
+            title="航程圈（约 5 / 10 天能到多远）"
+            aria-label="航程圈"
+            aria-pressed={showVoyageRings}
+            data-testid="toggle-voyage-rings"
+          >
+            {/* 同心圆：与外圈开关的"风/洋流/骷髅"形状区分得开 */}
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+              <circle cx="12" cy="12" r="3" />
+              <circle cx="12" cy="12" r="7.5" strokeDasharray="3 3" />
+              <circle cx="12" cy="12" r="10.5" strokeDasharray="2 4" opacity="0.6" />
+            </svg>
           </button>
           <div className="hidden md:block w-px h-4 bg-gold-600/45" />
           <SoundToggle />
