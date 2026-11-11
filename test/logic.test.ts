@@ -64,7 +64,11 @@ import {
   BRACE_SEGMENTS, braceYaw, rotateAboutYaw, SAIL_TAPER, sailClew,
   sheetSag, sheetSway, SHEET_SEGMENTS, writeSheetPoints,
 } from '../src/components/deck/deckRigging'
-import { bowWaveLength, bowWaveSpread, KELVIN_TAN, kelvinStrength, wakeStrength } from '../src/components/deck/deckWake'
+import {
+  BOWSPRIT_BASE, BOWSPRIT_TIP, bowspritYAt, FIGUREHEAD, FIGUREHEAD_CREST, FIGUREHEAD_SPINE,
+  figureheadPoints, figureheadTip, STEM_Z,
+} from '../src/components/deck/deckBow'
+import { bowWaveLength, bowWaveSpread, KELVIN_TAN, kelvinStrength, wakeStrength, WATERLINE_Y_M } from '../src/components/deck/deckWake'
 import { CABIN_BOUNDS, CABIN_ENTER, CABIN_EXIT, cabinEyeY, cabinFloorY, clampToCabin, isInCabin, stepInCabin } from '../src/components/deck/deckCabin'
 import { clampElevation, EL_MAX, EL_MIN, EL_TIGHTEN_FROM, minElevationAt } from '../src/components/map3d/cameraLimits'
 import {
@@ -9960,6 +9964,57 @@ console.log('\n== 天数口径守卫 ==')
   }
 }
 
+
+/*
+ * ---- 船首：斜桅只有一个端点，船首像不能插进斜桅也不能没入水里 ----
+ *
+ * 【守什么】斜桅端点在 `shipModel` 里原来算了**两遍**（实体用 base+dir·len、
+ * 索具用 shipDeckAt(17)+6.1）。实测两处**碰巧重合**（都是 y=7.96，方向里少算的
+ * 0.95 与底端多算的 0.95 抵消），所以这不是修一个看得见的错，而是拆掉一颗
+ * 定时炸弹：改任何一个数，前支索就会系在杆头之外的空气里，而远景里那只是
+ * 几根细线。这一轮把端点收进 `deckBow`，这里守三件事：
+ *  ① 斜桅轴线的函数在端点处自洽（同一个来源才可能）；
+ *  ② 船首像的每个球都在水线之上、斜桅之下（不然就是"插进桅里/泡在水里"）；
+ *  ③ 源码里不许再出现斜桅端点的字面量（防止第三次分叉）。
+ */
+{
+  assert(BOWSPRIT_TIP.y > BOWSPRIT_BASE.y + 4, `斜桅向上抬 ${(BOWSPRIT_TIP.y - BOWSPRIT_BASE.y).toFixed(2)} 米`)
+  assert(BOWSPRIT_TIP.z > BOWSPRIT_BASE.z, '斜桅朝船首前方伸出')
+  assert(Math.abs(bowspritYAt(BOWSPRIT_BASE.z) - BOWSPRIT_BASE.y) < 1e-9, '轴线函数在底端等于底端')
+  assert(Math.abs(bowspritYAt(BOWSPRIT_TIP.z) - BOWSPRIT_TIP.y) < 1e-9, '轴线函数在端头等于端头')
+
+  const pts = figureheadPoints()
+  assert(pts.length === FIGUREHEAD_SPINE.length, '脊柱点数与数据表一致')
+  for (let i = 1; i < pts.length; i++) {
+    assert(pts[i].z > pts[i - 1].z, `第 ${i} 段更靠前（z ${pts[i - 1].z.toFixed(2)} → ${pts[i].z.toFixed(2)}）`)
+    assert(pts[i].r < pts[i - 1].r, `第 ${i} 段更细（r ${pts[i - 1].r} → ${pts[i].r}）`)
+  }
+  for (const p of pts) {
+    assert(p.y - p.r > WATERLINE_Y_M + 0.8,
+      `船首像在水线之上（y=${p.y.toFixed(2)} − r ${p.r} > 水线 ${WATERLINE_Y_M}）`)
+    assert(p.y + p.r < bowspritYAt(p.z) - 0.05,
+      `船首像不捅进斜桅（顶 ${(p.y + p.r).toFixed(2)} < 斜桅 ${bowspritYAt(p.z).toFixed(2)}）`)
+  }
+  const tip = figureheadTip()
+  assert(tip.z > STEM_Z + 1, `尾尖伸出船首柱 ${(tip.z - STEM_Z).toFixed(2)} 米（剪影要探出去才看得见）`)
+  assert(tip.z < BOWSPRIT_TIP.z - 4, '船首像不会伸到斜桅端头去（那里是系索的地方）')
+  /*
+   * 头冠必须一起判：它建在脊柱之外，是整个船首像**最高**的部件。
+   * 第一版就是它捅进了斜桅（顶 3.85 vs 斜桅轴线 3.80）—— 脊柱全部合格，
+   * 只有这个尖越界，所以它必须有自己的判据。
+   */
+  const crest = pts[0]
+  const crestTop = crest.y + FIGUREHEAD_CREST.lift + FIGUREHEAD_CREST.height / 2
+  assert(crestTop < bowspritYAt(crest.z) - 0.06,
+    `头冠不捅进斜桅（顶 ${crestTop.toFixed(2)} < 斜桅 ${bowspritYAt(crest.z).toFixed(2)}）`)
+  assert(FIGUREHEAD.pitch > 0 && FIGUREHEAD.pitch < 0.6, `前倾 ${FIGUREHEAD.pitch} rad 在 0..0.6`)
+
+  // 源码守卫：端点只许在 deckBow 里出现
+  const ship = readFileSync(join(process.cwd(), 'src', 'components', 'deck', 'shipModel.ts'), 'utf8')
+  assert(!/26\.2/.test(ship), 'shipModel 里不再有斜桅端点的字面量（端点只许来自 deckBow）')
+  assert(/import \{[\s\S]{0,200}BOWSPRIT_TIP/.test(ship), 'shipModel 从 deckBow 取端点')
+  assert(/ship-figurehead/.test(ship) && /ship-stem/.test(ship), '船首柱与船首像真的建出来了')
+}
 
 console.log(`\n最终结果：${passed} 通过 / ${failed} 失败`)
 if (failed > 0) process.exit(1)

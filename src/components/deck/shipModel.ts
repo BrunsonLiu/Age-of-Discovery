@@ -6,6 +6,9 @@ import {
   shipDeckAt, shipDeckHalfWidthAt, shipHalfWidthAt, shipKeelAt,
 } from './shipShape'
 import { buildHullGeo } from './shipHull'
+import {
+  BOWSPRIT_BASE, BOWSPRIT_CAP_INSET, BOWSPRIT_TIP, FIGUREHEAD_CREST, figureheadPoints, STEM_Z, stemTopY,
+} from './deckBow'
 import { sailorIdle, SAILOR_POSES, SAILOR_STATIONS } from './deckCrew'
 import { chartCourse } from './deckChart'
 import { WATERLINE_Y_M, WAKE_SEGMENTS } from './deckWake'
@@ -1976,28 +1979,112 @@ export function createDeckShip(): DeckShip {
    * 一眼就假（而且它占的正是船最显眼的剪影位置）。斜桅是一根从船首斜插出去的
    * 锥形木杆，前桅的支索就绑在它上面。
    */
-  const bowBase = new V(0, shipDeckAt(17) + 0.95, 15.8)
+  const bowBase = new V(0, BOWSPRIT_BASE.y, BOWSPRIT_BASE.z)
+  const bowTipV = new V(0, BOWSPRIT_TIP.y, BOWSPRIT_TIP.z)
+  const spritDir = bowTipV.clone().sub(bowBase)
+  const spritLen = spritDir.length()
+  spritDir.normalize()
   {
-    const dir = new V(0, 6.1, 26.2).sub(new V(0, 0.95, 15.8)).normalize()
-    const len = new V(0, 6.1, 26.2).distanceTo(new V(0, 0.95, 15.8))
-    const sprit = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.3, len, 8), mastMat)
+    const sprit = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.3, spritLen, 8), mastMat)
     sprit.name = 'ship-bowsprit'
-    sprit.position.copy(bowBase).addScaledVector(dir, len / 2)
-    sprit.quaternion.setFromUnitVectors(new V(0, 1, 0), dir)
+    sprit.position.copy(bowBase).addScaledVector(spritDir, spritLen / 2)
+    sprit.quaternion.setFromUnitVectors(new V(0, 1, 0), spritDir)
     group.add(sprit)
     // 捆绑环（gammoning）：斜桅穿过船首处的两三道绳圈
     for (let i = 0; i < 3; i++) {
       const ring = new THREE.Mesh(new THREE.TorusGeometry(0.26, 0.045, 5, 12), ironMat)
-      ring.position.copy(bowBase).addScaledVector(dir, 0.5 + i * 0.55)
+      ring.position.copy(bowBase).addScaledVector(spritDir, 0.5 + i * 0.55)
       ring.quaternion.copy(sprit.quaternion)
       ring.rotateX(Math.PI / 2)
       group.add(ring)
     }
     // 斜桅端头的帽
     const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.13, 0.34, 8), brassMat)
-    cap.position.copy(bowBase).addScaledVector(dir, len - 0.25)
+    cap.name = 'ship-bowsprit-cap'
+    cap.position.copy(bowBase).addScaledVector(spritDir, spritLen - BOWSPRIT_CAP_INSET)
     cap.quaternion.copy(sprit.quaternion)
     group.add(cap)
+  }
+
+  /*
+   * ---------------- 船首柱（stem post）+ 船首像（figurehead） ----------------
+   *
+   * 【为什么值得做】船的**剪影**在远处只有三样东西认得出：桅杆的高度、帆的形状、
+   * 船首前端那道曲线。前两样早就有了，而船首原本是"放样收成一条边"——从侧面看
+   * 是一条刀口，从正面看什么都没有。船首柱把船体前缘收成一根有厚度的木柱，
+   * 船首像再从柱顶伸出去，于是"这是哪条船"在最远处也能认出来。
+   *
+   * 【为什么船首像在船首柱顶上而不是挂在船舷上】真实帆船的船首像（figurehead）
+   * 是船首柱的**延伸**：它顺着柱子的曲度往前下方伸，让剪影连续。挂高了读作
+   * "船头站了个人"，挂低了会被船首浪盖住。
+   *
+   * 形状全在 `deckBow` 的 `FIGUREHEAD_SPINE` 里（纯数据、可单测）：脊柱上摆一串
+   * 收细的球，加尾鳍与头冠，镀金 —— 这个尺度上"读成一个人/一只海兽"靠的是
+   * **金灿灿的一条曲线**，不是五官。
+   */
+  {
+    const stem = new THREE.Mesh(new THREE.BoxGeometry(0.34, 1.62, 0.5), woodDark)
+    stem.name = 'ship-stem'
+    // 柱子从甲板下方一直顶到船首像的挂点（中间不许有缝，否则像"两个零件"）
+    stem.position.set(0, stemTopY() - 0.82, STEM_Z)
+    stem.rotation.x = -0.18
+    group.add(stem)
+    // 柱头的铜箍：柱顶到船首像之间要有"接上去"的东西
+    const stemCap = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.24, 0.3, 8), brassMat)
+    stemCap.position.set(0, stemTopY() - 0.12, STEM_Z - 0.05)
+    group.add(stemCap)
+    /*
+     * 船首像的托架（cheek）：两根短梁从柱顶斜下来托住像的根部。
+     * 【为什么不叫"头栏"、也不拉到舷侧】第一版照着真实帆船的 head rail 从船首柱
+     * 一路拉到舷侧外沿 —— 结果那根梁横在甲板上方 0.3~0.6 米处，从甲板看就是
+     * "一根横杆挡在走道中间"（实测两轮截图都是这样）。原因是**这条船的船首没有
+     * 可以挂靠的"头部结构"**：船体放样在 z=18 收成一条边，舷墙内侧就是甲板边，
+     * 任何连到舷侧的梁都必然从甲板上方穿过。所以只保留贴着柱子的两根短托架，
+     * 它们的作用是"让像不是凭空插上去的"，不需要伸出去。
+     */
+    for (const sgn of [-1, 1]) {
+      const a = new V(0, stemTopY() - 0.28, STEM_Z - 0.02)
+      const b = new V(sgn * 0.42, stemTopY() - 0.78, STEM_Z - 0.62)
+      const mid = a.clone().add(b).multiplyScalar(0.5)
+      const dir = b.clone().sub(a)
+      const cheek = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.075, dir.length(), 5), woodDark)
+      cheek.name = `ship-figurehead-cheek-${sgn > 0 ? 'port' : 'stbd'}`
+      cheek.position.copy(mid)
+      cheek.quaternion.setFromUnitVectors(new V(0, 1, 0), dir.normalize())
+      group.add(cheek)
+    }
+
+    const figure = new THREE.Group()
+    figure.name = 'ship-figurehead'
+    const bodyMat = new THREE.MeshStandardMaterial({
+      // 镀金：比 brassMat 亮一档，远处才有"一点金"（与船壳的深棕拉开）
+      color: 0xc9a24a, roughness: 0.42, metalness: 0.65, emissive: 0x2a1f08, emissiveIntensity: 0.35,
+    })
+    disposables.push(bodyMat)
+    const pts = figureheadPoints()
+    for (let i = 0; i < pts.length; i++) {
+      const p = pts[i]
+      const seg = new THREE.Mesh(new THREE.SphereGeometry(p.r, 10, 7), bodyMat)
+      seg.position.set(p.x, p.y, p.z)
+      figure.add(seg)
+    }
+    // 尾鳍：两片薄板向后上方张开（船首像最容易被认出的部分）
+    const tipP = pts[pts.length - 1]
+    for (const sgn of [-1, 1]) {
+      const fin = new THREE.Mesh(new THREE.ConeGeometry(0.17, 0.52, 4), bodyMat)
+      fin.position.set(sgn * 0.12, tipP.y + 0.16, tipP.z - 0.06)
+      fin.rotation.set(-0.9, 0, sgn * 0.5)
+      figure.add(fin)
+    }
+    // 头冠：肩部那一段往上收出一个尖，剪影里像个头
+    const crest = new THREE.Mesh(
+      new THREE.ConeGeometry(FIGUREHEAD_CREST.radius, FIGUREHEAD_CREST.height, 6), bodyMat,
+    )
+    crest.name = 'ship-figurehead-crest'
+    crest.position.set(0, pts[0].y + FIGUREHEAD_CREST.lift, pts[0].z + 0.02)
+    crest.rotation.x = 0.35
+    figure.add(crest)
+    group.add(figure)
   }
 
   /*
@@ -2045,8 +2132,14 @@ export function createDeckShip(): DeckShip {
   const foreTop = new V(0, mastData[0].top, 11)
   const mainTop = new V(0, mastData[1].top, 1)
   const mizTop = new V(0, mastData[2].top, -8)
-  // 斜桅端头：与上面那根实体的 bowsprit 是同一个点（两处各写一份必然分叉）
-  const bowTip = new V(0, shipDeckAt(17) + 6.1, 26.2)
+  /*
+   * 斜桅端头：**只有 `deckBow.BOWSPRIT_TIP` 这一份**。
+   * 这里原来写的是 `shipDeckAt(17) + 6.1`，而实体斜桅是从 (0, 0.95, 15.8) 求
+   * 方向再摆到 `bowBase` 上 —— 两处**碰巧**算出同一个 y（7.96）：方向里少算的
+   * 0.95 与底端多算的 0.95 抵消。所以这不是修错，是把"靠巧合对上"换成一个
+   * 来源；e2e 用"索具端点 vs 网格端头"守着它不再分叉。
+   */
+  const bowTip = new V(0, BOWSPRIT_TIP.y, BOWSPRIT_TIP.z)
   curve(foreTop, bowTip, 0.9, false)
   curve(foreTop, mainTop, 0.7, false)
   curve(mainTop, mizTop, 0.55, false)
@@ -2085,14 +2178,25 @@ export function createDeckShip(): DeckShip {
   }
   const rungGeo = new THREE.BufferGeometry().setFromPoints(rungPts)
   const rungMat = new THREE.LineBasicMaterial({ color: 0x3a3324, transparent: true, opacity: 0.75 })
-  group.add(new THREE.LineSegments(rungGeo, rungMat))
+  const rungLines = new THREE.LineSegments(rungGeo, rungMat)
+  rungLines.name = 'ship-ratlines'
+  group.add(rungLines)
   disposables.push(rungGeo, rungMat)
   const rigGeo = new THREE.BufferGeometry().setFromPoints(rigPts)
   const rigMat = new THREE.LineBasicMaterial({ color: 0x2a2419, transparent: true, opacity: 0.85 })
-  group.add(new THREE.LineSegments(rigGeo, rigMat))
+  const rigLines = new THREE.LineSegments(rigGeo, rigMat)
+  /*
+   * 命名给 e2e 用：这条线里包含"前支索"的端点 —— 它必须与斜桅端头**重合**。
+   * 不命名的话，"绳头系在空气里"只能靠肉眼在截图里找（0.95 米的差在远景里
+   * 只有几个像素，而且很容易被当成索具的正常弯度）。
+   */
+  rigLines.name = 'ship-rig-static'
+  group.add(rigLines)
   const runGeo = new THREE.BufferGeometry().setFromPoints(runPts)
   const runMat = new THREE.LineBasicMaterial({ color: 0x4a4130, transparent: true, opacity: 0.7 })
-  group.add(new THREE.LineSegments(runGeo, runMat))
+  const runLines = new THREE.LineSegments(runGeo, runMat)
+  runLines.name = 'ship-rig-running'
+  group.add(runLines)
   disposables.push(rigGeo, rigMat, runGeo, runMat)
 
   return {

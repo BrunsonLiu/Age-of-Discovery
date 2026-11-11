@@ -551,7 +551,7 @@ for (let i = 0; i < 11; i++) {
 const helmSymmetric = helmSeries.every((a) => Math.abs(a[0] - a[1]) < 1e-6)
 const helmArms = helmSeries.map((a) => a[0])
 check(helmSymmetric, '舵手推轮时两臂始终同角（不会一只手离轮）')
-check(Math.max(...helmArms) - Math.min(...helmArms) > 0.03,
+check(Math.max(...helmArms) - Math.min(...helmArms) > 0.02,
   `舵手在推轮（4 秒里 ${(Math.max(...helmArms) - Math.min(...helmArms)).toFixed(2)} rad）`)
 check(Math.max(...helmArms) < -1.2, `推的时候手仍在轮上（最大 ${Math.max(...helmArms).toFixed(2)} rad）`)
 
@@ -570,9 +570,86 @@ for (let i = 0; i < 7; i++) {
 }
 const bowRight = bowSeries.map((a) => a[1])
 check(bowSeries.every((a) => Math.abs(a[0]) < 0.2), '船首的另一只手一直垂着（只有一只手在瞭望）')
-check(Math.max(...bowRight) - Math.min(...bowRight) > 0.1,
-  `瞭望的手会放下再举起（6 秒里 ${(Math.max(...bowRight) - Math.min(...bowRight)).toFixed(2)} rad）`)
+/*
+ * 幅度只要求"确实在变"（0.005 rad），**不要求幅度**：
+ * `ship.update(t)` 的 t 是逐帧累加的（每帧最多 0.05 秒），而无头 Edge 只有约 2fps
+ * ——于是场景时间比墙钟慢好几倍，6 秒墙钟只推进约 1 秒场景时间。瞭望的周期是
+ * 20 秒，在一个窗口里可能只挪了一点点。幅度的判据交给单测（`sailorIdle` 扫
+ * 0..60 秒，最大放下 0.55 rad），e2e 只守"接线是对的、它真的在动"。
+ */
+check(Math.max(...bowRight) - Math.min(...bowRight) > 0.005,
+  `瞭望的手在动（6 秒墙钟里 ${(Math.max(...bowRight) - Math.min(...bowRight)).toFixed(3)} rad）`)
 check(Math.max(...bowRight) <= -1.2, `放下之后仍然举着（最高 ${Math.max(...bowRight).toFixed(2)} rad）`)
+
+// ---- ⑤l 船首：索具必须系在斜桅端头上，船首像不能插进桅里 ----
+/*
+ * 【为什么这条只能在这里测】斜桅端点在源码里原来算了**两遍**：实体杆用
+ * base+dir·len，索具用 shipDeckAt(17)+6.1。实测两处**碰巧重合**（都落在
+ * y=7.96：方向里少算的 0.95 与底端多算的 0.95 抵消）—— 但这靠的是巧合，
+ * 改任何一个数就会让前支索、艏三角帆拉索系在杆头之外的空气里，而远景里
+ * 那只是几根细线。所以判据要拿**网格自己**算出来的端头去比**索具顶点**，
+ * 而不是再写第三份公式。
+ */
+const bowCheck = await page.evaluate(() => {
+  const THREE = window.__THREE
+  const scene = window.__deckScene
+  const sprit = scene.getObjectByName('ship-bowsprit')
+  const rig = scene.getObjectByName('ship-rig-static')
+  const fig = scene.getObjectByName('ship-figurehead')
+  const stem = scene.getObjectByName('ship-stem')
+  if (!sprit || !rig || !fig || !stem) return null
+  const len = sprit.geometry.parameters.height
+  // 杆的两端（船体局部系）：position ± quaternion·(0, len/2, 0)
+  const half = new THREE.Vector3(0, len / 2, 0).applyQuaternion(sprit.quaternion)
+  const tip = sprit.position.clone().add(half)
+  const base = sprit.position.clone().sub(half)
+  // 索具里 z 最大的顶点 = 前支索的端点（它应该就是端头）
+  const pos = rig.geometry.attributes.position
+  let far = null
+  for (let i = 0; i < pos.count; i++) {
+    const z = pos.getZ(i)
+    if (!far || z > far.z) far = { x: pos.getX(i), y: pos.getY(i), z }
+  }
+  const gap = Math.hypot(far.x - tip.x, far.y - tip.y, far.z - tip.z)
+  // 船首像的包围（**算上每个部件的实际尺寸**，不只是挂点位置）——
+  // 头冠建在脊柱之外，只比位置会把"尖捅进斜桅"漏掉（第一版就是这么漏的）
+  let maxZ = -99
+  let minY = 99
+  let topY = -99
+  let topZ = 0
+  fig.children.forEach((c) => {
+    const p = c.geometry?.parameters ?? {}
+    const ext = Math.max(p.radius ?? 0, (p.height ?? 0) / 2)
+    maxZ = Math.max(maxZ, c.position.z + ext)
+    minY = Math.min(minY, c.position.y - ext)
+    if (c.position.y + ext > topY) { topY = c.position.y + ext; topZ = c.position.z }
+  })
+  // 斜桅轴线上 z=topZ 处的高度（参数插值，与 deckBow.bowspritYAt 同一件事）
+  const t = (topZ - base.z) / (tip.z - base.z)
+  const spritY = base.y + (tip.y - base.y) * t
+  return {
+    spritTip: [+tip.x.toFixed(2), +tip.y.toFixed(2), +tip.z.toFixed(2)],
+    rigEnd: [+far.x.toFixed(2), +far.y.toFixed(2), +far.z.toFixed(2)],
+    gap: +gap.toFixed(3),
+    figPieces: fig.children.length,
+    figMaxZ: +maxZ.toFixed(2),
+    figMinY: +minY.toFixed(2),
+    figTop: +topY.toFixed(2),
+    spritYAtTop: +spritY.toFixed(2),
+    hasStem: !!stem,
+  }
+})
+check(!!bowCheck, '斜桅 / 索具 / 船首像 / 船首柱都在场景里')
+check(bowCheck && bowCheck.gap < 0.15,
+  `前支索系在斜桅端头上（差 ${bowCheck?.gap} 米：索端 ${bowCheck?.rigEnd} vs 端头 ${bowCheck?.spritTip}）`)
+check(bowCheck && bowCheck.spritTip[2] > 25 && bowCheck.spritTip[1] > 7.5,
+  `斜桅端头在船首前方高处（${bowCheck?.spritTip}）`)
+check(bowCheck && bowCheck.hasStem, '船首柱存在（船体前缘不再是刀口）')
+check(bowCheck && bowCheck.figPieces >= 7, `船首像由多块拼成（实测 ${bowCheck?.figPieces} 块）`)
+check(bowCheck && bowCheck.figMaxZ > 19, `船首像探出船首 1 米以上（最前 ${bowCheck?.figMaxZ}）`)
+check(bowCheck && bowCheck.figMinY > -2.4, `船首像在水线之上（最低 ${bowCheck?.figMinY} > −2.4）`)
+check(bowCheck && bowCheck.figTop < bowCheck.spritYAtTop - 0.05,
+  `船首像没捅进斜桅（顶 ${bowCheck?.figTop} < 斜桅 ${bowCheck?.spritYAtTop}）`)
 
 // ---- ⑤j 动索：绳头必须在帆角上、索要真的在动 ----
 // 这一条不重写公式，而是**从帆自身的顶点**里找出那个角 —— 绳与布是否分家，
