@@ -9,6 +9,7 @@ import { buildHullGeo } from './shipHull'
 import {
   BOWSPRIT_BASE, BOWSPRIT_CAP_INSET, BOWSPRIT_TIP, FIGUREHEAD_CREST, figureheadPoints, STEM_Z, stemTopY,
 } from './deckBow'
+import { ANCHOR_LEN, ANCHOR_SIDE, ANCHOR_STOCK, anchorPose, HAWSE_Y, HAWSE_Z } from './deckAnchor'
 import { sailorIdle, SAILOR_POSES, SAILOR_STATIONS } from './deckCrew'
 import { chartCourse } from './deckChart'
 import { WATERLINE_Y_M, WAKE_SEGMENTS } from './deckWake'
@@ -76,6 +77,11 @@ export interface DeckShip {
    * 这三个数全部由 `deckWake` 的纯函数从"是否航行 + 船速"算出来。
    */
   setWake(strength: number, spreadRad: number, bowLenM: number, waveAmp?: number): void
+  /**
+   * 抛锚 / 收锚（`!fleet.isSailing`）。
+   * 锚垂进水里 = 停着，收到舷边 = 在走 —— 全船唯一与"是否在航行"直接挂钩的实体。
+   */
+  setMooring(moored: boolean): void
   /**
    * 海图桌上那张图上的航线（**真实方位与剩余距离**）。
    * @param bearingDeg 到下一站的真方位；@param remainNm 剩余海里。
@@ -1361,6 +1367,8 @@ export function createDeckShip(): DeckShip {
   let flagNormalTick = 0
   /** 动索自己的帧间隔（转桁角的平滑用） */
   let lastRigT = 0
+  /** 锚收放的平滑计时 */
+  let lastAnchorT = 0
 
   /*
    * ---------------- 贴着船体的水沫带 + 船首 V 浪 ----------------
@@ -2088,6 +2096,78 @@ export function createDeckShip(): DeckShip {
   }
 
   /*
+   * ---------------- 锚（anchor）----------------
+   *
+   * 【为什么是全船最该有的一件"零碎"】甲板上的三件可点物表达"接下来做什么"，
+   * 锚表达**此刻的状态**：锚垂进水里 = 停着，锚收到舷边 = 在走。它也是这条船上
+   * 唯一与 `fleet.isSailing` 直接挂钩的实体 —— 玩家看见锚收起来了，就知道船真的在动。
+   *
+   * 【位置为什么在右舷船首外沿】真实的锚挂在"猫头"（cathead，船首外伸的横梁）上，
+   * 锚链从**锚链孔**（hawse hole）出海，所以锚在船壳**外面**、链子斜着穿出去。
+   * 挂在舷墙内侧就变成"甲板上放了个铁件"。
+   *
+   * 尺寸按 36 米商船：锚杆 2.4、横杆 2.2 —— 在甲板上看是"一个人张开双臂那么宽"。
+   * 状态与位置全部来自 `deckAnchor.anchorPose`（纯函数，可单测）。
+   */
+  const anchorRefs: { group: THREE.Group; cable: THREE.BufferAttribute } = (() => {
+    const startPose = anchorPose(false)
+    const anchor = new THREE.Group()
+    anchor.name = 'ship-anchor'
+    anchor.position.set(startPose.x, startPose.y, startPose.z)
+    anchor.rotation.x = startPose.tilt
+    // 挂环
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.17, 0.05, 5, 10), ironMat)
+    anchor.add(ring)
+    // 锚杆
+    const shank = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.13, ANCHOR_LEN, 6), ironMat)
+    shank.position.y = -ANCHOR_LEN / 2
+    anchor.add(shank)
+    // 横杆（stock）：靠近挂环那端。
+    /*
+     * 【为什么让它**沿船长**而不是横着】横杆长 2.2 米、锚又挂在船壳外 0.28 米处 ——
+     * 横着放时，靠近船那一头会**插进舷墙里**（实测截图：横杆穿过栏杆扎进甲板）。
+     * 真实船收锚时横杆就是顺着船壳的方向贴着的，所以这里绕 x 转 90°。
+     */
+    const stock = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.075, ANCHOR_STOCK, 6), ironMat)
+    stock.rotation.x = Math.PI / 2
+    stock.position.y = -0.38
+    anchor.add(stock)
+    // 两个锚爪：从锚冠向两侧翻起（扁平的四棱锥，远看是"钩"）
+    for (const sgn of [-1, 1]) {
+      const arm = new THREE.Mesh(new THREE.ConeGeometry(0.22, 0.78, 4), ironMat)
+      arm.position.set(sgn * 0.3, -ANCHOR_LEN + 0.24, 0)
+      arm.rotation.set(0, 0, sgn * 0.55)
+      anchor.add(arm)
+    }
+    // 锚冠（crown）：锚杆底端的一块厚铁
+    const crown = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.3, 0.26), ironMat)
+    crown.position.y = -ANCHOR_LEN + 0.06
+    anchor.add(crown)
+    group.add(anchor)
+
+    // 锚链孔：船壳上的一圈深色孔（没有它，链子像从空气里出来）
+    const hawse = new THREE.Mesh(new THREE.TorusGeometry(0.17, 0.05, 5, 10), ironMat)
+    hawse.name = 'ship-hawse'
+    hawse.position.set(ANCHOR_SIDE * shipHalfWidthAt(HAWSE_Z) * 1.01, HAWSE_Y, HAWSE_Z)
+    hawse.rotation.y = Math.PI / 2
+    group.add(hawse)
+
+    // 锚链：从锚链孔到挂环的一段（顶点每帧按当前锚位重写）
+    const arr = new Float32Array((SHEET_SEGMENTS + 1) * 3)
+    const g = new THREE.BufferGeometry()
+    g.setAttribute('position', new THREE.BufferAttribute(arr, 3))
+    const m = new THREE.LineBasicMaterial({ color: 0x3a3428, transparent: true, opacity: 0.9 })
+    const line = new THREE.Line(g, m)
+    line.name = 'ship-anchor-cable'
+    line.frustumCulled = false
+    group.add(line)
+    disposables.push(g, m)
+    return { group: anchor, cable: g.attributes.position as THREE.BufferAttribute }
+  })()
+  /** 当前是否抛锚（由 DeckView 按 `fleet.isSailing` 写） */
+  let anchorMoored = false
+
+  /*
    * ---------------- 炮门（gun ports） ----------------
    * 一排小黑方口是"这是一条武装商船/战舰"最省笔画的一笔：近看是框 + 洞，
    * 远看是一条断续的暗带。位置贴着船壳的弧面算（cos 反解），不是随便摆的方块。
@@ -2210,8 +2290,7 @@ export function createDeckShip(): DeckShip {
     setCourse(bearingDeg: number | null, remainNm: number | null) {
       paintCourse?.(bearingDeg, remainNm)
     },
-    setWake(strength: number, spreadRad: number, bowLenM: number, waveAmp = 1) {
-      wakeState.strength = strength
+    setWake(strength: number, spreadRad: number, bowLenM: number, waveAmp = 1) {      wakeState.strength = strength
       wakeState.spread = spreadRad
       wakeState.bowLen = bowLenM
       wakeState.waveAmp = waveAmp
@@ -2219,6 +2298,9 @@ export function createDeckShip(): DeckShip {
     setWind(bearingDeg: number, speedKnots: number) {
       windTarget.bearing = bearingDeg
       windTarget.speed = speedKnots
+    },
+    setMooring(moored: boolean) {
+      anchorMoored = moored
     },
     setCrew(n: number) {
       const shown = Math.max(0, Math.min(sailors.length, Math.round(n)))
@@ -2379,6 +2461,32 @@ export function createDeckShip(): DeckShip {
        * 会从船心拉出十八根射线（只闪一帧，但截图里就是一团黑线）。
        */
       updateRigging(t, windK(windTarget.speed))
+
+      /*
+       * ---- 锚：抛 / 收 ----
+       *
+       * 目标位置来自 `anchorPose`（纯函数），这里只做**平滑**：抛锚是"咚"一下，
+       * 但收锚是摇绞盘，几秒钟才上来；直接跳变看起来像穿模。时间常数 0.6 秒，
+       * 用 dt 而不是"每帧固定比例"（固定比例在 2fps 和 60fps 下速度差 30 倍）。
+       */
+      {
+        const want = anchorPose(anchorMoored)
+        const a = 1 - Math.exp(-Math.max(0.001, Math.min(0.2, t - lastAnchorT)) / 0.6)
+        lastAnchorT = t
+        const g = anchorRefs.group
+        g.position.x = want.x
+        g.position.z = want.z
+        g.position.y += (want.y - g.position.y) * a
+        g.rotation.x += (want.tilt - g.rotation.x) * a
+        // 锚链：锚链孔 → 挂环（垂度由状态给；控制点取 2× 见 deckRigging）
+        writeSheetPoints(
+          anchorRefs.cable.array as Float32Array,
+          ANCHOR_SIDE * shipHalfWidthAt(HAWSE_Z) * 1.01, HAWSE_Y, HAWSE_Z,
+          g.position.x, g.position.y, g.position.z,
+          anchorPose(anchorMoored).cableSag, 0, SHEET_SEGMENTS,
+        )
+        anchorRefs.cable.needsUpdate = true
+      }
 
       // 灯笼晃：吊灯本来就随船摇，幅度小、周期不同（两盏不同相）
       for (let i = 0; i < lanternPivots.length; i++) {

@@ -1258,6 +1258,12 @@ export default function DeckView() {
             bowWaveLength(st.fleet.isSailing, knots),
             look.wave,
           )
+          /*
+           * 锚：**与航迹同源**（同一个 `fleet.isSailing`）。锚垂进水里 = 停着，
+           * 锚收到舷边 = 在走。两处如果各读一个状态，就会出现"船在走锚还挂着"
+           * 这种一眼假的画面 —— 所以都从这里这一处分支出去。
+           */
+          deckShip.setMooring(!st.fleet.isSailing)
         }
         {
           const wpt = st.waypoint

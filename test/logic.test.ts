@@ -68,6 +68,9 @@ import {
   BOWSPRIT_BASE, BOWSPRIT_TIP, bowspritYAt, FIGUREHEAD, FIGUREHEAD_CREST, FIGUREHEAD_SPINE,
   figureheadPoints, figureheadTip, STEM_Z,
 } from '../src/components/deck/deckBow'
+import {
+  ANCHOR_Z, anchorFootY, anchorPose, HAWSE_Y, HAWSE_Z,
+} from '../src/components/deck/deckAnchor'
 import { bowWaveLength, bowWaveSpread, KELVIN_TAN, kelvinStrength, wakeStrength, WATERLINE_Y_M } from '../src/components/deck/deckWake'
 import { CABIN_BOUNDS, CABIN_ENTER, CABIN_EXIT, cabinEyeY, cabinFloorY, clampToCabin, isInCabin, stepInCabin } from '../src/components/deck/deckCabin'
 import { clampElevation, EL_MAX, EL_MIN, EL_TIGHTEN_FROM, minElevationAt } from '../src/components/map3d/cameraLimits'
@@ -10014,6 +10017,40 @@ console.log('\n== 天数口径守卫 ==')
   assert(!/26\.2/.test(ship), 'shipModel 里不再有斜桅端点的字面量（端点只许来自 deckBow）')
   assert(/import \{[\s\S]{0,200}BOWSPRIT_TIP/.test(ship), 'shipModel 从 deckBow 取端点')
   assert(/ship-figurehead/.test(ship) && /ship-stem/.test(ship), '船首柱与船首像真的建出来了')
+}
+
+/*
+ * ---- 锚：抛锚/收锚是"船在不在走"的实体信号 ----
+ *
+ * 【守什么】锚是这条船上唯一与 `fleet.isSailing` 直接挂钩的实体，判据要能守住
+ * "两种状态在画面上真的不一样"，而不是"有个名叫锚的东西"：
+ *  ① 抛锚时锚爪在水下、收锚时锚爪在水上（不然"抛了锚"和"收着锚"长得一样）；
+ *  ② 两个位置差得够远（≥2 米）—— 只差 20 厘米等于没变化；
+ *  ③ 锚挂在船壳**外沿**（x 略大于该站位的半宽）：挂在舷墙里面就成了"甲板上放了块铁"；
+ *  ④ 锚链孔在舷墙顶之下、锚之前的位置合理（链子才有斜度）。
+ */
+{
+  const moored = anchorPose(true)
+  const sailing = anchorPose(false)
+  assert(sailing.y - moored.y > 2, `收锚比抛锚高 ${(sailing.y - moored.y).toFixed(2)} 米（≥2）`)
+  assert(anchorFootY(true) < WATERLINE_Y_M, `抛锚时锚爪在水下（${anchorFootY(true).toFixed(2)} < 水线 ${WATERLINE_Y_M}）`)
+  assert(anchorFootY(false) > WATERLINE_Y_M + 1,
+    `收锚时锚爪在水面之上（${anchorFootY(false).toFixed(2)} > ${(WATERLINE_Y_M + 1).toFixed(2)}）`)
+  assert(moored.wet && !sailing.wet, '只有抛锚时才"湿"（渲染端据此决定是否画水花）')
+  // 挂在船壳外沿（不是舷墙里面）：左舷所以 x 是负的，判据取绝对值
+  const halfW = shipHalfWidthAt(ANCHOR_Z)
+  assert(Math.abs(moored.x) > halfW && Math.abs(moored.x) < halfW + 0.8,
+    `锚在船壳外沿（x=${moored.x.toFixed(2)}，半宽 ${halfW.toFixed(2)}）`)
+  assert(Math.sign(moored.x) < 0, '锚挂在左舷（外景机位在左舷，锚才进得了画）')
+  assert(moored.z > HAWSE_Z && moored.z < STEM_Z, '锚在锚链孔之前、船首柱之后')
+  assert(HAWSE_Y < shipDeckAt(HAWSE_Z) + 0.95, `锚链孔在舷墙顶之下（${HAWSE_Y} < ${(shipDeckAt(HAWSE_Z) + 0.95).toFixed(2)}）`)
+  assert(moored.cableSag < sailing.cableSag, '抛锚时链子绷直、收锚时松垮')
+  assert(Math.sign(moored.tilt) !== Math.sign(sailing.tilt), '两种状态的倾角方向不同（收起来翻贴船壳）')
+  // 源码守卫：状态来自同一个 isSailing，锚与链子真的建出来了
+  const deck = readFileSync(join(process.cwd(), 'src', 'components', 'deck', 'DeckView.tsx'), 'utf8')
+  assert(/setMooring\(!st\.fleet\.isSailing\)/.test(deck), '锚的状态与航迹同源（都读 fleet.isSailing）')
+  const ship = readFileSync(join(process.cwd(), 'src', 'components', 'deck', 'shipModel.ts'), 'utf8')
+  assert(/ship-anchor'/.test(ship) && /ship-anchor-cable'/.test(ship), '锚与锚链真的建出来了')
 }
 
 console.log(`\n最终结果：${passed} 通过 / ${failed} 失败`)
