@@ -59,6 +59,10 @@ import {
   degreeLabel, GRATICULE_STEPS, graticuleValues, isWholeDegree, MIN_LINE_GAP_PX, pickGraticuleStep,
 } from '../src/utils/graticule'
 import {
+  CLIMATE_LABEL_FRAC, CLIMATE_LABEL_PAD, CLIMATE_LINES,
+  climateGapCenter, climateLabelPx, climateRuns, OBLIQUITY_DEG, POLAR_CIRCLE_DEG,
+} from '../src/utils/climateLines'
+import {
   SURF_PERIOD_PX, SURF_WIND_FULL, SURF_WIND_MIN, surfDash, surfOpacity, surfStrength, surfWeight,
 } from '../src/utils/surf'
 import { densify, filterSeaPoints, splitAtLand } from '../src/utils/seaClip'
@@ -10486,6 +10490,126 @@ console.log('\n== 天数口径守卫 ==')
   assert(/pointerEvents = 'none'/.test(g), 'pane 不吃指针事件（否则点海面出航会被网格挡住）')
   assert(/font-size:12px/.test(g), '度数用 12px（项目下限；再小在高分屏上读不出）')
   assert(/as unknown as/.test(g) === false, '没有残留的类型强转')
+}
+
+
+/*
+ * ---- 气候线：回归线与极圈 ----
+ *
+ * 【守什么】这四条线是"两条天文学恒等式 + 一个断口"落地成画面的东西，
+ * 三种错法都不会报错、只会让图**说的是假话**：
+ *  ① 纬度写歪（23.5 / 23.4 / 极圈另写一个数）—— 字面上看不出来，
+ *     但回归线一旦不等于 90 − 极圈，四季就散了架；
+ *  ② 断口的位置/宽度与标签对不上 —— 线会从字中间穿过去，或者断得莫名其妙；
+ *  ③ 断口把线"吃掉"一段 —— 两段长度之和必须等于原长减断口，差一个像素都不行，
+ *     否则线上会凭空多出/少掉一截（这种错在缩放到某个级别时才会露出来）。
+ */
+{
+  // ① 两组数必须由同一个常数推出来（各写一份迟早有一个被改掉）
+  assert(Math.abs(POLAR_CIRCLE_DEG - (90 - OBLIQUITY_DEG)) < 1e-12,
+    `极圈 ${POLAR_CIRCLE_DEG.toFixed(4)}° = 90 − 黄赤交角 ${OBLIQUITY_DEG}°`)
+  assert(Math.abs(OBLIQUITY_DEG - 23.4362) < 1e-9,
+    `黄赤交角取 ${OBLIQUITY_DEG}°（2026 年 23°26′11″，不是课本上的 23.5°）`)
+
+  // ② 四条线：两条回归、两条极圈，南北对称，回归线在两极圈之内
+  assert(CLIMATE_LINES.length === 4, `共 ${CLIMATE_LINES.length} 条气候线`)
+  const byKey = Object.fromEntries(CLIMATE_LINES.map((l) => [l.key, l])) as Record<string, { lat: number; name: string }>
+  assert(byKey['tropic-n'] && byKey['tropic-s'] && byKey['arctic'] && byKey['antarctic'],
+    '四个键齐全（tropic-n / tropic-s / arctic / antarctic）')
+  assert(byKey['tropic-n'].lat === -byKey['tropic-s'].lat, '南北回归线关于赤道对称')
+  assert(byKey['arctic'].lat === -byKey['antarctic'].lat, '南北极圈关于赤道对称')
+  assert(byKey['tropic-n'].lat > 0 && byKey['tropic-n'].lat < 30,
+    `北回归线在 ${byKey['tropic-n'].lat.toFixed(4)}°N（热带北界）`)
+  assert(byKey['arctic'].lat > 60 && byKey['arctic'].lat < 70,
+    `北极圈在 ${byKey['arctic'].lat.toFixed(4)}°N（北寒带南界）`)
+  assert(byKey['arctic'].lat - byKey['tropic-n'].lat > 40,
+    '极圈与回归线之间隔着温带（不是一个数）')
+
+  // ③ 图上写出来的字必须对得上这个数
+  assert(degreeLabel('lat', byKey['tropic-n'].lat) === '23°26′N',
+    `北回归线的度数写成「${degreeLabel('lat', byKey['tropic-n'].lat)}」`)
+  assert(degreeLabel('lat', byKey['tropic-s'].lat) === '23°26′S', '南回归线写 S')
+  assert(degreeLabel('lat', byKey['arctic'].lat) === '66°34′N',
+    `北极圈写成「${degreeLabel('lat', byKey['arctic'].lat)}」`)
+
+  // ④ 标签宽度的估算：四字约 60~70px，与字号/字距一致
+  const wTropic = climateLabelPx('北回归线')
+  assert(wTropic >= 4 * 12 && wTropic <= 4 * 16 + 16,
+    `「北回归线」估宽 ${wTropic}px（4 字 × 12px 起）`)
+  assert(climateLabelPx('北极圈') < wTropic, '三字比四字窄')
+  assert(climateLabelPx('') === 0 && climateLabelPx(Number.NaN as unknown as string) === 0,
+    '空名字 → 0（不画断口）')
+
+  // ⑤ 断口中心：可见经度跨度的固定比例（墨卡托经度在屏幕上是线性的）
+  assert(Math.abs(climateGapCenter(-40, 60, 0.36) - (-40 + 100 * 0.36)) < 1e-9,
+    `[-40,60] 的 36% → ${climateGapCenter(-40, 60, 0.36)}°E`)
+  assert(Math.abs(climateGapCenter(-40, 60, CLIMATE_LABEL_FRAC) - climateGapCenter(-40, 60, 0.36)) < 1e-12,
+    '默认比例就是 0.36')
+  assert(Math.abs(climateGapCenter(-40, 60, 5) - 55) < 1e-9, '比例离谱时夹到 0.95（不跑到画面外）')
+  assert(Math.abs(climateGapCenter(-40, 60, -3) - (-35)) < 1e-9, '负比例夹到 0.05')
+  assert(climateGapCenter(10, 10) === 10, '跨度 0 → 退回西边界（不除零）')
+  assert(Number.isNaN(climateGapCenter(Number.NaN, 60)), 'west 不可用 → NaN（组件那边要挡）')
+
+  // ⑥ 断口：只挖中间一段，两端照画，且**总长不多不少**
+  const runs2 = climateRuns(-40, 60, 10, 4, 0)
+  assert(runs2.length === 2, `断口在中间 → 两段（实测 ${runs2.length} 段）`)
+  assert(runs2[0][0] === -40 && Math.abs(runs2[0][1] - 6) < 1e-9,
+    `左段 [-40, ${runs2[0][1]}]（到断口左沿 6°）`)
+  assert(Math.abs(runs2[1][0] - 14) < 1e-9 && runs2[1][1] === 60,
+    `右段 [${runs2[1][0]}, 60]（从断口右沿 14° 起）`)
+  assert(Math.abs((runs2[0][1] - runs2[0][0]) + (runs2[1][1] - runs2[1][0]) + 8 - 100) < 1e-9,
+    '两段长度 + 断口 = 原长 100°（挖断口不丢距离）')
+
+  // 断口在段外 → 一整条；断口盖住整段 → 空；halfGap 0 → 一整条
+  const one = climateRuns(-40, 60, 200, 4)
+  assert(one.length === 1 && one[0][0] === -40 && one[0][1] === 60, '断口在画面外 → 线是完整的一条')
+  assert(climateRuns(-40, 60, 10, 500).length === 0, '断口比整段还宽 → 什么都不画')
+  assert(climateRuns(-40, 60, 10, 0).length === 1, '没有断口 → 一整条')
+
+  // 碎段（只剩两度）要被丢掉：否则线头会露出一根几像素的脏点
+  const dropped = climateRuns(-40, 60, -38, 1, 3)
+  assert(dropped.length === 1 && Math.abs(dropped[0][0] - (-37)) < 1e-9,
+    `只剩 1° 的碎段被丢掉，保留 [${dropped[0][0]}, ${dropped[0][1]}]`)
+  assert(climateRuns(-40, 60, 10, 4, 0).length === 2, 'minRun=0 时碎段全留（参数可选）')
+
+  // 退化输入
+  assert(climateRuns(60, -40, 10, 4).length === 0, '东西颠倒 → 空')
+  assert(climateRuns(Number.NaN, 60, 10, 4).length === 0, 'NaN → 空')
+  /*
+   * 断口参数坏了（NaN）时**画完整的一条线**，不是不画：
+   * 线本身是一条真实存在的地理界线，缺了它就是图在说谎；名字少一个只是不方便。
+   * 「宁可密，不可空」——与经纬网那边同一条原则。
+   */
+  const noGap = climateRuns(-40, 60, Number.NaN, 4)
+  assert(noGap.length === 1 && noGap[0][0] === -40 && noGap[0][1] === 60, '断口 NaN → 画完整的一条线')
+
+  // ⑦ 源码守卫：两个 pane、暖色虚线、字宽驱动断口、12px
+  const cl = readFileSync(join(process.cwd(), 'src', 'components', 'map', 'ClimateLines.tsx'), 'utf8')
+  assert(/createPane\(CLIMATE_PANE\)/.test(cl) && /createPane\(CLIMATE_LABEL_PANE\)/.test(cl),
+    '线与名字各用一个自建 pane（不寄生在经纬网那两个上）')
+  assert(/zIndex = '345'/.test(cl) && /zIndex = '522'/.test(cl),
+    '线 345（陆地以下）/ 名字 522（网格度数之上、港口 600 之下）')
+  assert(/pointerEvents = 'none'/.test(cl), 'pane 不吃指针事件（否则点海面出航会被气候线挡住）')
+  assert(/fontSize|font-size:12px/.test(cl), '名字用 12px（项目下限）')
+  assert(/dashArray: '7 6'/.test(cl), '虚线（与网格实线分开的两条线索之一）')
+  assert(/climateLabelPx\(/.test(cl) && /climateRuns\(/.test(cl),
+    '断口宽度由字宽算、断口由纯函数挖（不在组件里写死坐标）')
+  assert(!/23\.4|66\.5/.test(cl), '纬度不写死在组件里（唯一来源是 utils/climateLines）')
+
+  /*
+   * ⑧ 全局：pane 名字里不许出现 "Pane" 字样。
+   * Leaflet 建 pane 时执行 `'leaflet-' + name.replace('Pane','') + '-pane'`，
+   * 名字里带 "Pane" 会被切掉、类名与 ES 里的名字对不上 —— 第 94 轮的
+   * `graticuleLabelPane` 就是这么量了个寂寞（探针找了个不存在的类名）。
+   */
+  const mapDir = join(process.cwd(), 'src', 'components', 'map')
+  for (const f of readdirSync(mapDir)) {
+    if (!f.endsWith('.tsx') && !f.endsWith('.ts')) continue
+    const src = readFileSync(join(mapDir, f), 'utf8')
+    for (const m of src.matchAll(/createPane\(\s*['"]([^'"]+)['"]/g)) {
+      assert(!m[1].includes('Pane'), `${f} 的 pane 名「${m[1]}」不含 "Pane"（会被 Leaflet 切掉）`)
+    }
+  }
 }
 
 

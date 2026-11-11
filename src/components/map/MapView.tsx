@@ -15,6 +15,7 @@ import MiniMap from './MiniMap'
 import { ScaleBar } from './ScaleBar'
 import { VoyageRings } from './VoyageRings'
 import { Graticule } from './Graticule'
+import { ClimateLines } from './ClimateLines'
 import { SurfLine } from './SurfLine'
 import { buildMajorLand, featureArea } from '@/utils/terrainDecor'
 import { RouteLine } from './RouteLine'
@@ -605,6 +606,10 @@ export default function MapView() {
                   挂在等角线**之前**：线在同一片海上但更淡 —— 先有经纬度，
                   玩家才知道自己站在哪个风带里（风带分界就是 ±30°）。 */}
               <Graticule />
+              {/* 气候线：回归线与极圈（自建 z=345 线 / z=522 名字）。
+                  它们和网格**不重合**（23.4362° / 66.5638° 都不是整数度），
+                  所以是独立一层；暖色虚线 + 名字写在线上，与冷色网格分开。 */}
+              <ClimateLines />
               {/* 等角航线网：自带 z=380 的 pane，低于 overlayPane(400) 的陆地填充，
                   所以压到陆地上的那半截会被自动盖住，只留海面部分 */}
               <RhumbLines />
