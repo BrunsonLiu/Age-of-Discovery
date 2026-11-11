@@ -48,7 +48,8 @@ import {
 import { shipNearZoomScale, SHIP_NEAR_ZOOM_MIN } from '../src/utils/shipZoom'
 import { iceStrengthAt, iceEdgeShift, ICE_SEASON_SHIFT_DEG } from '../src/utils/polarIce'
 import { componentAreas, majorLand } from '../src/utils/shoreBand'
-import { clampToDeck, deckEyeY, deckWalkHalfWidth, isOnDeck, stepWalk } from '../src/components/deck/deckWalk'
+import { clampToDeck, deckEyeY, deckWalkHalfWidth, isOnDeck, stepWalk, WALK_RADIUS_M } from '../src/components/deck/deckWalk'
+import { BOAT, BOAT_ARC, BOAT_STATIONS, boatHull, boatKeelLift, boatObstacle, boatRailGap } from '../src/components/deck/deckBoat'
 import { buildHullGeo } from '../src/components/deck/shipHull'
 import {
   HULL_ARC, HULL_BULWARK, SHIP_DRAFT_LIFT, SHIP_HALF_LENGTH, SHIP_SCALE,
@@ -10051,6 +10052,85 @@ console.log('\n== 天数口径守卫 ==')
   assert(/setMooring\(!st\.fleet\.isSailing\)/.test(deck), '锚的状态与航迹同源（都读 fleet.isSailing）')
   const ship = readFileSync(join(process.cwd(), 'src', 'components', 'deck', 'shipModel.ts'), 'utf8')
   assert(/ship-anchor'/.test(ship) && /ship-anchor-cable'/.test(ship), '锚与锚链真的建出来了')
+}
+
+/*
+ * ---- 甲板小艇：位置合理，而且**必须真的挡人** ----
+ *
+ * 【守什么】甲板行走只约束船体轮廓与桅杆。一条 7 米长、近 1 米高的艇摆在腰部，
+ * 如果它不参与碰撞，玩家会**直接从中间穿过去** —— 模型在、世界是空的，
+ * 比没有这条艇更糟。这里守三件事：位置不出界、不压舱口/不挡桅杆、真的能推离。
+ */
+{
+  const b = boatObstacle()
+  assert(BOAT.halfLen * 2 > 6 && BOAT.halfLen * 2 < 8, `小艇长 ${(BOAT.halfLen * 2).toFixed(1)} 米（6~8）`)
+  assert(BOAT.halfWide * 2 > 1.2 && BOAT.halfWide * 2 < 2.2, `艇宽 ${(BOAT.halfWide * 2).toFixed(2)} 米（1.2~2.2）`)
+  assert(b.minX > -deckWalkHalfWidth(BOAT.z), `小艇没穿出舷墙（左缘 ${b.minX.toFixed(2)} > 可走界限 ${(-deckWalkHalfWidth(BOAT.z)).toFixed(2)}）`)
+  assert(boatRailGap() > 0.5, `艇与舷墙之间留出 ${boatRailGap().toFixed(2)} 米走道`)
+  // 不压货舱口（舱口 x 从 −1.1 到 1.9、z 从 4.4 到 6.8）
+  assert(b.maxX < -1.1, `小艇不压货舱口（艇右缘 ${b.maxX.toFixed(2)} < 舱口左缘 −1.1）`)
+  // 不进主桅（桅在 (0, 1)、半径 1.15）
+  assert(0 - b.maxX > 1.15, `小艇不碰主桅（离轴 ${(0 - b.maxX).toFixed(2)} > 1.15）`)
+  assert(boatKeelLift() > 0.2, `艇底用垫木抬起 ${boatKeelLift()} 米`)
+
+  // ① 从右边撞进去 → 被推到右缘（+ 玩家半径）
+  const push = stepWalk({ x: -1.0, z: 2 }, -0.6, 0)
+  assert(Math.abs(push.x - (b.maxX + WALK_RADIUS_M)) < 1e-9, `撞向小艇会被推开（x=${push.x.toFixed(2)}）= 艇缘 + 半径`)
+  assert(Math.abs(push.z - 2) < 1e-9, '被推开时 z 不变（沿最浅的一轴推）')
+  // ② 贴着小艇侧面走：不能卡住，z 要能推进（起点稍在艇内，靠推离把 x 顶出来）
+  const slide = stepWalk({ x: -1.5, z: 2 }, 0, 0.4)
+  assert(slide.z > 2.2, `贴着小艇走能滑过去（z 2 → ${slide.z.toFixed(2)}）`)
+  assert(Math.abs(slide.x - (b.maxX + WALK_RADIUS_M)) < 1e-9, '滑动时仍然贴在艇边')
+  // ③ 从船首方向撞进去 → 沿 z 推回
+  const head = stepWalk({ x: -2.45, z: 8.0 }, 0, -0.4)
+  assert(Math.abs(head.z - (b.maxZ + WALK_RADIUS_M)) < 1e-9, `从船首撞进去沿 z 推回（z=${head.z.toFixed(2)}）`)
+  // ④ 左舷走道仍然走得动（艇与舷墙之间那条缝）
+  const corridor = stepWalk({ x: -3.7, z: 4.0 }, 0, 0.5)
+  assert(Math.abs(corridor.x + 3.7) < 1e-9 && corridor.z > 4.4, '左舷走道没被小艇堵死')
+  // ⑤ 源码守卫：stepWalk 里真的用了这个矩形
+  const walk = readFileSync(join(process.cwd(), 'src', 'components', 'deck', 'deckWalk.ts'), 'utf8')
+  assert(/boatObstacle\(\)/.test(walk), 'stepWalk 真的读了小艇的占位矩形')
+
+  /*
+   * 艇体放样（`boatHull`）：
+   * 【守什么】第一版用"压扁的下半球"，从甲板看是一只黑碗（两端圆头、没有舷弧）。
+   * 换成沿船长放样之后，这三件事必须算得出来：两端收成尖、龙骨中段最深、
+   * 顶点一个都不许超出 BOAT 的尺寸。
+   */
+  const h = boatHull()
+  const vcount = h.positions.length / 3
+  assert(vcount === 2 * (BOAT_STATIONS + 1) * (BOAT_ARC + 1), `艇体顶点数 = 2×${BOAT_STATIONS + 1}×${BOAT_ARC + 1}（实测 ${vcount}）`)
+  let maxAbsX = 0
+  let maxY = -99
+  let minY = 99
+  let minZ = 99
+  let maxZ = -99
+  for (let i = 0; i < vcount; i++) {
+    const x = h.positions[i * 3]
+    const y = h.positions[i * 3 + 1]
+    const z = h.positions[i * 3 + 2]
+    maxAbsX = Math.max(maxAbsX, Math.abs(x))
+    maxY = Math.max(maxY, y)
+    minY = Math.min(minY, y)
+    minZ = Math.min(minZ, z)
+    maxZ = Math.max(maxZ, z)
+  }
+  assert(maxAbsX <= BOAT.halfWide + 1e-6, `艇体不超宽（${maxAbsX.toFixed(2)} ≤ ${BOAT.halfWide}）`)
+  assert(Math.abs(minY + BOAT.depth) < 0.02, `龙骨最低点 ≈ −depth（${minY.toFixed(2)}）`)
+  assert(maxY <= 0.07, `舷缘最高 ${maxY.toFixed(2)} 米（艇缘在 0 附近）`)
+  assert(Math.abs(minZ + BOAT.halfLen) < 1e-6 && Math.abs(maxZ - BOAT.halfLen) < 1e-6,
+    `艇体纵跨 −${BOAT.halfLen}..+${BOAT.halfLen}`)
+  // 两端的宽度必须是 0（尖头），中段最宽
+  const widthAt = (t: number) => {
+    const row = Math.round(t * BOAT_STATIONS) * (BOAT_ARC + 1) + BOAT_ARC
+    return Math.abs(h.positions[row * 3])
+  }
+  assert(widthAt(0) < 0.02 && widthAt(1) < 0.02, `两端收成尖（${widthAt(0).toFixed(3)} / ${widthAt(1).toFixed(3)}）`)
+  assert(widthAt(0.5) > BOAT.halfWide * 0.9, `中段最宽（${widthAt(0.5).toFixed(2)}）`)
+  // 索引范围只判一次（逐条判会把断言数刷到几千条，掩盖真正的变化）
+  const iMin = Math.min(...h.indices)
+  const iMax = Math.max(...h.indices)
+  assert(iMin >= 0 && iMax < vcount, `索引都在顶点范围内（${iMin}..${iMax} / ${vcount}）`)
 }
 
 console.log(`\n最终结果：${passed} 通过 / ${failed} 失败`)

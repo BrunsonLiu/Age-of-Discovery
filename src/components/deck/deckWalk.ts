@@ -1,4 +1,5 @@
 import { shipDeckAt, shipHalfWidthAt } from './shipModel'
+import { boatObstacle } from './deckBoat'
 
 /**
  * 甲板行走的几何与移动（纯函数，可单测）。
@@ -61,10 +62,14 @@ export function clampToDeck(x: number, z: number): WalkPos {
 }
 
 /**
- * 一步移动：分轴推进 + 桅杆推离。
+ * 一步移动：分轴推进 + 桅杆推离 + 小艇推离。
  *
  * 【为什么要推离而不是挡住】三根桅杆在甲板正中，挡死的话玩家会被卡住，
  * 只能后退重走。推到圆周上（沿切向滑动）才走得动。
+ *
+ * 小艇在左舷腰部（见 `deckBoat`），是一个矩形障碍：进入就沿**穿透最浅的那条边**
+ * 推出去 —— 这与桅杆的径向推离是同一个思路，贴着艇边走时能自然滑过去，
+ * 不会"撞在中间动不了"。
  */
 export function stepWalk(from: WalkPos, dx: number, dz: number): WalkPos {
   let x = from.x + dx
@@ -83,6 +88,26 @@ export function stepWalk(from: WalkPos, dx: number, dz: number): WalkPos {
     } else if (d <= 1e-9) {
       // 正好站在桅杆中心（理论上不会发生）：往船尾推一点
       z = mz - r
+    }
+  }
+
+  // 小艇：矩形推离（加上玩家半径）
+  {
+    const b = boatObstacle()
+    const x0 = b.minX - WALK_RADIUS_M
+    const x1 = b.maxX + WALK_RADIUS_M
+    const z0 = b.minZ - WALK_RADIUS_M
+    const z1 = b.maxZ + WALK_RADIUS_M
+    if (x > x0 && x < x1 && z > z0 && z < z1) {
+      const px0 = x - x0
+      const px1 = x1 - x
+      const pz0 = z - z0
+      const pz1 = z1 - z
+      const m = Math.min(px0, px1, pz0, pz1)
+      if (m === px0) x = x0
+      else if (m === px1) x = x1
+      else if (m === pz0) z = z0
+      else z = z1
     }
   }
 

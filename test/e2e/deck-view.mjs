@@ -727,6 +727,64 @@ check(anchored && anchored.x < -1.9, `锚挂在左舷船壳外沿（x=${anchored
 check(hoisted && hoisted.y > 2.6,
   `收起的锚吊到舷墙顶之上（挂环 y=${hoisted?.y}，舷墙顶 2.74 附近 —— 甲板上看得见）`)
 
+// ---- ⑤n 甲板小艇：看得见，而且**真的挡人** ----
+/*
+ * 【为什么要用"撞上去"来测】小艇是这一轮唯一会改变玩家可行走区域的东西。
+ * 只断言"场景里有个叫 ship-longboat 的组"是不够的 —— 模型在、碰撞不在，
+ * 玩家会从艇中间穿过去，那比没有这条艇更糟。
+ */
+const boatInfo = await page.evaluate(() => {
+  const g = window.__deckScene.getObjectByName('ship-longboat')
+  if (!g) return null
+  const hull = g.getObjectByName('ship-longboat-hull')
+  const names = []
+  g.traverse((o) => { if (o.name) names.push(o.name) })
+  // 艇体是放样出来的（没有 scale 可读）：长度/宽度从顶点里量
+  const pos = hull?.geometry.attributes.position
+  let len = 0
+  let wide = 0
+  if (pos) {
+    hull.geometry.computeBoundingBox()
+    const bb = hull.geometry.boundingBox
+    len = bb.max.z - bb.min.z
+    wide = bb.max.x - bb.min.x
+  }
+  return {
+    x: +g.position.x.toFixed(2),
+    z: +g.position.z.toFixed(2),
+    len: +len.toFixed(2),
+    wide: +wide.toFixed(2),
+    parts: names.length,
+    hasOars: names.filter((n) => /oar/.test(n)).length,
+  }
+})
+check(!!boatInfo, '甲板上有小艇（ship-longboat）')
+check(boatInfo && boatInfo.len > 6 && boatInfo.len < 8, `小艇长 ${boatInfo?.len} 米（6~8）`)
+check(boatInfo && boatInfo.wide > 1.2 && boatInfo.wide < 2.2, `艇宽 ${boatInfo?.wide} 米`)
+check(boatInfo && boatInfo.parts >= 8, `小艇由多件拼成（${boatInfo?.parts} 个命名件）`)
+check(boatInfo && boatInfo.hasOars === 2, `艇里有两只桨（${boatInfo?.hasOars}）`)
+check(boatInfo && boatInfo.x < -1.5 && Math.abs(boatInfo.z - 4.3) < 0.6, `小艇架在左舷腰部（x=${boatInfo?.x} z=${boatInfo?.z}）`)
+
+// 撞上去：从右舷侧往左（A 键）走，必须停在艇边而不是穿过去
+await page.evaluate(() => window.__deckWalk.set({ x: -0.4, z: 4.3, yaw: 0, pitch: -0.1 }))
+await sleep(400)
+const beforeCrash = await page.evaluate(() => window.__deckWalk.get())
+await page.keyboard.down('a')
+await sleep(2000)
+await page.keyboard.up('a')
+await sleep(400)
+const afterCrash = await page.evaluate(() => window.__deckWalk.get())
+// 艇右缘 = x −2.45 + 0.78 = −1.67；加上玩家半径 0.32 → 停在 −1.35 附近
+check(afterCrash.x < beforeCrash.x - 0.3, `确实往小艇走过去（x ${beforeCrash.x.toFixed(2)} → ${afterCrash.x.toFixed(2)}）`)
+check(afterCrash.x > -1.45, `被小艇挡住，没穿过去（停在 x=${afterCrash.x.toFixed(2)}，艇缘 −1.67）`)
+// 沿艇侧仍能走动（不是被卡死）
+await page.keyboard.down('w')
+await sleep(1200)
+await page.keyboard.up('w')
+await sleep(300)
+const afterSlide = await page.evaluate(() => window.__deckWalk.get())
+check(afterSlide.z > afterCrash.z + 0.3, `贴着艇侧还能往前走（z ${afterCrash.z.toFixed(2)} → ${afterSlide.z.toFixed(2)}）`)
+
 // ---- ⑤j 动索：绳头必须在帆角上、索要真的在动 ----
 // 这一条不重写公式，而是**从帆自身的顶点**里找出那个角 —— 绳与布是否分家，
 // 只有拿真实几何对才测得出来（公式对公式会一起错）。

@@ -10,6 +10,7 @@ import {
   BOWSPRIT_BASE, BOWSPRIT_CAP_INSET, BOWSPRIT_TIP, FIGUREHEAD_CREST, figureheadPoints, STEM_Z, stemTopY,
 } from './deckBow'
 import { ANCHOR_LEN, ANCHOR_SIDE, ANCHOR_STOCK, anchorPose, HAWSE_Y, HAWSE_Z } from './deckAnchor'
+import { BOAT, boatHull, boatKeelLift } from './deckBoat'
 import { sailorIdle, SAILOR_POSES, SAILOR_STATIONS } from './deckCrew'
 import { chartCourse } from './deckChart'
 import { WATERLINE_Y_M, WAKE_SEGMENTS } from './deckWake'
@@ -2166,6 +2167,95 @@ export function createDeckShip(): DeckShip {
   })()
   /** 当前是否抛锚（由 DeckView 按 `fleet.isSailing` 写） */
   let anchorMoored = false
+
+  /*
+   * ---------------- 甲板上的小艇（longboat） ----------------
+   *
+   * 【为什么它比"再加几个木桶"重要得多】从上往下看甲板时，腰部原本是一大片
+   * 空木板（只有舱口、几只桶和缆桩）。真实商船的腰部一定架着一条长艇 ——
+   * 上岸、拖锚、送缆全靠它，它是**除桅杆之外甲板上最大的东西**。少它，
+   * 这条船读作"一个装着桅杆的大盒子"。
+   *
+   * 尺寸与位置全部来自 `deckBoat`（纯数据）：那条模块同时给出**障碍矩形**，
+   * 因为甲板行走必须被它挡住 —— 模型在、世界是空的，比没有这条艇更糟。
+   */
+  {
+    /*
+     * 组的位置：**艇底**在垫木顶上（船体局部 y = 甲板 + chockLift）。
+     * `boatHull` 的坐标里艇缘在 0、艇底在 −depth，所以整组再抬 depth ——
+     * 这样"垫木抬多高"就是艇底的位置，改一个数不会牵动三处。
+     */
+    const keelY = shipDeckAt(BOAT.z) + boatKeelLift() + BOAT.depth
+    const boat = new THREE.Group()
+    boat.name = 'ship-longboat'
+    boat.position.set(BOAT.x, keelY, BOAT.z)
+    boat.rotation.y = BOAT.yaw
+    /*
+     * 艇体：沿船长放样（见 `boatHull`）。艇缘在 y=0、艇底在 −depth，
+     * 所以整组抬到 `chockLift + depth` 处，艇底正好落在垫木上。
+     */
+    const hullData = boatHull()
+    const hullGeo = new THREE.BufferGeometry()
+    hullGeo.setAttribute('position', new THREE.BufferAttribute(hullData.positions, 3))
+    hullGeo.setIndex(hullData.indices)
+    hullGeo.computeVertexNormals()
+    const hull = new THREE.Mesh(hullGeo, new THREE.MeshStandardMaterial({
+      // 比船壳亮一档：艇在桅影里，用船壳的木色会读成"一条黑槽"（实测截图）
+      color: 0x7a5a36, roughness: 0.88, metalness: 0.04, side: THREE.DoubleSide,
+    }))
+    hull.name = 'ship-longboat-hull'
+    boat.add(hull)
+    /*
+     * 外板肋骨：每舷 4 根竖条。
+     * 【为什么必须加】艇体是放样出来的一整片曲面，侧面在阴影里就是一块平平的暗板
+     * （实测截图：像一条长木槽）。肋骨给它横向的明暗断点，1 厘米的凸起就够。
+     */
+    for (const sgn of [-1, 1]) {
+      for (let i = 0; i < 4; i++) {
+        const z = -2.4 + i * 1.6
+        const rib = new THREE.Mesh(new THREE.BoxGeometry(0.06, BOAT.depth * 0.78, 0.1), woodDark)
+        rib.name = `ship-longboat-rib-${sgn > 0 ? 'port' : 'stbd'}-${i}`
+        rib.position.set(sgn * (BOAT.halfWide * 0.93), -BOAT.depth * 0.42, z)
+        boat.add(rib)
+      }
+    }
+    /* 艇内铺板：没有它，从甲板上看艇里是一个黑洞 */
+    const floor = new THREE.Mesh(new THREE.PlaneGeometry(1.5, BOAT.halfLen * 1.9), woodDark)
+    floor.rotation.x = -Math.PI / 2
+    floor.position.y = -BOAT.depth + 0.22
+    boat.add(floor)
+    // 艇缘：一圈椭圆箍（没有它，开口的边缘是一条纸一样薄的接缝）
+    const rim = new THREE.Mesh(new THREE.TorusGeometry(1, 0.05, 4, 20), woodDark)
+    rim.name = 'ship-longboat-rim'
+    rim.rotation.x = -Math.PI / 2
+    rim.scale.set(BOAT.halfWide, BOAT.halfLen, 1)
+    rim.position.y = 0.02
+    boat.add(rim)
+    // 三道横座板
+    for (let i = 0; i < 3; i++) {
+      const t = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.07, 0.34), woodMid)
+      t.name = `ship-longboat-thwart-${i}`
+      t.position.set(0, -0.16, -1.9 + i * 1.9)
+      boat.add(t)
+    }
+    // 两支桨：躺在座板上（艇里空着反而不像"能用的艇"）
+    for (const sgn of [-1, 1]) {
+      const oar = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 3.0, 5), mastMat)
+      oar.name = `ship-longboat-oar-${sgn > 0 ? 'port' : 'stbd'}`
+      oar.rotation.x = Math.PI / 2
+      oar.position.set(sgn * 0.42, -0.1, 0.3)
+      boat.add(oar)
+    }
+    // 两根垫木：艇底与甲板之间
+    for (const zs of [-2, 2]) {
+      const chock = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.24, 0.3), woodDark)
+      chock.position.set(0, -BOAT.depth - BOAT.chockLift * 0.5 + 0.12, zs)
+      boat.add(chock)
+    }
+    // 甲板上的一圈暗部：没有它，艇像"贴在木板上的一张画"
+    addShadow(boat, 0, -BOAT.depth - BOAT.chockLift + 0.01, BOAT.halfWide * 1.5, BOAT.halfLen * 1.1, 0.5)
+    group.add(boat)
+  }
 
   /*
    * ---------------- 炮门（gun ports） ----------------
