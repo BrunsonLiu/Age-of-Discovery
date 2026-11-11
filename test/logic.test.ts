@@ -62,6 +62,7 @@ import {
   CLIMATE_LABEL_FRAC, CLIMATE_LABEL_PAD, CLIMATE_LINES,
   climateGapCenter, climateLabelPx, climateRuns, OBLIQUITY_DEG, POLAR_CIRCLE_DEG,
 } from '../src/utils/climateLines'
+import { climateZoneAt, cursorLabel, readoutPlacement } from '../src/utils/cursorReadout'
 import {
   SURF_PERIOD_PX, SURF_WIND_FULL, SURF_WIND_MIN, surfDash, surfOpacity, surfStrength, surfWeight,
 } from '../src/utils/surf'
@@ -10610,6 +10611,72 @@ console.log('\n== 天数口径守卫 ==')
       assert(!m[1].includes('Pane'), `${f} 的 pane 名「${m[1]}」不含 "Pane"（会被 Leaflet 切掉）`)
     }
   }
+}
+
+
+/*
+ * ---- 光标读数：指哪儿读哪儿（度分 + 气候带）----
+ *
+ * 【守什么】读数框是玩家用来**报坐标**的工具，它说的每个字都得成立：
+ *  ① 气候带的分界必须与图上那四条金线是同一个数（各写一份迟早对不上）；
+ *  ② 分界线上算高一档（站在线上已经"过去了"）；
+ *  ③ 度数写成度分、南北东西不缺字母；
+ *  ④ 贴边要翻到光标另一侧 —— 只露半行字比没有读数更糟。
+ * 另有一条**结构**约束：这个组件不许进 React state。mousemove 逐像素来，
+ * 每次 setState 重渲染这棵子树 —— 本项目为此吃过大亏（60fps → 27fps）。
+ */
+{
+  // ① 分界与 climateLines 同源（不是把 23.44 再抄一遍）
+  assert(climateZoneAt(0)?.name === '热带', '赤道 → 热带')
+  assert(climateZoneAt(10)?.name === '热带' && climateZoneAt(-10)?.name === '热带',
+    '南北纬 10° 都在热带（热带跨赤道，不带半球前缀）')
+  assert(climateZoneAt(OBLIQUITY_DEG - 1e-6)?.name === '热带',
+    `23°26′ 以南（${(OBLIQUITY_DEG - 1e-6).toFixed(4)}°）仍是热带`)
+  assert(climateZoneAt(OBLIQUITY_DEG)?.name === '北温带',
+    `分界线上算高一档：${OBLIQUITY_DEG}°N → 北温带`)
+  assert(climateZoneAt(-OBLIQUITY_DEG)?.name === '南温带', '南回归线上 → 南温带')
+  assert(climateZoneAt(45)?.name === '北温带' && climateZoneAt(-45)?.name === '南温带',
+    '南北纬 45° 分属南北温带')
+  assert(climateZoneAt(POLAR_CIRCLE_DEG - 1e-6)?.name === '北温带', '极圈以南仍是温带')
+  assert(climateZoneAt(POLAR_CIRCLE_DEG)?.name === '北寒带', '北极圈上 → 北寒带')
+  assert(climateZoneAt(-POLAR_CIRCLE_DEG)?.name === '南寒带', '南极圈上 → 南寒带')
+  assert(climateZoneAt(90)?.name === '北寒带' && climateZoneAt(-90)?.name === '南寒带', '两极')
+  assert(climateZoneAt(Number.NaN) === null, 'NaN 纬度 → 不判（组件就不写这一段）')
+  // 两个分界之间必须只隔一条线（不能有第三种答案，也不能漏掉某一段）
+  const zoneNames = [-89, -70, -50, -30, -23, -10, 0, 10, 23, 30, 50, 70, 89].map((l) => climateZoneAt(l)?.name)
+  assert(zoneNames.join(',') === '南寒带,南寒带,南温带,南温带,热带,热带,热带,热带,热带,北温带,北温带,北寒带,北寒带',
+    `由南到北的气候带顺序：${zoneNames.join(' / ')}`)
+
+  // ② 一行读数
+  assert(cursorLabel(30, -10) === '30°N  10°W · 北温带', `读数：${cursorLabel(30, -10)}`)
+  assert(cursorLabel(29.95, -10.0167) === '29°57′N  10°01′W · 北温带', `分刻度：${cursorLabel(29.95, -10.0167)}`)
+  assert(cursorLabel(0, 0) === '0°  0° · 热带', `赤道与本初子午线：${cursorLabel(0, 0)}`)
+  assert(cursorLabel(-33.87, 151.21).endsWith('南温带'), `悉尼一带 → ${cursorLabel(-33.87, 151.21)}`)
+  assert(cursorLabel(Number.NaN, 0) === '', 'NaN 不写字')
+
+  // ③ 贴边翻侧
+  const size = { x: 1440, y: 900 }
+  const mid = readoutPlacement(700, 400, 150, 28, size)
+  assert(mid.x === 714 && mid.y === 416 && !mid.flippedX && !mid.flippedY,
+    `画面中间：右下 ${mid.x},${mid.y}（gap 14）`)
+  const rx = readoutPlacement(1400, 400, 150, 28, size)
+  assert(rx.flippedX && rx.x + 150 <= 1400, `贴右边翻到光标左侧（x=${rx.x}）`)
+  const by = readoutPlacement(700, 880, 150, 28, size)
+  assert(by.flippedY && by.y + 28 <= 880, `贴下边翻到光标上方（y=${by.y}，底栏 52px 让开）`)
+  const corner = readoutPlacement(1420, 890, 150, 28, size)
+  assert(corner.x >= 4 && corner.x + 150 <= size.x - 4 && corner.y >= 4 && corner.y + 28 <= size.y - 4,
+    `角落也关得住（${corner.x},${corner.y}）`)
+  assert(readoutPlacement(Number.NaN, Number.NaN, 10, 10, size).x >= 4, 'NaN 光标 → 夹到安全位置（不写 NaN）')
+
+  // ④ 源码守卫：不重渲染、不吃点击、12px
+  const cc = readFileSync(join(process.cwd(), 'src', 'components', 'map', 'CursorCoords.tsx'), 'utf8')
+  assert(!/useState/.test(cc), 'CursorCoords 不用 useState（mousemove 逐像素，重渲染会吃帧）')
+  assert(/map\.on\('mousemove'/.test(cc) && /textContent/.test(cc),
+    '读数走 DOM（textContent + transform），不走 state')
+  assert(/pointer-events-none/.test(cc), '读数框不吃点击（压在海图上的浮层不许整张吃点击）')
+  assert(/text-\[12px\]/.test(cc), '读数用 12px（项目下限）')
+  assert(/offsetWidth/.test(cc), '翻边按真实宽度算（字数变了宽度也变）')
+  assert(/movestart/.test(cc) && /zoomstart/.test(cc), '拖动/缩放时先藏起来（避免读数停在旧位置）')
 }
 
 

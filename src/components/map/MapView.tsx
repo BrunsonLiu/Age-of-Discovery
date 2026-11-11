@@ -23,6 +23,7 @@ import { ShipAnimation } from './ShipAnimation'
 import NpcShips2D from './NpcShips2D'
 import { MapOverlays } from './MapOverlays'
 import MapClickHandler from './MapClickHandler'
+import { CursorCoords } from './CursorCoords'
 import OceanLabels from './OceanLabels'
 import RhumbLines from './RhumbLines'
 import VintageMapOverlay from './VintageMapOverlay'
@@ -627,6 +628,9 @@ export default function MapView() {
               {/* 航程圈（底栏开关）：半径 = 每日航程 × 天数，与出航计划同一个函数 */}
               <VoyageRings />
               <MapClickHandler />
+              {/* 光标读数：指哪儿读哪儿（度分 + 气候带）。只改 DOM 不进 state —— 
+                  mousemove 逐像素来，重渲染会把航速帧率吃掉 */}
+              <CursorCoords />
               <OceanLabels />
               <RouteLine />
               <PortMarker />
