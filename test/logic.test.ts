@@ -62,6 +62,10 @@ import {
   SURF_PERIOD_PX, SURF_WIND_FULL, SURF_WIND_MIN, surfDash, surfOpacity, surfStrength, surfWeight,
 } from '../src/utils/surf'
 import { densify, filterSeaPoints, splitAtLand } from '../src/utils/seaClip'
+import {
+  WAKE_MAX_NM, WAKE_MAX_POINTS, WAKE_MIN_NM, WAKE_SCREEN_PX, wakeNmForScreen, wakePolyline,
+} from '../src/utils/shipWake'
+import type { RouteGeometry } from '../src/utils/routePath'
 import { isOnLand, registerLandGeojson } from '../src/utils/landCheck'
 import { OCEAN_CURRENTS, OCEAN_LABELS, currentFlowPoints, windArrowSites } from '../src/data/mapLayers'
 import { buildHullGeo } from '../src/components/deck/shipHull'
@@ -10637,6 +10641,76 @@ console.log('\n== 天数口径守卫 ==')
   assert(/splitAtLand\(currentFlowPoints/.test(ov), '洋流按陆地裁切')
   assert(/pane=\{BAND_PANE\}/.test(ov), '风带虚线挂在自建 pane 上')
   assert(/zIndex = '330'/.test(ov), '风带 pane 在陆地填充（400）之下 —— 否则一条青线横穿撒哈拉')
+}
+
+
+/*
+ * ---- 商船尾迹：必须长在它**走过的航迹**上 ----
+ *
+ * 【守什么】尾迹是"这艘船从哪儿来"的唯一线索，两种错法都会立刻被看出来：
+ *  ① 画在船头前面（返程时按 sign=1 算就会这样）—— 看起来船在倒着开；
+ *  ② 两端点直接连一条线 —— A* 的折线是绕着海岸走的，直线段会横穿陆地。
+ * 所以判据盯着：端点确实在"身后"、中间必须走几何自己的顶点、端点在航线端点处不画。
+ */
+{
+  const mkGeom = (): RouteGeometry => ({
+    points: [
+      { lat: 0, lng: 0, cumNm: 0 },
+      { lat: 0, lng: 1, cumNm: 60 },
+      { lat: 0, lng: 2, cumNm: 120 },
+    ],
+    totalNm: 120,
+    from: [0, 0],
+    to: [0, 2],
+    expansions: 0,
+    elapsedMs: 0,
+  })
+  const g = mkGeom()
+
+  // ① 正向：船在 100 海里处，尾迹应当在它**西边**（lng 更小）
+  const fwd = wakePolyline(g, 100, 1, 60)
+  assert(fwd.length >= 2, `正向尾迹有 ${fwd.length} 个点`)
+  assert(Math.abs(fwd[fwd.length - 1][1] - (100 / 60)) < 0.02, `尾迹头在船位（lng≈${(100 / 60).toFixed(2)}）`)
+  assert(fwd[0][1] < fwd[fwd.length - 1][1], `尾迹在船身后方（${fwd[0][1].toFixed(2)} < ${fwd[fwd.length - 1][1].toFixed(2)}）`)
+
+  // ② 返程（sign=-1）：船头朝西，尾迹必须在**东边**
+  const back = wakePolyline(g, 100, -1, 60)
+  assert(back.length >= 2, '返程尾迹也画得出来')
+  assert(back[0][1] > back[back.length - 1][1], `返程时尾迹在另一侧（${back[0][1].toFixed(2)} > ${back[back.length - 1][1].toFixed(2)}）`)
+
+  // ③ 中间点必须是几何顶点（lng=1 那个拐点），不能是两端点的直线插值
+  assert(fwd.some(([, lng]) => Math.abs(lng - 1) < 1e-9), '尾迹经过了航线自己的拐点（没走直线）')
+
+  // ④ 端点处（身后没有航迹）不画
+  assert(wakePolyline(g, 0, 1, 60).length === 0, '刚出发时不画尾迹')
+  assert(wakePolyline(g, 0, -1, 60).length >= 2, '刚出发但朝返程方向 → 身后有航迹，要画')
+  assert(wakePolyline(g, Number.NaN, 1, 60).length === 0, 'NaN 里程不画')
+  assert(wakePolyline(g, 100, 1, 0).length === 0, '长度 0 不画')
+
+  // ⑤ 点数量有上限（逐帧 setLatLngs，点太多会卡）
+  const long: RouteGeometry = {
+    points: Array.from({ length: 400 }, (_, i) => ({ lat: 0, lng: i * 0.01, cumNm: i * 0.6 })),
+    totalNm: 399 * 0.6,
+    from: [0, 0],
+    to: [0, 4],
+    expansions: 0,
+    elapsedMs: 0,
+  }
+  const many = wakePolyline(long, long.totalNm, 1, 200)
+  assert(many.length <= WAKE_MAX_POINTS, `点被抽稀到 ${many.length} 个（上限 ${WAKE_MAX_POINTS}）`)
+  assert(Math.abs(many[0][1] - 0) > 1e-9 || Math.abs(many[many.length - 1][1] - 4) < 1e-6,
+    '抽稀后首尾仍然正确')
+
+  // ⑥ 屏幕长度恒定：把"想要的像素长度"换成海里
+  assert(Math.abs(wakeNmForScreen(WAKE_SCREEN_PX / 100) - 100) < 1e-9, '100px/海里 → 100 海里（屏幕长度恒定）')
+  assert(wakeNmForScreen(0.05) === WAKE_MAX_NM, `world zoom（0.05px/海里）夹到上限 ${WAKE_MAX_NM} 海里`)
+  assert(wakeNmForScreen(5) === WAKE_MIN_NM, `近岸（5px/海里）夹到下限 ${WAKE_MIN_NM} 海里`)
+  assert(wakeNmForScreen(Number.NaN) > 0 && wakeNmForScreen(0) > 0, '参数不可用时给一个正数（不画 0 长度）')
+
+  // ⑦ 源码守卫：重画必须节流（逐帧 setLatLngs 实测 60 → 27 fps）
+  const npc = readFileSync(join(process.cwd(), 'src', 'components', 'map', 'NpcShips2D.tsx'), 'utf8')
+  assert(/lastPx/.test(npc) && />=\s*2/.test(npc), '尾迹按"屏幕上移动 ≥2px"节流重画')
+  assert(/wakeNmForScreen/.test(npc), '尾迹长度按当前缩放换算（屏幕长度恒定）')
 }
 
 console.log(`\n最终结果：${passed} 通过 / ${failed} 失败`)

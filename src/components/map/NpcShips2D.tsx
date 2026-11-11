@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useRef } from 'react'
-import { Marker } from 'react-leaflet'
+import { Marker, Polyline, useMap } from 'react-leaflet'
 import L from 'leaflet'
 import { ports } from '@/data/ports'
 import { routes } from '@/data/routes'
 import { shipSprite } from '@/data/shipSprites'
 import { getRouteGeometry } from '@/utils/routePath'
 import { NPC_LEGS, NPC_SPEED_NM, npcLegAt, npcPose } from '@/utils/npcShips'
+import { wakeNmForScreen, wakePolyline } from '@/utils/shipWake'
+import { pxPerNmAt } from '@/utils/mapScale'
 
 /**
  * 2D 海图上的 NPC 商船（与 2.5D 用的是**同一个公式**）。
@@ -25,7 +27,20 @@ import { NPC_LEGS, NPC_SPEED_NM, npcLegAt, npcPose } from '@/utils/npcShips'
 const NPC_SIZE = 46
 
 export default function NpcShips2D() {
+  const map = useMap()
   const markerRefs = useRef<(L.Marker | null)[]>([])
+  const wakeRefs = useRef<(L.Polyline | null)[]>([])
+  /**
+   * 上次重画尾迹时，这艘船在屏幕上的位置（像素）。
+   *
+   * 【为什么必须节流】逐帧 `setLatLngs` 会让 SVG 每帧重绘路径 ——
+   * 实测（无头 Edge，软件渲染）世界缩放下 **60.3 → 27.4 fps**（把尾迹
+   * `display:none` 立刻回 60.3）。而商船在 world zoom 时每秒只移动 **1.7px**，
+   * 60fps 里 58 帧都是白画。
+   * 改成"屏幕上真的移动了 2px 以上才重画"：world zoom 约 1 次/秒，
+   * 近岸 zoom 5 约 5 次/秒 —— 都够顺，代价降到可以忽略。
+   */
+  const lastPx = useRef<{ x: number; y: number }[]>([])
 
   /**
    * 每条腿的几何与初始相位，只算一次（航线几何是 A*，别每帧算）
@@ -81,20 +96,56 @@ export default function NpcShips2D() {
       for (let i = 0; i < legs.length; i++) {
         const m = markerRefs.current[i]
         if (!m) continue
-        const pose = npcPose(legs[i].geom, npcLegAt(legs[i].geom.totalNm, NPC_SPEED_NM, legs[i].phase0, now))
+        // npcLegAt 给"沿几何的里程 + 方向"，npcPose 把它翻成经纬度与罗盘方位 ——
+        // 尾迹要用前者（posNm/sign），船图标用后者，所以两个都留着
+        const st = npcLegAt(legs[i].geom.totalNm, NPC_SPEED_NM, legs[i].phase0, now)
+        const pose = npcPose(legs[i].geom, st)
         m.setLatLng([pose.lat, pose.lng])
         // 船首朝上的素材 → CSS 顺时针正角 = 方位角，不减 90
         const rot = m.getElement()?.firstElementChild as HTMLElement | null
         if (rot) rot.style.transform = `rotate(${pose.bearing.toFixed(1)}deg)`
+        /*
+         * 尾迹：沿它**真正走过的折线**取身后 60 海里。
+         * 位置与船位同源（同一个 positionAtNm），所以尾迹永远贴着航迹，
+         * 转弯时也跟着折 —— 这正是贴图做不到的（见 utils/shipWake 的注释）。
+         * 逐帧调 setLatLngs 而不是走 React state：3 艘船 × 60fps 重渲染整棵树不值得。
+         */
+        const w = wakeRefs.current[i]
+        if (w) {
+          const pt = map.latLngToContainerPoint([pose.lat, pose.lng])
+          const prev = lastPx.current[i]
+          if (!prev || Math.hypot(pt.x - prev.x, pt.y - prev.y) >= 2) {
+            lastPx.current[i] = { x: pt.x, y: pt.y }
+            w.setLatLngs(wakePolyline(legs[i].geom, st.posNm, st.sign, wakeNmForScreen(pxPerNmAt(map))))
+          }
+        }
       }
     }
     raf = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(raf)
-  }, [legs])
+  }, [legs, map])
+
+  const initialWakes = useMemo(
+    () => legs.map((leg) => {
+      const st = npcLegAt(leg.geom.totalNm, NPC_SPEED_NM, leg.phase0, 0)
+      return wakePolyline(leg.geom, st.posNm, st.sign)
+    }),
+    [legs],
+  )
 
   if (!legs.length) return null
   return (
     <>
+      {/* 尾迹画在商船**下面**（先后顺序 = 绘制顺序）：船要压在尾巴上 */}
+      {legs.map((leg, i) => (
+        <Polyline
+          key={`npc-wake-${i}`}
+          positions={initialWakes[i]}
+          pathOptions={{ color: '#eaf5fb', weight: 2.4, opacity: 0.32, lineCap: 'round', lineJoin: 'round' }}
+          interactive={false}
+          ref={(l) => { wakeRefs.current[i] = l }}
+        />
+      ))}
       {legs.map((leg, i) => (
         <Marker
           key={`npc-${i}`}
