@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Marker, Polyline, useMap } from 'react-leaflet'
 import L from 'leaflet'
-import { degreeLabel, graticuleValues, pickGraticuleStep } from '@/utils/graticule'
+import { degreeLabel, graticuleValues, isWholeDegree, pickGraticuleStep } from '@/utils/graticule'
 
 /**
  * 2D 海图的经纬网 + 边缘度数。
@@ -69,11 +69,19 @@ interface GridLine {
   points: [number, number][]
   /** 标签锚点（容器坐标 → 已转成经纬度） */
   at: L.LatLng
-  /** 赤道：线粗一点、字亮一点 */
+  /** 赤道 / 本初子午线：线最粗、字最亮 */
   major: boolean
+  /**
+   * 整度线（相对"分刻度"）。
+   *
+   * 【为什么要有两档】步长细分到 0.1° 之后，一屏里有十好几条线；如果每条一样重，
+   * 网格会盖住海面纹理、也看不出"1° 落在哪儿"。整度线稍重、分刻度线更淡，
+   * 这才读成"度 + 分"的层级，而不是一堆等价的格子。
+   */
+  whole: boolean
 }
 
-function labelIcon(kind: 'lat' | 'lng', text: string, major: boolean) {
+function labelIcon(kind: 'lat' | 'lng', text: string, major: boolean, whole: boolean) {
   /*
    * 用 divIcon + transform 对齐：lat 的标签要在**竖直方向居中**于线上
    * （translateY(-50%)），lng 的要**水平居中**（translateX(-50%)）。
@@ -84,7 +92,7 @@ function labelIcon(kind: 'lat' | 'lng', text: string, major: boolean) {
   const html = `<span style="display:inline-block;transform:${shift};
     font-family:var(--font-serif, Georgia, serif);font-size:12px;line-height:1;
     letter-spacing:0.08em;white-space:nowrap;
-    color:${major ? '#e8dcc0' : '#c3d7e4'};opacity:${major ? 0.95 : 0.8};
+    color:${major ? '#e8dcc0' : '#c3d7e4'};opacity:${major ? 0.95 : whole ? 0.8 : 0.62};
     text-shadow:0 0 3px rgba(6,18,26,0.9),0 1px 2px rgba(6,18,26,0.8);
     padding:2px 3px;">${text}</span>`
   return L.divIcon({ html, className: 'grat-label', iconSize: [0, 0], iconAnchor: [0, 0] })
@@ -139,6 +147,7 @@ function buildGrid(map: L.Map): GridLine[] {
       points: [[lat, west], [lat, east]],
       at: map.containerPointToLatLng(L.point(LAT_LABEL_X, y)),
       major,
+      whole: isWholeDegree(lat),
     })
   }
 
@@ -158,6 +167,7 @@ function buildGrid(map: L.Map): GridLine[] {
       points: [[south, lng], [north, lng]],
       at: map.containerPointToLatLng(L.point(x, lngLabelY)),
       major,
+      whole: isWholeDegree(lng),
     })
   }
   return out
@@ -227,7 +237,12 @@ export function Graticule() {
              */
             color: g.major ? '#b6d4e6' : '#9dc2d8',
             weight: g.major ? 1.5 : 1,
-            opacity: g.major ? 0.46 : 0.28,
+            /*
+             * 三档：赤道/本初子午线 0.46、整度 0.28、分刻度 0.15。
+             * 分刻度如果也 0.28，一屏十几条线会把海面纹理压平（实测
+             * 0.1° 步长下同屏 12 条纬线 + 20 条经线）。
+             */
+            opacity: g.major ? 0.46 : g.whole ? 0.28 : 0.15,
             interactive: false,
           }}
         />
@@ -236,7 +251,7 @@ export function Graticule() {
         <Marker
           key={`grat-lbl-${g.label}-${g.at.lat.toFixed(3)}-${g.at.lng.toFixed(3)}`}
           position={g.at}
-          icon={labelIcon(g.kind, g.label, g.major)}
+          icon={labelIcon(g.kind, g.label, g.major, g.whole)}
           pane={LABEL_PANE}
           interactive={false}
           keyboard={false}

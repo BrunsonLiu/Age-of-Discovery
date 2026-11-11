@@ -101,10 +101,14 @@ const readStable = async () => {
 /** 把 "30°N" / "45°W" / "赤道" / "0°" 解析成 { kind, deg } */
 const parse = (t) => {
   if (t === '赤道') return { kind: 'lat', deg: 0 }
-  const m = /^(\d+)°([NSEW])?$/.exec(t)
+  /*
+   * 高缩放级会写「35°24′N」（分刻度）。这里必须一起解析，否则
+   * "每个标签都能解析"会在放大之后假红。
+   */
+  const m = /^(\d+)°(?:(\d{2})′)?([NSEW])?$/.exec(t)
   if (!m) return null
-  const deg = Number(m[1])
-  const d = m[2]
+  const deg = Number(m[1]) + (m[2] ? Number(m[2]) / 60 : 0)
+  const d = m[3]
   if (d === 'N') return { kind: 'lat', deg }
   if (d === 'S') return { kind: 'lat', deg: -deg }
   if (d === 'E') return { kind: 'lng', deg }
@@ -205,12 +209,17 @@ await page.mouse.move(720, 430)
  * 判"至少两个"就假红了。这里逐格滚、每格看一眼，到"屏上有 3 个以上纬线"就停。
  */
 let probe = s1
-for (let i = 0; i < 6; i++) {
+for (let i = 0; i < 9; i++) {
   await page.mouse.wheel({ deltaY: -130 })
   await sleep(700)
   probe = await readLabels()
-  const n = probe.labels.map((l) => parse(l.t)).filter((p) => p && p.kind === 'lat').length
-  if (n >= 3) break
+  const ls = probe.labels.map((l) => ({ ...l, p: parse(l.t) }))
+    .filter((l) => l.p && l.p.kind === 'lat').sort((a, b) => b.p.deg - a.p.deg)
+  const degs = ls.map((l) => l.p.deg).sort((a, b) => a - b)
+  const stepNow = degs.length >= 2
+    ? Math.min(...degs.slice(1).map((d, k) => Number((d - degs[k]).toFixed(4)))) : 99
+  // 目标：已经在分刻度（< 0.5°）且一屏还有 3 个以上度数
+  if (ls.length >= 3 && stepNow < 0.5) break
 }
 await sleep(600)
 const s2 = await readStable()
@@ -226,10 +235,19 @@ check(perDeg2 > gapBeforePerDeg * 1.5,
   `放大后每度像素变大（${gapBeforePerDeg.toFixed(1)} → ${perDeg2.toFixed(1)}px/度）`)
 check(lineGap2 >= 60 && lineGap2 <= 900,
   `相邻纬线间距 ${lineGap2.toFixed(0)}px 仍可读、也没跑到画面外`)
-// 放大后步长必须变细：写死 5° 时每格会涨到几百像素、一屏只剩一根线
+/*
+ * 放大后步长必须变细 —— 而且现在会细到**分刻度**（0.5/0.25/0.1°）。
+ * 写死 5° 时每格会涨到几百像素、一屏只剩一根线（上一版最小 1°，
+ * zoom 10 就是这样：整屏一根纬线）。
+ */
 const degs2 = lats2.map((l) => l.p.deg).sort((a, b) => a - b)
-const step2 = degs2.length >= 2 ? Math.min(...degs2.slice(1).map((d, i) => d - degs2[i])) : 0
-check(step2 >= 1 && step2 <= 2, `放大后网格步长变细到 ${step2}°（写死 5° 会在这里红）`)
+const steps2 = degs2.slice(1).map((d, i) => Number((d - degs2[i]).toFixed(4)))
+const step2 = steps2.length ? Math.min(...steps2) : 0
+check(step2 > 0 && step2 < 5, `放大后网格步长变细到 ${step2}°（写死 5° 会在这里红）`)
+const minuteLabels = lats2.filter((l) => l.t.includes('′'))
+check(step2 < 1 ? minuteLabels.length >= 1 : true,
+  step2 < 1 ? `分刻度的度数写成「分」（${minuteLabels.map((l) => l.t).join(' ')}）` : '本级别还是整度（不需要分）')
+check(lats2.length >= 3, `放大后一屏仍有 ${lats2.length} 个纬度度数（不会只剩一个）`)
 check(lngs2.length >= 1, `放大后仍有经度度数（${lngs2.map((l) => l.t).join(' ')}）`)
 
 // ------------------------------------------------------ ⑥ 不吃点击（装饰层）

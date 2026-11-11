@@ -56,7 +56,7 @@ import {
   circleLatLngs, MIN_RING_NM, pickRingDays, RING_DAY_CANDIDATES, RING_MAX_PX, RING_MIN_PX, RING_SEGMENTS, ringRadii,
 } from '../src/utils/voyageRings'
 import {
-  degreeLabel, GRATICULE_STEPS, graticuleValues, MIN_LINE_GAP_PX, pickGraticuleStep,
+  degreeLabel, GRATICULE_STEPS, graticuleValues, isWholeDegree, MIN_LINE_GAP_PX, pickGraticuleStep,
 } from '../src/utils/graticule'
 import {
   SURF_PERIOD_PX, SURF_WIND_FULL, SURF_WIND_MIN, surfDash, surfOpacity, surfStrength, surfWeight,
@@ -10385,6 +10385,31 @@ console.log('\n== 天数口径守卫 ==')
   assert(pickGraticuleStep(91) === 1, `zoom 7（91px/度）用 1° 网格`)
   assert(pickGraticuleStep(2.84) === 30, `zoom 2（2.84px/度）用 30° 网格`)
 
+  /*
+   * 高缩放级必须有**够多的线**。
+   *
+   * 【守的是这条】上一版最小步长 1°：zoom 10 时 1° = 728px，900px 高的画面
+   * 只跨 1.2° —— 整屏一根纬线、一根经线，海面大片空白（截图确认）。
+   * 细分到 0.1°（6′）之后同屏 12 条纬线。这条判据问的就是"一屏看得见几条"。
+   */
+  for (const z of [7, 8, 9, 10]) {
+    const pxPerDeg = (256 * 2 ** z) / 360
+    const step = pickGraticuleStep(pxPerDeg)
+    const linesOnScreen = 900 / (step * pxPerDeg)
+    assert(linesOnScreen >= 4, `zoom ${z}：900px 高的画面能看到 ${linesOnScreen.toFixed(1)} 条纬线（≥ 4）`)
+    assert(step === 1 || step === 0.5 || step === 0.25 || step === 0.1,
+      `zoom ${z} 的步长 ${step}° 已经是"分刻度"档`)
+  }
+  assert(pickGraticuleStep(728) === 0.1, 'zoom 10（728px/度）细分到 0.1°（6′）')
+  // 步长必须是整分钟：0.1°=6′、0.25°=15′、0.5°=30′
+  for (const st of GRATICULE_STEPS) {
+    const minutes = st * 60
+    assert(Math.abs(minutes - Math.round(minutes)) < 1e-9, `步长 ${st}° = ${minutes}′ 是整分钟`)
+  }
+  // 整度判定（用来分主刻度/分刻度两档线宽）
+  assert(isWholeDegree(35) && isWholeDegree(-10) && isWholeDegree(0), '整数度是整度线')
+  assert(!isWholeDegree(35.4) && !isWholeDegree(0.1) && !isWholeDegree(Number.NaN), '0.1/35.4/NaN 不是整度线')
+
   // ③ 经度方向一定比纬度方向松（cos φ ≤ 1）—— 标签不会横向挤在一起
   for (const lat of [0, 20, 40, 60, 75, 85]) {
     const latPx = 22.75
@@ -10397,6 +10422,26 @@ console.log('\n== 天数口径守卫 ==')
     `[-12,12] 步长 5 → ${graticuleValues(-12, 12, 5).join(',')}`)
   assert(graticuleValues(-90, 90, 30).includes(0), '南北半球之间的网格含 0°（赤道）')
   assert(graticuleValues(-90, 90, 30).every((v) => Number.isInteger(v)), '网格值都是整数（不出现 -89.99999）')
+  /*
+   * 分刻度的值**不能被取整**。
+   * 这一条是补的：我把 `Math.round(v)` 注入回去（原来的写法）跑了一遍，
+   * 全套 8140 条判据一条都没红 —— 因为所有既有用例的步长都是整数度。
+   * 0.1° 步长下取整会把 34.1/34.2/34.3 全变成 34，图上就只剩一条线。
+   */
+  {
+    const frac = graticuleValues(34.1, 34.4, 0.1)
+    assert(frac.length === 4, `[34.1, 34.4] 步长 0.1 → 4 个值（实测 ${frac.length}）`)
+    assert(Math.abs(frac[0] - 34.1) < 1e-9 && Math.abs(frac[3] - 34.4) < 1e-9,
+      `端点保留小数（${frac[0]} … ${frac[3]}）`)
+    assert(new Set(frac).size === frac.length, `分刻度不产生重复值（${frac.join(',')}）`)
+    for (const v of frac) {
+      assert(Math.abs(v / 0.1 - Math.round(v / 0.1)) < 1e-6, `${v} 落在 0.1° 网格上`)
+      assert(!Number.isInteger(v), `${v} 没有被取整成整数`)
+    }
+    // 0.25 步长同理
+    const q = graticuleValues(35.0, 35.75, 0.25)
+    assert(q.length === 4 && Math.abs(q[1] - 35.25) < 1e-9, `[35, 35.75] 步长 0.25 → ${q.join(',')}`)
+  }
   assert(graticuleValues(0, 10, 0).length === 0 && graticuleValues(10, 0, 5).length === 0,
     '步长 0 / 上下界颠倒 → 空（不画）')
   assert(graticuleValues(Number.NaN, 10, 5).length === 0, 'NaN 上界 → 空')
@@ -10415,6 +10460,18 @@ console.log('\n== 天数口径守卫 ==')
   // -0 不能漏出去（浮点算出来的 -0.0000001 会进来）
   assert(!degreeLabel('lat', -0.0000001).includes('-'), `-1e-7 度不产生负号（${degreeLabel('lat', -0.0000001)}）`)
   assert(degreeLabel('lat', Number.NaN) === '', 'NaN 给空串（不画字）')
+  /*
+   * 分刻度：0.1° 步长下会真的用到。分钟补两位、撇号用 U+2032
+   * （字体子集 BASE 里有 °′″，不会缺字）。
+   */
+  assert(degreeLabel('lat', 35.4) === '35°24′N', `35.4° → ${degreeLabel('lat', 35.4)}`)
+  assert(degreeLabel('lat', 35.5) === '35°30′N', `35.5° → ${degreeLabel('lat', 35.5)}`)
+  assert(degreeLabel('lat', -35.25) === '35°15′S', `-35.25° → ${degreeLabel('lat', -35.25)}`)
+  assert(degreeLabel('lng', -10.1) === '10°06′W', `-10.1° → ${degreeLabel('lng', -10.1)}（分钟补两位）`)
+  assert(degreeLabel('lat', 0.1) === '0°06′N', `0.1° → ${degreeLabel('lat', 0.1)}（0 度也要写）`)
+  assert(degreeLabel('lng', 179.9) === '179°54′E', `179.9° → ${degreeLabel('lng', 179.9)}`)
+  assert(degreeLabel('lng', 179.999) === '180°', `179.999° 进位成 180°（不带 E/W）`)
+  assert(!degreeLabel('lat', 35.4).includes('°00'), '分钟为 0 时不写 00′')
 
   // ⑥ 源码守卫：量屏幕、分 pane、不吃点击、字号不低于 12px
   const g = readFileSync(join(process.cwd(), 'src', 'components', 'map', 'Graticule.tsx'), 'utf8')
