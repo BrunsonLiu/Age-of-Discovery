@@ -12,6 +12,7 @@ import SeaDebris from './SeaDebris'
 import SeaRelics from './SeaRelics'
 import { SeaPhenomena } from './SeaPhenomena'
 import MiniMap from './MiniMap'
+import { ScaleBar } from './ScaleBar'
 import { buildMajorLand, featureArea } from '@/utils/terrainDecor'
 import { RouteLine } from './RouteLine'
 import { ShipAnimation } from './ShipAnimation'
@@ -605,6 +606,8 @@ export default function MapView() {
               <SeaPhenomena />
               {/* 右上角小地图：全世界轮廓 + 当前视野框，点击跳转 */}
               <MiniMap land={geoData.land} />
+              {/* 右下角比例尺：长度从当前投影量出来（见 ScaleBar 的注释） */}
+              <ScaleBar />
               <MapClickHandler />
               <OceanLabels />
               <RouteLine />

@@ -51,6 +51,7 @@ import { componentAreas, majorLand } from '../src/utils/shoreBand'
 import { clampToDeck, deckEyeY, deckWalkHalfWidth, isOnDeck, stepWalk, WALK_RADIUS_M } from '../src/components/deck/deckWalk'
 import { BOAT, BOAT_ARC, BOAT_STATIONS, boatHull, boatKeelLift, boatObstacle, boatRailGap } from '../src/components/deck/deckBoat'
 import { PEN, PEN_SPOTS, penLivestock, penObstacle } from '../src/components/deck/deckPen'
+import { pickScale, SCALE_MAX_PX, SCALE_MIN_PX, SCALE_STEPS, scaleHint } from '../src/utils/scaleBar'
 import { buildHullGeo } from '../src/components/deck/shipHull'
 import {
   HULL_ARC, HULL_BULWARK, SHIP_DRAFT_LIFT, SHIP_HALF_LENGTH, SHIP_SCALE,
@@ -10198,6 +10199,57 @@ console.log('\n== 天数口径守卫 ==')
   assert(/setProvisions\(st\.fleet\.food\)/.test(deck), '栏里几只羊直接读 fleet.food')
   const ship = readFileSync(join(process.cwd(), 'src', 'components', 'deck', 'shipModel.ts'), 'utf8')
   assert(/ship-pen-sheep-/.test(ship) && /ship-pen-straw/.test(ship), '栏子与羊真的建出来了')
+}
+
+/*
+ * ---- 海图比例尺：长度必须是量出来的，档位必须是整数 ----
+ *
+ * 【守什么】比例尺是玩家用来"量"航线的工具。它有两种错法都会毁掉信任：
+ *  ① 写死一个长度（缩放不变）→ 高纬度差一半，玩家按它估补给；
+ *  ② 档位不是整数（比如 3.7 海里）→ 玩家还得心算。
+ * 这里守：像素落在可读区间、档位来自 1-2-5 系列、缩放变大时档位单调变小。
+ */
+{
+  assert(pickScale(0) === null && pickScale(-1) === null && pickScale(Number.NaN) === null,
+    '像素/海里 不可用时不给尺子（宁可没有，也不给错数）')
+  const steps = new Set<number>(SCALE_STEPS as readonly number[])
+  let prevNm = Infinity
+  for (const ppm of [0.02, 0.05, 0.1, 0.3, 0.8, 2, 5, 12, 30, 80, 200]) {
+    const b = pickScale(ppm)
+    assert(!!b, `ppm=${ppm} 有尺子`)
+    assert(steps.has(b!.nm), `ppm=${ppm} 的档位 ${b!.nm} 来自 1-2-5 系列`)
+    assert(Math.abs(b!.px - ppm * b!.nm) < 1.01, `ppm=${ppm} 的像素长 ${b!.px} = ${ppm}×${b!.nm}`)
+    /*
+     * 区间保证只在"有档位塞得进区间"时成立；所有档位都太长/太短时，
+     * 取**最接近区间中心**的一档 —— 这时长度仍然是真的（px = ppm×nm），
+     * 只是可能略超出可读区间。宁可尺子长一点，也不许它说谎。
+     */
+    const fits = SCALE_STEPS.some((nm) => ppm * nm >= SCALE_MIN_PX && ppm * nm <= SCALE_MAX_PX)
+    if (fits) {
+      assert(b!.px >= SCALE_MIN_PX && b!.px <= SCALE_MAX_PX,
+        `ppm=${ppm} 的尺子 ${b!.px}px 落在可读区间 ${SCALE_MIN_PX}..${SCALE_MAX_PX}`)
+    } else if (b) {
+      assert(b.px <= SCALE_MAX_PX * 2, `ppm=${ppm} 无档位可塞时取最近档（${b.px}px）`)
+    }
+    // 放大（ppm 变大）时，同一条屏幕长度代表的里程只会变少
+    assert(b!.nm <= prevNm * 1.0001, `ppm=${ppm} 的档位 ${b!.nm} 不比上一档 ${prevNm} 大`)
+    prevNm = b!.nm
+  }
+  // 具体一例：60 海里 ≈ 1 度纬度；如果 1 度在屏幕上是 300px，尺子应当是 50 或 100 海里
+  // 极端缩放：没有一条尺子能既真实又可读 → 宁可不画（不许拉长去凑区间）
+  assert(pickScale(600) === null, '极端放大时不给尺子（1 海里的档位也有 600px，会横穿海图）')
+  // 1 度纬度 = 60 海里；如果 1 度在屏幕上 300px ⇒ 5 px/海里 ⇒ 100px 的尺子 = 20 海里
+  const b60 = pickScale(300 / 60)
+  assert(b60!.nm === 20 && b60!.px === 100, `1 度=300px（5 px/海里）时给 ${b60!.nm} 海里 = ${b60!.px}px`)
+  assert(scaleHint(100) === '≈ 185 公里', `100 海里换算成 ${scaleHint(100)}`)
+  assert(scaleHint(2) === '≈ 3.7 公里', `2 海里换算成 ${scaleHint(2)}`)
+
+  // 源码守卫：比例尺必须真的量投影，而且不吃点击
+  const bar = readFileSync(join(process.cwd(), 'src', 'components', 'map', 'ScaleBar.tsx'), 'utf8')
+  assert(/latLngToContainerPoint/.test(bar), '比例尺量的是容器像素（不是写死的长度）')
+  assert(/haversineNm/.test(bar), '海里数走 haversineNm（与航程同一个来源）')
+  assert(/pointer-events-none/.test(bar), '比例尺不吃点击')
+  assert(/map\.on\('zoomend'/.test(bar), '缩放结束后重算')
 }
 
 console.log(`\n最终结果：${passed} 通过 / ${failed} 失败`)
