@@ -61,6 +61,9 @@ import {
 import {
   SURF_PERIOD_PX, SURF_WIND_FULL, SURF_WIND_MIN, surfDash, surfOpacity, surfStrength, surfWeight,
 } from '../src/utils/surf'
+import { densify, filterSeaPoints, splitAtLand } from '../src/utils/seaClip'
+import { isOnLand, registerLandGeojson } from '../src/utils/landCheck'
+import { OCEAN_CURRENTS, OCEAN_LABELS, currentFlowPoints, windArrowSites } from '../src/data/mapLayers'
 import { buildHullGeo } from '../src/components/deck/shipHull'
 import {
   HULL_ARC, HULL_BULWARK, SHIP_DRAFT_LIFT, SHIP_HALF_LENGTH, SHIP_SCALE,
@@ -10490,6 +10493,93 @@ console.log('\n== 天数口径守卫 ==')
   // 用 @keyframes 而不是裸 keyframes：注释里写着"没有 keyframes"不该被自己判红
   assert(!/@keyframes/.test(sf), 'SurfLine 没有 @keyframes')
   assert(/useGameStore/.test(sf) && /weather\.windSpeed/.test(sf), '浪的强弱来自 weather.windSpeed')
+}
+
+
+/*
+ * ---- 海上的线不许穿陆：洋流与风箭头 ----
+ *
+ * 【守什么】这些装饰是按**经纬度**摆的，谁也不看陆地长什么样。实测（真实
+ * land.geojson + isOnLand，逐 0.25° 加密）：
+ *   · 风箭头 135 个落点里 **48 个在陆地上**（撒哈拉、巴西高原、南非内陆）；
+ *   · 4 条洋流的节点直接在内陆：加那利 28/63、阿古拉斯 19/25、南赤道 19/121、
+ *     季风漂流 9/65 —— 画出来就是"洋流从非洲大陆中间穿过去"。
+ * 洋流这条折线**同时是物理来源**（seaCurrents 按 200 海里带宽算顺流逆流），
+ * 所以不能只裁画面，数据本身必须离岸。
+ *
+ * 这里分两段守：
+ *  ① 纯函数的边界行为（用合成掩码，快、不看数据）；
+ *  ② 用**真实 geojson** 逐点验数据：每条洋流、每个风箭头都必须在水里。
+ */
+{
+  // ① densify：相邻两点不得超过步长，端点必须保留
+  const line: [number, number][] = [[0, 0], [10, 0], [10, 20]]
+  const d = densify(line, 1)
+  assert(d[0][0] === 0 && d[0][1] === 0, 'densify 保留起点')
+  assert(d[d.length - 1][0] === 10 && d[d.length - 1][1] === 20, 'densify 保留终点')
+  let maxStep = 0
+  for (let i = 1; i < d.length; i++) {
+    maxStep = Math.max(maxStep, Math.abs(d[i][0] - d[i - 1][0]), Math.abs(d[i][1] - d[i - 1][1]))
+  }
+  assert(maxStep <= 1 + 1e-9, `加密后最大步长 ${maxStep.toFixed(3)}° ≤ 1°`)
+  assert(densify([[3, 4]], 1).length === 1, '单点原样返回')
+  assert(densify([], 1).length === 0, '空线返回空')
+  assert(densify([[0, 0], [2, 0]], 0).length === 2, '步长非法时原样返回（不除零）')
+
+  // ① splitAtLand：陆地夹在中间 → 两段；陆地在一端 → 一段；全陆 → 空
+  const midLand = (lat: number, lng: number) => Math.abs(lng) < 5
+  const two = splitAtLand([[-20, -30], [-20, 30]], midLand, 1, 1)
+  assert(two.length === 2, `陆地夹在中间时切成两段（实测 ${two.length} 段）`)
+  for (const run of two) {
+    for (const [la, ln] of run) assert(!midLand(la, ln), '切出来的段里没有陆地点')
+  }
+  assert(two[0][two[0].length - 1][1] < -4 && two[1][0][1] > 4, '两段的端点分别停在陆地两侧')
+  const endLand = (lat: number) => lat > 10
+  const one = splitAtLand([[0, 0], [20, 0]], endLand, 1, 1)
+  assert(one.length === 1, `陆地在一端时只剩一段（实测 ${one.length}）`)
+  assert(one[0][one[0].length - 1][0] <= 10, '留下的那一段停在海岸（纬度 ≤ 10）')
+  assert(splitAtLand([[50, 0], [60, 0]], endLand, 1, 1).length === 0, '整条在陆地上 → 不画')
+  // 碎段要丢掉：0.6° 的孤岛水塘只会有 1~2 个像素
+  const speck = splitAtLand([[-20, -6], [-20, -5.4]], midLand, 0.2, 1.5)
+  assert(speck.length === 0, '短于 minRunDeg 的碎段被丢掉')
+
+  // ② 真实数据：注册 land.geojson 后逐条验
+  const gj = JSON.parse(readFileSync(join(process.cwd(), 'public', 'data', 'land.geojson'), 'utf8'))
+  registerLandGeojson(gj)
+
+  for (const cur of OCEAN_CURRENTS) {
+    for (const season of [1, 200]) {
+      const pts = currentFlowPoints(cur, season)
+      const dense = densify(pts, 0.25)
+      const bad = dense.filter(([la, ln]) => isOnLand(la, ln))
+      assert(bad.length === 0,
+        `${cur.name}（第 ${season} 天）在陆地上有 ${bad.length} 个点` +
+        (bad.length ? `，例：${bad.slice(0, 3).map(([la, ln]) => `${la.toFixed(1)},${ln.toFixed(1)}`).join(' ')}` : ''))
+      // 而且它必须真的被切成一段（数据干净时护栏不该切它）
+      const runs = splitAtLand(pts, isOnLand, 0.25)
+      assert(runs.length === 1, `${cur.name}（第 ${season} 天）数据干净 → 护栏不切它（实测 ${runs.length} 段）`)
+    }
+  }
+
+  const sites = windArrowSites(1)
+  const onLand = sites.filter((s) => isOnLand(s.lat, s.lng))
+  const kept = filterSeaPoints(sites, isOnLand)
+  assert(onLand.length > 0, `网格里确实有落在陆地上的点（${onLand.length} 个），否则这条判据是空的`)
+  assert(kept.length === sites.length - onLand.length, `过滤掉的正好是陆地上那些（${kept.length} 留在海里）`)
+  assert(kept.every((s) => !isOnLand(s.lat, s.lng)), '过滤后剩下的每一个都在水里')
+  assert(kept.length > 60, `海里还剩下 ${kept.length} 个箭头（不能一刀切光）`)
+
+  // 海洋名也要在水里（原来就是对的，守一下别再飘到岸上）
+  for (const l of OCEAN_LABELS) {
+    assert(!isOnLand(l.lat, l.lng), `海洋名「${l.name}」不在陆地上`)
+  }
+
+  // 源码守卫：两个图层真的用了过滤/裁切
+  const ov = readFileSync(join(process.cwd(), 'src', 'components', 'map', 'MapOverlays.tsx'), 'utf8')
+  assert(/filterSeaPoints\(windArrowSites/.test(ov), '风箭头按陆地过滤')
+  assert(/splitAtLand\(currentFlowPoints/.test(ov), '洋流按陆地裁切')
+  assert(/pane=\{BAND_PANE\}/.test(ov), '风带虚线挂在自建 pane 上')
+  assert(/zIndex = '330'/.test(ov), '风带 pane 在陆地填充（400）之下 —— 否则一条青线横穿撒哈拉')
 }
 
 console.log(`\n最终结果：${passed} 通过 / ${failed} 失败`)

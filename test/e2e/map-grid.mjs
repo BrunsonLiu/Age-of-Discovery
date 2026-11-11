@@ -168,7 +168,14 @@ const bandY = await page.evaluate(async () => {
   const st = window.__mapStore.getState()
   window.__mapStore.setState({ showWindOverlay: true })
   await new Promise((r) => setTimeout(r, 900))
-  const paths = [...document.querySelectorAll('.leaflet-overlay-pane path')]
+  /*
+   * 风带虚线在**自建 `windband` pane**（z=330，陆地之下）里，不在 overlayPane ——
+   * 它原来挂在 overlayPane 会横穿撒哈拉（第 93 轮修掉）。所以这里两个 pane 都查。
+   */
+  const paths = [
+    ...document.querySelectorAll('.leaflet-overlay-pane path'),
+    ...document.querySelectorAll('.leaflet-windband-pane path'),
+  ]
   // 风带：stroke #3a6b7c、虚线 2 8
   const bands = paths.filter((p) => (p.getAttribute('stroke') || '').toLowerCase() === '#3a6b7c'
     && (p.getAttribute('stroke-dasharray') || '') === '2 8')
