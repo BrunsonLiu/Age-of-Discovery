@@ -119,9 +119,9 @@ const s1 = await readStable()
 check(s1.paths.length >= 2, `线画出来了（${s1.paths.length} 段）`)
 check(s1.labels.length >= 1, `名字写出来了（${s1.labels.map((l) => l.t).join(' ')}）`)
 check(s1.paths.every((p) => p.stroke === '#d8bd8a'), `线是暖金色（实测 ${s1.paths[0]?.stroke}）`)
-check(s1.paths.every((p) => p.dash === '7 6'), `线是虚线（dash="${s1.paths[0]?.dash}"，与网格实线分开）`)
+check(s1.paths.every((p) => p.dash === '8 4'), `线是虚线（dash="${s1.paths[0]?.dash}"，占空 67% —— 7 6 读成"一串点"）`)
 check(s1.paths.every((p) => Math.abs(p.opacity - 0.5) < 1e-6),
-  `透明度 0.5（A/B 差分实测：线本身 mean 18.7 级，网格 13.2 级 —— 比网格重一点）`)
+  `透明度 0.5（A/B 差分实测：线本身 mean 21.7 / p90 54 级，网格 13.2 / 15.3 —— 比网格重一档）`)
 check(s1.labels.every((l) => l.fs >= 12), `名字字号 ${s1.labels[0]?.fs}px ≥ 12（项目下限）`)
 check(s1.labels.every((l) => {
   const m = /rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?\)/.exec(l.bg || '')

@@ -10591,7 +10591,7 @@ console.log('\n== 天数口径守卫 ==')
     '线 345（陆地以下）/ 名字 522（网格度数之上、港口 600 之下）')
   assert(/pointerEvents = 'none'/.test(cl), 'pane 不吃指针事件（否则点海面出航会被气候线挡住）')
   assert(/fontSize|font-size:12px/.test(cl), '名字用 12px（项目下限）')
-  assert(/dashArray: '7 6'/.test(cl), '虚线（与网格实线分开的两条线索之一）')
+  assert(/dashArray: '8 4'/.test(cl), '虚线 8 4（占空 67%：7 6 在全世界缩放下读成"一串点"）')
   assert(/climateLabelPx\(/.test(cl) && /climateRuns\(/.test(cl),
     '断口宽度由字宽算、断口由纯函数挖（不在组件里写死坐标）')
   assert(!/23\.4|66\.5/.test(cl), '纬度不写死在组件里（唯一来源是 utils/climateLines）')
