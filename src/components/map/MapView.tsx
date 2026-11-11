@@ -15,6 +15,7 @@ import MiniMap from './MiniMap'
 import { ScaleBar } from './ScaleBar'
 import { VoyageRings } from './VoyageRings'
 import { Graticule } from './Graticule'
+import { SurfLine } from './SurfLine'
 import { buildMajorLand, featureArea } from '@/utils/terrainDecor'
 import { RouteLine } from './RouteLine'
 import { ShipAnimation } from './ShipAnimation'
@@ -585,6 +586,10 @@ export default function MapView() {
                       interactive={false}
                     />
                   ))}
+                  {/* 岸边浪线：z=398，在陆地填色**之下** —— 描边居中画，
+                      落进陆地的那半截被自动盖住，只留海面外侧一道白沫。
+                      强弱与推进速度都绑风速（weather.windSpeed），与航速同源。 */}
+                  <SurfLine land={geoData.land} />
                   <GeoJSON key="land" data={geoData.land} style={landStyleFor} interactive={false} />
                   {/* 地形符号：山丘/树丛。挂在自定义 terrainPane(z=450)，
                       压在陆地之上、港口标记(z=600)之下 */}

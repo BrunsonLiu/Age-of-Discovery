@@ -58,6 +58,9 @@ import {
 import {
   degreeLabel, GRATICULE_STEPS, graticuleValues, MIN_LINE_GAP_PX, pickGraticuleStep,
 } from '../src/utils/graticule'
+import {
+  SURF_PERIOD_PX, SURF_WIND_FULL, SURF_WIND_MIN, surfDash, surfOpacity, surfStrength, surfWeight,
+} from '../src/utils/surf'
 import { buildHullGeo } from '../src/components/deck/shipHull'
 import {
   HULL_ARC, HULL_BULWARK, SHIP_DRAFT_LIFT, SHIP_HALF_LENGTH, SHIP_SCALE,
@@ -10419,6 +10422,74 @@ console.log('\n== 天数口径守卫 ==')
   assert(/pointerEvents = 'none'/.test(g), 'pane 不吃指针事件（否则点海面出航会被网格挡住）')
   assert(/font-size:12px/.test(g), '度数用 12px（项目下限；再小在高分屏上读不出）')
   assert(/as unknown as/.test(g) === false, '没有残留的类型强转')
+}
+
+
+/*
+ * ---- 岸边浪线：强弱必须真的来自风速，虚线周期必须能无缝回卷 ----
+ *
+ * 【守什么】浪线看起来像"贴图"，但它带着一个承诺：**风越大浪越明显**。
+ * 三种错法都会悄悄毁掉这个承诺：
+ *  ① 风速不可用时随便给个默认值（画出一片无中生有的浪）；
+ *  ② 虚线周期不等于 12 —— 将来若恢复"沿虚线爬"的动画，走到终点接不上，
+ *     每循环一次抖一下；
+ *  ③ 线的粗细/亮度不随风变（那就真是贴图了）。
+ * 另外守两条**结构**约束（只在源码里能看出来）：
+ *  · 浪线必须夹在浅水层与陆地之间（写反了白沫会被洗淡或盖住）；
+ *  · 不许再给这一层加 CSS 动画（实测 60 → 10.2 fps）。
+ */
+{
+  assert(surfStrength(Number.NaN) === 0 && surfStrength(undefined as unknown as number) === 0,
+    '风速不可用 → 无浪（不凭空画）')
+  assert(surfStrength(SURF_WIND_MIN) === 0, `风速 ${SURF_WIND_MIN} 节（风平浪静）没有白沫`)
+  assert(surfStrength(SURF_WIND_FULL) === 1, `风速 ${SURF_WIND_FULL} 节（风暴）浪打满`)
+  assert(surfStrength(0) === 0, '0 节 → 0（不是负数）')
+  assert(surfStrength(99) === 1, '超过上限也夹在 1')
+  assert(Math.abs(surfStrength(12) - (12 - SURF_WIND_MIN) / (SURF_WIND_FULL - SURF_WIND_MIN)) < 1e-9,
+    `12 节（晴天常见风速）→ ${surfStrength(12).toFixed(3)}`)
+
+  // 单调：风越大，线越粗、越亮
+  let prevW = 0
+  let prevO = 0
+  for (let w = 0; w <= 40; w++) {
+    const s = surfStrength(w)
+    const ww = surfWeight(s)
+    const oo = surfOpacity(s)
+    assert(ww >= prevW - 1e-9 && oo >= prevO - 1e-9, `${w} 节时线宽/亮度不倒退`)
+    assert(ww >= 3.4 - 1e-9 && ww <= 6.6 + 1e-9, `${w} 节线宽 ${ww.toFixed(2)} 在 3.4..6.6（可见厚度 = 一半）`)
+    assert(oo > 0.29 && oo < 0.65, `${w} 节不透明度 ${oo.toFixed(2)} 在 0.30..0.64`)
+    prevW = ww
+    prevO = oo
+  }
+
+  // 虚线：两段之和必须正好是一个周期（动画才能无缝回卷），且占空比随风增长
+  let prevDuty = 0
+  for (const w of [0, 6, 12, 20, 30, 40]) {
+    const [d, g] = surfDash(surfStrength(w)).split(' ').map(Number)
+    assert(Math.abs(d + g - SURF_PERIOD_PX) < 1e-6,
+      `${w} 节：白沫 ${d} + 空隙 ${g} = 周期 ${SURF_PERIOD_PX}（差一点都会让循环抖一下）`)
+    assert(g > 0, `${w} 节：空隙 ${g > 0} 不为 0（否则整条线变实线）`)
+    const duty = d / SURF_PERIOD_PX
+    assert(duty >= prevDuty - 1e-9, `${w} 节占空比 ${(duty * 100).toFixed(0)}% 不倒退`)
+    assert(duty > 0.19 && duty < 0.41, `${w} 节占空比在 20%~40%（太细读成噪点、太密读成实线）`)
+    prevDuty = duty
+  }
+
+  // 结构守卫①：浪线夹在浅水层与陆地之间（渲染顺序就是图层顺序）
+  const mv = readFileSync(join(process.cwd(), 'src', 'components', 'map', 'MapView.tsx'), 'utf8')
+  const iShallow = mv.indexOf('shallows-${w}')
+  const iSurf = mv.indexOf('<SurfLine')
+  const iLand = mv.indexOf('key="land"')
+  assert(iShallow > 0 && iSurf > 0 && iLand > 0, '三处都在（浅水层 / 浪线 / 陆地）')
+  assert(iShallow < iSurf, '浪线排在浅水层之后（否则白沫被 12 层青蓝洗淡）')
+  assert(iSurf < iLand, '浪线排在陆地之前（否则整条海岸套一圈亮边）')
+
+  // 结构守卫②：这一层不许有 CSS 动画（实测 60 → 10.2 fps，见 SurfLine 注释）
+  const sf = readFileSync(join(process.cwd(), 'src', 'components', 'map', 'SurfLine.tsx'), 'utf8')
+  assert(!/animation\s*:/.test(sf), 'SurfLine 没有 animation（白沫爬行会让整片 SVG 每帧重绘）')
+  // 用 @keyframes 而不是裸 keyframes：注释里写着"没有 keyframes"不该被自己判红
+  assert(!/@keyframes/.test(sf), 'SurfLine 没有 @keyframes')
+  assert(/useGameStore/.test(sf) && /weather\.windSpeed/.test(sf), '浪的强弱来自 weather.windSpeed')
 }
 
 console.log(`\n最终结果：${passed} 通过 / ${failed} 失败`)
