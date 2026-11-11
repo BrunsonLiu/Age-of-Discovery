@@ -50,6 +50,7 @@ import { iceStrengthAt, iceEdgeShift, ICE_SEASON_SHIFT_DEG } from '../src/utils/
 import { componentAreas, majorLand } from '../src/utils/shoreBand'
 import { clampToDeck, deckEyeY, deckWalkHalfWidth, isOnDeck, stepWalk, WALK_RADIUS_M } from '../src/components/deck/deckWalk'
 import { BOAT, BOAT_ARC, BOAT_STATIONS, boatHull, boatKeelLift, boatObstacle, boatRailGap } from '../src/components/deck/deckBoat'
+import { PEN, PEN_SPOTS, penLivestock, penObstacle } from '../src/components/deck/deckPen'
 import { buildHullGeo } from '../src/components/deck/shipHull'
 import {
   HULL_ARC, HULL_BULWARK, SHIP_DRAFT_LIFT, SHIP_HALF_LENGTH, SHIP_SCALE,
@@ -10149,6 +10150,54 @@ console.log('\n== 天数口径守卫 ==')
   const iMin = Math.min(...h.indices)
   const iMax = Math.max(...h.indices)
   assert(iMin >= 0 && iMax < vcount, `索引都在顶点范围内（${iMin}..${iMax} / ${vcount}）`)
+}
+
+/*
+ * ---- 牲口栏：几只羊必须等于"粮"算出来的数 ----
+ *
+ * 【守什么】栏子是"粮快见底"的预告，它必须严格由 `fleet.food` 决定：
+ * 分档单调、整数、上下限、空栏只发生在粮真的不够时。位置也要守（不能压货舱口、
+ * 不能压小艇、不能挡主桅），并且要能挡住玩家（与甲板小艇同一套推离）。
+ */
+{
+  const live = (f: number) => penLivestock(f)
+  assert(live(0) === 0 && live(-5) === 0, '粮 0 / 负数 → 空栏')
+  assert(live(Number.NaN) === 0, 'NaN 粮 → 空栏')
+  assert(live(3) === 0, '粮 3 → 空栏（马上要饿肚子了）')
+  assert(live(4) === 1, '粮 4 → 1 只')
+  assert(live(9) === 1, '粮 9 → 1 只')
+  assert(live(10) === 2, '粮 10 → 2 只')
+  assert(live(19) === 2, '粮 19 → 2 只')
+  assert(live(20) === 3, '粮 20 → 3 只（满栏）')
+  assert(live(999) === 3, '粮再多也只有 3 只（栏就这么大）')
+  let prevN = -1
+  for (let f = 0; f <= 40; f += 1) {
+    const n = live(f)
+    assert(Number.isInteger(n) && n >= prevN && n <= PEN_SPOTS.length,
+      `粮 ${f} → ${n} 只（整数、单调不减、不超过栏位）`)
+    prevN = n
+  }
+
+  // 位置：不压货舱口、不压小艇、不挡主桅、在可走范围内
+  const p = penObstacle()
+  assert(p.minX > -1.1 || p.maxX < -1.1, '栏子在货舱口的另一侧（不与舱口重叠）')
+  const boat = boatObstacle()
+  const overlapBoat = p.minX < boat.maxX && p.maxX > boat.minX && p.minZ < boat.maxZ && p.maxZ > boat.minZ
+  assert(!overlapBoat, '栏子与甲板小艇不重叠')
+  const distMast = Math.hypot(Math.max(0, p.minX) - 0, PEN.z - 1)
+  assert(distMast > 1.15, `栏子离主桅 ${distMast.toFixed(2)} 米（> 1.15）`)
+  assert(p.maxX < deckWalkHalfWidth(PEN.z), `栏子没穿出舷墙（右缘 ${p.maxX.toFixed(2)} < ${deckWalkHalfWidth(PEN.z).toFixed(2)}）`)
+
+  // 真的挡人：从中央走道往**右舷**（+x，栏子那一侧）撞过去要停在栏边
+  const hit = stepWalk({ x: PEN.x - PEN.halfX - 0.2, z: PEN.z }, 0.5, 0)
+  assert(Math.abs(hit.x - (p.minX - WALK_RADIUS_M)) < 1e-9,
+    `撞向牲口栏会被推开（x=${hit.x.toFixed(2)}）= 栏缘 − 半径`)
+
+  // 源码守卫：状态与粮同源，羊真的建出来了
+  const deck = readFileSync(join(process.cwd(), 'src', 'components', 'deck', 'DeckView.tsx'), 'utf8')
+  assert(/setProvisions\(st\.fleet\.food\)/.test(deck), '栏里几只羊直接读 fleet.food')
+  const ship = readFileSync(join(process.cwd(), 'src', 'components', 'deck', 'shipModel.ts'), 'utf8')
+  assert(/ship-pen-sheep-/.test(ship) && /ship-pen-straw/.test(ship), '栏子与羊真的建出来了')
 }
 
 console.log(`\n最终结果：${passed} 通过 / ${failed} 失败`)

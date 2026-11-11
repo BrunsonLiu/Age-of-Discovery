@@ -785,6 +785,54 @@ await sleep(300)
 const afterSlide = await page.evaluate(() => window.__deckWalk.get())
 check(afterSlide.z > afterCrash.z + 0.3, `贴着艇侧还能往前走（z ${afterCrash.z.toFixed(2)} → ${afterSlide.z.toFixed(2)}）`)
 
+// ---- ⑤o 牲口栏：羊的只数必须等于"粮"算出来的数 ----
+/*
+ * 【为什么用"改粮再数羊"来测】栏子是"粮快见底"的画面预告。只断言"场景里有三只羊"
+ * 是不够的 —— 羊必须**跟着粮变**，否则它只是一个装饰，玩家看空栏也不会当真。
+ */
+const penSample = () => page.evaluate(() => {
+  const pen = window.__deckScene.getObjectByName('ship-pen')
+  if (!pen) return null
+  const sheep = []
+  pen.traverse((o) => { if (/^ship-pen-sheep-/.test(o.name) && o.visible) sheep.push(o.name) })
+  return { count: sheep.length, names: sheep.sort(), hasStraw: !!pen.getObjectByName('ship-pen-straw') }
+})
+const setFood = (v) => page.evaluate((f) => {
+  const st = window.__gameStore.getState()
+  window.__gameStore.setState({ fleet: { ...st.fleet, food: f } })
+}, v)
+await setFood(24)
+await sleep(700)
+const penFull = await penSample()
+check(penFull && penFull.count === 3, `粮 24 → 栏里 3 只羊（实测 ${penFull?.count}）`)
+check(!!penFull?.hasStraw, '栏里铺了秸秆')
+await setFood(12)
+await sleep(700)
+const penTwo = await penSample()
+check(penTwo && penTwo.count === 2, `粮 12 → 里剩 2 只（实测 ${penTwo?.count}）`)
+await setFood(2)
+await sleep(700)
+const penEmpty = await penSample()
+check(penEmpty && penEmpty.count === 0, `粮 2 → 栏子空了（实测 ${penEmpty?.count}）`)
+// 恢复，别把后面的用例留在空栏上
+await setFood(30)
+await sleep(600)
+
+// 撞向栏子：从中央走道往右舷走，必须停在栏边
+const penInfo = await page.evaluate(() => {
+  const pen = window.__deckScene.getObjectByName('ship-pen')
+  return pen ? { x: +pen.position.x.toFixed(2), z: +pen.position.z.toFixed(2) } : null
+})
+check(!!penInfo && penInfo.x > 2 && Math.abs(penInfo.z - 2.6) < 0.3, `栏子在右舷腰部（x=${penInfo?.x} z=${penInfo?.z}）`)
+await page.evaluate(() => window.__deckWalk.set({ x: 1.2, z: 2.6, yaw: 0, pitch: -0.15 }))
+await sleep(400)
+await page.keyboard.down('d')
+await sleep(1600)
+await page.keyboard.up('d')
+await sleep(300)
+const afterPen = await page.evaluate(() => window.__deckWalk.get())
+check(afterPen.x < 1.5, `被牲口栏挡住（停在 x=${afterPen.x.toFixed(2)}，栏缘 1.75）`)
+
 // ---- ⑤j 动索：绳头必须在帆角上、索要真的在动 ----
 // 这一条不重写公式，而是**从帆自身的顶点**里找出那个角 —— 绳与布是否分家，
 // 只有拿真实几何对才测得出来（公式对公式会一起错）。

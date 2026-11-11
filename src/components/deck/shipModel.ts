@@ -11,6 +11,7 @@ import {
 } from './deckBow'
 import { ANCHOR_LEN, ANCHOR_SIDE, ANCHOR_STOCK, anchorPose, HAWSE_Y, HAWSE_Z } from './deckAnchor'
 import { BOAT, boatHull, boatKeelLift } from './deckBoat'
+import { PEN, PEN_SPOTS, penLivestock } from './deckPen'
 import { sailorIdle, SAILOR_POSES, SAILOR_STATIONS } from './deckCrew'
 import { chartCourse } from './deckChart'
 import { WATERLINE_Y_M, WAKE_SEGMENTS } from './deckWake'
@@ -78,6 +79,12 @@ export interface DeckShip {
    * 这三个数全部由 `deckWake` 的纯函数从"是否航行 + 船速"算出来。
    */
   setWake(strength: number, spreadRad: number, bowLenM: number, waveAmp?: number): void
+  /**
+   * 牲口栏里露几只羊：由 `fleet.food` 经 `penLivestock` 得来（0..3）。
+   * 【为什么它必须与粮同源】栏子是"粮快见底"的**预告**：屏幕上空栏必须能对上
+   * 一个真实的粮数，不能是随机的装饰。
+   */
+  setProvisions(food: number): void
   /**
    * 抛锚 / 收锚（`!fleet.isSailing`）。
    * 锚垂进水里 = 停着，收到舷边 = 在走 —— 全船唯一与"是否在航行"直接挂钩的实体。
@@ -2258,6 +2265,89 @@ export function createDeckShip(): DeckShip {
   }
 
   /*
+   * ---------------- 牲口栏（livestock pen）----------------
+   *
+   * 【为什么这条船要养羊】"粮"是玩家每趟都要盯的数，可它在画面上一直没有实体
+   * （桶是死的、舱口是个洞）。栏子是**唯一会随补给变化的东西**：粮 20 以上三只羊，
+   * 掉到 4 以下栏子空了 —— 栏子空永远比 HUD 上的粮先一步报警，这比再加一行字有用。
+   *
+   * 位置在右舷腰部（与小艇对侧）：那一带本来只有缆桩，摆下 2.2×2.6 米之后
+   * 中央走道与货舱口都不受影响（`deckPen` 里有判据守着）。
+   */
+  const penSheep: THREE.Group[] = []
+  {
+    const pen = new THREE.Group()
+    pen.name = 'ship-pen'
+    pen.position.set(PEN.x, shipDeckAt(PEN.z) + 0.02, PEN.z)
+    // 秸秆地：一层浅黄，读作"栏里铺了草"
+    const straw = new THREE.Mesh(
+      new THREE.BoxGeometry(PEN.halfX * 2, 0.04, PEN.halfZ * 2),
+      new THREE.MeshStandardMaterial({ color: 0x8a7334, roughness: 1, metalness: 0 }),
+    )
+    straw.name = 'ship-pen-straw'
+    pen.add(straw)
+    // 四根立柱 + 两道横板（不做整面墙：要看得见里面的羊）
+    const postGeo = new THREE.BoxGeometry(0.09, PEN.height, 0.09)
+    for (const sx of [-1, 1]) {
+      for (const sz of [-1, 1]) {
+        const post = new THREE.Mesh(postGeo, woodDark)
+        post.position.set(sx * PEN.halfX, PEN.height / 2, sz * PEN.halfZ)
+        pen.add(post)
+      }
+    }
+    for (const y of [PEN.height * 0.55, PEN.height * 0.92]) {
+      for (const sz of [-1, 1]) {
+        const rail = new THREE.Mesh(new THREE.BoxGeometry(PEN.halfX * 2, 0.07, 0.05), woodMid)
+        rail.position.set(0, y, sz * PEN.halfZ)
+        pen.add(rail)
+      }
+      for (const sx of [-1, 1]) {
+        const rail = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.07, PEN.halfZ * 2), woodMid)
+        rail.position.set(sx * PEN.halfX, y, 0)
+        pen.add(rail)
+      }
+    }
+    /*
+     * 羊：身体一只压扁的球 + 黑头 + 四条细腿。
+     * 【为什么是"黑头羊"】这个尺度上羊的毛是浅色的一团，全靠**头和腿的深色**才
+     * 认得出是动物；纯浅色的一团会读成"栏里放了两袋面粉"（第一版就是这样）。
+     */
+    const woolMat = new THREE.MeshStandardMaterial({ color: 0xd9d3c4, roughness: 1, metalness: 0 })
+    const darkMat = new THREE.MeshStandardMaterial({ color: 0x2c2723, roughness: 0.95, metalness: 0 })
+    disposables.push(woolMat, darkMat)
+    const bodyGeo = new THREE.SphereGeometry(1, 10, 7)
+    const legGeo = new THREE.CylinderGeometry(0.035, 0.035, 0.26, 4)
+    const headGeo = new THREE.SphereGeometry(0.11, 8, 6)
+    for (let i = 0; i < PEN_SPOTS.length; i++) {
+      const spot = PEN_SPOTS[i]
+      const sheep = new THREE.Group()
+      sheep.name = `ship-pen-sheep-${i}`
+      sheep.position.set(spot.dx, 0, spot.dz)
+      sheep.rotation.y = spot.yaw
+      const body = new THREE.Mesh(bodyGeo, woolMat)
+      body.scale.set(0.2, 0.21, 0.34)
+      body.position.y = 0.44
+      sheep.add(body)
+      const head = new THREE.Mesh(headGeo, darkMat)
+      head.position.set(0, 0.5, 0.4)
+      sheep.add(head)
+      for (const sx of [-1, 1]) {
+        for (const sz of [-1, 1]) {
+          const leg = new THREE.Mesh(legGeo, darkMat)
+          leg.position.set(sx * 0.1, 0.13, sz * 0.22)
+          sheep.add(leg)
+        }
+      }
+      addShadow(sheep, 0, 0.02, 0.26, 0.42, 0.32)
+      pen.add(sheep)
+      penSheep.push(sheep)
+    }
+    group.add(pen)
+  }
+  /** 栏里露出几只羊（−1 = 还没设置过） */
+  let penShown = -1
+
+  /*
    * ---------------- 炮门（gun ports） ----------------
    * 一排小黑方口是"这是一条武装商船/战舰"最省笔画的一笔：近看是框 + 洞，
    * 远看是一条断续的暗带。位置贴着船壳的弧面算（cos 反解），不是随便摆的方块。
@@ -2391,6 +2481,13 @@ export function createDeckShip(): DeckShip {
     },
     setMooring(moored: boolean) {
       anchorMoored = moored
+    },
+    setProvisions(food: number) {
+      const shown = Math.max(0, Math.min(penSheep.length, penLivestock(food)))
+      // 只在变化时改（每帧改 visible 会让 three 重算场景图）
+      if (shown === penShown) return
+      penShown = shown
+      for (let i = 0; i < penSheep.length; i++) penSheep[i].visible = i < shown
     },
     setCrew(n: number) {
       const shown = Math.max(0, Math.min(sailors.length, Math.round(n)))

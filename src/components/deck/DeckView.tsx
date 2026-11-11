@@ -1260,6 +1260,12 @@ export default function DeckView() {
           deckShip.setCrew(sailorCount(flag?.crew ?? 0))
         }
         /*
+         * 牲口栏：**与"粮"同源**。栏里几只羊由 `penLivestock(fleet.food)` 决定 ——
+         * 粮掉到 4 以下栏子就空了，比 HUD 上的数字更早提醒玩家该靠港。
+         * 这里不另设阈值：分档写在 `deckPen` 里，纯函数可单测。
+         */
+        deckShip.setProvisions(st.fleet.food)
+        /*
          * 海图桌上那条线：方位 = 到 waypoint 的真方位，长度按剩余海里。
          * 两者都来自既有单一来源（`calculateBearing` / `useVoyageNext`），
          * 所以"桌上的图"和"出航计划面板"永远说同一件事。

@@ -1,5 +1,6 @@
 import { shipDeckAt, shipHalfWidthAt } from './shipModel'
 import { boatObstacle } from './deckBoat'
+import { penObstacle } from './deckPen'
 
 /**
  * 甲板行走的几何与移动（纯函数，可单测）。
@@ -98,6 +99,26 @@ export function stepWalk(from: WalkPos, dx: number, dz: number): WalkPos {
     const x1 = b.maxX + WALK_RADIUS_M
     const z0 = b.minZ - WALK_RADIUS_M
     const z1 = b.maxZ + WALK_RADIUS_M
+    if (x > x0 && x < x1 && z > z0 && z < z1) {
+      const px0 = x - x0
+      const px1 = x1 - x
+      const pz0 = z - z0
+      const pz1 = z1 - z
+      const m = Math.min(px0, px1, pz0, pz1)
+      if (m === px0) x = x0
+      else if (m === px1) x = x1
+      else if (m === pz0) z = z0
+      else z = z1
+    }
+  }
+
+  // 牲口栏：与小艇同一套矩形推离（对侧腰部的另一个"实心"东西）
+  {
+    const p = penObstacle()
+    const x0 = p.minX - WALK_RADIUS_M
+    const x1 = p.maxX + WALK_RADIUS_M
+    const z0 = p.minZ - WALK_RADIUS_M
+    const z1 = p.maxZ + WALK_RADIUS_M
     if (x > x0 && x < x1 && z > z0 && z < z1) {
       const px0 = x - x0
       const px1 = x1 - x
