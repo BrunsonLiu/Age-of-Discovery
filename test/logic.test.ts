@@ -9158,7 +9158,25 @@ console.log('\n== 天数口径守卫 ==')
 }
 
 /*
- * ---- 甲板中央走道：磨损必须横跨船宽 ----
+ * ---- 夜航尾迹：波脊不能只活在月光道里 ----
+ *
+ * 【守什么】开尔文波脊原来**只乘在镜面项**里（1.0 + kwSpec*2.6）—— 而镜面只在
+ * 月光道里有值，于是道外的波脊亮度恒等于零。冻住 performance.now 做 A/B 差分
+ * （.workbuddy/kelvin-probe.mjs）量到的就是：整片水域里唯一的变化是月光道上
+ * 那几块碎光。所以补了一项"被搅起来的水把月光散回来"的散射。
+ * 两条都必须守：
+ *  ① 散射项存在，而且乘了 uMoonK（不然正午的尾迹带一条发蓝的亮带）；
+ *  ② 镜面那一项的系数还在（不要为了加散射把原来的镜面调制删掉）。
+ */
+{
+  const view = readFileSync(join(process.cwd(), 'src', 'components', 'deck', 'DeckView.tsx'), 'utf8')
+  assert(/\(1\.0 \+ kwSpec \* 2\.6\)/.test(view), '波脊仍然参与镜面（kwSpec × 2.6）')
+  assert(/col \+= uMoon \* kwSpec \* 0\.055 \* foamGate \* uMoonK;/.test(view),
+    '波脊另有一项散射，且乘了 uMoonK（白天不亮）')
+  assert(/float foamGate = 0\.35 \+ 0\.65 \* vnoise/.test(view), '散射项有噪声门（不是一条连续的弧线）')
+}
+
+/*
  *
  * 【守什么】`traffic` 是按 uv 的 **u** 做的剖面。甲板的 uv 里 u 是横向（24 块板沿 u
  * 排开）、v 是船长方向，且 repeat 只沿 v —— 一旦有人把 repeat 改成 (2,3) 或把
