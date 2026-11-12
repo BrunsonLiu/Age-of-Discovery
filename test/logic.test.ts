@@ -11395,6 +11395,57 @@ console.log('\n== 天数口径守卫 ==')
 
 
 /*
+ * ---- 系泊缆绳：船真的被系住了 ----
+ *
+ * 【守什么】停在码头边的船原来只是"浮在那里"，一根缆绳都没有，
+ * 看久了会发现它在漂。真实的系泊是船首与船尾各一根、斜着拉到码头 ——
+ * 这是"八"字，一眼能读出"这条船被系住了"。守四件事：
+ *  ① 只给离岸最近的一两条船（远处的船要拉 90 米缆，比"没系"更怪）；
+ *  ② 船上一端在自己船的端点上（距船中心 ≈ 船长 × 0.44）；
+ *  ③ 岸上一端在码头前沿（z 在小正数、y 在码头面高度）；
+ *  ④ 有下垂（绷成直线读作"一根钢筋"）。
+ */
+{
+  for (const st of Object.values(HARBOR_STYLES)) {
+    const plan = harborPlan(st, 36, 1, 6)
+    const nShip = Math.min(2, plan.moorings.length)
+    assert(plan.lines.length === nShip * 2,
+      `${st.id} 最近 ${nShip} 条船各两根缆（共 ${plan.lines.length} 根）`)
+    for (const L of plan.lines) {
+      const [fx, fy, fz] = L.from
+      // 属于哪条船：端点应该在那条船的船首/船尾
+      const host = plan.moorings.find((m) => {
+        const dx = Math.cos(m.yaw) * m.len * 0.44
+        const dz = -Math.sin(m.yaw) * m.len * 0.44
+        return (Math.abs(fx - (m.x + dx)) < 1e-6 && Math.abs(fz - (m.z + dz)) < 1e-6)
+          || (Math.abs(fx - (m.x - dx)) < 1e-6 && Math.abs(fz - (m.z - dz)) < 1e-6)
+      })
+      assert(!!host, `${st.id} 缆绳的船上一端在某条船的艏/艉（${fx.toFixed(1)}, ${fz.toFixed(1)}）`)
+      assert(fy > 0.2, `${st.id} 船上一端在甲板高度（y=${fy.toFixed(2)}，不能从水面里长出来）`)
+      // 岸上一端：码头前沿
+      assert(L.to[2] > 0 && L.to[2] < 0.3, `${st.id} 岸上一端在码头前沿（z=${L.to[2].toFixed(2)}）`)
+      assert(L.to[1] >= plan.deckY - 0.05, `${st.id} 岸上一端不低于码头面（y=${L.to[1].toFixed(2)}）`)
+      // ④ 下垂
+      assert(L.sag > 0.05 && L.sag < 0.25, `${st.id} 有下垂（${L.sag.toFixed(2)}）`)
+      // 缆绳不能横穿整座城：两端水平距离不该超过 6 单位
+      const horiz = Math.hypot(L.to[0] - fx, L.to[2] - fz)
+      assert(horiz < 6, `${st.id} 缆绳不横跨半个港（水平 ${horiz.toFixed(1)} 单位）`)
+    }
+  }
+  const hm5 = readFileSync(join(process.cwd(), 'src', 'components', 'deck', 'harborModel.ts'), 'utf8')
+  assert(/name = `deck-harbor-mooringline-\$\{i\}`/.test(hm5), '缆绳网格按序命名（取证要用）')
+  /*
+   * 【为什么必须是 Tube 而不是 Line】真实缆绳直径 5 厘米，在 18 单位外是 0.2 像素；
+   * `THREE.Line` 永远只画 1 像素 —— 实测一张图里一根都看不见。Tube 半径 0.028
+   * （夸张 10 倍）才有 2~3 像素，读作"一根缆"。
+   */
+  assert(/new THREE\.TubeGeometry\(curve, 10, 0\.028, 4, false\)/.test(hm5),
+    '缆绳是细 Tube（Line 在 0.2 像素的宽度下完全不可见）')
+  assert(/QuadraticBezierCurve3/.test(hm5), '缆绳走二次贝塞尔（中点下垂）')
+}
+
+
+/*
  * ---- 同一座港在两个视图里必须是同一座城 ----
  *
  * 【守什么】甲板视角（`HARBOR_STYLES`）与 2.5D 全球板（`map3d/models.ts`）

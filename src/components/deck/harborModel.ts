@@ -31,6 +31,7 @@ const MAX_PALM = 8
 const MAX_CRANE = 3
 const MAX_FOLK = 14
 const MAX_LAMP = 10
+const MAX_LINE = 4
 
 export interface DeckHarbor {
   group: THREE.Group
@@ -466,6 +467,31 @@ export function createDeckHarbor(): DeckHarbor {
   reflect.renderOrder = 2
   group.add(reflect)
 
+  /*
+   * ---- 系泊缆绳 ----
+   * 每条一根 `THREE.Line`（细线，便宜）。中段用二次贝塞尔下垂 ——
+   * 真实缆绳不会绷成直线，下垂那一小段正是"它松着、被系住"的信号。
+   * 【为什么用 Line 不用 Tube】缆绳在画面上本来就是 1~2 像素；Tube 要多几百个
+   * 三角形去表达一个看不出来的粗细。
+   */
+  const lineMat = mk(0x6a6258)
+  bases.set(lineMat, lineMat.color.clone())
+  /*
+   * 【为什么不是 Line】真实缆绳直径 5 厘米：在 18 单位（≈320 米）外是 **0.2 像素**，
+   * `THREE.Line` 又永远只画 1 像素 —— 一根都看不见（实测截图里完全没有绳子）。
+   * 改成一圈 4 段的极细 Tube（半径 0.028 单位 ≈ 半米粗，夸张了 10 倍）：
+   * 屏幕上有 2~3 像素，读作"一根缆"。与人物（2.5 倍）、灯塔（20 倍）同一个取舍。
+   */
+  const lineMeshes: THREE.Mesh[] = []
+  for (let i = 0; i < MAX_LINE; i++) {
+    const ln = new THREE.Mesh(new THREE.BufferGeometry(), lineMat)
+    ln.name = `deck-harbor-mooringline-${i}`
+    ln.frustumCulled = false
+    ln.visible = false
+    group.add(ln)
+    lineMeshes.push(ln)
+  }
+
   const spireTower = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), spireMat)
   spireTower.name = 'deck-harbor-spire'
   spireTower.geometry.translate(0, 0.5, 0)
@@ -583,6 +609,26 @@ export function createDeckHarbor(): DeckHarbor {
     }
     curDeckY = deckY
     writeFolk(0)
+
+    /* ---- 系泊缆绳：二次贝塞尔（中点下垂）挤成细管 ---- */
+    for (let i = 0; i < MAX_LINE; i++) {
+      const ln = lineMeshes[i]
+      const L = i < pl.lines.length ? pl.lines[i] : null
+      if (!L) { ln.visible = false; continue }
+      ln.visible = true
+      const [ax, ay, az] = L.from
+      const [bx, by, bz] = L.to
+      /* 控制点取 2×sag：贝塞尔在 t=0.5 处只下沉 sag/2，取两倍才对得上"下垂量" */
+      const cy = Math.min(ay, by) - L.sag * 2
+      const curve = new THREE.QuadraticBezierCurve3(
+        new THREE.Vector3(ax, ay, az),
+        new THREE.Vector3((ax + bx) * 0.5, cy, (az + bz) * 0.5),
+        new THREE.Vector3(bx, by, bz),
+      )
+      const geo = new THREE.TubeGeometry(curve, 10, 0.028, 4, false)
+      ln.geometry.dispose()
+      ln.geometry = geo
+    }
 
     /* ---- 水边的灯：灯杆 + 光点（光点的 y 就是灯高） ---- */
     {

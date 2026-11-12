@@ -76,7 +76,7 @@ export const HARBOR_STYLES: Record<HarborStyleId, HarborStyle> = {
     spire: true,
     palms: 0,
     banner: 0xb03a2e,
-    quay: 0x9a9184,
+    quay: 0x7c7568,
     sail: 'square',
     lamp: [1.5, 1.05, 0.6],
   },
@@ -95,7 +95,7 @@ export const HARBOR_STYLES: Record<HarborStyleId, HarborStyle> = {
     spire: false,
     palms: 7,
     banner: 0x2f6b4f,
-    quay: 0x5a4430,
+    quay: 0x4c3a29,
     sail: 'square',
     lamp: [1.45, 1.0, 0.5],
   },
@@ -114,7 +114,7 @@ export const HARBOR_STYLES: Record<HarborStyleId, HarborStyle> = {
     spire: false,
     palms: 5,
     banner: 0xc0392b,
-    quay: 0x8c8478,
+    quay: 0x706a5f,
     sail: 'junk',
     lamp: [1.55, 0.95, 0.45],
   },
@@ -133,7 +133,7 @@ export const HARBOR_STYLES: Record<HarborStyleId, HarborStyle> = {
     spire: false,
     palms: 6,
     banner: 0x7a5230,
-    quay: 0x9c8f78,
+    quay: 0x7f7460,
     sail: 'square',
     lamp: [1.5, 1.0, 0.52],
   },
@@ -208,6 +208,23 @@ export interface HarborLamp {
   y: number
   /** 灯的亮度系数（0.7~1.2，让一排灯不是同样的亮） */
   k: number
+}
+
+/**
+ * 一根系泊缆绳（从停泊的商船拉到岸上）。
+ *
+ * 【为什么要有】停在码头边的船现在只是"浮在那里"：一根缆绳都没有，
+ * 看久了会发现它在漂（船体还随浪起伏）。真实的系泊是**船首与船尾各一根、
+ * 斜着拉到码头的系缆桩**上，形成一个"八"字 —— 这个形状一眼就能读出
+ * "这条船被系住了"，比任何细节都省。
+ */
+export interface MooringLine {
+  /** 船上一端（本地坐标，y 在甲板高度附近） */
+  from: [number, number, number]
+  /** 岸上一端 */
+  to: [number, number, number]
+  /** 中段下垂量（世界单位）—— 真实缆绳不会绷成直线 */
+  sag: number
 }
 
 /**
@@ -305,6 +322,8 @@ export interface HarborPlan {
   folk: HarborFolk[]
   /** 水边的灯 */
   lamps: HarborLamp[]
+  /** 系泊缆绳 */
+  lines: MooringLine[]
   /** 尖顶（x, z, 高度）—— 没有 spire 的样式返回 null */
   spire: { x: number; z: number; h: number } | null
   /** 吊货臂架（x, z, 臂长） */
@@ -328,6 +347,7 @@ const EMPTY_PLAN: HarborPlan = {
   chimneys: [],
   folk: [],
   lamps: [],
+  lines: [],
   spire: null,
   cranes: [],
   flag: { x: 0, z: 0, h: 0 },
@@ -524,6 +544,33 @@ export function harborPlan(style: HarborStyle, width: number, presence: number, 
   }
 
   /*
+   * 系泊缆绳：只给**离岸最近的那一两条**船。
+   * 【为什么不全给】远处的船（z = −5）系到岸上要拉 5 个单位（90 米）的缆，
+   * 在画面上是一条横跨半个港的斜线，比"没系"更怪。近的那条船才看得清缆绳。
+   */
+  const lines: MooringLine[] = []
+  {
+    const sorted = [...moorings].sort((a, b) => b.z - a.z).slice(0, 2)
+    for (const m of sorted) {
+      // 船的 +x 端（船首）：绕 Y 转了 yaw 之后，长轴方向是 (cos yaw, 0, −sin yaw)
+      const dx = Math.cos(m.yaw) * m.len * 0.44
+      const dz = -Math.sin(m.yaw) * m.len * 0.44
+      const bowY = 0.28
+      // 船首系到它右前方一点、船尾系到左前方一点 —— 形成"八"字
+      lines.push({
+        from: [m.x + dx, bowY, m.z + dz],
+        to: [m.x + dx * 0.55 + 0.9, deckTopY + 0.02, 0.12],
+        sag: 0.1,
+      })
+      lines.push({
+        from: [m.x - dx, bowY, m.z - dz],
+        to: [m.x - dx * 0.55 - 0.9, deckTopY + 0.02, 0.12],
+        sag: 0.12,
+      })
+    }
+  }
+
+  /*
    * 水边的灯：每条栈桥末端一盏，码头前沿再补两三盏。
    * 高度 0.55~0.75 单位（10~13 米，比人高很多）—— 灯笼挂在高杆上，
    * 才能照到栈桥与靠上来的船。
@@ -575,6 +622,7 @@ export function harborPlan(style: HarborStyle, width: number, presence: number, 
     chimneys,
     folk,
     lamps,
+    lines,
     spire: style.spire
       /*
        * 尖顶 = 方形钟楼 + 尖锥：只给一个细锥时比例是 1:11（一根针，实测）。

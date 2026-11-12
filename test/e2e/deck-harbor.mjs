@@ -108,6 +108,7 @@ const gotoPort = async (portId) => {
       folk: h?.plan?.folk?.length ?? 0,
       folkKinds: [...new Set((h?.plan?.folk ?? []).map((f) => f.kind))],
       lamps: h?.plan?.lamps?.length ?? 0,
+      lines: h?.plan?.lines?.length ?? 0,
       spire: h?.plan?.spire ? Math.round(h.plan.spire.h * 10) / 10 : null,
       port: window.__gameStore.getState().fleet.currentPortId,
     }
@@ -148,6 +149,8 @@ for (const e of EXPECT) {
   check(r.folk >= 4, `${e.name}：码头上 ${r.folk} 个人`)
   check(r.folkKinds.length >= 2, `${e.name}：至少两种身份（${r.folkKinds.join('/')}）`)
   check(r.lamps >= r.piers + 2, `${e.name}：水边 ${r.lamps} 盏灯（≥ 栈桥数 ${r.piers} + 2）`)
+  /* 船真的被系住了：最近的一两条船，艏艉各一根 */
+  check(r.lines === Math.min(2, r.moorings) * 2, `${e.name}：${r.lines} 根系泊缆绳`)
 }
 check(new Set(seen.map((s) => s.got.style)).size === 4,
   `四个海域四种样式，各不相同（${seen.map((s) => s.got.style).join(' / ')}）`)
@@ -325,6 +328,18 @@ const folkMesh = await page.evaluate(() => {
 check(Object.values(folkMesh).every((v) => v && v.visible),
   `人的四个网格都在，实例池 ${Object.values(folkMesh)[0]?.count ?? '—'}/个（${
     Object.entries(folkMesh).map(([k, v]) => `${k}${v?.visible ? '✓' : '✗'}`).join(' ')}）`)
+
+const lineMeshes = await page.evaluate(() => {
+  const scene = window.__deckScene
+  const out = []
+  for (let i = 0; i < 4; i++) {
+    const m = scene?.getObjectByName(`deck-harbor-mooringline-${i}`)
+    out.push(m ? { visible: m.visible, verts: m.geometry?.attributes?.position?.count ?? 0 } : null)
+  }
+  return out
+})
+check(lineMeshes.filter(Boolean).every((m) => m.visible) && lineMeshes.filter(Boolean).length >= 2,
+  `缆绳网格都在（${lineMeshes.filter(Boolean).map((m) => m.verts).join('/')} 个顶点）`)
 
 console.log(`\n报错：${errors.length ? errors.join(' | ') : '无'}`)
 check(errors.length === 0, '无页面错误')
