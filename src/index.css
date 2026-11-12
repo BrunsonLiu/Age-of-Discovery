@@ -1390,3 +1390,23 @@ body {
   from { background-position: 0 0; }
   to { background-position: 0 52px; }
 }
+
+/* 岸上的流星：复用事件场景的 sceneMeteor（同一条"流星"曲线，不再写一遍），
+ * 只把周期放慢到 9.5 秒——岸上不是战场，天上一秒一颗会把注意力从港口拽走。
+ *
+ * 【别把这条追加在雨幕后面又被整体重写】** 这里第一次写完，改雨幕时用
+ * 「从雨幕注释开始截断再拼新块」的写法把它一起截掉了：`<span class="harbor-meteor">`
+ * 于是变成一个没有样式的空 span，屏幕上什么都不动、也不报错。
+ * 单测里现在有一条守卫同时检查「index.css 有这条规则」与「组件里有这个元素」。
+ */
+.harbor-meteor {
+  position: absolute;
+  left: 24%;
+  top: 9%;
+  width: 84px;
+  height: 2px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, rgba(233, 241, 255, 0) 0%, rgba(233, 241, 255, 0.9) 100%);
+  opacity: 0;
+  animation: sceneMeteor 9.5s linear infinite;
+}

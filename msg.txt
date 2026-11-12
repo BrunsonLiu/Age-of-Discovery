@@ -1,20 +1,10 @@
-feat(harbor): 岸上接上天光 —— 同一座港，白天/黄昏/深夜是三种画面
+fix(harbor): 把被截断的流星样式补回来，并给「元素与规则两边都在」加守卫
 
-岸上那张远景是**画**，画里的光是固定的正午；而游戏一昼夜 8 分钟实时推进，
-玩家会在岸上看着日落。海图有 VintageMapOverlay、甲板有 litK、3D 海图有日相调灯，
-只有岸上没接 —— 在海上熬到天黑、一上岸天又亮了，比"没有昼夜"更假。
+第一次写 .harbor-meteor 时把它追加在雨幕块后面；后来改雨幕用了
+「从雨幕注释开始截断再拼新块」的写法，把这条规则一起截掉了 ——
+`<span class="harbor-meteor">` 于是变成一个没有样式的空 span：
+屏幕上什么都不动、不报错、没有任何判据会红（构建产物里也确实没有这条规则）。
 
-新增 utils/harborMood.ts（纯函数）+ components/harbor/useHarborAmbience.ts（4Hz 写 opacity）：
-- 夜：混向深蓝（0.80 上限，实测再深城的轮廓就糊），不是乘系数（会把桅杆压成纯黑）
-- 黄昏：**两层** —— multiply 染色（保住对比）+ screen 辉光（只留海平线上方一条）。
-  单个 screen 层实测变暖 28 级、grain 从 0.030 掉到 0.012，整片橙雾
-- 星：一块 div + 数十段 radial-gradient（不是 60 个节点），静态 + 每 9.5 秒一颗流星
-- 水面碎光：点距 76×49、遮罩收到真的水域（第一版是铺满船帆的"雪粒"）
-- 雨/雾：只在该出现时挂载；雨丝 7×52 tile（多而淡，不是少而亮）
-- 四盏码头灯挂在系缆桩上（QUAY_LAMPS 与 QUAY_POSTS 同一份数据），灯的光池+闪烁
-
-顺手：洋名（英吉利海峡）改四向深褐描边 —— 它是对比度审计里全屏唯一不达标的一段
-（压在浅米色陆地上 1.73:1），发光是同色救不了"底色变亮"。
-
-新增 e2e harbor-mood（28/0，判据全是像素）；单测 11151/0；harbor-view 63/0；
-contrast-audit 未达标 0（9 段靠描边）；clickable / smalltext / layout / mobile / map-legibility 全绿。
+- 重新补上规则（复用 sceneMeteor，周期 9.5s）
+- 单测加 4 条守卫：index.css 有 .harbor-meteor 规则、用的是 sceneMeteor、
+  组件里真的挂了元素、雨幕的 tile 与 keyframes 都在

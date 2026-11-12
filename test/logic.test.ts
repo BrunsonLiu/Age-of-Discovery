@@ -12487,4 +12487,14 @@ console.log('== 岸上天光：同一座港，白天和夜里是两张画 ==')
   assert(/< 250/.test(amb2) && /0\.004/.test(amb2),
     '按 4Hz + 0.004 门限写 opacity（每帧写会触发整屏样式重算）')
   assert(/skyAt\(performance\.now\(\), st\.routeProgress/.test(amb2), '日相读 skyClock 的唯一来源，不自己算相位')
+  /*
+   * 流星：元素在组件里、规则在 index.css 里，**两边都要有**。
+   * 第一次写完，改雨幕时用「从雨幕注释开始截断再拼新块」的写法把这条规则一起截掉了，
+   * 结果是一个没有样式的空 span —— 屏幕上什么都不动、也不报错、没有任何判据会红。
+   */
+  const cssAll = readFileSync(join(process.cwd(), 'src', 'index.css'), 'utf8')
+  assert(/\.harbor-meteor\s*\{/.test(cssAll), 'index.css 里有 .harbor-meteor 的规则（不是空 span）')
+  assert(/animation:\s*sceneMeteor/.test(cssAll), '流星复用 sceneMeteor 曲线（不另写一条）')
+  assert(/className="harbor-meteor"/.test(hv2), '组件里真的挂了这个元素')
+  assert(/\.harbor-rain\s*\{/.test(cssAll) && /harborRainFall/.test(cssAll), '雨幕的 tile 与 keyframes 都在')
 }
