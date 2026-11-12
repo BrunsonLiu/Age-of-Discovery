@@ -16,7 +16,7 @@ import { texFrom } from './shipTextures'
  */
 
 /** 一片云的贴图（含水汽的软圆叠加 + 平底 + 下沿阴影） */
-function makeCloudCanvas(seed: number, w = 512, h = 384): HTMLCanvasElement {
+function makeCloudCanvas(seed: number, w = 768, h = 576): HTMLCanvasElement {
   const c = document.createElement('canvas')
   c.width = w
   c.height = h
@@ -51,10 +51,15 @@ function makeCloudCanvas(seed: number, w = 512, h = 384): HTMLCanvasElement {
   const bw = w * 0.30
   const bh = h * 0.20
   const base = g.createRadialGradient(cx0, cy0, 0, cx0, cy0, bw)
-  base.addColorStop(0, 'rgba(255,255,255,1)')
-  base.addColorStop(0.62, 'rgba(255,255,255,0.94)')
-  base.addColorStop(0.88, 'rgba(255,255,255,0.45)')
-  base.addColorStop(1, 'rgba(255,255,255,0)')
+  /*
+   * 底盘是**微冷灰**（226,232,242）而不是纯白：
+   * 云的体积感靠"顶亮、底暗"的落差，纯白在 8bit 里没有上浮空间 —— 高光画不上去。
+   * 底色压到 226 之后，鼓包的迎光面才能用 255 画出来（相差 29 级）。
+   */
+  base.addColorStop(0, 'rgba(214,223,237,1)')
+  base.addColorStop(0.62, 'rgba(218,227,240,0.96)')
+  base.addColorStop(0.88, 'rgba(226,234,245,0.5)')
+  base.addColorStop(1, 'rgba(230,238,247,0)')
   g.save()
   g.translate(cx0, cy0)
   g.scale(1, bh / bw)
@@ -67,10 +72,16 @@ function makeCloudCanvas(seed: number, w = 512, h = 384): HTMLCanvasElement {
    * 而不是随机撒在内部 —— 直径比间距略大，相邻的圆连成一片、外缘鼓出一串
    * 圆弧，这就是积云标志性的"菜花边"。随机撒在内部时，外缘仍由底盘决定。
    */
-  g.globalCompositeOperation = 'lighter'
+  /*
+   * 【为什么用 source-over 而不是 'lighter'】'lighter' 是**加法**：给鼓包画
+   * "背光侧的冷灰阴影"时，它反而把那块**加亮**了（rgb 相加不可能变暗），
+   * 于是阴影和本体互相抵消，整朵云回到一片白。而且加法很快饱和到 255，
+   * 8bit 里再也压不出层次。改成 source-over：本体是微冷灰、迎光面才用近白，
+   * 暗部靠底色的深浅表达。
+   */
+  g.globalCompositeOperation = 'source-over'
   const puffs = 46
   for (let i = 0; i < puffs; i++) {
-    // 沿上半椭圆（−100°..100°）排出一个个鼓包
     const a = (-1.0 + 2.0 * (i / (puffs - 1))) * Math.PI * 0.82 + (rnd() - 0.5) * 0.25
     const ring = 0.80 + 0.20 * rnd()
     const px = cx0 + Math.sin(a) * bw * ring
@@ -78,26 +89,30 @@ function makeCloudCanvas(seed: number, w = 512, h = 384): HTMLCanvasElement {
     /*
      * 半径 0.055~0.095·w 且间距只有 0.04·w：**相邻的圆必须重叠**才连成一片。
      * 上一版半径 0.035~0.065 时，圆弧之间露着缝，屏幕上是一串**独立的泡泡**
-     * 排成一条弧（实测），不是一朵云。
+     * 排成一条弧，不是一朵云。
      */
     const rr = w * (0.055 + 0.040 * rnd())
-    const alpha = 0.45 + 0.25 * rnd()
-    const grd = g.createRadialGradient(px, py, 0, px, py, rr)
-    grd.addColorStop(0, `rgba(255,255,255,${alpha})`)
-    grd.addColorStop(0.5, `rgba(255,255,255,${alpha * 0.62})`)
-    grd.addColorStop(1, 'rgba(255,255,255,0)')
-    g.fillStyle = grd
+    const alpha = 0.72 + 0.22 * rnd()
+    // ① 本体：微冷灰的球（比底盘亮一点点，鼓包才浮起来）
+    const body = g.createRadialGradient(px, py, 0, px, py, rr)
+    body.addColorStop(0, `rgba(238,243,250,${alpha})`)
+    body.addColorStop(0.55, `rgba(226,233,244,${alpha * 0.86})`)
+    body.addColorStop(1, 'rgba(220,228,240,0)')
+    g.fillStyle = body
     g.beginPath()
     g.arc(px, py, rr, 0, Math.PI * 2)
     g.fill()
-    // 每个鼓包内侧再补一个小圆：让团块有内部的厚度（否则鼓包只是一层壳）
-    const ir = rr * 0.72
-    const iGrd = g.createRadialGradient(px, py + rr * 0.25, 0, px, py + rr * 0.25, ir)
-    iGrd.addColorStop(0, `rgba(255,255,255,${alpha * 0.85})`)
-    iGrd.addColorStop(1, 'rgba(255,255,255,0)')
-    g.fillStyle = iGrd
+    /*
+     * ② 迎光面（左上）：近白。这是"球被斜上方照亮"唯一可见的证据 ——
+     * 只画本体时，一朵云就是一堆同亮度的泡泡，屏幕上只有轮廓没有体积。
+     */
+    const hl = g.createRadialGradient(px - rr * 0.26, py - rr * 0.30, 0, px - rr * 0.26, py - rr * 0.30, rr * 0.95)
+    hl.addColorStop(0, `rgba(253,254,255,${alpha * 0.62})`)
+    hl.addColorStop(0.55, `rgba(250,252,255,${alpha * 0.26})`)
+    hl.addColorStop(1, 'rgba(250,252,255,0)')
+    g.fillStyle = hl
     g.beginPath()
-    g.arc(px, py + rr * 0.25, ir, 0, Math.PI * 2)
+    g.arc(px - rr * 0.26, py - rr * 0.30, rr * 0.95, 0, Math.PI * 2)
     g.fill()
   }
   /*
@@ -128,7 +143,12 @@ function makeCloudCanvas(seed: number, w = 512, h = 384): HTMLCanvasElement {
   shade.addColorStop(0.55, 'rgba(158,172,192,0.30)')
   shade.addColorStop(1, 'rgba(146,160,182,0.62)')
   g.fillStyle = shade
-  g.fillRect(0, h * 0.52, w, h * 0.42)
+  /*
+   * 填充矩形必须**与渐变的起点对齐**（都是 0.46h）：原来从 0.52h 开始填，
+   * 265~300 这一段没画到，于是这一段的下边界上 alpha 从 0 直接跳到 0.13 ——
+   * 整朵云中间横着一条**笔直的接缝**（导出贴图一眼就看见，画面上是云被切成两半）。
+   */
+  g.fillRect(0, h * 0.46, w, h * 0.52)
   g.globalCompositeOperation = 'source-over'
   ;(window as unknown as { __cloudCanvas?: HTMLCanvasElement }).__cloudCanvas = c
   return c

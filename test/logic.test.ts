@@ -11753,6 +11753,17 @@ console.log('\n== 天数口径守卫 ==')
     '云底是"切平"的（destination-out 渐变）—— 积云的下沿是平的')
   assert(/depthTest: true/.test(cb),
     '云必须开深度测试（云在半径 118 上，比港口近景远；关了会盖在房子上）')
+  /*
+   * 鼓包必须用 **source-over** 画：'lighter' 是加法，画"背光侧的冷灰阴影"时
+   * 反而把那一块**加亮**了（rgb 相加不可能变暗），阴影与本体互相抵消，
+   * 整朵云回到一片白。而且加法很快饱和，8bit 里再也压不出层次。
+   */
+  assert(!/globalCompositeOperation = 'lighter'/.test(cb),
+    '云的鼓包不能用 lighter 叠加（加法画不出阴影，只会加亮）')
+  assert(/const body = g\.createRadialGradient/.test(cb) && /const hl = g\.createRadialGradient/.test(cb),
+    '每个鼓包画"本体 + 迎光面"两笔（只画一个均匀的圆 = 一堆同亮度的泡泡）')
+  assert(/g\.fillRect\(0, h \* 0\.46, w, h \* 0\.52\)/.test(cb),
+    '云底阴影的填充矩形与渐变起点对齐（错开会在云中间留下一条笔直的接缝）')
   assert(/lerp\(CLOUD_WHITE, 0\.90\)/.test(dv), '云色先往白里推到 0.90（留 10% 天蓝在云底）')
   assert(/uCloudDrift\.value\.set\(t \* 0\.004/.test(dv), '云会漂（极慢，一分钟 0.24 个单位）')
   // 取证句柄（e2e 读 uniform —— 天空那块被教程遮罩压着，量像素量到的是遮罩）
