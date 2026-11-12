@@ -81,13 +81,35 @@ await page.evaluate(() => {
 await sleep(900)
 
 // ---- ① 进船上视角 ----
-const opened = await page.evaluate(() => {
+/*
+ * 【为什么要先做命中测试、再用真鼠标点】
+ * 这个入口原来是 `fixed bottom-6 z-30`：桌面端正好落在底栏（y 849..900）上、
+ * 层级又低于底栏内部那层 div —— 实测 elementFromPoint 命中的是
+ * `DIV.flex items-center gap-0.5 shrink-0 order-3`，玩家**根本点不到**
+ * （用户反馈"转换到船的 3D 视角我没看到按钮"）。
+ * 而旧的判据用 `b.click()` 直接调 DOM，绕过了命中测试，所以一直全绿 ——
+ * 3D 海图那个开关当年也是这样漏的。现在改成：先 elementFromPoint，再真鼠标点。
+ */
+const gate = await page.evaluate(() => {
   const b = document.querySelector('[data-testid=deck-view-toggle]')
-  if (!b) return false
-  b.click()
-  return true
+  if (!b) return null
+  const r = b.getBoundingClientRect()
+  const el = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2)
+  return {
+    x: r.x + r.width / 2, y: r.y + r.height / 2,
+    self: !!el && (el === b || b.contains(el)),
+    under: el ? `${el.tagName}.${String(el.className).slice(0, 28)}` : 'null',
+    z: getComputedStyle(b).zIndex,
+    top: Math.round(r.y), bottom: Math.round(r.y + r.height), vh: innerHeight,
+  }
 })
-check(opened, '主屏上有「船上」入口')
+check(!!gate, '主屏上有「船上」入口')
+check(gate?.self === true, `「船上」入口的中心真的命中自己（不是被盖住：${gate?.under}）`)
+check((gate?.bottom ?? 9999) < 849, `入口不在底栏（y ${gate?.top}..${gate?.bottom}，底栏 849 起）`)
+check(Number(gate?.z ?? 0) >= 800, `入口层级 ${gate?.z}（要压在底栏之上）`)
+if (gate) await page.mouse.click(gate.x, gate.y)
+await sleep(300)
+check(await page.evaluate(() => window.__mapStore.getState().deckView === true), '真鼠标点「船上」→ 真的进了甲板视角')
 // three 场景是懒加载的：轮询"场景真的建好了"，而不是固定等
 let sceneReady = false
 for (let i = 0; i < 40 && !sceneReady; i++) {

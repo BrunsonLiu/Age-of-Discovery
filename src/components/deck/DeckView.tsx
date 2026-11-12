@@ -1584,14 +1584,26 @@ export default function DeckView() {
   if (!open) {
     if (viewMode === 'harbor') return null
     return (
+      /*
+       * 【入口为什么搬到这里】
+       * 原来它是 `fixed right-4 bottom-24 md:bottom-6 z-30`：桌面端 bottom-6
+       * 正好落在底栏（y 849..900）上、z-30 又低于底栏内部那层 div ——
+       * 实测 elementFromPoint 命中的是 `DIV.flex items-center gap-0.5 shrink-0 order-3`，
+       * 也就是**按钮整个被底栏盖住**，玩家点不到也看不见（用户反馈"没看到按钮"）。
+       * 同一个坑 3D 海图那个开关也踩过（它现在躲在 top-14 right-3）。
+       * 现在与它并排：都在顶栏下方的右上角，z-900 压在底栏/侧栏之上。
+       */
       <button
         type="button"
         onClick={() => setDeckView(true)}
         data-testid="deck-view-toggle"
         title="船上视角（V）：贴着海面看自己的船"
-        className="fixed right-4 bottom-24 z-30 flex items-center gap-1.5 rounded-full border border-gold-600/50 bg-ocean-900/85 px-3 py-2 text-xs text-parchment-100 shadow-lg backdrop-blur transition hover:bg-ocean-800/90 md:bottom-6"
+        className="absolute right-[7.4rem] top-14 z-[900] flex items-center gap-1.5 rounded border
+                   border-[#8b6f3e]/70 bg-[#1b1408]/95 px-3 py-1.5 text-xs font-serif text-[#e8d4a8]
+                   shadow-[0_2px_8px_rgba(0,0,0,0.55)] transition-colors
+                   hover:bg-[#2a1f0c] active:scale-95"
       >
-        <Anchor size={14} />
+        <Anchor size={14} aria-hidden="true" />
         船上
       </button>
     )

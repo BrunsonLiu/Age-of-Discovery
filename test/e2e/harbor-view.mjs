@@ -293,6 +293,34 @@ await until(() => !!document.querySelector('[data-testid="harbor-invite"]'))
 await page.click('[data-testid="harbor-invite-close"]')
 check(!(await page.$('[data-testid="harbor-invite"]')), '邀请条可以手动收起')
 
+/*
+ * 【岸上 → 船】这一步守的是"两个空间接得上"：
+ * 岸上那张 1600×900 是画的（素材本身就是远景），但船那头是真的 3D。
+ * 「上船看看」必须真的把玩家送到甲板上：viewMode 回 chart + deckView = true，
+ * 两个状态缺一个都会出现"点了黑屏"或"点了回到海图却没上船"。
+ */
+// 先站到岸上（上一段结束时已经回了海图）
+await page.evaluate(() => {
+  window.__mapStore.setState({ viewMode: 'harbor', deckView: false })
+})
+await new Promise(r => setTimeout(r, 500))
+if (await page.$('[data-testid="harbor-go-deck"]')) {
+  await page.click('[data-testid="harbor-go-deck"]')
+  await new Promise(r => setTimeout(r, 900))
+  const bridge = await page.evaluate(() => ({
+    view: window.__mapStore.getState().viewMode,
+    deck: window.__mapStore.getState().deckView,
+    canvas: !!document.querySelector('[data-testid="deck-view"] canvas'),
+  }))
+  check(bridge.view === 'chart' && bridge.deck === true, `岸上点「上船看看」→ 上甲板（view=${bridge.view} deck=${bridge.deck}）`)
+  check(bridge.canvas, '甲板层真的画出来了（有 canvas，不是黑屏）')
+  await page.evaluate(() => window.__mapStore.setState({ deckView: false }))
+  await new Promise(r => setTimeout(r, 500))
+} else {
+  check(false, '岸上应该有「上船看看」入口（从码头跨到甲板）')
+}
+
+
 // ---- 8. 移动端：功能一个不少，服务按钮不被底栏/浮卡压住 ----
 await page.setViewport({ width: 390, height: 844 })
 await page.reload({ waitUntil: 'networkidle2', timeout: 60000 })

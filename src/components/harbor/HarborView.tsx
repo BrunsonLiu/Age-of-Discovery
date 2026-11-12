@@ -116,6 +116,7 @@ export default function HarborView() {
   const logbook = useGameStore(s => s.logbook)
   const setActivePanel = useGameStore(s => s.setActivePanel)
   const setViewMode = useMapStore(s => s.setViewMode)
+  const setDeckView = useMapStore(s => s.setDeckView)
   const setCenter = useMapStore(s => s.setCenter)
   const setSelectedPortId = useMapStore(s => s.setSelectedPortId)
 
@@ -377,6 +378,29 @@ export default function HarborView() {
                     )
                   })}
                 </div>
+                {/*
+                  【从码头走上船】岸上是画出来的景（素材就是 1600×900 的油画），
+                  但"船"的那一头是**真的 3D**。与其把岸也做成立体模型（那批港口
+                  素材本身就是远景），不如把两个空间接起来：从这里一步跨到甲板上，
+                  空间感就由"船"来承担。
+                */}
+                <button
+                  onClick={() => { setViewMode('chart'); setDeckView(true) }}
+                  data-testid="harbor-go-deck"
+                  /* 小屏先让位：手机上这张服务板本来就紧，多一块会把最后一个服务入口
+                     顶到底栏底下（实测 5 个入口里有一个点不中）。手机上"回船上"走底栏
+                     的空间开关，桌面再给这块跳板。 */
+                  className="hidden md:block mt-2 w-full text-left rounded border border-gold-600/55 bg-black/30 px-2.5 py-2
+                    hover:bg-gold-700/25 press transition-colors"
+                >
+                  <span className="flex items-center gap-1.5 text-gold-100 font-serif text-[14px]">
+                    <Anchor size={15} aria-hidden="true" />
+                    上船看看
+                  </span>
+                  <span className="block text-gold-400 font-serif text-[12px] mt-1 leading-snug">
+                    踩着跳板回到甲板 · 从水面上看这座港
+                  </span>
+                </button>
               </div>
             </section>
           </div>
