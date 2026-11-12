@@ -11733,12 +11733,26 @@ console.log('\n== 天数口径守卫 ==')
    */
   assert(/0\.14 \* vnoise\(cq \* 5\.70 \+ 41\.0\)/.test(dv),
     '第三层高频噪声（云边缘要被打毛，但不能撕成触须）')
-  // ④ 云随昼夜
+  // ④ 云
   /*
-   * 白天 0.96：0.82 时云只是"提亮一点的天"，混合后仍是灰蓝（实测云心 187/193/202）。
-   * 白云的漫反射接近全反射，权重 >0.9 才有"白"这个读感。
+   * 第 126 轮：噪声云**整层关掉**（0），云完全交给贴图 billboard
+   * （`cloudBillboards.ts`）。两层叠在一起时，后面那层等值线把整片天洗白
+   * —— 实测截图左半边一片惨白。
    */
-  assert(/uCloud\.value = 0\.10 \+ 0\.86 \* dayK/.test(dv), '云随昼夜：白天 0.96、夜里 0.10')
+  assert(/skyMat\.uniforms\.uCloud\.value = 0\b/.test(dv), '噪声云整层关闭（贴图云接管）')
+  /*
+   * 贴图云：必须**三张不同贴图**（一张铺 18 片时，画面左右两朵是一个模子印的），
+   * 且必须成实例（1 片 1 次 draw call 的话就是 18 次）。
+   * 贴图本身是程序画的：软底盘 + 沿轮廓排的"花椰菜"圆 + 平底 + 下沿阴影。
+   */
+  const cb = readFileSync(join(process.cwd(), 'src', 'components', 'deck', 'cloudBillboards.ts'), 'utf8')
+  assert(/const VARIANTS = 3/.test(cb), '云贴图有 3 种轮廓（一种轮廓铺满全天空会被看出重复）')
+  assert(/new THREE\.InstancedMesh\(geo, mat, Math\.ceil\(spots\.length \/ VARIANTS\)\)/.test(cb),
+    '云片是实例化的（不然 18 片 = 18 次 draw call）')
+  assert(/g\.globalCompositeOperation = 'destination-out'/.test(cb),
+    '云底是"切平"的（destination-out 渐变）—— 积云的下沿是平的')
+  assert(/depthTest: true/.test(cb),
+    '云必须开深度测试（云在半径 118 上，比港口近景远；关了会盖在房子上）')
   assert(/lerp\(CLOUD_WHITE, 0\.90\)/.test(dv), '云色先往白里推到 0.90（留 10% 天蓝在云底）')
   assert(/uCloudDrift\.value\.set\(t \* 0\.004/.test(dv), '云会漂（极慢，一分钟 0.24 个单位）')
   // 取证句柄（e2e 读 uniform —— 天空那块被教程遮罩压着，量像素量到的是遮罩）

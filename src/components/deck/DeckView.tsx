@@ -3,6 +3,7 @@ import * as THREE from 'three'
 import { Anchor, Footprints, X } from 'lucide-react'
 import { useGameStore } from '@/store/useGameStore'
 import { useMapStore } from '@/store/useMapStore'
+import { createCloudLayer } from './cloudBillboards'
 import { skyAt } from '@/utils/skyClock'
 import { getPreset, onQualityChange } from '@/utils/quality'
 import { createDeckShip, type DeckShip } from './shipModel'
@@ -661,7 +662,12 @@ export default function DeckView() {
            * 白天的地板值 0.03（原 0.10）：正午蓝天上一个淡白圆盘，读作
            * "镜头上的脏点"而不是月亮（截图实测）。夜里 0.03+2.10 不影响。
            */
-          col += uMoonColor * smoothstep(0.99988, 0.99994, m) * (0.03 + 2.18 * uMoonK);
+          /*
+           * 白天的地板值 0.03 → 0：太阳方向与月亮方向只差十几度，白天在太阳下面
+           * 紧挨着一个淡淡的**小圆盘**（实测截图里像镜头上的脏点）。月亮在白昼
+           * 本来就该完全看不见，地板值删掉。
+           */
+          col += uMoonColor * smoothstep(0.99988, 0.99994, m) * (2.18 * uMoonK);
           /*
            * 月亮的两圈光晕。指数越大半径越小：
            * 240/26 时外圈直径约 300px，夜里读成"月亮周围一大块灰白"（截图实测）；
@@ -710,6 +716,15 @@ export default function DeckView() {
     sky.name = 'deck-sky'
     sky.frustumCulled = false
     scene.add(sky)
+
+    /*
+     * ---- 云：贴图 billboard（不是噪声等值线）----
+     * 见 `cloudBillboards.ts` 的注释：噪声云调了四轮，永远是"一缕一缕的等值线"，
+     * 而云占画面 25%。改成 16 片朝向球心的四边形，形状写在贴图里，
+     * 代价 1 次 draw call + 一张 256² 的程序生成贴图。
+     */
+    const clouds = createCloudLayer()
+    scene.add(clouds.group)
 
     // ---- 星：固定屏幕尺寸的小点，只在上半球 ----
     const starCount = 420
@@ -1638,7 +1653,11 @@ export default function DeckView() {
       const lightMul = 0.42 + 0.58 * skyInfo.lit
       moon.intensity = 2.1 * lightMul
       // 雾里看不到月亮：下面那处再乘一次 (1 − 雾)
-      skyMat.uniforms.uMoonK.value = 0.06 + 0.94 * night
+      /*
+       * 0.06 的地板值 → 0：日月方向只差十几度，白天太阳下方会多出一个淡淡的
+       * 小圆盘（像镜头脏点）。月亮在白昼本来就看不见，地板值删掉。
+       */
+      skyMat.uniforms.uMoonK.value = Math.max(0, (night - 0.12) / 0.88)
       /*
        * 太阳：仰角 5°~15°（随日相起伏），方位角固定（见 `sunAz` 的注释）。
        * `sunK` 是"太阳在地平线之上"的程度 —— 夜里归零，天空的亮心与海面的
@@ -1649,7 +1668,13 @@ export default function DeckView() {
         sunDir.copy(sunAz).multiplyScalar(Math.cos(alt))
         sunDir.y = Math.sin(alt)
         sunDir.normalize()
-        const sunK = Math.pow(Math.max(0, Math.min(1, skyInfo.lit)), 0.7)
+        /*
+         * 太阳的强度必须**在地平线之下归零**：原来用 pow(lit, 0.7)，夜里
+         * lit≈0.1 → sunK 0.2，夜空里还挂着一个淡白色的小圆盘（实测截图：
+         * 月亮下面多一个"第二个太阳"）。改成 (lit−0.22)/0.78，日落后 30 分钟
+         * 内就彻底消失。
+         */
+        const sunK = Math.pow(Math.max(0, (Math.min(1, skyInfo.lit) - 0.22) / 0.78), 0.7)
         skyMat.uniforms.uSunDir.value.copy(sunDir)
         seaUniforms.uSunDir.value.copy(sunDir)
         skyMat.uniforms.uSunK.value = sunK
@@ -1730,6 +1755,8 @@ export default function DeckView() {
       )
       seaUniforms.uFogK.value = look.fog
       seaUniforms.uFogColor.value.copy(skyMat.uniforms.uFogColor.value)
+      // 云也要吃雾：浓雾天一片片轮廓清楚的积云立刻露馅
+      clouds.setFog(look.fog, skyMat.uniforms.uFogColor.value)
         skyMat.uniforms.uDark.value = dark
         skyMat.uniforms.uFogK.value = look.fog * 0.9
       // 雾与厚云都会遮月亮：暴雨夜里那轮月亮应该只剩一个模糊的亮斑
@@ -2089,7 +2116,21 @@ export default function DeckView() {
        * 放大截图里像一团水汽。白云的漫反射接近全反射，云心的混合权重必须 >0.9
        * 才有"白"这个读感（实测云心 187/193/202 → 提上去之后 232/236/240）。
        */
-      skyMat.uniforms.uCloud.value = 0.10 + 0.86 * dayK
+      /*
+       * 噪声云降到 0.10+0.18·dayK（原 0.10+0.86）：
+       * 它现在只当**底层薄云**用 —— 贴图 billboard 负责"云朵"，噪声负责
+       * "整片天不是干净的蓝"。两层都满强度时会互相打架（billboard 上叠着
+       * 一缕缕的等值线，比只有一层更脏）。
+       */
+      /*
+       * 噪声云**整层关掉**（0.10+0.18·dayK → 0）。
+       * 它现在只会在天空上蒙一层半透的白纱：实测把 billboard 云摆在前面时，
+       * 后面那层等值线会把整片天洗白（截图里左半边一片惨白），而且它自己
+       * 也没有形状可言。云完全交给 `cloudBillboards.ts`。
+       * uniform 与 GLSL 先留着：海图那边（Map3DView）还在用同一套噪声云公式。
+       */
+      skyMat.uniforms.uCloud.value = 0
+      clouds.setNight(night)
       skyMat.uniforms.uCloudDrift.value.set(t * 0.004, t * 0.0015)
       /*
        * 0.84 → 0.90：白云就是白的，天顶的蓝只该在云底（那条仰角阴影）里露一点。
@@ -2170,6 +2211,7 @@ export default function DeckView() {
       coast.dispose()
       harbor.dispose()
       rain.dispose()
+      clouds.dispose()
       offQuality()
       post.dispose()
       renderer.dispose()
