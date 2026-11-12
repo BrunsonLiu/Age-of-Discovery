@@ -332,23 +332,43 @@ await page.evaluate(() => window.__gameStore.setState({ activePanel: 'port' }))
 check(await until(() => !!document.querySelector('[data-testid="harbor-enter"]')), '移动端港口面板里也有上岸入口')
 await page.click('[data-testid="harbor-enter"]')
 check(await until(() => !!document.querySelector('[data-testid="harbor-view"]')), '移动端能进岸上')
+/*
+ * 【为什么要先滚到底】岸上的服务是一列**可以滚的列表**（手机 390×844 时内容
+ * 888px，比可视区高）。原先的判据在"没滚动"的状态下逐点命中，最后一块
+ * `harbor-service-logbook` 正好落在底部木梁后面 → 永远点不到（实测 y=568..632，
+ * 木梁从 595 起）。修法是让滚动区止于木梁顶（`bottom-[249px]`），于是
+ * **滚到底就全都能点到**。判据要跟着改成"滚到底之后"——"不滚也能全看到"
+ * 对一列五个入口是不现实的（那要求内容压进 595px）。
+ */
+/* 「回海图」在页面顶部：**必须在滚动之前测**，否则滚到底之后它自己出屏了 */
+const backVisible = await page.evaluate(() => {
+  const back = document.querySelector('[data-testid="harbor-back-to-chart"]')?.getBoundingClientRect()
+  return !!back && back.y >= 0 && back.y < innerHeight
+})
+await page.evaluate(() => {
+  const sc = [...document.querySelectorAll('[data-testid="harbor-view"] div')]
+    .find(d => getComputedStyle(d).overflowY === 'auto')
+  if (sc) sc.scrollTop = sc.scrollHeight
+})
+await new Promise(r => setTimeout(r, 400))
 const mobile = await page.evaluate(() => {
   const btns = [...document.querySelectorAll('[data-testid^="harbor-service-"]')].map(b => {
     const r = b.getBoundingClientRect()
     const top = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2)
     return { id: b.getAttribute('data-testid'), y: Math.round(r.y), h: Math.round(r.height), hit: b.contains(top) }
   })
-  const back = document.querySelector('[data-testid="harbor-back-to-chart"]')?.getBoundingClientRect()
   return {
     btns,
-    backVisible: !!back && back.y >= 0 && back.y < innerHeight,
     foreground: !!document.querySelector('[data-testid="harbor-view"] svg[viewBox="0 0 1440 164"]'),
     vh: innerHeight,
   }
 })
 check(mobile.btns.length === 5, '移动端 5 个服务入口都在（功能不少）')
-check(mobile.btns.every(b => b.hit), '5 个按钮的中心都真的能被点中（没被底栏或浮卡遮住）')
-check(mobile.backVisible, '移动端「回海图」按钮在视口内')
+check(mobile.btns.every(b => b.hit),
+  `滚动到底之后 5 个按钮的中心都能被点中（${mobile.btns.filter(b => !b.hit).map(b => b.id).join(',') || '全部命中'}）`)
+check(mobile.btns.every(b => b.y >= 0 && b.y + b.h <= mobile.vh),
+  `滚到底之后 5 个按钮都在屏幕内（最低到 y=${Math.max(...mobile.btns.map(b => b.y + b.h))}，视口 ${mobile.vh}）`)
+check(backVisible, '移动端「回海图」按钮在视口内')
 check(!mobile.foreground, '移动端不渲染前景剪影（会被多行底栏吃掉）')
 await page.click('[data-testid="harbor-service-logbook"]')
 check(await until(() => window.__gameStore.getState().activePanel === 'event'), '移动端真实鼠标点「航海日志」→ 面板打开')

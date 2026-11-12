@@ -225,7 +225,14 @@ export default function HarborView() {
       />
 
       {/* ── 中景：地点铭牌 / 见闻 / 服务入口 ──────────────────────── */}
-      <div className="absolute inset-0 overflow-y-auto overscroll-contain px-4 md:px-28 pt-12 md:pt-16 pb-60 md:pb-40">
+      {/*
+            滚动区在移动端必须**止于底栏顶部**（249px = 底部木梁 138 + 标签栏 111）。
+            原来铺到 inset-0、只靠 pb-60 让位：最后一块服务（harbor-service-logbook，
+            实测 y=568..632）正好藏在木梁（y 从 595 起）后面 —— elementFromPoint
+            命中的是 `DIV.wood-beam--foot`，玩家点不到，而且**不滚动就不知道它在**。
+            桌面端仍铺满（底部只有 52px 的底栏，pb-40 已经够）。
+          */}
+          <div className="absolute inset-x-0 top-0 bottom-[249px] md:bottom-0 overflow-y-auto overscroll-contain px-4 md:px-28 pt-12 md:pt-16 pb-8 md:pb-40">
         <div className="mx-auto max-w-6xl">
           <div className="flex items-start justify-between gap-3 mb-4 md:mb-6">
             <div className="flex items-center gap-2 text-gold-300 font-serif text-[13px]">

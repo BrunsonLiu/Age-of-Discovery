@@ -7,6 +7,7 @@ import { skyAt } from '@/utils/skyClock'
 import { createDeckShip, type DeckShip } from './shipModel'
 import { DECK_WAVES, deckShipPose, deckWaveHeight } from './deckWaves'
 import { findCoast, bearingWord, compassWord, wrapDeg, type CoastSighting } from './deckCoast'
+import { createDeckHarbor, type DeckHarbor } from './harborModel'
 import { createDeckCoast } from './coastModel'
 import { deckEyeY, stepWalk, WALK_SPEED_M, type WalkPos } from './deckWalk'
 import { CABIN_ENTER, CABIN_EXIT, cabinEyeY, stepInCabin } from './deckCabin'
@@ -811,6 +812,16 @@ export default function DeckView() {
      */
     const coast = createDeckCoast()
     scene.add(coast.group)
+
+    /*
+     * ---- 靠港近景：那座城 ----
+     * `coast` 给的是"一条有灯塔的海岸"——它对**所有港口**都一样，停在塞维利亚与
+     * 停在荒岛看不出区别。这一层补上只有港口才有的东西：防波堤、码头、栈桥、
+     * 成排的房子、停泊的商船、吊货臂架、旗。样式按海域分四套（红瓦石堤 / 木棚茅顶 /
+     * 木构青瓦 / 平顶土屋），近看剪影就知道到了哪片海。
+     */
+    const harbor: DeckHarbor = createDeckHarbor()
+    scene.add(harbor.group)
     // 取证句柄：巡检要能量岸线的可见性/坐标（与海图的 __map3d 同一做法）
     ;(window as unknown as { __deckScene?: THREE.Scene }).__deckScene = scene
     ;(window as unknown as { __deckCam?: THREE.Camera }).__deckCam = camera
@@ -902,6 +913,11 @@ export default function DeckView() {
     post.setBloom(0.38)
     // 取证句柄：探针要能开/关辉光做同帧 A/B
     ;(window as unknown as { __deckPost?: unknown }).__deckPost = post
+    /*
+     * 港口的取证句柄：e2e 直接读布局（几栋房、几条栈桥、哪种样式），
+     * 不去数屏幕上的色块——"看起来有一排房子"无法判定，数字可以。
+     */
+    ;(window as unknown as { __deckHarbor?: () => unknown }).__deckHarbor = () => harbor.debug()
     // 取证句柄：着色器编译失败时只有拿到 renderer 才能读 programs 的 diagnostics
     ;(window as unknown as { __deckRenderer?: unknown }).__deckRenderer = renderer
 
@@ -1411,6 +1427,12 @@ export default function DeckView() {
         }
         sightingRef.current = sighting
         coast.setSighting(sighting)
+        /*
+         * 港口与海岸读**同一份** sighting：两份各自算一次距离是这类画面最典型的
+         * 分叉来源（岸在左、港在右，或者一个出现一个消失）。
+         * 停泊时 `isSailing` 传 false → 港无条件显示（见 harborVisible 的注释）。
+         */
+        harbor.setSighting(sighting, st.fleet.isSailing)
         if (hudRef.current) {
           if (inCabinRef.current) {
             hudRef.current.textContent = '船长室 · 海图桌'
@@ -1422,6 +1444,7 @@ export default function DeckView() {
         }
       }
       coast.update(t, night, skyMat.uniforms.uHorizon.value, look.fog, skyMat.uniforms.uFogColor.value)
+      harbor.update(t, night, look.fog, skyMat.uniforms.uFogColor.value)
 
       /*
        * ---- 海鸟：位置由纯函数给，这里只抄顶点 ----
@@ -1572,6 +1595,7 @@ export default function DeckView() {
       })
       deckShip.dispose()
       coast.dispose()
+      harbor.dispose()
       rain.dispose()
       post.dispose()
       renderer.dispose()

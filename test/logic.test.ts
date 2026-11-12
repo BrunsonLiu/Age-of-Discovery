@@ -250,6 +250,9 @@ import { chooseLabelSides } from '../src/utils/portLabels'
 import { ports } from '../src/data/ports'
 import { tasks } from '../src/data/tasks'
 import {
+  HARBOR_MAX_NM, HARBOR_STYLES, harborPlan, harborRadius, harborStyleFor, harborVisible,
+} from '../src/components/deck/deckHarbor'
+import {
   appendLogbook, countEchoes, echoAt, echoDayFor, echoForPort, findClueFor,
   makeArrivalEntry, makeEchoEntry, makeTitleEntry, markAllRead, pickRumor, LOGBOOK_MAX,
 } from '../src/data/logbook'
@@ -11093,6 +11096,125 @@ console.log('\n== 天数口径守卫 ==')
   assert(/tributeState\(/.test(pdSrc), '港口面板的按钮状态走同一份 tributeState')
   assert(/data-service-anchor="tribute"/.test(pdSrc), '朝贡那一块有锚点（e2e 据此取证）')
   assert(/disabled=\{!tribute\.ready\}/.test(pdSrc), '不可交时按钮是灰的（不是点了没反应）')
+}
+
+
+/*
+ * ---- 靠港近景：从甲板上看见的"那座城" ----
+ *
+ * 【守什么】`coastModel` 给的是**所有港口通用**的一条海岸（山脊、树、灯塔）——
+ * 停在塞维利亚港和停在荒岛的画面一模一样，玩家在甲板上认不出"到了哪"。这一层
+ * 补的是只有港口才有的东西，所以判据要守四件事：
+ *  ① 四种海域的样式真的不同（屋顶角度、墙色、棕榈、帆型），不是换个色调；
+ *  ② 布局不越界、不互相穿插（房子不出岸线、栈桥不撞防波堤、停泊船在码头外侧）；
+ *  ③ 同一个港每次进来是同一座城（布局只由港 id 与 presence 决定，不是随机的）；
+ *  ④ 该出现的时候出现（6 海里内 / 停泊无条件），不该出现时整组隐藏。
+ */
+{
+  // ① 四套样式：剪影能分开的四件事
+  const styles = Object.values(HARBOR_STYLES)
+  assert(styles.length === 4, `四套港口样式（${styles.map(s => s.id).join(' / ')}）`)
+  assert(new Set(styles.map(s => s.wall)).size === 4, '四种墙色互不相同')
+  assert(new Set(styles.map(s => s.roof)).size === 4, '四种屋顶色互不相同')
+  assert(new Set(styles.map(s => s.id)).size === 4, 'id 不重复')
+  // 欧洲有钟楼、加勒比/非洲/南洋有棕榈 —— 这是"到哪片海"的识别符号
+  assert(HARBOR_STYLES.europe.spire === true && HARBOR_STYLES.europe.palms === 0,
+    '欧洲样式有钟楼、没有棕榈')
+  for (const id of ['caribbean', 'asia', 'africa'] as const) {
+    assert(HARBOR_STYLES[id].spire === false && HARBOR_STYLES[id].palms > 0,
+      `${id} 没有钟楼、有棕榈（热带的识别符号）`)
+  }
+  assert(HARBOR_STYLES.asia.sail === 'junk' && HARBOR_STYLES.europe.sail === 'square',
+    '南洋用硬帆、欧洲用方帆')
+  // 屋顶角度：欧洲陡顶、非洲平顶（0.2 与 0.75 在剪影上是两种建筑）
+  assert(HARBOR_STYLES.europe.roofPitch > HARBOR_STYLES.africa.roofPitch * 2.5,
+    `欧洲陡顶 ${HARBOR_STYLES.europe.roofPitch} vs 非洲平顶 ${HARBOR_STYLES.africa.roofPitch}`)
+
+  // region → 样式：america 归加勒比（都是西班牙殖民港的样子）
+  assert(harborStyleFor('europe').id === 'europe', 'europe → europe')
+  assert(harborStyleFor('asia').id === 'asia', 'asia → asia')
+  assert(harborStyleFor('africa').id === 'africa', 'africa → africa')
+  assert(harborStyleFor('caribbean').id === 'caribbean' && harborStyleFor('america').id === 'caribbean',
+    'caribbean 与 america 共用一套')
+  assert(harborStyleFor('没这个区').id === 'europe', '未知区回落到欧洲（不会崩）')
+
+  // ② 布局：不越界、不穿插
+  for (const st of styles) {
+    const plan = harborPlan(st, 36, 1, 6)
+    assert(plan.visible, `${st.id} 在贴岸时可见`)
+    assert(plan.houses.length >= 5 && plan.houses.length <= 11,
+      `${st.id} 房屋数 ${plan.houses.length}（5~11）`)
+    assert(plan.houses.length >= st.houses[0] && plan.houses.length <= st.houses[1],
+      `${st.id} 房屋数落在样式给的区间里`)
+    // 房子不能超出码头面（超出去就站在水里）
+    for (const h of plan.houses) {
+      assert(Math.abs(h.x) + h.w * 0.5 <= plan.deckHalfW * 1.02,
+        `${st.id} 房屋 x=${h.x.toFixed(1)} 宽 ${h.w.toFixed(1)} 仍在码头面内（半宽 ${plan.deckHalfW.toFixed(1)}）`)
+      assert(h.z > plan.deckZ0 && h.z < plan.deckZ1,
+        `${st.id} 房屋站在码头面上（z=${h.z.toFixed(2)} ∈ [${plan.deckZ0}, ${plan.deckZ1}]）`)
+      assert(h.h > 0 && h.roofH > 0, `${st.id} 房屋有墙高与屋顶高`)
+    }
+    // 栈桥必须伸进水里（z1 < z0），而且不与防波堤的 x 区间重叠
+    /*
+     * 名义 `piers` 条里，中间那条永远让给航道口（正前方要能进船），
+     * 所以实际是名义值 −0 或 −1。判据写死"≥2 且不超过名义"，不写等于。
+     */
+    assert(plan.piers.length >= 2 && plan.piers.length <= st.piers,
+      `${st.id} 栈桥 ${plan.piers.length} 条（名义 ${st.piers}，中间让给航道口）`)
+    for (const p of plan.piers) {
+      assert(p.z1 < p.z0, `${st.id} 栈桥朝海伸出（z0=${p.z0} → z1=${p.z1.toFixed(1)}）`)
+      assert(Math.abs(p.x) + p.w * 0.5 <= plan.deckHalfW, `${st.id} 栈桥在码头面内`)
+    }
+    // 防波堤：两道，内端在岸线附近、外端伸进水里，且口子留在中间
+    assert(plan.breakwaters.length === 2, `${st.id} 两道防波堤`)
+    const [bl, br] = plan.breakwaters
+    assert(bl.x0 < 0 && br.x0 > 0, '左臂在左、右臂在右')
+    assert(bl.z1 < 0 && br.z1 < 0, '两臂都伸进水里（z1 < 0）')
+    assert(Math.abs(bl.x1) > plan.deckHalfW * 0.4, `左臂外端 x=${bl.x1.toFixed(1)} 没堵到中间（口子留着）`)
+    assert(bl.h > 0 && bl.h < 1.2, `堤高 ${bl.h.toFixed(2)}（低矮的抛石堤，不是一堵墙）`)
+    // 停泊船：在码头面**外侧**（更靠海），不能在码头上
+    assert(plan.moorings.length >= 3, `${st.id} 至少三条停泊船（${plan.moorings.length}）`)
+    for (const m of plan.moorings) {
+      assert(m.z < plan.deckZ0, `${st.id} 停泊船在码头外（z=${m.z.toFixed(1)} < ${plan.deckZ0}）`)
+      assert(m.len >= 0.8 && m.len <= 2.2, `${st.id} 船长 ${m.len.toFixed(2)} 单位（14~40 米，不是 100 米）`)
+    }
+    // 最近那条要离码头近（否则整排都是远处的细线）
+    assert(Math.min(...plan.moorings.map(m => -m.z)) < 1.6,
+      `${st.id} 至少一条船贴着码头（最近的 z=${Math.min(...plan.moorings.map(m => m.z)).toFixed(1)}）`)
+    assert(plan.palms.length === st.palms, `${st.id} 棕榈 ${plan.palms.length} 棵`)
+    assert(plan.cranes.length === 2, `${st.id} 两台吊货臂架`)
+  }
+
+  // ③ 同一个港每次都是同一座城
+  const a1 = harborPlan(HARBOR_STYLES.europe, 36, 1, 6)
+  const a2 = harborPlan(HARBOR_STYLES.europe, 36, 1, 6)
+  assert(JSON.stringify(a1) === JSON.stringify(a2), '同样的输入 → 完全一样的布局（不抖）')
+  const b1 = harborPlan(HARBOR_STYLES.europe, 36, 1, 12)
+  assert(JSON.stringify(a1.houses.map(h => h.x)) !== JSON.stringify(b1.houses.map(h => h.x)),
+    '不同的港（seed 不同）长得不一样')
+
+  // ④ 出现条件与景别
+  assert(harborVisible(2, true) && harborVisible(HARBOR_MAX_NM, true), '航行中 6 海里内画港')
+  assert(!harborVisible(HARBOR_MAX_NM + 0.1, true), '超过 6 海里不画（远处只有海岸）')
+  assert(harborVisible(8, false), '停泊时 8 海里也画（船就靠在码头边）')
+  assert(!harborVisible(Number.NaN, false), 'NaN 距离不画')
+  assert(harborRadius(1) === 18, `贴岸半径 18（实测 ${harborRadius(1)}）`)
+  assert(harborRadius(0) === 42, `远景半径 42（实测 ${harborRadius(0)}）`)
+  assert(harborRadius(0.5) > harborRadius(0.9), 'presence 越大越近（单调）')
+
+  // ⑤ 源码守卫：与海岸读同一份 sighting、几何命名、样式随港切换
+  const dvSrc = readFileSync(join(process.cwd(), 'src', 'components', 'deck', 'DeckView.tsx'), 'utf8')
+  assert(/harbor\.setSighting\(sighting, st\.fleet\.isSailing\)/.test(dvSrc),
+    '港口与海岸读**同一份** sighting（各自算一次会分叉）')
+  const hmSrc = readFileSync(join(process.cwd(), 'src', 'components', 'deck', 'harborModel.ts'), 'utf8')
+  for (const name of ['deck-harbor-quay', 'deck-harbor-walls', 'deck-harbor-hulls', 'deck-harbor-spire']) {
+    assert(hmSrc.includes(`name = '${name}'`) || hmSrc.includes(`'${name}'`), `网格命名 ${name}（取证要用）`)
+  }
+  assert(/harborVisible\(s\.distNm, isSailing\)/.test(hmSrc), '可见性走 harborVisible（不在几何层自己算阈值）')
+  assert(/harborStyleFor\(s\.port\.region\)/.test(hmSrc), '样式按港口 region 取（不是写死欧洲）')
+  // 船体必须手写几何：ExtrudeGeometry 那版一个像素都不显示（真踩过）
+  assert(!/new THREE\.ExtrudeGeometry/.test(hmSrc), '船体不 new ExtrudeGeometry（那版三角化后整船不可见）')
+  assert(/RING/.test(hmSrc), '船体是自己列的轮廓顶点')
 }
 
 
