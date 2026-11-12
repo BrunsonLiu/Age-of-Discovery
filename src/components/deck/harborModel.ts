@@ -990,10 +990,15 @@ export function createDeckHarbor(): DeckHarbor {
     let qi = 0
     for (const pn of pl.panes) {
       if (qi >= MAX_HOUSE * 6) break
-      // 框：比窗大 70%/50%，垫在窗后 1.5 厘米（只露出四边）
+      /*
+       * 框：窗框比窗大 70%/50%；**门框只大 14%/8%**。
+       * 门框按窗框的比例给时，一圈石框会占满整面墙（门的宽高本来就接近墙的
+       * 1/4），看起来像"墙上贴了一张比门大一圈的白纸"。
+       */
+      const isDoor = pn.door === true
       dummy.position.set(pn.x, pn.y, pn.z + 0.012)
       dummy.rotation.set(0, 0, 0)
-      dummy.scale.set(pn.w * 1.7, pn.h * 1.5, 0.04)
+      dummy.scale.set(pn.w * (isDoor ? 1.14 : 1.7), pn.h * (isDoor ? 1.08 : 1.5), 0.04)
       dummy.updateMatrix()
       windowFrames.setMatrixAt(qi, dummy.matrix)
       // 窗：凸出框一点，避免与墙面深度冲突
@@ -1264,20 +1269,30 @@ export function createDeckHarbor(): DeckHarbor {
            * 这一组"梯形排列的横杆"才是帆船停泊时的剪影。
            */
           for (let lv = 0; lv < 2; lv++) {
-            const sailY = 0.2 + m.len * (k === 0 ? 0.84 : 1.0) * (0.44 + 0.16 * lv)
-            const span = (k === 0 ? 0.62 : 0.74) * (1 - 0.2 * lv)
+            const sailY = 0.2 + m.len * (k === 0 ? 0.84 : 1.0) * (0.42 + 0.2 * lv)
+            /*
+             * 桁长 0.36~0.42·len。原来的 0.62~0.74 是船宽（0.29·len）的**两倍多** ——
+             * 四层横杆从船两舷各伸出 20 米，屏幕上是一副脚手架（整图实测：
+             * 那条大船是"一堆棕色横条"）。真实横桁只比船宽长 20~30%。
+             */
+            const span = (k === 0 ? 0.36 : 0.42) * (1 - 0.2 * lv)
             dummy.position.set(mx, sailY, mz)
             dummy.rotation.set(0, m.yaw, 0)
+            /*
+             * 帆卷厚度 0.075 → 0.05·len（0.12 单位 ≈ 2 米）。0.075 时四层白条
+             * 叠在一起，整条船是"一堆堆叠的白箱子"（整图实测）—— 真实收帆是
+             * 一卷细长的布卷在桁上，直径只有半米；夸张到能看见即可，不能成板。
+             */
             dummy.scale.set(
-              Math.max(0.07, m.len * 0.1),
-              Math.max(0.055, m.len * 0.075),
+              Math.max(0.07, m.len * 0.09),
+              Math.max(0.05, m.len * 0.05),
               m.len * span,
             )
             dummy.updateMatrix()
             sails.setMatrixAt(si++, dummy.matrix)
             /* 桁：同一位置、稍靠下、更细更深的一根杆（布卷挂在它下面） */
-            dummy.position.set(mx, sailY - m.len * 0.055, mz)
-            dummy.scale.set(m.len * 0.055, m.len * 0.05, m.len * span * 1.08)
+            dummy.position.set(mx, sailY - m.len * 0.045, mz)
+            dummy.scale.set(m.len * 0.06, m.len * 0.055, m.len * span * 1.1)
             dummy.updateMatrix()
             yardBars.setMatrixAt(si - 1, dummy.matrix)
           }

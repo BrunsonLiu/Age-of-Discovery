@@ -12027,7 +12027,14 @@ if (failed > 0) process.exit(1)
   // ② 窗框
   assert(/name = 'deck-harbor-windowframes'/.test(hm2), '窗框网格命名 deck-harbor-windowframes')
   assert(/windowFrames\.setMatrixAt\(qi, dummy\.matrix\)/.test(hm2), '窗框按窗逐扇写（与窗同一个 qi）')
-  assert(/pn\.w \* 1\.7, pn\.h \* 1\.5/.test(hm2), '框比窗大 70%/50%（只露出四边）')
+  /*
+   * 窗框比窗大 70%/50%；**门框只大 14%/8%**。门框按窗框的比例会占满整面墙
+   * （门的宽高本来就接近墙的 1/4），读作"墙上贴了张比门大一圈的白纸"。
+   */
+  assert(/pn\.w \* \(isDoor \? 1\.14 : 1\.7\), pn\.h \* \(isDoor \? 1\.08 : 1\.5\)/.test(hm2),
+    '框比窗大 70%/50%、门框只大 14%/8%（只露出四边）')
+  assert(/door: true,/.test(readFileSync(join(process.cwd(), 'src', 'components', 'deck', 'deckHarbor.ts'), 'utf8')),
+    '临街的房子有门（只有窗没有门的房子读作仓库模型）')
   // ③ 屋顶比例
   const dh = readFileSync(join(process.cwd(), 'src', 'components', 'deck', 'deckHarbor.ts'), 'utf8')
   assert(/roofH: h \* style\.roofPitch \* 0\.56/.test(dh),

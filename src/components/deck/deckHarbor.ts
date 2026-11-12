@@ -209,6 +209,14 @@ export interface HarborPane {
   z: number
   w: number
   h: number
+  /**
+   * 门（不再是窗）。
+   * 【为什么必须区分】一排只有窗、没有门的房子，在甲板视角上读作"仓库模型"：
+   * 窗在墙的上半、一排排整齐地排着，没有任何"从这里进去"的暗示。真实的地中海
+   * 排屋每栋临街一个门（比窗高、贴地、木色、有石框）。这里用同一个实例池，
+   * 只把框的比例收窄（门框比窗框小得多）、位置贴地。
+   */
+  door?: boolean
 }
 
 /**
@@ -513,19 +521,39 @@ export function harborPlan(style: HarborStyle, width: number, presence: number, 
      * 现在整块落在墙外（-0.05），厚度 0.05。
      */
     const zf = h.z - h.d * 0.5 - 0.05
+    /*
+     * 门：只有**临码头那排**（z < 1.0）开门。门洞贴地、比窗高、比窗窄，
+     * 正对街面正中；与门在同一列的下层窗要让位（否则门窗叠在一起）。
+     */
+    const hasDoor = h.z < 1.0
+    const doorW = Math.min(0.24 * s, h.w * 0.24)
+    const doorH = Math.min(0.4 * s, h.h * 0.46)
     for (let c = 0; c < cols; c++) {
       const t = (c + 0.5) / cols - 0.5
+      const px = h.x + t * h.w * 0.66
       for (const [row, yy] of [[0, 0.42], [1, 0.7]] as const) {
         // 后排（商馆）高，两排窗都有；前排仓库矮，只开一层
         if (h.h < 0.52 * s && row === 1) continue
+        // 门的正上方那格窗让位
+        if (hasDoor && row === 0 && Math.abs(px - h.x) < doorW * 0.95) continue
         panes.push({
-          x: h.x + t * h.w * 0.66,
+          x: px,
           y: deckTopY + h.h * yy,
           z: zf,
           w: Math.min(0.2 * s, h.w * 0.16),
           h: Math.min(0.26 * s, h.h * 0.2),
         })
       }
+    }
+    if (hasDoor) {
+      panes.push({
+        x: h.x,
+        y: deckTopY + doorH * 0.5,
+        z: zf,
+        w: doorW,
+        h: doorH,
+        door: true,
+      })
     }
     // 烟囱：一半的房子有，站在屋脊上偏一侧
     if (rnd(i * 8.3 + 71) > 0.45) {
