@@ -20,7 +20,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
  */
 export function mergeStaticChildren(
   root: THREE.Object3D,
-  opts: { keep?: (m: THREE.Mesh) => boolean } = {},
+  opts: { keep?: (m: THREE.Mesh) => boolean; onlyUnnamed?: boolean } = {},
 ): { before: number; after: number } {
   const before = countDrawables(root)
   const keep = opts.keep ?? (() => false)
@@ -37,6 +37,14 @@ export function mergeStaticChildren(
     if (mat.visible === false) continue
     if (child.userData.noMerge) continue
     if (keep(child)) continue
+    /*
+     * 【为什么要有 onlyUnnamed】有名字的网格是**运行时会点名找的**：湿痕带
+     * （改 opacity）、白沫带、护舷木条、斜桅（BOWSPRIT_TIP）、船首柱、船首像，
+     * 还有 e2e 的一整套结构判据。把整船的直接子级一股脑合掉时，这些名字只剩
+     * 第一个留下的那个 —— 12 条 e2e 立刻红，运行时也可能改错对象。
+     * 只合"没名字"的那些（船壳板、腰板、甲板面之类），既压 draw call 又不动引用。
+     */
+    if (opts.onlyUnnamed && child.name) continue
     const arr = buckets.get(mat)
     if (arr) arr.push(child)
     else buckets.set(mat, [child])

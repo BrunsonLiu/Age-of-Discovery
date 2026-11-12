@@ -2528,6 +2528,26 @@ export function createDeckShip(): DeckShip {
    * "由多件拼成"（艇有肋骨/横座/两支桨，船首像有脸颊/头冠），合并会把这些
    * 结构判据变成"1 块"。它们加起来只有 23 个网格，不合并的代价可以接受。
    */
+  /*
+   * 最后再合**整船的直接子网格**（船壳、甲板面、舷墙、腰板、艏艉柱……共 64 个）。
+   * 这些都不单独动（船是整体在 group 上动的），按材质合并之后只剩 10 来个。
+   * 帆、绳、水手、锚、舱口都是 **Group** 子节点，`mergeStaticChildren` 只处理
+   * 直接子级的 Mesh，所以它们一处都不会被碰到。
+   */
+  mergedStats['deck-ship(direct)'] = mergeStaticChildren(group, { onlyUnnamed: true })
+  /*
+   * 船舱**内部**的 52 个网格也合掉（占整帧 draw call 的 16%）。
+   * 甲板视角下它们被尾楼外箱包住，一个像素看不到却每帧各提交一次。
+   * `keep` 保住海图桌与两道门：进舱后要点它们（e2e 按名字找）。
+   */
+  {
+    const cabin = group.getObjectByName('ship-cabin')
+    if (cabin) {
+      mergedStats['ship-cabin'] = mergeStaticChildren(cabin, {
+        keep: (m) => /chart|door|inner/.test(m.name),
+      })
+    }
+  }
   for (const nm of [
     'ship-hatch-group', 'ship-wheel-group', 'ship-crow-group',
     'ship-pen', 'ship-stern-lantern',
