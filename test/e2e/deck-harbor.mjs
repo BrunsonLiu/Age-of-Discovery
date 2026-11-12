@@ -107,6 +107,7 @@ const gotoPort = async (portId) => {
       chimneys: h?.plan?.chimneys?.length ?? 0,
       folk: h?.plan?.folk?.length ?? 0,
       folkKinds: [...new Set((h?.plan?.folk ?? []).map((f) => f.kind))],
+      lamps: h?.plan?.lamps?.length ?? 0,
       spire: h?.plan?.spire ? Math.round(h.plan.spire.h * 10) / 10 : null,
       port: window.__gameStore.getState().fleet.currentPortId,
     }
@@ -146,6 +147,7 @@ for (const e of EXPECT) {
   /* 空城问题：码头上得有人，而且不止一种身份（不然是一排复制品） */
   check(r.folk >= 4, `${e.name}：码头上 ${r.folk} 个人`)
   check(r.folkKinds.length >= 2, `${e.name}：至少两种身份（${r.folkKinds.join('/')}）`)
+  check(r.lamps >= r.piers + 2, `${e.name}：水边 ${r.lamps} 盏灯（≥ 栈桥数 ${r.piers} + 2）`)
 }
 check(new Set(seen.map((s) => s.got.style)).size === 4,
   `四个海域四种样式，各不相同（${seen.map((s) => s.got.style).join(' / ')}）`)
@@ -241,6 +243,43 @@ check(diff.changed > 4000,
 check(diff.p50 >= 10,
   `变化像素的中位亮度差 ${diff.p50} 级（>10 才算真的"画出来"，不只是边缘抗锯齿）`)
 check(diff.p90 >= 30, `p90 ${diff.p90} 级 / 最大 ${diff.max} 级（房屋与船是实心色块）`)
+
+// ---------------------------------- ⑤ 夜里：一排灯亮起、整座城暗下去
+/*
+ * 【为什么要闭环推到深黑】日相 = ((now-t0)/1000/480 + START_PHASE) mod 1，
+ * 两个常数都在模块里 —— 一次加多少不好算。所以每次加 60 秒（0.125 周期）
+ * 再读 `__deckHarbor().night`，够黑就停。第一版直接加 312384000，
+ * 实测只到 night 0.44（黄昏），于是"夜里房子还是亮的"看起来像个 bug。
+ */
+const nightState = await page.evaluate(async () => {
+  const o = window.performance.now.bind(window.performance)
+  window.performance.now = () => o() + 312384000
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+  let n = 0
+  for (let i = 0; i < 10; i++) {
+    await sleep(900)
+    n = window.__deckHarbor?.()?.night ?? 0
+    if (n > 0.85) break
+    const o2 = window.performance.now.bind(window.performance)
+    window.performance.now = () => o2() + 60000
+  }
+  await sleep(900)
+  const lamp = window.__deckScene?.getObjectByName('deck-harbor-lamps')
+  const wall = window.__deckScene?.getObjectByName('deck-harbor-walls')
+  const win = window.__deckScene?.getObjectByName('deck-harbor-windows')
+  return {
+    night: window.__deckHarbor?.()?.night ?? 0,
+    litK: window.__deckHarbor?.()?.litK ?? 1,
+    lampOp: lamp?.material?.opacity ?? 0,
+    winOp: win?.material?.opacity ?? 0,
+    wall: wall?.material?.color.getHexString() ?? '',
+  }
+})
+check(nightState.night > 0.8, `推到深夜（night=${nightState.night.toFixed(2)}）`)
+check(nightState.lampOp > 0.6, `水边的灯亮起来（opacity ${nightState.lampOp.toFixed(2)}）`)
+check(nightState.winOp > 0.5, `墙上的窗光也亮（opacity ${nightState.winOp.toFixed(2)}）`)
+/* 夜里墙必须真的暗下去：与白天那张 shotA 相比，litK 是唯一的口径 */
+check(nightState.litK < 0.35, `夜里整座城暗下来（litK ${nightState.litK.toFixed(2)} < 0.35）`)
 
 // 顺带记一笔：夜里的窗光（用 performance.now 偏移推到夜里）
 await page.evaluate(() => {

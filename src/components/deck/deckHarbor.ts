@@ -190,6 +190,26 @@ export interface HarborPane {
   h: number
 }
 
+/**
+ * 码头上的一盏灯（灯笼 / 火把）。
+ *
+ * 【为什么要有】夜里的港口现在只有房子的窗光（一排小点，且都在墙上）。
+ * 真实的码头是**沿着水边挂一排灯**的：栈桥末端、系缆桩、货堆旁。
+ * 这一排灯是夜里"这里是码头"最强的形状信号 —— 它沿着岸线走，
+ * 与散在墙上的窗光完全不同的分布。
+ *
+ * 【为什么挂在栈桥末端】那儿是船靠上来系缆的地方，也是唯一必须看清的地方；
+ * 灯挂在尽头，还能让栈桥本身在夜里显出长度（否则夜里只剩一片黑）。
+ */
+export interface HarborLamp {
+  x: number
+  z: number
+  /** 灯的高度（世界单位） */
+  y: number
+  /** 灯的亮度系数（0.7~1.2，让一排灯不是同样的亮） */
+  k: number
+}
+
 /** 码头上的人的三种身份（只影响衣服颜色与站位，不影响任何数值） */
 export type FolkKind = 'porter' | 'sailor' | 'idle'
 
@@ -268,6 +288,8 @@ export interface HarborPlan {
   chimneys: HarborChimney[]
   /** 码头上的人 */
   folk: HarborFolk[]
+  /** 水边的灯 */
+  lamps: HarborLamp[]
   /** 尖顶（x, z, 高度）—— 没有 spire 的样式返回 null */
   spire: { x: number; z: number; h: number } | null
   /** 吊货臂架（x, z, 臂长） */
@@ -290,6 +312,7 @@ const EMPTY_PLAN: HarborPlan = {
   panes: [],
   chimneys: [],
   folk: [],
+  lamps: [],
   spire: null,
   cranes: [],
   flag: { x: 0, z: 0, h: 0 },
@@ -485,6 +508,28 @@ export function harborPlan(style: HarborStyle, width: number, presence: number, 
     })
   }
 
+  /*
+   * 水边的灯：每条栈桥末端一盏，码头前沿再补两三盏。
+   * 高度 0.55~0.75 单位（10~13 米，比人高很多）—— 灯笼挂在高杆上，
+   * 才能照到栈桥与靠上来的船。
+   */
+  const lamps: HarborLamp[] = []
+  for (let i = 0; i < piers.length; i++) {
+    const p = piers[i]
+    lamps.push({ x: p.x, z: p.z1 + 0.12, y: 0.62 + 0.12 * rnd(i * 3.1 + 109), k: 0.85 + 0.3 * rnd(i * 5.7 + 113) })
+  }
+  {
+    const extra = 2 + Math.floor(rnd(117) * 2)
+    for (let i = 0; i < extra; i++) {
+      lamps.push({
+        x: (rnd(i * 4.3 + 119) - 0.5) * 1.5 * halfW,
+        z: 0.05 + 0.1 * rnd(i * 6.1 + 127),
+        y: 0.6 + 0.14 * rnd(i * 7.3 + 131),
+        k: 0.8 + 0.35 * rnd(i * 9.1 + 137),
+      })
+    }
+  }
+
   const palms: { x: number; z: number; h: number }[] = []
   for (let i = 0; i < style.palms; i++) {
     palms.push({
@@ -514,6 +559,7 @@ export function harborPlan(style: HarborStyle, width: number, presence: number, 
     panes,
     chimneys,
     folk,
+    lamps,
     spire: style.spire
       /*
        * 尖顶 = 方形钟楼 + 尖锥：只给一个细锥时比例是 1:11（一根针，实测）。

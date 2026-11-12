@@ -11316,6 +11316,61 @@ console.log('\n== 天数口径守卫 ==')
 
 
 /*
+ * ---- 夜里的码头：一排灯 ----
+ *
+ * 【守什么】夜里的港口原来只有房子的窗光（散在墙上、同一高度）。真实的码头
+ * 是**沿着水边挂一排灯**的：栈桥末端、系缆桩旁。这一排灯的分布与窗光完全不同，
+ * 是夜里"这里是码头"最强的形状信号。守四件事：
+ *  ① 每条栈桥末端都有一盏（系缆的地方必须看得清）；
+ *  ② 灯杆比人高得多（灯埋在人里就等于没有）；
+ *  ③ 灯只在夜里亮（白天亮一排黄点是最假的）；
+ *  ④ 亮度有差异（一排同样亮的灯读作"贴图"）。
+ */
+{
+  for (const st of Object.values(HARBOR_STYLES)) {
+    const plan = harborPlan(st, 36, 1, 6)
+    assert(plan.lamps.length >= plan.piers.length + 2,
+      `${st.id} 灯 ${plan.lamps.length} 盏（≥ 栈桥数 + 2）`)
+    // ① 每条栈桥末端一盏
+    for (const p of plan.piers) {
+      const atTip = plan.lamps.some((l) => Math.abs(l.x - p.x) < 1e-6 && Math.abs(l.z - (p.z1 + 0.12)) < 1e-6)
+      assert(atTip, `${st.id} 栈桥 x=${p.x.toFixed(1)} 的末端有一盏灯`)
+    }
+    // ② 灯比人高（人的身高上限 0.3，灯最低 0.5）
+    const maxFolk = Math.max(0, ...plan.folk.map((f) => f.h))
+    for (const l of plan.lamps) {
+      assert(l.y > maxFolk + 0.15, `${st.id} 灯高 ${l.y.toFixed(2)} 高于最高的人 ${maxFolk.toFixed(2)}`)
+      assert(l.y >= 0.5 && l.y <= 0.9, `${st.id} 灯高在 0.5~0.9 单位（9~16 米）`)
+      // 灯必须在水侧（码头前沿或更外），不能挂到内陆房顶上
+      assert(l.z <= 0.2, `${st.id} 灯在水边（z=${l.z.toFixed(2)} ≤ 0.2）`)
+    }
+    // ④ 亮度有差异（不是一排复制品）
+    const ks = plan.lamps.map((l) => l.k)
+    assert(new Set(ks.map((k) => k.toFixed(2))).size >= Math.min(3, ks.length),
+      `${st.id} 灯的亮度至少有 3 档不同（${ks.map((k) => k.toFixed(2)).join('/')}）`)
+  }
+  const hmSrc4 = readFileSync(join(process.cwd(), 'src', 'components', 'deck', 'harborModel.ts'), 'utf8')
+  assert(/name = 'deck-harbor-lamps'/.test(hmSrc4), '灯的光点网格命名 deck-harbor-lamps')
+  assert(/name = 'deck-harbor-lampposts'/.test(hmSrc4), '灯杆网格命名 deck-harbor-lampposts')
+  /*
+   * ③ 只在夜里亮：opacity 里的底值必须是"黄昏就点上"的那种小常数，
+   * 而不是 1（白天 1 的话，一排黄点挂在白天的码头上）。
+   */
+  assert(/lampMat\.opacity = Math\.min\(1, \(0\.25 \+ 0\.75 \* night\)\)/.test(hmSrc4),
+    '灯的亮度随 night 走（黄昏 0.25 起亮）')
+  assert(/lampMat\.opacity[\s\S]{0,120}fogK/.test(hmSrc4), '雾里要削（否则"能见度 100 米"时 7 海里外的灯还亮着）')
+  /*
+   * 昼夜与雾的**顺序**：必须"先混雾色、再乘昼夜"。
+   * 反过来时，黄昏那片暖亮的 uFogColor 会把墙提亮回来 ——
+   * 实测夜里 litK 0.638 而墙面只暗了 18%（#d7ccb5 → #b1a895）。
+   */
+  const order = hmSrc4.indexOf('m.color.lerp(fogColor')
+  const after = hmSrc4.indexOf('m.color.multiplyScalar(litK)')
+  assert(order > 0 && after > order, '先混雾色、再乘昼夜系数（反过来夜里会被雾提亮）')
+}
+
+
+/*
  * ---- 同一座港在两个视图里必须是同一座城 ----
  *
  * 【守什么】甲板视角（`HARBOR_STYLES`）与 2.5D 全球板（`map3d/models.ts`）

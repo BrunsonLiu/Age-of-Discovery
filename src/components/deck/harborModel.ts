@@ -30,6 +30,7 @@ const MAX_MOOR = 6
 const MAX_PALM = 8
 const MAX_CRANE = 3
 const MAX_FOLK = 14
+const MAX_LAMP = 10
 
 export interface DeckHarbor {
   group: THREE.Group
@@ -42,7 +43,10 @@ export interface DeckHarbor {
   update(t: number, night: number, fogK: number, fogColor: THREE.Color): void
   dispose(): void
   /** 取证用：当前这一帧的布局与样式（e2e / 探针读它，不猜像素） */
-  debug(): { style: string; houses: number; piers: number; moorings: number; plan: HarborPlan | null }
+  debug(): {
+    style: string; houses: number; piers: number; moorings: number
+    night: number; litK: number; plan: HarborPlan | null
+  }
 }
 
 function makeGlow(): THREE.Texture {
@@ -376,6 +380,38 @@ export function createDeckHarbor(): DeckHarbor {
   folkHead.frustumCulled = false
   group.add(folkHead)
 
+  /*
+   * ---- 水边的灯 ----
+   * 灯杆（细柱，与桅同色）+ 光点（一个 Points，加法混合）。
+   * 【为什么光点要单独一批而不是并进窗光】两者的分布完全不同：窗光散在墙上、
+   * 沿岸线高度一致；灯是**沿水边的一排**、高度更高、更亮。并进一批就没法
+   * 分别控制（雾里的削弱、夜里的强度都要各算一份）。
+   */
+  const lampPostGeo = new THREE.CylinderGeometry(0.016, 0.022, 1, 5)
+  lampPostGeo.translate(0, 0.5, 0)
+  const lampPosts = new THREE.InstancedMesh(lampPostGeo, mastMat, MAX_LAMP)
+  lampPosts.name = 'deck-harbor-lampposts'
+  lampPosts.frustumCulled = false
+  group.add(lampPosts)
+  const lampGeo = new THREE.BufferGeometry()
+  lampGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(MAX_LAMP * 3), 3))
+  const lampMat = new THREE.PointsMaterial({
+    map: glowTex,
+    color: new THREE.Color(1.7, 1.15, 0.62),
+    size: 1,
+    sizeAttenuation: true,
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    opacity: 0,
+    fog: false,
+    toneMapped: false,
+  })
+  const lampPoints = new THREE.Points(lampGeo, lampMat)
+  lampPoints.name = 'deck-harbor-lamps'
+  lampPoints.frustumCulled = false
+  group.add(lampPoints)
+
   const spireTower = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), spireMat)
   spireTower.name = 'deck-harbor-spire'
   spireTower.geometry.translate(0, 0.5, 0)
@@ -493,6 +529,28 @@ export function createDeckHarbor(): DeckHarbor {
     }
     curDeckY = deckY
     writeFolk(0)
+
+    /* ---- 水边的灯：灯杆 + 光点（光点的 y 就是灯高） ---- */
+    {
+      const lp = lampGeo.getAttribute('position') as THREE.BufferAttribute
+      const nL = Math.min(MAX_LAMP, pl.lamps.length)
+      for (let i = 0; i < MAX_LAMP; i++) {
+        const l = i < nL ? pl.lamps[i] : null
+        if (!l) {
+          lampPosts.setMatrixAt(i, zero)
+          lp.setXYZ(i, 0, -100, 0)
+          continue
+        }
+        dummy.position.set(l.x, deckY, l.z)
+        dummy.rotation.set(0, 0, 0)
+        dummy.scale.set(1, l.y, 1)
+        dummy.updateMatrix()
+        lampPosts.setMatrixAt(i, dummy.matrix)
+        lp.setXYZ(i, l.x, deckY + l.y, l.z)
+      }
+      lampPosts.instanceMatrix.needsUpdate = true
+      lp.needsUpdate = true
+    }
 
     /* ---- 烟囱：一半的房子有，站在屋脊上 ---- */
     let ci = 0
@@ -749,6 +807,9 @@ export function createDeckHarbor(): DeckHarbor {
    * e2e 的"四个港都是 8 栋房"抓到的就是这个（实测）。
    */
   let lastPortId = -1
+  /* 最近一帧的昼夜系数（取证用：`__deckHarbor().night`） */
+  let lastNight = -1
+  let lastLitK = -1
 
   return {
     group,
@@ -801,16 +862,32 @@ export function createDeckHarbor(): DeckHarbor {
        * 白天则接近本色。`t` 目前只用来给旗与窗光一点点呼吸。
        */
       const litK = 0.18 + 0.82 * (1 - night)
+      lastNight = night
+      lastLitK = litK
+      /*
+       * 【顺序很重要：先混雾色、**再**乘昼夜系数】
+       * 第一版是 `乘 litK → 混雾色`：黄昏时 `uFogColor` 还是一片暖亮的天光，
+       * 混进去等于把墙提亮回来 —— 实测夜里（night 0.44、litK 0.638）墙面
+       * 只有 #b1a895（比白天暗 18%），一城房子在夜里还是米白的。
+       * 雾是"混入天光"，而天光本身在夜里是暗的；`uFogColor` 没跟上日相时，
+       * litK 兜住这一层。顺序换过来之后，夜里的墙才真的暗下去。
+       */
       for (const [mat, base] of bases) {
         const m = mat as THREE.MeshBasicMaterial
-        m.color.copy(base).multiplyScalar(litK)
-        // 浓雾：往雾色里退（与海岸同一套大气透视）
+        m.color.copy(base)
         if (fogK > 0) m.color.lerp(fogColor, Math.min(0.9, fogK * 0.85))
+        m.color.multiplyScalar(litK)
         m.opacity = 1
         m.transparent = false
       }
       // 码头上的人在动（很小的起伏，幅度 7% 身高）
       if (folkList.length) writeFolk(t)
+      /*
+       * 水边的灯：夜里亮，被雾削，随距离淡（用 size 表达"远灯更小"）。
+       * 与窗光分开控制：灯比窗光更亮一档，且不随 `night` 线性（黄昏就该点上）。
+       */
+      lampMat.opacity = Math.min(1, (0.25 + 0.75 * night)) * (1 - Math.min(1, fogK) * 0.85)
+      lampMat.size = (0.42 + 0.16 * night) * (1 + curPresence * 0.5)
       // 窗光：只在夜里、且被雾削
       winMat.opacity = Math.max(0, Math.min(1, night)) * (1 - Math.min(1, fogK) * 0.9)
       const breath = 0.9 + 0.1 * Math.sin(t * 0.7)
@@ -819,6 +896,8 @@ export function createDeckHarbor(): DeckHarbor {
     debug() {
       return {
         style: style.id,
+        night: lastNight,
+        litK: lastLitK,
         houses: plan?.houses.length ?? 0,
         piers: plan?.piers.length ?? 0,
         moorings: plan?.moorings.length ?? 0,
