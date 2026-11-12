@@ -466,6 +466,43 @@ export function createDeckHarbor(): DeckHarbor {
   roofs.name = 'deck-harbor-roofs'
   roofs.frustumCulled = false
   group.add(roofs)
+  /*
+   * 屋脊瓦：沿屋脊一道凸起的窄条，比屋面亮一档。
+   *
+   * 【为什么要单独一条】从甲板上看，屋顶是**平视**的一个三角：两坡在屏幕上的
+   * 分界完全靠顶点色（RIDGE_K 1.02）—— 只差 2%，实际上看不出来，屋顶读作
+   * 一个纯红的三角形块。真实瓦屋面在屋脊上有一道专门的脊瓦，它比坡面高
+   * 3~5 厘米、受光也最足，是屋顶轮廓上唯一的一条硬线。有了这一条，
+   * "三角红块"才变成"两坡顶"。
+   */
+  const ridgeGeo = shadeFaces(new THREE.BoxGeometry(1, 1, 1), 0.62)
+  ridgeGeo.translate(0, 0.5, 0)
+  /*
+   * 亮度烘在**顶点色**里（×1.35），不用 instanceColor。
+   * 【为什么】ridges 与 roofs 共用同一个材质；给其中一个 setColorAt 之后，
+   * 两者会争同一份 program 的 `instancingColor` 分支，实测第一版根本不出现。
+   * 顶点色是几何自己的属性，零风险。
+   */
+  {
+    const ca = ridgeGeo.getAttribute('color')
+    for (let i = 0; i < ca.count; i++) {
+      ca.setXYZ(i, ca.getX(i) * 1.35, ca.getY(i) * 1.35, ca.getZ(i) * 1.35)
+    }
+    ca.needsUpdate = true
+  }
+  /*
+   * 屋脊瓦用**克隆出来的材质**，不共用 roofMat。
+   * 【为什么必须分开】roofMat 上挂着 `instanceColor`（逐栋色差），而 ridges 没有
+   * 这个属性 —— 共用材质时 three 走的是带 instancingColor 的那份 program，
+   * 缺属性导致脊瓦画不出来（实测：把材质临时换成亮绿就出现，换回去就消失）。
+   * 克隆之后两者各有自己的 program，脊瓦的颜色在 `applyStyle` 里跟着屋顶同步。
+   */
+  const ridgeMat = (roofMat as THREE.MeshBasicMaterial).clone()
+  ridgeMat.color.multiplyScalar(1.2)
+  const ridges = new THREE.InstancedMesh(ridgeGeo, ridgeMat, MAX_HOUSE)
+  ridges.name = 'deck-harbor-ridges'
+  ridges.frustumCulled = false
+  group.add(ridges)
 
   /*
    * 城内第三排（远屋顶）：只复用墙与屋顶的几何 + 材质。
@@ -1085,6 +1122,7 @@ export function createDeckHarbor(): DeckHarbor {
         jettyBands.setMatrixAt(i, zero)
         annexWalls.setMatrixAt(i, zero)
         annexRoofs.setMatrixAt(i, zero)
+        ridges.setMatrixAt(i, zero)
         continue
       }
       /*
@@ -1201,6 +1239,24 @@ export function createDeckHarbor(): DeckHarbor {
       else dummy.scale.set(h.w * 1.14, Math.max(0.05, h.roofH), h.d * 1.14)
       dummy.updateMatrix()
       roofs.setMatrixAt(i, dummy.matrix)
+
+      /* 屋脊瓦：沿屋脊一条，比屋面亮 12%（受光最足的那条线） */
+      /*
+       * 位置取"顶面 − 0.35·roofH"、高 0.8·roofH：条带的底埋进屋脊里，
+       * 上半截凸出来。第一版把底放在顶面上（−0.02·h.h），探针读到的实例
+       * y=1.31 而屋顶顶面在 1.58 —— 整条**埋在屋顶内部**，一个像素都不显示。
+       */
+      dummy.position.set(h.x, deckY + h.h + h.roofH * 0.65, h.z)
+      dummy.rotation.set(0, h.endGable ? h.yaw + Math.PI / 2 : h.yaw, 0)
+      /*
+       * 尺寸按屏幕倒推：屋顶在 1440×900 里只有 35~45px 高，
+       * 0.16·roofH（≈0.05 单位）算出来是 **1.5 像素** —— 看不见（第一版就是这样）。
+       * 0.34·roofH + 厚 0.1 才有 4~5px 的一条线。
+       */
+      const rl = (h.endGable ? h.d : h.w) * 1.16
+      dummy.scale.set(rl, Math.max(0.035, h.roofH * 0.5), 0.11)
+      dummy.updateMatrix()
+      ridges.setMatrixAt(i, dummy.matrix)
     }
     walls.instanceMatrix.needsUpdate = true
     roofs.instanceMatrix.needsUpdate = true
@@ -1210,6 +1266,7 @@ export function createDeckHarbor(): DeckHarbor {
     eaves.instanceMatrix.needsUpdate = true
     houseShadows.instanceMatrix.needsUpdate = true
     upperWalls.instanceMatrix.needsUpdate = true
+    ridges.instanceMatrix.needsUpdate = true
     jettyBands.instanceMatrix.needsUpdate = true
     annexWalls.instanceMatrix.needsUpdate = true
     annexRoofs.instanceMatrix.needsUpdate = true
@@ -1694,6 +1751,8 @@ export function createDeckHarbor(): DeckHarbor {
     style = st
     ;(wallMat).color.setHex(st.wall)
     ;(roofMat).color.setHex(st.roof)
+    // 屋脊瓦是 roofMat 的克隆：换样式时必须一起改（乘 1.2 的提亮也在这里重算）
+    ridgeMat.color.setHex(st.roof).multiplyScalar(1.2)
     ;(stoneMat).color.setHex(st.stone)
     ;(pierMat).color.setHex(st.timber)
     ;(deckMat).color.setHex(st.quay)

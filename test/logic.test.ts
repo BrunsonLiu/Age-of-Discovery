@@ -11723,6 +11723,15 @@ console.log('\n== 天数口径守卫 ==')
   assert(/Math\.min\(0\.42, m\.len \* 0\.26\)/.test(hmHull),
     '干舷封顶 0.42（43 米的主力船给 26% 就是 11 米干舷 = 一堵墙）')
 
+  /*
+   * 屋脊瓦：屋顶在甲板上是**平视**的一个三角，两坡的分界只靠顶点色差 2% ——
+   * 读不出来。专用脊瓦（凸起、亮 20%）是屋顶轮廓上唯一的一条硬线。
+   */
+  assert(/const ridgeMat = \(roofMat as THREE\.MeshBasicMaterial\)\.clone\(\)/.test(hmHull),
+    '屋脊瓦用克隆材质（与 roofMat 共用时会因 instanceColor 分支画不出来）')
+  assert(/ridgeMat\.color\.setHex\(st\.roof\)\.multiplyScalar\(1\.2\)/.test(hmHull),
+    '换海域样式时屋脊瓦的颜色跟着屋顶同步')
+
   const hm5 = readFileSync(join(process.cwd(), 'src', 'components', 'deck', 'harborModel.ts'), 'utf8')
   assert(/name = `deck-harbor-mooringline-\$\{i\}`/.test(hm5), '缆绳网格按序命名（取证要用）')
   /*
