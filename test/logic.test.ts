@@ -63,7 +63,7 @@ import {
   climateGapCenter, climateLabelPx, climateRuns, OBLIQUITY_DEG, POLAR_CIRCLE_DEG,
 } from '../src/utils/climateLines'
 import { climateZoneAt, cursorLabel, readoutPlacement } from '../src/utils/cursorReadout'
-import { DEFAULT_NATION, legendPending, NATION_COUNT, NATIONS, nationById } from '../src/data/nations'
+import { DEFAULT_NATION, legendPending, NATION_COUNT, NATIONS, nationById, nextChapter, storyStep } from '../src/data/nations'
 import {
   SURF_PERIOD_PX, SURF_WIND_FULL, SURF_WIND_MIN, surfDash, surfOpacity, surfStrength, surfWeight,
 } from '../src/utils/surf'
@@ -209,7 +209,7 @@ import {
 } from '../src/utils/miniGame'
 import type { OfficerId } from '../src/types'
 import { emitUiCommand, onUiCommand } from '../src/utils/uiBus'
-import { ports, portGoods } from '../src/data/ports'
+import { localDemands, ports, portGoods } from '../src/data/ports'
 import { goods } from '../src/data/goods'
 import {
   TUTORIAL_STEPS,
@@ -10694,15 +10694,14 @@ console.log('\n== 天数口径守卫 ==')
  * 另加一条**方向性**约束：开局包里不许有金币（这条线不再靠钱堆强度）。
  */
 {
-  // ① 四个国别：母港不同、船名不同
-  assert(NATION_COUNT === 4 && new Set(NATIONS.map(n => n.id)).size === 4,
-    `四个国别，id 不重复（${NATIONS.map(n => n.id).join(' / ')}）`)
-  assert(new Set(NATIONS.map(n => n.portId)).size === 4, '四个母港互不相同（不能两个人挤一个码头）')
-  assert(new Set(NATIONS.map(n => n.shipName)).size === 4, `四条座船各有名字（${NATIONS.map(n => n.shipName).join(' / ')}）`)
+  // ① 五个国别：母港不同、船名不同
+  assert(NATION_COUNT === 5 && new Set(NATIONS.map(n => n.id)).size === 5,
+    `五个国别，id 不重复（${NATIONS.map(n => n.id).join(' / ')}）`)
+  assert(new Set(NATIONS.map(n => n.portId)).size === 5, '五个母港互不相同（不能两个人挤一个码头）')
+  assert(new Set(NATIONS.map(n => n.shipName)).size === 5, `五条座船各有名字（${NATIONS.map(n => n.shipName).join(' / ')}）`)
   for (const n of NATIONS) {
     const p = ports.find(x => x.id === n.portId)
     assert(!!p, `${n.name}的母港 id=${n.portId} 真的在 data/ports 里`)
-    assert(p?.region === 'europe', `${n.name}从欧洲的母港出发（${p?.nameCn}）`)
   }
   // 历史上的港口不能写串：里斯本给葡萄牙、塞维利亚给西班牙、伦敦给英格兰、阿姆斯特丹给荷兰
   const portOf = (id: string) => ports.find(p => p.id === nationById(id).portId)?.nameCn
@@ -10710,6 +10709,19 @@ console.log('\n== 天数口径守卫 ==')
   assert(portOf('spain') === '塞维利亚', `西班牙的母港是塞维利亚（实测 ${portOf('spain')}）`)
   assert(portOf('england') === '伦敦', `英格兰的母港是伦敦（实测 ${portOf('england')}）`)
   assert(portOf('netherlands') === '阿姆斯特丹', `荷兰的母港是阿姆斯特丹（实测 ${portOf('netherlands')}）`)
+  assert(portOf('china') === '广州', `大明的母港是广州（实测 ${portOf('china')}）`)
+  // 广州真的能做生意：有货、有渴求品（1.3 以上才进掮客推荐单）
+  assert(portGoods.some(pg => pg.portId === 21), '广州有货价行（新港不许是个空壳）')
+  assert(localDemands(21).length >= 1, `广州有渴求品（${localDemands(21).join(',')}）—— 否则掮客开不出单`)
+  assert(portGoods.filter(pg => pg.portId === 21).some(pg => pg.priceModifier <= 0.75),
+    '广州有本地特产（modifier ≤ 0.75），第一趟才有货可买')
+  /*
+   * 【为什么大明不放在欧洲】它是五个国别里唯一从亚洲出发的：
+   * "开局船的位置也不一样"这条要求在这里最极端 —— 广州到加勒比要横穿两个大洋。
+   * 所以母港必须真的在 asia 区，否则地图上的"东方起点"是假的。
+   */
+  assert(ports.find(p => p.id === nationById('china').portId)?.region === 'asia',
+    '大明的母港在亚洲区（不是欧洲某个港换个中文名）')
 
   // ② 开局包里没有金币（这条线卖的是航路、名号、见闻）
   for (const n of NATIONS) {
@@ -10817,6 +10829,84 @@ console.log('\n== 天数口径守卫 ==')
   const legendSrc = readFileSync(join(process.cwd(), 'src', 'components', 'map', 'NationLegend.tsx'), 'utf8')
   assert(/legendPending\(nation/.test(legendSrc), '传说标记按国别与已兑现列表过滤')
   assert(/pointer-events: none !important/.test(legendSrc), '传说标记不吃点击（压在海图上的浮层不许吃指针）')
+}
+
+
+/*
+ * ---- 国别故事线：三段航路必须真的能走完 ----
+ *
+ * 【守什么】用户 2026-11-12 的第二次要求："每个国家在这段历史有不同的故事线和航线……
+ * 但还是不要只用文字堆砌"。所以故事线不是一段文案，而是**三段目的地**：
+ *  ① 每国恰好三段，终点都是 `data/ports` 里真实的港（否则永远开不到）；
+ *  ② 按 id 推进且幂等：同一座港反复靠，第二段不会重复发奖；
+ *  ③ 奖励里没有金币（与遗物、传说同一条规矩）；
+ *  ④ 三段走完后 `nextChapter` 必须返回 null，海图上的标记才会消失。
+ */
+{
+  for (const n of NATIONS) {
+    assert(n.story.length === 3, `${n.name}的航路是三段（实测 ${n.story.length}）`)
+    assert(new Set(n.story.map(c => c.id)).size === 3, `${n.name}的三段 id 不重复`)
+    assert(new Set(n.story.map(c => c.name)).size === 3, `${n.name}的三段名字不重复（地图上要靠名字分辨）`)
+    for (const c of n.story) {
+      const p = ports.find(x => x.id === c.portId)
+      assert(!!p, `${n.name}「${c.name}」的目的地 id=${c.portId} 真的存在`)
+      assert(c.gain.fame > 0, `${n.name}「${c.name}」给名号（${c.gain.fame}）`)
+      assert(!('gold' in c.gain), `${n.name}「${c.name}」不给金币`)
+      assert(c.line.length <= 60, `${n.name}「${c.name}」的兑现句是一句（${c.line.length} 字）`)
+    }
+    // 三段的目的地不能重复（否则"走三段"变成"去一个地方三趟"）
+    assert(new Set(n.story.map(c => c.portId)).size === 3, `${n.name}的三段目的地各不相同`)
+  }
+  // 五条航路加起来要覆盖到不同的海：不能五个国家都只在加勒比打转
+  const allPorts = new Set(NATIONS.flatMap(n => n.story.map(c => c.portId)))
+  assert(allPorts.size >= 12, `五条航路一共覆盖 ${allPorts.size} 个港（不是同一条线换个名字）`)
+
+  // ② 推进与幂等
+  const pt = nationById('portugal')
+  assert(nextChapter('portugal', [])?.id === 'portugal-1', '葡萄牙第一段是西非商站')
+  assert(nextChapter('portugal', ['portugal-1'])?.id === 'portugal-2', '走完一段就推进到下一段')
+  assert(nextChapter('portugal', ['portugal-1', 'portugal-2', 'portugal-3']) === null,
+    '三段走完 → 没有下一段（海图上的菱形标记随之消失）')
+  assert(nextChapter(null, []) === null, '没有国别 → 没有航路')
+  assert(storyStep('portugal', []) === 0 && storyStep('portugal', ['portugal-1', 'portugal-2']) === 2,
+    '已走段数按 id 数，不按下标')
+
+  // ③ 真跑一遍：大明的第一段（广州 → 满剌加）
+  const initCn = () => {
+    useGameStore.getState().initGame('merchant', 'captain', 'china')
+    return useGameStore.getState()
+  }
+  const cn = initCn()
+  assert(cn.nation === 'china' && cn.fleet.currentPortId === 21,
+    `大明从广州出发（nation=${cn.nation} port=${cn.fleet.currentPortId}）`)
+  assert(cn.fleet.ships[0].name === '清和号', `座船「${cn.fleet.ships[0].name}」`)
+  assert(cn.fleet.ships[0].crew === 17, `船员 15+2=${cn.fleet.ships[0].crew}`)
+  assert(cn.factionRep.scholars === 14, `学者声望起手 ${cn.factionRep.scholars}`)
+  assert(JSON.stringify(cn.discoveredPorts) === '[21]', `母港广州已发现（${JSON.stringify(cn.discoveredPorts)}）`)
+  assert(nextChapter('china', cn.storyDone)?.portId === 12, '大明的下一站是满剌加（马六甲）')
+
+  const fameBefore = cn.fleet.fame
+  useGameStore.getState().arriveAtPort(12)
+  const after = useGameStore.getState()
+  assert(JSON.stringify(after.storyDone) === '["china-1"]',
+    `到满剌加 → 第一段记账（${JSON.stringify(after.storyDone)}）`)
+  assert(after.fleet.fame === fameBefore + 12, `名号 +12（${fameBefore} → ${after.fleet.fame}）`)
+  assert(nextChapter('china', after.storyDone)?.id === 'china-2', '下一站推进到蒙巴萨')
+
+  // 再靠一次同一座港：不许再发一次奖（幂等）
+  const fameOnce = after.fleet.fame
+  useGameStore.getState().arriveAtPort(12)
+  const again = useGameStore.getState()
+  assert(again.fleet.fame === fameOnce, `同一座港再靠一次不再发奖（${again.fleet.fame} = ${fameOnce}）`)
+  assert(again.storyDone.filter(x => x === 'china-1').length === 1, '第一段只记一次')
+
+  // ④ 段号写在地图上：标记用菱形 + 段号，且不吃点击
+  const storySrc = readFileSync(join(process.cwd(), 'src', 'components', 'map', 'NationStory.tsx'), 'utf8')
+  assert(/nextChapter\(nation/.test(storySrc), '航路标记按"当前该走哪一段"取目的地')
+  assert(/pointer-events: none !important/.test(storySrc), '航路标记不吃点击')
+  assert(/story-mark-step/.test(storySrc), '标记上写着段号（1/2/3）')
+  const storeSrc2 = readFileSync(join(process.cwd(), 'src', 'store', 'useGameStore.ts'), 'utf8')
+  assert(/storyDone: state\.storyDone/.test(storeSrc2), '航路进度进存档白名单')
 }
 
 

@@ -28,6 +28,7 @@ import { OFFICER_MAP } from '@/data/officers'
 import { CREW_CHAR_MAP } from '@/data/crewChars'
 import { currentTitle } from '@/data/titles'
 import { useFxStore } from '@/store/useFxStore'
+import { useMapStore } from '@/store/useMapStore'
 import type { CueName } from '@/utils/audio'
 import { helmReward, type HelmRunResult } from '@/utils/helm'
 import {
@@ -37,7 +38,7 @@ import {
 import { advanceDebris } from '@/utils/seaDebris'
 import { debrisGain, DEBRIS_INFO, type DebrisSpot } from '@/data/debris'
 import { findRelic, relicDistanceNm, relicInSeason, RELIC_PICKUP_NM } from '@/data/relics'
-import { nationById, legendPending, DEFAULT_NATION } from '@/data/nations'
+import { nationById, legendPending, nextChapter, DEFAULT_NATION } from '@/data/nations'
 import { phenomenonAt, phenomenonEventBias, SEA_PHENOMENA } from '@/data/seaPhenomena'
 import { newlyReached } from '@/data/voyageMilestones'
 import { appendLogbook, findClueFor, makeArrivalEntry, makeEchoEntry, makeTitleEntry, markAllRead } from '@/data/logbook'
@@ -271,6 +272,8 @@ const initialGameState: GameState = {
   nation: null,
   /** 已兑现的传说（见 data/nations 的 legend.id） */
   collectedLegends: [],
+  /** 已走完的航路段落（见 data/nations 的 story[].id） */
+  storyDone: [],
 }
 
 interface GameStore extends GameState {
@@ -1313,7 +1316,15 @@ export const useGameStore = create<GameStore>()(
           gameMode: mode,
           nation: nation.id,
           collectedLegends: [],
+          storyDone: [],
         })
+        /*
+         * 海图的初始视野默认钉在伊比利亚（[34,-9]，见 useMapStore）。
+         * 从广州出海的那一局如果不跟着挪，玩家会看到"船在亚洲、镜头在大西洋"——
+         * 一开局就看不见自己的船。所以开局把视野直接摆到母港上。
+         * 只在这一处设：之后玩家自己拖到哪儿，就留在哪儿（不做跟随）。
+         */
+        if (startPort) useMapStore.getState().setCenter([startPort.latitude, startPort.longitude])
       },
 
       setGamePhase: (phase) => set({ gamePhase: phase }),
@@ -1809,8 +1820,68 @@ export const useGameStore = create<GameStore>()(
           if (echo && !logbook.some(e => e.id === echo.id)) {
             logbook = appendLogbook(logbook, echo)
           }
+          /*
+           * ---- 国别故事线：开到这一段的目的地港，就把它记下来 ----
+           *
+           * 【为什么判在 `arriveAtPort` 而不是日结算】航线段落是"从港到港"的，
+           * 判据就该是"船真的靠上了那个码头"，与传说的"开进一片海"不同。
+           * 两件事、两个判据，别混在一个函数里（混了就会出现"路过算不算"的模糊地带）。
+           *
+           * 【为什么按 id 判而不是看下标】`nextChapter` 找的是"第一段没做过的"，
+           * 幂等：同一座港反复靠，第二段不会重复发奖；将来加段也不用改存档结构。
+           *
+           * 【为什么奖励里没有金币】航路是荣誉与风向，不是账本（用户定的方向）。
+           */
+          let storyDone = state.storyDone
+          const chapter = nextChapter(state.nation, state.storyDone)
+          if (chapter && chapter.portId === portId) {
+            storyDone = [...state.storyDone, chapter.id]
+            const next = nextChapter(state.nation, storyDone)
+            useFxStore.getState().fx(
+              {
+                kind: 'banner', tone: 'gold',
+                text: `航路 · ${chapter.name}`,
+                sub: next
+                  ? `名号 +${chapter.gain.fame} · 下一段：${next.name}`
+                  : `名号 +${chapter.gain.fame} · 这条航路走完了`,
+              },
+              'milestone',
+            )
+          }
+          const chapterGain = nextChapter(state.nation, state.storyDone)?.portId === portId
+            ? nextChapter(state.nation, state.storyDone)!
+            : null
           return {
-            fleet: { ...state.fleet, currentPortId: portId, isSailing: false },
+            fleet: {
+              ...state.fleet,
+              currentPortId: portId,
+              isSailing: false,
+              ...(chapterGain
+                ? {
+                    fame: state.fleet.fame + chapterGain.gain.fame,
+                    morale: Math.max(0, Math.min(100, state.fleet.morale + chapterGain.gain.morale)),
+                  }
+                : {}),
+            },
+            ...(chapterGain
+              ? {
+                  factionRep: Object.entries(chapterGain.gain.faction).reduce(
+                    (acc, [k, v]) => ({ ...acc, [k]: Math.max(-100, Math.min(100, (acc[k as FactionId] ?? 0) + (v ?? 0))) }),
+                    { ...state.factionRep },
+                  ),
+                  notifications: [
+                    ...state.notifications,
+                    {
+                      id: `story-${chapterGain.id}`,
+                      type: 'discovery' as const,
+                      title: `航路 · ${chapterGain.name}`,
+                      message: chapterGain.line,
+                      timestamp: Date.now(),
+                    },
+                  ],
+                }
+              : {}),
+            storyDone,
             // 记下"从哪来"：currentRoute 马上就要清空，回程建议要用它
             lastPortId: state.currentRoute?.fromPortId ?? state.lastPortId,
             currentRoute: null,
@@ -2785,6 +2856,14 @@ export const useGameStore = create<GameStore>()(
           if (pState.nation === undefined) pState.nation = null
           if (!Array.isArray(pState.collectedLegends)) pState.collectedLegends = []
         }
+        /*
+         * v17→v18: 国别故事线（三段航路）。
+         * 老存档补空数组 = "一段都没走过"。**不能补成"已走过"**：
+         * 那会把三段的名号与势力声望一次性白送出去。
+         */
+        if (version < 18) {
+          if (!Array.isArray(pState.storyDone)) pState.storyDone = []
+        }
         return persistedState
       },
       partialize: (state) => ({
@@ -2829,6 +2908,7 @@ export const useGameStore = create<GameStore>()(
         knownPassages: state.knownPassages,
         nation: state.nation,
         collectedLegends: state.collectedLegends,
+        storyDone: state.storyDone,
       }),
       // 存档软锁修复：存档里若停在事件阶段但事件未持久化，重开时落回 playing
       merge: (persisted, current) => {
@@ -2848,6 +2928,7 @@ export const useGameStore = create<GameStore>()(
          */
         merged.nation = merged.nation ?? null
         merged.collectedLegends = merged.collectedLegends ?? []
+        merged.storyDone = merged.storyDone ?? []
         return merged
       },
     }

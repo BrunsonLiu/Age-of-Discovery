@@ -535,6 +535,13 @@ export interface GameState {
    * 与 `collectedRelics` 同一档——都是"这一局真的发生过"。
    */
   collectedLegends: string[]
+  /**
+   * 已走完的国别航路段落（id，见 data/nations 的 story[].id）。
+   *
+   * 与遗物/传说同一档：都是"这一局真的做过的事"。
+   * 按 id 记而不是记下标——下标在老存档里是 0，会让人重走一遍。
+   */
+  storyDone: string[]
 }
 
 /**
@@ -542,7 +549,7 @@ export interface GameState {
  *
  * 放在 types 里而不是直接从 data 引，是为了不让 types 反过来依赖 data（会成环）。
  */
-export type NationId = 'portugal' | 'spain' | 'england' | 'netherlands'
+export type NationId = 'portugal' | 'spain' | 'england' | 'netherlands' | 'china'
 
 /**
  * 玩法模式（见 GameState.gameMode）。

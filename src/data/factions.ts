@@ -103,6 +103,7 @@ const PORT_FACTION: Record<number, FactionId> = {
   18: 'guild',   // 澳门：商业据点
   19: 'guild',   // 巴达维亚：荷属总部
   20: 'crown',   // 加的斯：珍宝舰队终点
+  21: 'scholars', // 广州：市舶司与钦天监，见闻换船引的地方
 }
 
 export function portFaction(portId: number): FactionId {

@@ -100,7 +100,7 @@ export default function IntroScreen() {
         <>
           <h2 className="pirate-title text-2xl sm:text-3xl text-gold-300 mb-2">你为谁出海？</h2>
           <p className="hidden sm:block font-serif text-gold-200 text-sm leading-relaxed max-w-md mb-3">
-            1492 年前后，四个国家的船正往四个方向去。选一面旗，船就停在那个港里。
+            1492 年前后，五面旗正往五个方向去。选一面旗，船就停在那个港里。
           </p>
           {/*
             【为什么小屏也要两列】一列四张卡在 375×667 上把面板顶到 907px
@@ -108,17 +108,20 @@ export default function IntroScreen() {
             两列把四张卡压成两行，省下 150 多像素；窄到 145px 时说明文字会多折两行，
             但那正是可以折的东西 —— 国名与港口在顶行，一眼能认。
           */}
-          <div className="grid grid-cols-2 gap-1.5 sm:gap-2 w-full max-w-md">
-            {NATIONS.map(n => {
+          <div className="grid grid-cols-2 gap-1 sm:gap-2 w-full max-w-md">
+            {NATIONS.map((n, ni) => {
               const selected = selectedNation === n.id
               const port = ports.find(p => p.id === n.portId)
+              // 五个国别排两列会剩一个空格：让最后一张横跨两列，
+              // 既填满那一行，也让"大明"看起来不是"多出来的")
+              const wide = ni === NATIONS.length - 1 && NATIONS.length % 2 === 1
               return (
                 <button
                   key={n.id}
                   onClick={() => setSelectedNation(n.id)}
                   data-nation={n.id}
                   aria-pressed={selected}
-                  className={`relative overflow-hidden text-left rounded-lg border p-1.5 sm:p-2.5 transition-all inlay ${
+                  className={`${wide ? 'col-span-2 ' : ''}relative overflow-hidden text-left rounded-lg border p-1 sm:p-2.5 transition-all inlay ${
                     selected
                       ? 'border-gold-200 shadow-[inset_0_0_0_1px_rgba(240,216,138,0.35),0_0_16px_rgba(212,168,56,0.22)]'
                       : 'border-gold-700/30 hover:border-gold-500/50'
@@ -158,14 +161,24 @@ export default function IntroScreen() {
             下面那三行字**当场换成另一个国家的故事**，比翻页更能说明"这真的不一样"。
             信息一条没少：国史一句、你是谁一句、船与传说一句。
           */}
-          <div className="mt-2 sm:mt-3 w-full max-w-md rounded-lg border border-gold-700/25 bg-ocean-900/30 px-2.5 sm:px-3 py-1.5 sm:py-2 text-left space-y-1">
+          <div className="mt-2 sm:mt-3 w-full max-w-md rounded-lg border border-gold-700/25 bg-ocean-900/30 px-2.5 sm:px-3 py-1 sm:py-2 text-left space-y-0.5 sm:space-y-1">
             <div className="hidden sm:block text-gold-300 text-xs font-serif tracking-wide">
               {`1492年 · ${originPort?.nameCn ?? '塞维利亚'}港`}
             </div>
             <p className="text-gold-200 text-[12px] sm:text-[13px] font-serif leading-snug sm:leading-relaxed">{chosenNation.history}</p>
             <p className="text-gold-200 text-[12px] sm:text-[13px] font-serif leading-snug sm:leading-relaxed">{chosenNation.origin}</p>
+            {/* 船名 + 传说压成一行：小屏（375×667）下面板高度只剩几十像素余量，
+                这两件事其实是同一句话的"你要开哪条船、去追哪个传说" */}
             <p className="text-gold-200 text-[12px] sm:text-[13px] font-serif leading-snug sm:leading-relaxed">
-              {`座船「${chosenNation.shipName}」就泊在这里。临行前有人说起过${chosenNation.legend.name}——那片海在图上是一片空白。`}
+              {`座船「${chosenNation.shipName}」· 传说「${chosenNation.legend.name}」· 泊于${originPort?.nameCn ?? '塞维利亚'}港`}
+            </p>
+            {/* 味道句在小屏上让位：传说本身在地图上有个圈，进了游戏还能看见 */}
+            <p className="hidden sm:block text-gold-200 text-[13px] font-serif leading-relaxed">
+              {`临行前有人说起过${chosenNation.legend.name}——那片海在图上是一片空白。`}
+            </p>
+            {/* 航路写在故事里，但它是**要走的**：地图上会一段一段地立起菱形标记 */}
+            <p className="text-gold-300 text-[12px] font-serif leading-snug">
+              {`这一局的航路：${chosenNation.story.map(c => c.name).join(' · ')}`}
             </p>
           </div>
           <div className="hidden sm:flex flex-wrap items-center justify-center gap-x-4 gap-y-1.5 text-gold-300 font-serif text-xs mt-3 max-w-md">
@@ -374,7 +387,7 @@ export default function IntroScreen() {
   }
 
   return (
-    <div data-testid="intro-screen" className="fixed inset-0 flex items-start sm:items-center justify-center bg-ocean-900/95 backdrop-blur-md overflow-y-auto py-4 sm:py-6" style={{ zIndex: 9999 }}>
+    <div data-testid="intro-screen" className="fixed inset-0 flex items-start sm:items-center justify-center bg-ocean-900/95 backdrop-blur-md overflow-y-auto py-3 sm:py-6" style={{ zIndex: 9999 }}>
       {/* 主标题背景（H1）：母港夜景与银河，衬在航海日志卡片之后 */}
       <img
         src={BG_ASSETS.title}
@@ -392,7 +405,7 @@ export default function IntroScreen() {
           {page.content}
         </div>
 
-        <div className="flex flex-col items-center gap-4 mt-6">
+        <div className="flex flex-col items-center gap-2 sm:gap-4 mt-3 sm:mt-6">
           <button
             onClick={handleNext}
             className="btn-nautical px-8 py-2.5 rounded-lg font-pirate text-lg

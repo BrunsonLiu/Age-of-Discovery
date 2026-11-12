@@ -29,6 +29,17 @@ export const ports: Port[] = [
   { id: 18, name: 'Macau', nameCn: '澳门', latitude: 22.1987, longitude: 113.5439, region: 'asia', description: '葡萄牙在中国的据点，东西方文化交汇之地', services: ['repair', 'supply', 'trade'] },
   { id: 19, name: 'Batavia', nameCn: '巴达维亚', latitude: -6.2088, longitude: 106.8456, region: 'asia', description: '荷兰东印度公司在亚洲的总部，今天的雅加达', services: ['repair', 'supply', 'recruit', 'trade'] },
   { id: 20, name: 'Cádiz', nameCn: '加的斯', latitude: 36.5298, longitude: -6.2928, region: 'europe', description: '西班牙珍宝舰队的终点港，来自新大陆的白银在此卸货', services: ['repair', 'supply', 'recruit', 'trade', 'shipyard'] },
+  /*
+   * 【第 21 个港：广州】2026-11-12 用户要求开局可选中国（"考虑国内用户"）。
+   *
+   * 为什么是广州而不是复用澳门：1492 年葡人还没到澳门（1557 年才落脚），
+   * 那时珠江口的市舶司在**广州**，朝贡贸易与丝绸出海都从这儿走。
+   * 用澳门当大明的母港是把一百年后的事挪到开局，这属于"地图在说谎"。
+   *
+   * 坐标用真实的广州城（23.13N / 113.26E），`region: 'asia'` 会自动继承
+   * 东南亚那张场景图（见 data/portImages 的区域映射），不需要新素材。
+   */
+  { id: 21, name: 'Guangzhou', nameCn: '广州', latitude: 23.1291, longitude: 113.2644, region: 'asia', description: '大明广东的市舶司所在，丝绸与瓷器的出海口；朝贡船队从这里南下满剌加', services: ['repair', 'supply', 'recruit', 'trade', 'shipyard'] },
 ]
 
 export const portGoods: PortGood[] = [
@@ -206,6 +217,23 @@ export const portGoods: PortGood[] = [
    * 不是把加的斯变富，只是让它"有货可装"。
    */
   { portId: 20, goodId: 7, price: 75, stock: 40, priceModifier: 0.8 },
+  /*
+   * ---- 广州(21)：丝绸出海，军械与香料北上 ----
+   *
+   * 【为什么这样配】七国的开局里只有大明的母港在亚洲，第一趟航程如果
+   * 不能在这片海上赚到钱，那这个选项就是"看风景"。所以广州必须有真事可做：
+   *   · 丝绸 84 / 0.7 —— 全图最便宜的丝绸之一（大明本来就是产地）；
+   *   · 木材 20 / 0.8 —— 造船木料，就近可补；
+   *   · 火炮 100 / 1.35 —— 渴求（1.3 以上才会进掮客的推荐单），
+   *     这样从欧洲/果阿运军械过来有正经利润，广州也不会变成"死港"；
+   *   · 香料 210 / 1.25 —— 满剌加/锡兰的香料在这里收得比产地差一点，
+   *     留出运费空间但不至于把马六甲比下去。
+   */
+  { portId: 21, goodId: 10, price: 84, stock: 220, priceModifier: 0.7 },
+  { portId: 21, goodId: 6, price: 20, stock: 200, priceModifier: 0.8 },
+  { portId: 21, goodId: 4, price: 100, stock: 40, priceModifier: 1.35 },
+  { portId: 21, goodId: 9, price: 210, stock: 40, priceModifier: 1.25 },
+  { portId: 21, goodId: 2, price: 42, stock: 50, priceModifier: 1.2 },
 ]
 
 /**

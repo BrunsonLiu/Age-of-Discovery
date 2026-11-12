@@ -281,4 +281,21 @@ export const tasks: Task[] = [
     requiredGoods: [{ goodId: 7, quantity: 6 }],
     minDay: 6,
   },
+  /*
+   * 第 21 个港（广州）的委托：接单港必须真的卖这种货（测试守着），
+   * 广州的丝绸 84 / 0.7 是全图最便宜的一档，所以让它"送生丝去满剌加"——
+   * 这一趟走的就是大明故事线的第一段（满剌加），玩家接单即顺路。
+   */
+  {
+    id: 23,
+    title: '送一船生丝去满剌加',
+    description: '市舶司的批文明年才下来，先把货送到满剌加的官厂。到了那边，自然有人接。',
+    type: 'trade',
+    status: 'available',
+    reward: { gold: 420, fame: 14 },
+    portId: 21,
+    targetPortId: 12,
+    requiredGoods: [{ goodId: 10, quantity: 8 }],
+    minDay: 3,
+  },
 ]

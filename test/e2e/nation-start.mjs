@@ -76,11 +76,12 @@ await sleep(2200)
 await clickNext()
 await sleep(900)
 const s0 = await introState()
-check(s0.cards.length === 4, `开局有四张国别卡（${s0.cards.map(c => c.id).join(' / ')}）`)
+check(s0.cards.length === 5, `开局有五张国别卡（${s0.cards.map(c => c.id).join(' / ')}）`)
+check(s0.cards.some(c => c.id === 'china'), '有「大明」这一项（国内玩家要从广州出海）')
 check(s0.cards.filter(c => c.pressed).length === 1 && s0.cards.find(c => c.pressed)?.id === 'spain',
   `默认选中西班牙（${s0.cards.find(c => c.pressed)?.id}）—— 与老版本的开局一致`)
 check(s0.cards.every(c => c.w > 120 && c.h > 60), `四张卡都渲染出了尺寸（${Math.round(s0.cards[0].w)}×${Math.round(s0.cards[0].h)}）`)
-check(s0.cards.every(c => /葡|西|英|荷/.test(c.text) && /声望|船员|名号|士気|士气/.test(c.text)),
+check(s0.cards.every(c => /葡|西|英|荷|明/.test(c.text) && /声望|船员|名号|士气/.test(c.text)),
   '每张卡都写了国别、母港与一句机制（不是只有名字）')
 check(s0.story.length >= 3, `故事栏有三行（${s0.story.length} 行）`)
 check(s0.box !== null && s0.box.y >= 0 && s0.box.y + s0.box.h <= s0.vh + 1,
@@ -179,6 +180,87 @@ check(after.collected.includes('sao-brandao'), `开进圈里就记账（${JSON.s
 check(after.fame === 20, `名号 +20（实测 ${after.fame}）`)
 check(!after.mark, '兑现之后海图上的标记消失（一次性）')
 check(after.notice, '弹了一条回执（不是悄悄加数值）')
+
+// ---- ⑦ 再来一局：大明（广州出发）与它的第一段航路 ----
+/*
+ * 【为什么要另跑一局】"开局船的位置也不一样"这条要求最极端的就是大明：
+ * 五个国别里只有它从亚洲出发。这一段守三件事：
+ * ① 母港是真的广州（不是塞维利亚换个名字）；
+ * ② 海图上立着第一段航路的菱形标记（满剌加，段号 1）；
+ * ③ 开到满剌加之后，标记跳到第二段（蒙巴萨）。
+ */
+await page.evaluate(() => { localStorage.clear(); sessionStorage.clear() })
+await page.reload({ waitUntil: 'networkidle2', timeout: 60000 })
+await sleep(2400)
+await clickNext()
+await sleep(900)
+const hasChina = await page.evaluate(() => !!document.querySelector('[data-nation=china]'))
+check(hasChina, '选国页里有「大明」卡')
+await page.evaluate(() => document.querySelector('[data-nation=china]')?.click())
+await sleep(350)
+const cnIntro = await page.evaluate(() => {
+  const panel = document.querySelector('[data-testid=intro-screen]')
+  return [...(panel?.querySelectorAll('.bg-ocean-900\\/30 p') ?? [])].map(p => (p.textContent || '').trim())
+})
+check(cnIntro.join(' ').includes('广州'), `大明的故事写在广州（${cnIntro[0]?.slice(0, 16)}…）`)
+check(cnIntro.join(' ').includes('满剌加'), `故事里写着这一局的航路（${cnIntro[cnIntro.length - 1]}）`)
+
+for (let i = 0; i < 5; i++) { await clickNext(); await sleep(800) }
+await sleep(1400)
+const cn = await st()
+check(cn.nation === 'china' && cn.port === 21, `大明从广州出发（${cn.nation} / ${cn.port}）`)
+check(cn.ship === '清和号', `座船「${cn.ship}」`)
+check(cn.crew === 17, `船员 15+2=${cn.crew}`)
+
+for (let i = 0; i < 12; i++) {
+  const open = await page.evaluate(() => !!window.__dialogueStore?.getState?.().scriptId)
+  if (!open) break
+  await page.evaluate(() => window.__dialogueStore?.getState?.().advance?.())
+  await sleep(300)
+}
+await sleep(900)
+
+const mark1 = await page.evaluate(() => {
+  const m = document.querySelector('.story-mark-icon')
+  if (!m) return null
+  const b = m.getBoundingClientRect()
+  return {
+    step: (m.querySelector('.story-mark-step')?.textContent || '').trim(),
+    name: (m.querySelector('.story-mark-name')?.textContent || '').trim(),
+    pe: getComputedStyle(m).pointerEvents,
+    x: b.x, y: b.y,
+  }
+})
+check(!!mark1 && mark1.name === '满剌加', `海图上立着第一段航路（${mark1?.name}）`)
+check(mark1?.step === '1', `标记上写着段号 ${mark1?.step}`)
+check(mark1?.pe === 'none', `航路标记不吃点击（${mark1?.pe}）`)
+
+// 开到满剌加：标记跳到第二段
+await page.evaluate(() => {
+  const s = window.__gameStore.getState()
+  window.__gameStore.setState({
+    fleet: { ...s.fleet, day: s.fleet.day + 1, currentPortId: null, isSailing: true },
+    gamePhase: 'playing',
+    shipPosition: [2.19, 102.25],
+  })
+  window.__gameStore.getState().arriveAtPort(12)
+})
+await sleep(800)
+const afterStory = await page.evaluate(() => {
+  const s = window.__gameStore.getState()
+  const m = document.querySelector('.story-mark-icon')
+  return {
+    done: s.storyDone, fame: s.fleet.fame,
+    step: (m?.querySelector('.story-mark-step')?.textContent || '').trim(),
+    name: (m?.querySelector('.story-mark-name')?.textContent || '').trim(),
+    notice: (s.notifications || []).some(n => /满剌加/.test(n.title + n.message)),
+  }
+})
+check(afterStory.done.includes('china-1'), `到满剌加就记账（${JSON.stringify(afterStory.done)}）`)
+check(afterStory.fame === 12, `名号 +12（实测 ${afterStory.fame}）`)
+check(afterStory.name === '蒙巴萨' && afterStory.step === '2',
+  `标记跳到第二段（${afterStory.step} · ${afterStory.name}）`)
+check(afterStory.notice, '弹了一条航路回执')
 
 console.log(`\n报错：${errors.length ? errors.join(' | ') : '无'}`)
 check(errors.length === 0, '无页面报错')
