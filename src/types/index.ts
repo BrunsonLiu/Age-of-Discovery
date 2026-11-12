@@ -544,6 +544,8 @@ export interface GameState {
   storyDone: string[]
   /** 上一次朝贡是第几天（-99 = 从没交过）。只有大明的「交勘合」会写它 */
   lastTributeDay: number
+  /** 一共交过几次朝贡（不设期限，够 titleAt 次给名号） */
+  tributes: number
 }
 
 /**

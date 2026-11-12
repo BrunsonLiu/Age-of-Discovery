@@ -352,6 +352,39 @@ check(afterTribute.fame === fameBeforeTribute + 26, `名号 +26（${fameBeforeTr
 check(/天后再来/.test(afterTribute.btnText) && afterTribute.disabled === true,
   `交完立刻进冷却：按钮改口「${afterTribute.btnText}」且变灰`)
 
+// 再交两次 → 第三次给名号「勘合船主」
+await page.evaluate(() => {
+  const payDay = (d) => {
+    const s = window.__gameStore.getState()
+    window.__gameStore.setState({
+      fleet: {
+        ...s.fleet, day: d, currentPortId: 21, isSailing: false,
+        cargo: [{ goodId: 9, quantity: 6 }], usedCapacity: 6,
+      },
+      lastTributeDay: -99,
+    })
+    window.__gameStore.getState().payTribute()
+  }
+  payDay(window.__gameStore.getState().fleet.day + 21)
+  payDay(window.__gameStore.getState().fleet.day + 21)
+})
+await sleep(900)
+const titled = await page.evaluate(() => {
+  const s = window.__gameStore.getState()
+  const box = document.querySelector('[data-service-anchor=tribute]')
+  return {
+    tributes: s.tributes,
+    claimed: s.claimedVictories.includes('tribute-china'),
+    page: s.logbook.some(e => e.title === '称号 · 勘合船主'),
+    hint: (box?.textContent || '').replace(/\s+/g, ' ').trim(),
+  }
+})
+check(titled.tributes === 3, `一共交了 ${titled.tributes} 次`)
+check(titled.claimed, '第三次给名号「勘合船主」')
+check(titled.page, '册子里多了一页称号')
+check(/已交 3 次/.test(titled.hint) && /已经记在册子里/.test(titled.hint),
+  '面板写着「已交 3 次 · 名号已经记在册子里」（不用玩家自己算还差几次）')
+
 // 反向：葡萄牙船长的港口面板里没有这一块
 await page.evaluate(() => {
   window.__gameStore.getState().setActivePanel(null)

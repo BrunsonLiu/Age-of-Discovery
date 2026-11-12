@@ -55,6 +55,8 @@ export default function PortDetail() {
   const nation = useGameStore(s => s.nation)
   const lastTributeDay = useGameStore(s => s.lastTributeDay)
   const payTribute = useGameStore(s => s.payTribute)
+  const tributeCount = useGameStore(s => s.tributes)
+  const claimedVictories = useGameStore(s => s.claimedVictories)
 
   const portId = fleet.currentPortId || selectedPortId
   const port = ports.find(p => p.id === portId)
@@ -316,6 +318,15 @@ export default function PortDetail() {
                     {tribute.cooldownLeft > 0 ? `${tribute.cooldownLeft} 天后再来` : tribute.rule.label}
                   </ActionButton>
                 </div>
+                {/*
+                  【别让玩家做算术】交够几次给名号，直接把"已交 N 次 · 再交 M 次"写出来。
+                  名号本身走 claimedVictories 去重，所以这里也读它：拿到之后改口"名号已得"。
+                */}
+                <p className="text-gold-300 text-xs font-serif">
+                  {claimedVictories.includes(tribute.rule.title.key)
+                    ? `已交 ${tributeCount} 次 · 名号「${tribute.rule.title.name}」已经记在册子里`
+                    : `已交 ${tributeCount} 次 · 再交 ${Math.max(0, tribute.rule.titleAt - tributeCount)} 次得名号「${tribute.rule.title.name}」`}
+                </p>
                 <p className="text-gold-400 text-xs font-serif">
                   {tribute.ready
                     ? '市舶司收下香料，记下你的船名。'

@@ -111,6 +111,10 @@ export interface TributeRule {
   gain: { fame: number; morale: number; faction: Partial<Record<FactionId, number>> }
   /** 两次朝贡之间至少隔多少天 */
   cooldownDays: number
+  /** 交够几次给一个专属名号（不设期限：这是长期的事） */
+  titleAt: number
+  /** 那个名号（与航路 finale 同一档：不改数值，只决定"后世怎么记载你"） */
+  title: { key: string; name: string; desc: string }
   /** 界面上的动作名 */
   label: string
   /** 回赐的一句 flavor */
@@ -380,6 +384,17 @@ export const NATIONS: readonly Nation[] = [
       goods: [{ goodId: 9, qty: 6 }],
       gain: { fame: 26, morale: 8, faction: { scholars: 12 } },
       cooldownDays: 20,
+      /*
+       * 交够三次给一个名号。
+       * 【为什么是三次】一次太轻（跑一趟满剌加就够），五次太重（要 100 天以上）。
+       * 三次正好是"这条航路你走过好几趟了"的量级，也和其它称号的门槛同一档。
+       */
+      titleAt: 3,
+      title: {
+        key: 'tribute-china',
+        name: '勘合船主',
+        desc: '市舶司的簿子上，你的船名出现了三次。往后进珠江口，验船的吏员会先向你拱手。',
+      },
       label: '交勘合',
       gift: '市舶司收下六担香料，回赐两匹宫缎——还有一句"下回带货来"。',
     },  },

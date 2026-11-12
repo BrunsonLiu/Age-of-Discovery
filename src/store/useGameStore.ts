@@ -276,6 +276,8 @@ const initialGameState: GameState = {
   storyDone: [],
   /** 上一次朝贡是第几天（-99 = 从没交过；只有大明用） */
   lastTributeDay: -99,
+  /** 一共交过几次朝贡（够 titleAt 次给名号） */
+  tributes: 0,
 }
 
 interface GameStore extends GameState {
@@ -1327,6 +1329,7 @@ export const useGameStore = create<GameStore>()(
           collectedLegends: [],
           storyDone: [],
           lastTributeDay: -99,
+          tributes: 0,
         })
         /*
          * 海图的初始视野默认钉在伊比利亚（[34,-9]，见 useMapStore）。
@@ -2446,11 +2449,23 @@ export const useGameStore = create<GameStore>()(
           (acc, [k, v]) => ({ ...acc, [k]: Math.max(-100, Math.min(100, (acc[k as FactionId] ?? 0) + (v ?? 0))) }),
           { ...state.factionRep },
         )
+        const tributes = state.tributes + 1
+        /*
+         * 交够 titleAt 次：给一个专属名号（与航路 finale 同一档——不改数值，
+         * 只决定"后世怎么记载你"，而且真的在册子里多一页）。
+         * 去重仍走 claimedVictories：导入旧存档、重复结算都不会重发。
+         */
+        const titleDue = tributes >= st.rule.titleAt && !state.claimedVictories.includes(st.rule.title.key)
+        const titleClaim: VictoryClaim | null = titleDue
+          ? { key: st.rule.title.key, name: st.rule.title.name, desc: st.rule.title.desc }
+          : null
         useFxStore.getState().fx(
           {
             kind: 'banner', tone: 'gold',
-            text: `进贡 · ${st.rule.label}`,
-            sub: `名号 +${st.rule.gain.fame} · 士气 +${st.rule.gain.morale}`,
+            text: titleClaim ? `称号 · ${titleClaim.name}` : `进贡 · ${st.rule.label}`,
+            sub: titleClaim
+              ? `第 ${tributes} 次朝贡 · 册子里多了一页`
+              : `名号 +${st.rule.gain.fame} · 士气 +${st.rule.gain.morale} · 第 ${tributes} 次`,
           },
           'milestone',
         )
@@ -2458,13 +2473,32 @@ export const useGameStore = create<GameStore>()(
           fleet: newFleet,
           factionRep,
           lastTributeDay: state.fleet.day,
-          notifications: [...state.notifications, {
-            id: `tribute-${state.fleet.day}`,
-            type: 'history' as const,
-            title: `进贡 · ${st.rule.label}`,
-            message: st.rule.gift,
-            timestamp: Date.now(),
-          }],
+          tributes,
+          ...(titleClaim
+            ? {
+                claimedVictories: [...state.claimedVictories, titleClaim.key],
+                logbook: appendLogbook(state.logbook, makeTitleEntry(titleClaim, state.fleet.day)),
+              }
+            : {}),
+          notifications: [
+            ...state.notifications,
+            {
+              id: `tribute-${state.fleet.day}`,
+              type: 'history' as const,
+              title: `进贡 · ${st.rule.label}`,
+              message: st.rule.gift,
+              timestamp: Date.now(),
+            },
+            ...(titleClaim
+              ? [{
+                  id: `tribute-title-${titleClaim.key}`,
+                  type: 'achievement' as const,
+                  title: `称号 · ${titleClaim.name}`,
+                  message: titleClaim.desc,
+                  timestamp: Date.now(),
+                }]
+              : []),
+          ],
         })
       }),
 
@@ -2959,6 +2993,13 @@ export const useGameStore = create<GameStore>()(
         if (version < 19) {
           if (pState.lastTributeDay === undefined) pState.lastTributeDay = -99
         }
+        /*
+         * v19→v20: 朝贡次数（够 3 次给名号）。
+         * 老存档补 0 是诚实的：册子上确实没记过你交过几次，不能替玩家虚报。
+         */
+        if (version < 20) {
+          if (pState.tributes === undefined) pState.tributes = 0
+        }
         return persistedState
       },
       partialize: (state) => ({
@@ -3005,6 +3046,7 @@ export const useGameStore = create<GameStore>()(
         collectedLegends: state.collectedLegends,
         storyDone: state.storyDone,
         lastTributeDay: state.lastTributeDay,
+        tributes: state.tributes,
       }),
       // 存档软锁修复：存档里若停在事件阶段但事件未持久化，重开时落回 playing
       merge: (persisted, current) => {
@@ -3026,6 +3068,7 @@ export const useGameStore = create<GameStore>()(
         merged.collectedLegends = merged.collectedLegends ?? []
         merged.storyDone = merged.storyDone ?? []
         merged.lastTributeDay = merged.lastTributeDay ?? -99
+        merged.tributes = merged.tributes ?? 0
         return merged
       },
     }

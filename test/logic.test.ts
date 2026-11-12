@@ -11001,6 +11001,8 @@ console.log('\n== 天数口径守卫 ==')
   assert(rule.portId === china.portId, '朝贡只能在母港（广州）交')
   assert(!('gold' in rule.gain), '回赐里没有金币')
   assert(rule.gain.fame > 0 && rule.cooldownDays >= 7, `回赐有名号、冷却 ${rule.cooldownDays} 天`)
+  assert(rule.titleAt >= 2 && rule.titleAt <= 5, `交够 ${rule.titleAt} 次给名号（一次太轻、五次太重）`)
+  assert(rule.title.key === 'tribute-china' && rule.title.name.length > 0, `名号是「${rule.title.name}」`)
   for (const g of rule.goods) {
     assert(!!goods.find(x => x.id === g.goodId), `要的货 id=${g.goodId} 真的存在`)
     assert(g.qty > 0, `要的件数 ${g.qty} 是正数`)
@@ -11045,6 +11047,38 @@ console.log('\n== 天数口径守卫 ==')
   const fameBefore = useGameStore.getState().fleet.fame
   useGameStore.getState().payTribute()
   assert(useGameStore.getState().fleet.fame === fameBefore, '同一天连点第二次不结算（冷却挡得住）')
+
+  // 交够三次：给名号「勘合船主」，只发一次
+  {
+    useGameStore.getState().initGame('merchant', 'captain', 'china')
+    const run = (d: number) => {
+      const s0 = useGameStore.getState()
+      useGameStore.setState({
+        fleet: { ...s0.fleet, day: d, cargo: [{ goodId: 9, quantity: 6 }], currentPortId: 21, isSailing: false },
+        lastTributeDay: -99,
+      })
+      useGameStore.getState().payTribute()
+    }
+    run(30)
+    assert(useGameStore.getState().tributes === 1, `交一次记 1 次（${useGameStore.getState().tributes}）`)
+    run(52)
+    assert(useGameStore.getState().tributes === 2, '交两次记 2 次')
+    const beforeTitle = useGameStore.getState().claimedVictories.includes('tribute-china')
+    assert(!beforeTitle, '两次还没有名号（门槛是 3）')
+    run(75)
+    const titled = useGameStore.getState()
+    assert(titled.tributes === 3, `交三次（${titled.tributes}）`)
+    assert(titled.claimedVictories.includes('tribute-china'), '第三次给名号勘合船主')
+    const tPage = titled.logbook.find(e => e.title === '称号 · 勘合船主')
+    assert(!!tPage && tPage.kind === 'title', `册子里多了一页「称号 · 勘合船主」`)
+    // 第四次不再发一次名号
+    run(98)
+    assert(useGameStore.getState().tributes === 4, '次数继续累加（4）')
+    assert(useGameStore.getState().claimedVictories.filter(k => k === 'tribute-china').length === 1,
+      '名号只发一次')
+    assert(useGameStore.getState().logbook.filter(e => e.title === '称号 · 勘合船主').length === 1,
+      '册子里只有一页')
+  }
 
   // 葡萄牙船长在广州也交不了（规则根本不挂在他身上）
   useGameStore.getState().initGame('merchant', 'captain', 'portugal')
