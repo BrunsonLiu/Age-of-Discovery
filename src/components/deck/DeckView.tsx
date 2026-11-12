@@ -1083,6 +1083,12 @@ export default function DeckView() {
     scene.add(harbor.group)
     // 取证句柄：巡检要能量岸线的可见性/坐标（与海图的 __map3d 同一做法）
     ;(window as unknown as { __deckScene?: THREE.Scene }).__deckScene = scene
+    /*
+     * 渲染统计句柄：`renderer.info` 是判断"卡在哪"的唯一入口 ——
+     * draw call 数（CPU 侧开销）、三角形数、program 数（着色器变体）。
+     * 探针 `.workbuddy/deck-perf.mjs` 读它，别再靠"感觉卡"。
+     */
+    ;(window as unknown as { __deckRenderer?: THREE.WebGLRenderer }).__deckRenderer = renderer
     ;(window as unknown as { __deckCam?: THREE.Camera }).__deckCam = camera
     ;(window as unknown as { __THREE?: unknown }).__THREE = THREE
 
@@ -1369,12 +1375,50 @@ export default function DeckView() {
     let raf = 0
     let frame = 0
     let tPrev = performance.now() / 1000
+    /*
+     * ---- 自适应分辨率（"很卡"的第一道防线）----
+     *
+     * 【为什么必须有】这个视角的像素成本很高：整块海面（多层噪声 + 菲涅尔）、
+     * 整块天空（云是 6 次噪声采样）、船（几百次 draw call）、再叠 bloom + FXAA
+     * + 颗粒。桌面独显跑满 60 很容易，**核显/轻薄本会掉到 25~35** —— 而玩家
+     * 在这里要"站在甲板上慢慢看"，卡一下就会被记成"这游戏很卡"。
+     *
+     * 做法：每 40 帧统计平均帧时，> 23ms 就按 12% 的步长降 pixelRatio（下限 0.6），
+     * < 17.5ms 且有余量再慢慢升回来。降的是**内部分辨率**，CSS 尺寸不变，
+     * 观感是"稍微柔一点"，而不是掉帧。
+     * 阈值给 23ms 而不是 16.7：留一点抖动余量，避免在 55~60 之间来回跳。
+     */
+    const basePR = Math.min(window.devicePixelRatio, 1.5)
+    let prScale = 1
+    let accT = 0
+    let accN = 0
+    let lastAdjust = 0
+    const adaptResolution = (dt: number, now: number) => {
+      accT += dt
+      accN++
+      // 12 帧就够判断（60fps 下 0.2 秒；低端机 3 秒内也能降下第一档）
+      if (accN < 12) return
+      const avg = accT / accN
+      accT = 0
+      accN = 0
+      if (now - lastAdjust < 2) return
+      if (avg > 0.023 && prScale > 0.6) {
+        prScale = Math.max(0.6, prScale - 0.12)
+        renderer.setPixelRatio(basePR * prScale)
+        lastAdjust = now
+      } else if (avg < 0.0175 && prScale < 0.999) {
+        prScale = Math.min(1, prScale + 0.08)
+        renderer.setPixelRatio(basePR * prScale)
+        lastAdjust = now
+      }
+    }
     const tick = () => {
       frame++
       const t = performance.now() / 1000
       // dt 钳在 0.1 秒：切后台回来时一帧可能是几十秒，会让平滑一步跳完
       const dt = Math.min(0.1, Math.max(0, t - tPrev))
       tPrev = t
+      adaptResolution(dt, t)
       const st = useGameStore.getState()
       /*
        * 港内系数（0.34 贴岸停泊 … 1 外海）：**海面、船姿态、船高、尾迹四处共用**

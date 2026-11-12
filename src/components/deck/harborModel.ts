@@ -543,7 +543,15 @@ export function createDeckHarbor(): DeckHarbor {
 
   /* ---- 栈桥（板 + 桩） ---- */
   const pierGeo = shadeFaces(new THREE.BoxGeometry(1, 1, 1))
-  const piers = new THREE.InstancedMesh(pierGeo, pierMat, MAX_PIER)
+  /*
+   * 栈桥板：**拆成一块块横板**（池放大到 16 倍）。
+   *
+   * 【为什么】一条 2.2~4.8 单位长的整板，在掠射角下没有任何横向信息 ——
+   * 屏幕上是"一块棕色的长条"。拆成 0.32 宽的横板、板间留 0.014 的缝之后，
+   * 那一排横线就是"木栈桥"。与岸壁压顶石同一个道理：分节 > 细节。
+   */
+  const MAX_PLANK = MAX_PIER * 16
+  const piers = new THREE.InstancedMesh(pierGeo, pierMat, MAX_PLANK)
   piers.name = 'deck-harbor-piers'
   piers.frustumCulled = false
   group.add(piers)
@@ -553,6 +561,18 @@ export function createDeckHarbor(): DeckHarbor {
    */
   shadeFaces(new THREE.CylinderGeometry(0.08, 0.08, 1, 5))
   pileGeo.translate(0, -0.5, 0)
+  /*
+   * 护木：栈桥两侧贴水面的一排竖木条（船靠上来撞的是它，不是桩）。
+   * 每根宽 0.035、高 0.2，从水下 0.06 到板面下 —— 屏幕上是栈桥侧面的一排竖线，
+   * 比板缝更显眼。
+   */
+  const fenderGeo = shadeFaces(new THREE.BoxGeometry(1, 1, 1), 0.55)
+  fenderGeo.translate(0, 0.5, 0)
+  const fenders = new THREE.InstancedMesh(fenderGeo, pierMat, MAX_PIER * 16)
+  fenders.name = 'deck-harbor-fenders'
+  fenders.frustumCulled = false
+  group.add(fenders)
+
   const piles = new THREE.InstancedMesh(pileGeo, pierMat, MAX_PIER * 6)
   piles.name = 'deck-harbor-piles'
   piles.frustumCulled = false
@@ -1424,18 +1444,37 @@ export function createDeckHarbor(): DeckHarbor {
     for (let i = wi; i < MAX_HOUSE * 3; i++) wp.setXYZ(i, 0, -100, 0)
     wp.needsUpdate = true
 
-    /* ---- 栈桥 + 桩 ---- */
+    /* ---- 栈桥 + 桩 + 护木 ---- */
     const nP = Math.min(MAX_PIER, pl.piers.length)
     let pi = 0
+    let ki = 0
+    let fdi = 0
     for (let i = 0; i < MAX_PIER; i++) {
       const p = i < nP ? pl.piers[i] : null
-      if (!p) { piers.setMatrixAt(i, zero); continue }
+      if (!p) continue
       const len = Math.abs(p.z1 - p.z0)
-      dummy.position.set(p.x, deckY + 0.02, (p.z0 + p.z1) * 0.5)
-      dummy.rotation.set(0, 0, 0)
-      dummy.scale.set(p.w, 0.12, len)
-      dummy.updateMatrix()
-      piers.setMatrixAt(i, dummy.matrix)
+      /* 板：沿 z 拆成 0.32 宽的一块块，板间留 0.014 的缝 */
+      const nPl = Math.min(16, Math.max(3, Math.round(len / 0.34)))
+      for (let k = 0; k < nPl && ki < MAX_PLANK; k++) {
+        const za = p.z0 + (p.z1 - p.z0) * (k / nPl)
+        const zb = p.z0 + (p.z1 - p.z0) * ((k + 1) / nPl)
+        dummy.position.set(p.x, deckY + 0.02, (za + zb) * 0.5)
+        dummy.rotation.set(0, 0, 0)
+        dummy.scale.set(p.w, 0.1, Math.max(0.02, Math.abs(zb - za) - 0.014))
+        dummy.updateMatrix()
+        piers.setMatrixAt(ki++, dummy.matrix)
+      }
+      /* 护木：两侧各 6 根，贴水面，从 −0.06 到板下 */
+      for (let k = 0; k < 6; k++) {
+        const zz = p.z0 + (p.z1 - p.z0) * ((k + 0.5) / 6)
+        for (const sx of [-1, 1]) {
+          dummy.position.set(p.x + sx * (p.w * 0.5 + 0.018), -0.06, zz)
+          dummy.rotation.set(0, 0, 0)
+          dummy.scale.set(0.035, deckY + 0.07, 0.05)
+          dummy.updateMatrix()
+          fenders.setMatrixAt(fdi++, dummy.matrix)
+        }
+      }
       // 每 1.2 单位一对桩
       const np = Math.min(3, Math.max(1, Math.round(len / 1.2)))
       for (let k = 0; k < np && pi < MAX_PIER * 6; k++) {
@@ -1450,6 +1489,10 @@ export function createDeckHarbor(): DeckHarbor {
       }
     }
     piers.instanceMatrix.needsUpdate = true
+    for (let i = ki; i < MAX_PLANK; i++) piers.setMatrixAt(i, zero)
+    piers.instanceMatrix.needsUpdate = true
+    for (let i = fdi; i < MAX_PIER * 16; i++) fenders.setMatrixAt(i, zero)
+    fenders.instanceMatrix.needsUpdate = true
     for (let i = pi; i < MAX_PIER * 6; i++) piles.setMatrixAt(i, zero)
     piles.instanceMatrix.needsUpdate = true
 

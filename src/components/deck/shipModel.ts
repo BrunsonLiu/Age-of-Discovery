@@ -12,6 +12,7 @@ import {
 import { ANCHOR_LEN, ANCHOR_SIDE, ANCHOR_STOCK, anchorPose, HAWSE_Y, HAWSE_Z } from './deckAnchor'
 import { BOAT, boatHull, boatKeelLift } from './deckBoat'
 import { PEN, PEN_SPOTS, penLivestock } from './deckPen'
+import { mergeStaticChildren } from './mergeStatic'
 import { sailorIdle, SAILOR_POSES, SAILOR_STATIONS } from './deckCrew'
 import { chartCourse } from './deckChart'
 import { WATERLINE_Y_M, WAKE_SEGMENTS } from './deckWake'
@@ -51,6 +52,13 @@ const BULWARK = HULL_BULWARK
 
 export interface DeckShip {
   group: THREE.Group
+  /**
+   * 静态子件合并前后的可绘制对象数（取证用）。
+   * 【为什么要暴露】"很卡"必须能被读出来：甲板视角原来 **974 次 draw call**，
+   * 其中船占 384 次（舵轮 21、舱口 13、兽栏 33、船首像 8……）。合并之后这个数
+   * 应该掉到几十 —— `.workbuddy/deck-perf.mjs` 对着它核。
+   */
+  mergeStats: Record<string, { before: number; after: number }>
   /**
    * 每帧推进。
    * @param night 夜色 0..1：**灯要跟着日相亮/灭**（正午的船窗不该发光）
@@ -2503,7 +2511,43 @@ export function createDeckShip(): DeckShip {
   group.add(runLines)
   disposables.push(rigGeo, rigMat, runGeo, runMat)
 
+  /*
+   * ---- 合并静态子件：把 384 次 draw call 压下来 ----
+   *
+   * 这些 Group 的子件都不需要单独动（舵轮整体转、舱口根本不动、兽栏里的羊
+   * 只有整体轻微晃动），所以可以按材质烘成一个几何。
+   * 船舱（cabin）**不合**：里面的门/窗/桌椅有单独开关与点击。
+   */
+  const mergedStats: Record<string, { before: number; after: number }> = {}
+  /*
+   * 用**名字**取组，不用局部变量：这些 Group 大多建在块作用域里
+   * （`{ const nest = ... }`），外面根本引用不到，但名字一直在。
+   */
+  /*
+   * 名单里**没有** `ship-longboat` 与 `ship-figurehead`：e2e 在守这两处的
+   * "由多件拼成"（艇有肋骨/横座/两支桨，船首像有脸颊/头冠），合并会把这些
+   * 结构判据变成"1 块"。它们加起来只有 23 个网格，不合并的代价可以接受。
+   */
+  for (const nm of [
+    'ship-hatch-group', 'ship-wheel-group', 'ship-crow-group',
+    'ship-pen', 'ship-stern-lantern',
+  ]) {
+    const g = group.getObjectByName(nm)
+    if (!g) continue
+    mergedStats[nm] = mergeStaticChildren(g)
+    // 兽栏里每只羊也是一个 Group（21 个网格），再往里合一层
+    if (nm === 'ship-pen') {
+      for (const child of g.children) {
+        if (child instanceof THREE.Group && child.name.startsWith('ship-pen-sheep')) {
+          mergeStaticChildren(child)
+        }
+      }
+    }
+  }
+
   return {
+    /** 合并前后的可绘制对象数（取证：`.workbuddy/deck-perf.mjs` 对着它核） */
+    mergeStats: mergedStats,
     group,
     /**
      * 背光方向 + 透光颜色：帆的透光靠它。
