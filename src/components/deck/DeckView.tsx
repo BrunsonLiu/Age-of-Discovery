@@ -1233,6 +1233,12 @@ export default function DeckView() {
     // 取证句柄：巡检要能量岸线的可见性/坐标（与海图的 __map3d 同一做法）
     ;(window as unknown as { __deckScene?: THREE.Scene }).__deckScene = scene
     /*
+     * 相机也要暴露：定位"这一块黑的是什么"最快的办法是**从屏幕坐标反查对象**
+     * （`.workbuddy/pick.mjs` 用 Raycaster 打一条线过去，打印命中的对象链）。
+     * 光看截图只能猜，猜错一次就是半小时。
+     */
+    ;(window as unknown as { __deckCamera?: THREE.PerspectiveCamera }).__deckCamera = camera
+    /*
      * 渲染统计句柄：`renderer.info` 是判断"卡在哪"的唯一入口 ——
      * draw call 数（CPU 侧开销）、三角形数、program 数（着色器变体）。
      * 探针 `.workbuddy/deck-perf.mjs` 读它，别再靠"感觉卡"。
@@ -2141,6 +2147,7 @@ export default function DeckView() {
       renderer.dispose()
       renderer.domElement.remove()
       delete (window as unknown as { __deckScene?: THREE.Scene }).__deckScene
+      delete (window as unknown as { __deckCamera?: THREE.PerspectiveCamera }).__deckCamera
       delete (window as unknown as { __deckWalk?: unknown }).__deckWalk
     }
   }, [open])

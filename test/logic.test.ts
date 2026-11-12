@@ -11845,6 +11845,19 @@ console.log('\n== 天数口径守卫 ==')
   assert(/makePlankedTop\(7\.2, 0\.28, 5\.8, 12\)/.test(smSrc), '船尾楼顶 12 条板')
 
   /*
+   * 帆的轮廓是弧的（侧边指数收分 + 帆脚下垂），但**必须钳住 t01**：
+   * y = pos.getY/(sh/2) 的浮点误差会让最底排变成 −1.0000001，
+   * Math.pow(负数, 1.5) = NaN → GPU 上渲染成一块**纯黑的三角**
+   * （实测：右上帆下方 5×5 的 0,0,0，raycast 距离也是 NaN）。
+   */
+  assert(/const t01 = Math\.min\(1, Math\.max\(0, \(y \+ 1\) \/ 2\)\)/.test(smSrc),
+    '帆的 t01 钳在 [0,1]（pow 负数=NaN，会在画面上烧出一块纯黑）')
+  assert(/Math\.pow\(t01, 1\.5\)/.test(smSrc), '侧边（leech）按指数收分 —— 直线读作三合板')
+  assert(/const foot = y < -0\.4 \?/.test(smSrc), '帆脚（foot）下垂成弧')
+  assert(/const age = hash01\(seed \* 1\.7 \+ 3\.1\)/.test(smSrc),
+    '每张帆的帆布年份不同（三张同色读作一个模子印的布）')
+
+  /*
    * 屋脊瓦：屋顶在甲板上是**平视**的一个三角，两坡的分界只靠顶点色差 2% ——
    * 读不出来。专用脊瓦（凸起、亮 20%）是屋顶轮廓上唯一的一条硬线。
    */

@@ -1695,15 +1695,31 @@ export function createDeckShip(): DeckShip {
    * 顶点着色器里同时改 position 与 normal，逆光时布面的明暗才跟着变。
    */
   const makeSailMaterial = (seed: number, flapAxis: THREE.Vector3, strength: number) => {
+    /*
+     * 每张帆的**帆布年份**不同：新旧帆在阳光下差 5~10%，而且旧帆偏灰、新帆偏
+     * 暖白。三张帆同色同亮时，从甲板看过去是一排**同一个模子印出来的布**。
+     * 幅度压得很小（±5% 亮度、±2% 色相）：真实的帆装是同一个月换的，不会一张
+     * 雪白一张土黄；只要"不是同一个数"，眼睛就会把它们分开。
+     */
+    const age = hash01(seed * 1.7 + 3.1)
+    const tone = 0.95 + 0.10 * age
     const mat = new THREE.MeshStandardMaterial({
       map: sailTex,
       alphaMap: sailAlpha,
       alphaTest: 0.32,
-      color: 0xf0e7cf,
+      color: new THREE.Color(0.94 * tone, 0.906 * tone * (0.995 + 0.02 * age), 0.812 * tone * (0.97 + 0.06 * age)),
       emissiveMap: sailTex,
-      // 自发光偏冷、很弱：只保证背光面不是纯黑，不参与染色
-      emissive: 0x141a20,
-      emissiveIntensity: 0.28,
+      /*
+       * 自发光（= 布的**透射环境光**）：偏冷、很弱，只保证背光面不是纯黑。
+       *
+       * 【为什么从 0x141a20/0.28 提到 0x2e2a22/0.46】帆是**双面**的：受风鼓起来
+       * 之后，帆脚附近能看见布的内侧，那一面是对着暗处的。0.28 的地板在这里
+       * 只出到 4/255 —— 放大截图里每张帆的下方都是**一条纯黑的横带**，读作
+       * "布破了一个洞"。真实的帆布会透过来的天光，内侧是暖灰而不是黑。
+       * 提亮之后地板约 14/255，配合上方的受光面，才有"布有厚度"的读感。
+       */
+      emissive: 0x2e2a22,
+      emissiveIntensity: 0.46,
       side: THREE.DoubleSide,
       roughness: 0.92,
       metalness: 0,
@@ -1921,10 +1937,27 @@ export function createDeckShip(): DeckShip {
        *    原来整张帆是一个规整的四边形，像挂在晾衣绳上的床单）。
        * ③ 帆脚弧（roach）：底边中间略微上收，布不会像被剪过一样平直。
        */
-      const taper = 1 - SAIL_TAPER * (1 - (y + 1) / 2)
+      /*
+       * 【第 124 轮：轮廓必须**是弧的**】上一版三条边都是直线（taper 线性、
+       * 帆脚只在下缘 45% 加 6% 的位移），放大看是一张**三合板**：布边笔直、
+       * 下沿平得像被剪过。真实帆的四条边都带弧：
+       *   ① 侧边（leech）向内收，而且越靠近帆脚收得越快（指数 1.5）；
+       *   ② 帆脚（foot）在两侧系点之间**下垂**成弧（受风时中间最鼓）；
+       *   ③ 帆顶（head）不弧 —— 它是绑在一根直木桁上的，直边才对。
+       * 三处叠加之后，同一张帆在轮廓上就已经和"两个矩形"没有关系了。
+       */
+      /*
+       * 【必须钳住】y 是 `pos.getY(i) / (sh/2)`，浮点误差会让最底排变成
+       * −1.0000001 —— 于是 t01 = −5e-8，而 **Math.pow(负数, 1.5) = NaN**。
+       * NaN 顶点在 GPU 上渲染成**一块纯黑的三角**（实测：右上帆下方一块
+       * 5×5 的 0,0,0，raycast 打过去距离也是 NaN）。钳到 [0,1] 就没有了。
+       */
+      const t01 = Math.min(1, Math.max(0, (y + 1) / 2))
+      const taper = 1 - SAIL_TAPER * (1 - Math.pow(t01, 1.5))
       pos.setX(i, pos.getX(i) * taper)
-      const foot = y < -0.55 ? -0.06 * (1 - Math.abs(x)) * sh : 0
-      pos.setZ(i, Math.cos(x * Math.PI * 0.5) * Math.cos(y * Math.PI * 0.5) * (sw * 0.11))
+      const foot = y < -0.4 ? -0.10 * (1 - Math.pow(Math.min(1, Math.abs(x)), 1.4)) * sh
+        * Math.max(0, 1 - (y + 0.4) / 0.6) : 0
+      pos.setZ(i, Math.cos(x * Math.PI * 0.5) * Math.cos(y * Math.PI * 0.5) * (sw * 0.13))
       pos.setY(i, pos.getY(i) + foot)
     }
     pos.needsUpdate = true
