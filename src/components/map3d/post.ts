@@ -100,13 +100,71 @@ void main() {
 }
 `
 
+/**
+ * 画布颗粒强度（编码后的 srgb 域的加法幅度）。
+ * 0.022 ≈ ±5.6/255：在 100% 缩放、JPEG 压缩后仍能读出"纸/布"的颗粒，
+ * 又不至于在纯色天空上变成噪点。
+ * 0.03 时整幅画面像"用了 1600 ISO"（实测）。
+ */
+const GRAIN = 0.022
+/** 暗角强度：四角压 16% */
+const VIGNETTE = 0.2
+
 const COMPOSITE_FRAG = /* glsl */ `
 uniform sampler2D tScene;
 uniform sampler2D tBloom;
 uniform float uBloom;
 uniform float uShoulder;
 uniform float uSplit;
+uniform float uGrain;
+uniform float uVignette;
+uniform vec2 uTexel;
+uniform float uFxaa;
 varying vec2 vUv;
+
+float hash21(vec2 p) {
+  return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+}
+
+float fxLuma(vec3 c) { return dot(c, vec3(0.2126, 0.7152, 0.0722)); }
+
+/*
+ * ---- FXAA（无 MSAA 时的抗锯齿）----
+ *
+ * 【为什么必须有】低模几何全是硬边缘：屋檐、桅杆、绳索、帆边、窗框。1:1 渲染
+ * 时它们是一级一级的台阶，整幅画面读作"早期网页 3D"（这是"粗糙"里最容易量化、
+ * 也最容易根治的一顶）。
+ *
+ * 【为什么和 MSAA 互斥】GPU 上 MSAA 4x 更准（对细线尤其），开着 FXAA 反而把
+ * 已经干净的边缘再糊一遍；软件渲染（swiftshader，e2e 与探针）下 MSAA 会把
+ * 帧率打到个位数，就让 FXAA 顶上。
+ *
+ * 【为什么阈值按"线性亮度"给】tScene 是硬件线性化的 sRGB 纹理，采样出来是
+ * 线性值 —— 线性域里暗部数值很小，按 srgb 习惯给 0.06 会漏掉一大半边缘。
+ * 0.035 是实测：能把屋面/桅杆的台阶压平，又不会把远处的窗格糊成一片。
+ */
+vec3 fxaaSample(vec2 uv) {
+  vec3 rgbM = texture2D(tScene, uv).rgb;
+  vec3 rgbNW = texture2D(tScene, uv + vec2(-1.0, -1.0) * uTexel).rgb;
+  vec3 rgbNE = texture2D(tScene, uv + vec2(1.0, -1.0) * uTexel).rgb;
+  vec3 rgbSW = texture2D(tScene, uv + vec2(-1.0, 1.0) * uTexel).rgb;
+  vec3 rgbSE = texture2D(tScene, uv + vec2(1.0, 1.0) * uTexel).rgb;
+  float lM = fxLuma(rgbM);
+  float lNW = fxLuma(rgbNW), lNE = fxLuma(rgbNE), lSW = fxLuma(rgbSW), lSE = fxLuma(rgbSE);
+  float lMin = min(lM, min(min(lNW, lNE), min(lSW, lSE)));
+  float lMax = max(lM, max(max(lNW, lNE), max(lSW, lSE)));
+  if (lMax - lMin < 0.035) return rgbM;
+  vec2 dir = vec2(-((lNW + lNE) - (lSW + lSE)), ((lNW + lSW) - (lNE + lSE)));
+  float reduce = max((lNW + lNE + lSW + lSE) * 0.03125, 0.0078125);
+  float rcpMin = 1.0 / (min(abs(dir.x), abs(dir.y)) + reduce);
+  dir = clamp(dir * rcpMin, vec2(-8.0), vec2(8.0)) * uTexel;
+  vec3 a = 0.5 * (texture2D(tScene, uv + dir * (1.0 / 3.0 - 0.5)).rgb
+                + texture2D(tScene, uv + dir * (2.0 / 3.0 - 0.5)).rgb);
+  vec3 b = a * 0.5 + 0.25 * (texture2D(tScene, uv - dir * 0.5).rgb
+                           + texture2D(tScene, uv + dir * 0.5).rgb);
+  float lB = fxLuma(b);
+  return (lB < lMin || lB > lMax) ? a : b;
+}
 
 /*
  * 【为什么要自己写 sRGB 编码，不用 three 的 colorspace_fragment】
@@ -122,7 +180,7 @@ vec3 srgbEncode(vec3 c) {
 }
 
 void main() {
-  vec3 base = texture2D(tScene, vUv).rgb;
+  vec3 base = uFxaa > 0.5 ? fxaaSample(vUv) : texture2D(tScene, vUv).rgb;
   vec3 bloom = texture2D(tBloom, vUv).rgb;
   /* 光晕略偏暖：灯的周围本来就该是暖的，纯白糊开会读成雾 */
   bloom *= mix(vec3(1.0), vec3(1.06, 1.0, 0.94), 0.5);
@@ -145,7 +203,26 @@ void main() {
   vec3 highTint = vec3(0.022, 0.010, -0.012);
   col += highTint * smoothstep(0.45, 0.95, luma) * uSplit;
 
-  gl_FragColor = vec4(srgbEncode(clamp(col, 0.0, 1.0)), 1.0);
+  vec3 outc = srgbEncode(clamp(col, 0.0, 1.0));
+  /*
+   * ---- 画布颗粒 + 暗角（介质质感）----
+   *
+   * 【为什么这一步比继续加几何有效】甲板视角是纯几何 + 平涂材质，而另外三个界面
+   * 是羊皮纸海图与油画 —— 差距不在"缺哪个物件"，在**介质**。一层 ±3/255 的
+   * 静止颗粒让白墙、红瓦、天空这些大面积纯色块立刻有"印在纸上"的读感。
+   *
+   * 【为什么用 gl_FragCoord 而不是 vUv × 时间】① 颗粒必须**随屏幕像素固定**，
+   * 跟着 uv 走会随相机移动而在世界坐标里滑动（像脏镜头在飘）；
+   * ② 不能随时间变，否则 60fps 下整幅画面在闪（噪点闪烁比没有颗粒更糟）。
+   * 两个尺度（1× 与 0.37×）叠一点低频，才像纸纹而不是电视雪花。
+   */
+  float g = hash21(floor(gl_FragCoord.xy)) * 0.62
+          + hash21(floor(gl_FragCoord.xy * 0.37) + 11.3) * 0.38;
+  outc += (g - 0.5) * uGrain;
+  /* 暗角：四角压 16%，把视线收回中心，也顺手压掉四角的空海 */
+  vec2 dv = vUv - 0.5;
+  outc *= 1.0 - uVignette * pow(clamp(length(dv) * 1.42, 0.0, 1.0), 2.2);
+  gl_FragColor = vec4(outc, 1.0);
 }
 `
 
@@ -176,7 +253,28 @@ export function createMap3DPost(renderer: THREE.WebGLRenderer): Map3DPost {
    * 正解是线性 + HalfFloat 存储，最后由合成本身的 `colorspace_fragment`
    * 完成与画布一致的编码（three 自己就在 OutputPass 里这么做）。
    */
-  const sceneRT = new THREE.WebGLRenderTarget(2, 2, { ...rtOpt, depthBuffer: true, type: THREE.UnsignedByteType })
+  /*
+   * ---- 抗锯齿为什么放在后处理里，而不是 MSAA ----
+   *
+   * 【根因】场景是渲染到**离屏 RT** 的，`new THREE.WebGLRenderer({ antialias: true })`
+   * 只对默认 framebuffer 生效 —— 对 RT 完全无效。于是低模几何的硬边缘
+   * （屋檐、桅杆、绳索、帆边、窗框）全是一级级的台阶，整幅画面读作
+   * "早期网页 3D"。这是"粗糙"里最容易量化、也最容易根治的一项。
+   *
+   * 【为什么不用 RT 的 samples（MSAA）】能开，但质量依赖驱动：swiftshader 的
+   * `maxSamples` 是 0（探针与 e2e 全在这里跑），真实显卡上又会走另一条路径 ——
+   * 两条路径的画质不同、还各自有失败模式。改成 FXAA 之后只有一条路径，
+   * 探针截的图就是玩家看到的图（可验证优先于理论画质）。
+   *
+   * `?noaa=1` 关掉它，用来做 A/B（对比截图在 .workbuddy/verify）。
+   */
+  const noAA = typeof location !== 'undefined'
+    && new URLSearchParams(location.search).get('noaa') === '1'
+  const sceneRT = new THREE.WebGLRenderTarget(2, 2, {
+    ...rtOpt,
+    depthBuffer: true,
+    type: THREE.UnsignedByteType,
+  })
   sceneRT.texture.colorSpace = THREE.SRGBColorSpace
   // 亮部与模糊：半分辨率、半浮点（光晕是低频，半浮点足够且不丢亮部）
   const brightRT = new THREE.WebGLRenderTarget(2, 2, { ...rtOpt, type: THREE.HalfFloatType })
@@ -204,12 +302,18 @@ export function createMap3DPost(renderer: THREE.WebGLRenderer): Map3DPost {
       uBloom: { value: BLOOM_STRENGTH },
       uShoulder: { value: SHOULDER },
       uSplit: { value: SPLIT },
+      uGrain: { value: GRAIN },
+      uVignette: { value: VIGNETTE },
+      uTexel: { value: new THREE.Vector2(1 / 1440, 1 / 900) },
+      uFxaa: { value: 0 },
     },
     vertexShader: VERT,
     fragmentShader: COMPOSITE_FRAG,
     depthTest: false,
     depthWrite: false,
   })
+
+  ;(compositeMat.uniforms.uFxaa as { value: number }).value = noAA ? 0 : 1
 
   let on = true
   let w = 2
@@ -223,6 +327,8 @@ export function createMap3DPost(renderer: THREE.WebGLRenderer): Map3DPost {
     if (nw === w && nh === h) return
     w = nw
     h = nh
+    const fx = compositeMat.uniforms.uTexel as { value: THREE.Vector2 }
+    fx.value.set(1 / w, 1 / h)
     sceneRT.setSize(w, h)
     const bw = Math.max(2, Math.floor(w * 0.5))
     const bh = Math.max(2, Math.floor(h * 0.5))
