@@ -11268,6 +11268,31 @@ console.log('\n== 天数口径守卫 ==')
       assert(Math.abs(b.x) <= plan.deckHalfW, `${st.id} 系缆桩在码头面内（x=${b.x.toFixed(1)}）`)
     }
 
+    /*
+     * 门头篷与门槛石阶（第 123 轮）：立面原来是一块**平板** —— 门是贴在墙上
+     * 的深色方块，门上方什么都没有。篷给的是"前后两层"，石阶给的是"站在地上"。
+     */
+    assert(plan.awnings.length >= 2, `${st.id} 门头篷 ${plan.awnings.length} 个（至少 2 个）`)
+    for (const aw of plan.awnings) {
+      assert(aw.tone >= 0 && aw.tone <= 3, `${st.id} 篷的帆布色 ${aw.tone}（0~3）`)
+      // 篷不能宽到跟邻栋连成一条彩带
+      const host = plan.houses.find((h) => Math.abs(h.x - aw.x) < 1e-6)
+      assert(!!host, `${st.id} 篷挂在某栋房子上（x=${aw.x.toFixed(2)}）`)
+      if (host) {
+        assert(aw.w <= host.w * 0.86 + 1e-6,
+          `${st.id} 篷宽 ${aw.w.toFixed(2)} 不超过房宽 86%（否则与邻栋连成一条彩带）`)
+        // 篷必须在门顶之上（低于门顶会压住门楣）
+        assert(aw.y > host.h * 0.3, `${st.id} 篷在门顶之上（y=${aw.y.toFixed(2)}）`)
+      }
+    }
+    assert(plan.steps.length === plan.awnings.length || plan.steps.length > 0,
+      `${st.id} 门槛石阶 ${plan.steps.length} 级`)
+    for (const st2 of plan.steps) {
+      assert(st2.h > 0.03 && st2.h < 0.12, `${st.id} 石阶高 ${st2.h.toFixed(3)}（3~12 厘米级）`)
+      assert(Math.abs(st2.x) + st2.w * 0.5 <= plan.deckHalfW,
+        `${st.id} 石阶不越出码头面`)
+    }
+
     assert(plan.cargo.length >= 6 && plan.cargo.length <= 24,
       `${st.id} 货堆 ${plan.cargo.length} 件（6~24）`)
     for (const c of plan.cargo) {
@@ -11794,6 +11819,30 @@ console.log('\n== 天数口径守卫 ==')
   assert(/const paneGlassMat = mk\(0x3c4954\)/.test(hmHull),
     '窗玻璃是板岩蓝灰（反天光），不是近黑')
   assert(/panes\.setColorAt\(qi, tone\)/.test(hmHull), '逐扇玻璃有明暗差（一排孔 -> 一排窗）')
+
+  /*
+   * 门头篷：斜顶 + **前檐垂布**。只有斜顶时相机几乎与篷面平行，屏幕上
+   * 是一条 4~9 像素的细带，读不出"伸出来的篷"；垂布是竖直的，才是一个彩色长条。
+   * 倾角必须**烘进几何**（rotateX）：实例只做横向缩放，倾角放在 rotation 里
+   * 会被非等比缩放拧歪。
+   */
+  assert(/const awFlap = new THREE\.BoxGeometry\(1, 0\.075, 0\.014, 10, 1, 1\)/.test(hmHull),
+    '篷有前檐垂布（只有斜顶时屏幕上是 4~9 像素的细带）')
+  assert(/awGeo\.rotateX\(-0\.26\)/.test(hmHull), '篷的倾角烘进几何（非等比缩放不会拧歪）')
+  assert(/const awnings = new THREE\.InstancedMesh\(awGeo, awningMat, MAX_HOUSE\)/.test(hmHull),
+    '篷是实例化的（每栋一个 = 1 次 draw call）')
+  assert(/const steps = new THREE\.InstancedMesh\(stepGeo, stoneMat, MAX_HOUSE\)/.test(hmHull),
+    '门槛石阶复用石材（零新增材质）')
+
+  /*
+   * 船尾楼顶：一整块 woodDark 受半球光的天蓝影响，读作"灰色的金属盖"。
+   * 必须是**铺板**：12 条木板 + 板缝 + 底面压暗。
+   */
+  const smSrc = readFileSync(join(process.cwd(), 'src', 'components', 'deck', 'shipModel.ts'), 'utf8')
+  assert(/function makePlankedTop\(w: number, t: number, d: number, planks: number\)/.test(smSrc),
+    '船尾楼顶是铺板几何（不是一整块灰板）')
+  assert(/const seam = edge < 0\.06 \? 0\.72 : 1/.test(smSrc), '铺板有板缝')
+  assert(/makePlankedTop\(7\.2, 0\.28, 5\.8, 12\)/.test(smSrc), '船尾楼顶 12 条板')
 
   /*
    * 屋脊瓦：屋顶在甲板上是**平视**的一个三角，两坡的分界只靠顶点色差 2% ——

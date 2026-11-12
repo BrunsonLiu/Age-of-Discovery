@@ -12,6 +12,7 @@ import {
 import { ANCHOR_LEN, ANCHOR_SIDE, ANCHOR_STOCK, anchorPose, HAWSE_Y, HAWSE_Z } from './deckAnchor'
 import { BOAT, boatHull, boatKeelLift } from './deckBoat'
 import { PEN, PEN_SPOTS, penLivestock } from './deckPen'
+import { hash01 } from './deckCoast'
 import { mergeStaticChildren } from './mergeStatic'
 import { sailorIdle, SAILOR_POSES, SAILOR_STATIONS } from './deckCrew'
 import { chartCourse } from './deckChart'
@@ -131,6 +132,35 @@ function contactShadowTexture(): THREE.CanvasTexture {
   const t = new THREE.CanvasTexture(c)
   t.colorSpace = THREE.SRGBColorSpace
   return t
+}
+
+/**
+ * 一块铺板的顶面（船尾楼顶、舱口盖共用）。
+ *
+ * 沿 x 拆成 `planks` 条，每条一个独立的明暗（±8%）+ 条间中缝（0.03 的暗线）。
+ * 顶点色烘进几何：这样 12 条板只占 1 次 draw call、1 个材质。
+ * 顶面/底面分开给色（底面压暗 22%）：从甲板斜看过去能看到后檐的厚度，
+ * 上下同色时那一条厚度读作"画上去的"。
+ */
+function makePlankedTop(w: number, t: number, d: number, planks: number): THREE.BufferGeometry {
+  const g = new THREE.BoxGeometry(w, t, d, planks, 1, 1)
+  const pos = g.attributes.position
+  const col: number[] = []
+  const base = new THREE.Color(0x6b4c2e)
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i)
+    const y = pos.getY(i)
+    // 板序（0..planks-1）与"这块是否在中缝上"
+    const u = (x / w + 0.5) * planks
+    const idx = Math.min(planks - 1, Math.floor(u))
+    const edge = Math.min(u - idx, 1 - (u - idx))
+    const seam = edge < 0.06 ? 0.72 : 1
+    const tone = 0.90 + 0.16 * hash01(idx * 3.7 + 11)
+    const k = tone * seam * (y < 0 ? 0.78 : 1)
+    col.push(base.r * k, base.g * k, base.b * k)
+  }
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3))
+  return g
 }
 
 export function createDeckShip(): DeckShip {
@@ -330,7 +360,23 @@ export function createDeckShip(): DeckShip {
   cabin.position.set(0, sternDeck + 1.35, -14.6)
   const cabinBox = new THREE.Mesh(new THREE.BoxGeometry(6.6, 2.7, 5.2), woodMid)
   cabin.add(cabinBox)
-  const cabinTop = new THREE.Mesh(new THREE.BoxGeometry(7.2, 0.28, 5.8), woodDark)
+  /*
+   * ---- 船尾楼的顶：一块**铺板**，不是一块灰板 ----
+   *
+   * 【为什么这一块值得单独做】它是船尾最大的一片平面（7.2×5.8 米，屏幕上
+   * 一整个梯形），原来是一整块 woodDark —— 受半球光的天蓝影响，读作
+   * "一块灰色的金属盖"，把"这是一条木船"这件事直接破坏掉。
+   * 改法：沿船宽拆成 12 条木板（每块 60 厘米，真实甲板宽度），逐条明暗差
+   * ±8%，再给每一条一个**中缝**（板间 2 厘米的暗线）。顶点色烘进去，
+   * 材质只需要一个 vertexColors 的木材。
+   *
+   * 【为什么不用 12 个 Mesh】12 个 Mesh = 12 次 draw call，虽然会被
+   * `mergeStaticChildren` 合掉，但几何事先合起来更省内存，也不必依赖合并。
+   */
+  const deckPlankMat = new THREE.MeshStandardMaterial({
+    color: 0xffffff, vertexColors: true, roughness: 0.9, metalness: 0.03,
+  })
+  const cabinTop = new THREE.Mesh(makePlankedTop(7.2, 0.28, 5.8, 12), deckPlankMat)
   cabinTop.position.y = 1.5
   cabin.add(cabinTop)
 

@@ -7,6 +7,7 @@ import {
   harborPlan, harborRadius, harborStyleFor, harborVisible, lampReflectionLen,
   type FolkKind, type HarborFolk, type HarborPlan, type HarborStyle,
 } from './deckHarbor'
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 import { rng, texFrom } from './shipTextures'
 
 /**
@@ -134,6 +135,13 @@ function stuccoCanvas(seed = 3): HTMLCanvasElement {
 
 /** 码头上的货堆上限 */
 const MAX_CARGO = 24
+/**
+ * 门头篷的四种帆布色：赭红 / 橄榄 / 沙黄 / 褪蓝。
+ * 都是**日晒褪过**的饱和（不是纯红纯蓝）：这一带临水街面的篷挂一夏天就淡了，
+ * 而高饱和的纯色在 ACES 之后会变成"塑料布"。
+ */
+const AWNING_TONES = [0xc4523a, 0x7a8250, 0xd9b268, 0x5a7482]
+
 const MAX_FOLK = 14
 const MAX_LAMP = 10
 const MAX_LINE = 4
@@ -882,6 +890,65 @@ export function createDeckHarbor(): DeckHarbor {
   panes.name = 'deck-harbor-panes'
   panes.frustumCulled = false
   group.add(panes)
+  /*
+   * ---- 门头篷 ----
+   *
+   * 几何：横向 1 单位、进深 0.26、8 条布褶的一块薄板，**倾角烘进几何**
+   * （-0.30 rad，前檐下垂）。倾角必须烘进去：实例的 scale 只有 x 方向
+   * （宽度随门变），要是把倾角放在 rotation 里，非等比缩放会把角度拧歪。
+   *
+   * 顶点色做了两件事：① 布褶的明暗（相邻一条布条差 10%）；② 外檐比贴墙那侧
+   * 暗 12%（布从墙上伸出去，外侧吃不到墙的反光）。颜色本身由 instanceColor 给。
+   */
+  /*
+   * 篷 = **斜顶 + 前檐垂布（valance）**两段合起来。
+   *
+   * 【为什么必须有垂布】只有斜顶时，相机几乎与篷面平行 —— 屏幕上是一条
+   * 4~9 像素的细带，读不出"伸出来的篷"（实测）。真实帆布篷的外檐都挂一圈
+   * 20~30 厘米的垂布，它是**竖直**的，从任何高度看都是一个彩色长条 +
+   * 下沿的阴影，这才是"这儿有个篷"的信号。
+   */
+  const awTop = new THREE.BoxGeometry(1, 0.016, 0.34, 10, 1, 1)
+  const awFlap = new THREE.BoxGeometry(1, 0.075, 0.014, 10, 1, 1)
+  awFlap.translate(0, -0.038, -0.168)
+  const awGeo = shadeFaces(mergeGeometries([awTop, awFlap]) as THREE.BufferGeometry, 0.55)
+  {
+    const pa = awGeo.getAttribute('position')
+    const ca = awGeo.getAttribute('color')
+    for (let i = 0; i < pa.count; i++) {
+      // z 在 −0.13..0.13（还没平移）：负的一侧是外檐
+      const outer = Math.max(0, Math.min(1, (0.17 - pa.getZ(i)) / 0.34))
+      const rib = 0.94 + 0.10 * (Math.abs(Math.round(pa.getX(i) * 10)) % 2)
+      const k = (0.94 - 0.14 * outer) * rib
+      ca.setXYZ(i, ca.getX(i) * k, ca.getY(i) * k, ca.getZ(i) * k)
+    }
+    ca.needsUpdate = true
+  }
+  awGeo.rotateX(-0.26)
+  awGeo.translate(0, -0.012, -0.17)
+  /*
+   * 材质基色是**白**：真实颜色来自 instanceColor（赭红/橄榄/沙黄/褪蓝）。
+   * 白底乘 instanceColor = 那四种帆布色；夜里由 bases 统一乘 litK。
+   */
+  const awningMat = mk(0xffffff)
+  bases.set(awningMat, new THREE.Color(0xffffff))
+  const awnings = new THREE.InstancedMesh(awGeo, awningMat, MAX_HOUSE)
+  awnings.name = 'deck-harbor-awnings'
+  awnings.frustumCulled = false
+  group.add(awnings)
+
+  /*
+   * ---- 门槛石阶 ----
+   * 一级 5 厘米高的石阶。它给的是**接触**：没有它，门是浮在墙上的一个深色方块。
+   * 复用 stoneMat（岸壁的石材），零新增材质。
+   */
+  const stepGeo = shadeFaces(new THREE.BoxGeometry(1, 1, 1))
+  stepGeo.translate(0, 0.5, 0)
+  const steps = new THREE.InstancedMesh(stepGeo, stoneMat, MAX_HOUSE)
+  steps.name = 'deck-harbor-steps'
+  steps.frustumCulled = false
+  group.add(steps)
+
   const chimneyGeo = shadeFaces(new THREE.BoxGeometry(1, 1, 1))
   chimneyGeo.translate(0, 0.5, 0)
   const chimneys = new THREE.InstancedMesh(chimneyGeo, chimneyMat, MAX_HOUSE)
@@ -1390,6 +1457,37 @@ export function createDeckHarbor(): DeckHarbor {
     }
     panes.instanceMatrix.needsUpdate = true
     if (panes.instanceColor) panes.instanceColor.needsUpdate = true
+
+    /* ---- 门头篷 + 门槛石阶 ---- */
+    /*
+     * 篷不跟房屋的 yaw（±0.06 rad ≈ 3.4°）：0.26 的进深上偏 1.5 厘米，
+     * 屏幕上不到一个像素；而 plan 里的篷只存了位置，没有存房屋的姿态。
+     */
+    for (let i = 0; i < MAX_HOUSE; i++) {
+      awnings.setMatrixAt(i, zero)
+      steps.setMatrixAt(i, zero)
+    }
+    for (let i = 0; i < Math.min(MAX_HOUSE, pl.awnings.length); i++) {
+      const aw = pl.awnings[i]
+      dummy.position.set(aw.x, aw.y, aw.z)
+      dummy.rotation.set(0, 0, 0)
+      dummy.scale.set(aw.w, 1, 1)
+      dummy.updateMatrix()
+      awnings.setMatrixAt(i, dummy.matrix)
+      tone.setHex(AWNING_TONES[Math.min(3, Math.max(0, aw.tone))])
+      awnings.setColorAt(i, tone)
+    }
+    awnings.instanceMatrix.needsUpdate = true
+    if (awnings.instanceColor) awnings.instanceColor.needsUpdate = true
+    for (let i = 0; i < Math.min(MAX_HOUSE, pl.steps.length); i++) {
+      const st = pl.steps[i]
+      dummy.position.set(st.x, st.y, st.z)
+      dummy.rotation.set(0, 0, 0)
+      dummy.scale.set(st.w, st.h, st.d)
+      dummy.updateMatrix()
+      steps.setMatrixAt(i, dummy.matrix)
+    }
+    steps.instanceMatrix.needsUpdate = true
     windowFrames.instanceMatrix.needsUpdate = true
 
     /* ---- 码头上的人（矩阵在 update 里每帧重写，这里先摆到位） ---- */

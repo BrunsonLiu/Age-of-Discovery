@@ -339,6 +339,38 @@ export function lampReflectionLen(lampY: number): number {
 }
 
 /**
+ * 门上的遮阳篷（帆布/木板篷）。
+ *
+ * 【为什么必须有】临街的立面现在是一块**平板**：门是贴上去的一块深色方块，
+ * 门上方什么都没有 —— 一排房子在屏幕上像一张贴纸墙。真实的地中海与南洋
+ * 临水街面，每个门头上都有一块伸出来的篷（挡西晒/挡雨），篷在墙上投一条
+ * 硬阴影，立面立刻有了**前后两层**。
+ *
+ * 【为什么是纯色帆布、不是条纹】条纹要用两个材质（白 + 色）才做得出来；
+ * 这里只有 instanceColor 一个逐实例的色，条纹会被染成"深红 + 更深的红"。
+ * 纯色帆布（赭红/橄榄/沙黄/褪蓝）同样是真实做法，而且正好补上"配色丰富"。
+ */
+export interface HarborAwning {
+  x: number
+  y: number
+  z: number
+  /** 宽度（跟着门宽走） */
+  w: number
+  /** 帆布色（0 赭红 / 1 橄榄 / 2 沙黄 / 3 褪蓝） */
+  tone: number
+}
+
+/** 门槛下的一级石阶：给门一个"站在地上"的接触 */
+export interface HarborStep {
+  x: number
+  y: number
+  z: number
+  w: number
+  h: number
+  d: number
+}
+
+/**
  * 岸壁上的一块压顶石。
  *
  * 【为什么要把一整块岸壁拆成石块】岸壁原来是一整块 Box —— 从甲板上看，
@@ -457,6 +489,10 @@ export interface HarborPlan {
   palms: { x: number; z: number; h: number }[]
   /** 墙上的窗洞 */
   panes: HarborPane[]
+  /** 门头的遮阳篷 */
+  awnings: HarborAwning[]
+  /** 门槛石阶 */
+  steps: HarborStep[]
   /** 屋顶上的烟囱 */
   chimneys: HarborChimney[]
   /** 岸壁的压顶石（沿 x 一排） */
@@ -492,6 +528,8 @@ const EMPTY_PLAN: HarborPlan = {
   moorings: [],
   palms: [],
   panes: [],
+  awnings: [],
+  steps: [],
   chimneys: [],
   quayStones: [],
   bollards: [],
@@ -668,6 +706,8 @@ export function harborPlan(style: HarborStyle, width: number, presence: number, 
    * 正面按房宽分 2~3 个、两排（一层与二层）。背面不画（看不见，省实例）。
    */
   const panes: HarborPane[] = []
+  const awnings: HarborAwning[] = []
+  const steps: HarborStep[] = []
   const chimneys: HarborChimney[] = []
   for (let i = 0; i < houses.length; i++) {
     const h = houses[i]
@@ -717,6 +757,36 @@ export function harborPlan(style: HarborStyle, width: number, presence: number, 
         w: doorW,
         h: doorH,
         door: true,
+      })
+      /*
+       * 门头篷：七成有。宽度是门宽的 1.9~2.3 倍（真实篷要罩住门口站人的地方），
+       * 位置在门顶上方 0.03 —— 低于门顶时会压住门楣，读作"门被切了一刀"。
+       */
+      if (rnd(i * 4.3 + 83) > 0.30) {
+        awnings.push({
+          x: h.x,
+          y: deckTopY + doorH + 0.035,
+          z: zf,
+          /*
+           * 宽 = 门宽的 2.6~3.2 倍，但**不超过房宽的 0.86**：相邻两栋的篷
+           * 一旦连起来，整条街就成了一条连续的彩带（第一版 1.9~2.3 太窄，
+           * 屏幕上只是门上一小块色斑，读不出"篷"）。
+           */
+          w: Math.min(h.w * 0.86, doorW * (2.6 + 0.6 * rnd(i * 6.7 + 87))),
+          tone: Math.floor(rnd(i * 9.1 + 89) * 4),
+        })
+      }
+      /*
+       * 门槛石阶：每栋都有。高度只有门高的 12%（≈0.05 单位 = 屏幕 3px），
+       * 它给的是**接触**不是造型 —— 没有它，门是浮在墙上的一个深色方块。
+       */
+      steps.push({
+        x: h.x,
+        y: deckTopY,
+        z: zf - 0.05,
+        w: doorW * 1.7,
+        h: Math.max(0.045, doorH * 0.14),
+        d: 0.16,
       })
     }
     // 烟囱：一半的房子有，站在屋脊上偏一侧
@@ -1025,6 +1095,8 @@ export function harborPlan(style: HarborStyle, width: number, presence: number, 
     moorings,
     palms,
     panes,
+    awnings,
+    steps,
     chimneys,
     quayStones,
     bollards,
