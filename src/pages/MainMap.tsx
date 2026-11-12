@@ -549,12 +549,17 @@ export default function MainMap() {
             aria-label={viewLabel}
             aria-pressed={viewMode === 'harbor'}
             title={!canAshore && viewMode !== 'harbor' ? '还在海上，靠岸后才能上岸' : (viewMode === 'harbor' ? '回到海图（A）' : '上岸走走（A）')}
-            className={`pointer-events-auto flex items-center gap-2 pl-3 pr-2.5 py-2.5 rounded-sm
-              font-serif text-sm whitespace-nowrap leading-none press transition-all
-              border border-gold-500/70
-              ${viewMode === 'harbor'
-                ? 'text-gold-100 bg-ocean-900/80'
-                : 'text-gold-100 bg-ocean-900/55 hover:bg-ocean-900/70'}
+            /*
+             * 【为什么不再是半透明深蓝】原来是 `bg-ocean-900/55`：
+             * 0.55 的底，海图上的地名（实测「地中海」）**从按钮底下透出来**，
+             * 一块按钮上压着半个地名 —— 这比"材质跟旁边不一样"难看得多。
+             * 项目自己的判据是"浮层 alpha ≥0.85"，这个按钮是全站唯一越线的。
+             * 现在换成同一块铜牌（.side-plate），另用 .side-plate--space
+             * 换成一节冷色：它换的是**空间**、不是开面板，要能一眼分开，
+             * 但材质（铆钉 + 顶棱受光 + 底棱背光）必须和下面四块一致。
+             */
+            className={`side-plate side-plate--space pointer-events-auto flex items-center gap-2 pl-3 pr-2.5 py-2.5 rounded-sm
+              font-serif text-sm whitespace-nowrap leading-none press
               disabled:opacity-40 disabled:cursor-not-allowed`}
           >
             <span>{viewLabel}</span>

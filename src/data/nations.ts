@@ -1,4 +1,5 @@
 import type { FactionId, NationId } from '@/types'
+import { haversineNm } from '@/utils/navigation'
 
 /* NationId 的唯一定义在 types/index.ts（GameState 要用它），这里只转出去 */
 export type { NationId }
@@ -417,6 +418,18 @@ export function nationById(id: string | null | undefined): Nation {
 }
 
 /** 这个国别的传说是否还没兑现 */
+/**
+ * 到传说海域还有多少海里。
+ *
+ * 【为什么放在数据层】和 `relicDistanceNm` 同一条规矩：距离由**数据**说了算，
+ * 界面只负责显示。两边各算一次就会出现"册子里写 812 海里、地图上标 790"。
+ * 大圆距离（haversine）—— 这个数不是航程（航程由 routeFacts 算），
+ * 所以文案写"离你 N 海里"，不写"还要 N 天"。
+ */
+export function legendDistanceNm(fromLat: number, fromLng: number, legend: NationLegend): number {
+  return haversineNm(fromLat, fromLng, legend.lat, legend.lng)
+}
+
 export function legendPending(nationId: string | null | undefined, collected: readonly string[]): NationLegend | null {
   /*
    * 【这里**不能**走 `nationById`】那个函数找不到就回落到默认国别（西班牙），

@@ -301,6 +301,64 @@ await input2.uploadFile(badPath)
 check(await until(() => document.body.innerText.includes('这不是存档文件')), '坏文件给出中文错误，不静默吞掉')
 check(!(await page.$('[data-testid="save-import-confirm"]')), '坏文件不会出现「确认覆盖」按钮')
 
+// ---- 6. 图鉴的「传说」一轨 ----
+/*
+ * 国别传说在开局介绍里就说过（`rumor`），地图上也钉着标记。
+ * 但在这一节做出来之前，它**只在地图上**：兑现一次之后 `legendPending` 返回 null，
+ * 标记消失、册子里一个字都查不到 —— "我到底找到过什么"没有下落。
+ *
+ * 【判据只能读册子本身】海图上就印着「归墟」两个字（NationLegend 的标记），
+ * 拿 `body.innerText.includes('归墟')` 判"册子里写了它"会永远为真。
+ * 所以这里只认 `<h4>` 小节标题与格子的 aria-label。
+ */
+const legendCell = () => page.evaluate(() =>
+  [...document.querySelectorAll('button[aria-label]')]
+    .map((b) => b.getAttribute('aria-label'))
+    .find((a) => (a || '').startsWith('归墟')) ?? null)
+
+await dismissDialogue()
+await page.evaluate(() => {
+  window.__gameStore.setState({ nation: 'china', collectedLegends: [], storyDone: ['china-1'], activePanel: 'event' })
+})
+/* 先等面板真的挂出来（上一段刚做过存档导入 + reload，面板是关着的），
+   再点 tab —— 顺序反了就成了"点了一个还不存在的按钮"。 */
+check(await until(() => document.querySelectorAll('[role=tab]').length === 3, 8000), '日志面板重新打开')
+await page.evaluate(() => [...document.querySelectorAll('[role=tab]')].find(b => b.textContent.includes('图鉴'))?.click())
+check(await until((l) => [...document.querySelectorAll('h4')].some((h) => h.textContent.trim() === l), 8000, '传说'),
+  '图鉴里有「传说」一节')
+check((await legendCell())?.startsWith('归墟') === true,
+  '未应验的传说也写出名字（不是「？」——玩家开局就听说过它）')
+check((await legendCell() || '').includes('还没到过那片海'), '未应验的格子写明"还没到过那片海"')
+
+await page.evaluate(() => {
+  const b = [...document.querySelectorAll('button[aria-label]')].find((x) => (x.getAttribute('aria-label') || '').startsWith('归墟'))
+  b?.click()
+})
+check(await until(() => [...document.querySelectorAll('p')].some((p) => /传说还在那片海上。离你 [\d,]+ 海里。/.test(p.textContent || ''))),
+  '点未应验的传说 → 给出真实距离（不写"还要几天"，那要走 routeFacts）')
+check(await page.evaluate(() => window.__gameStore.getState().activePanel) === 'event',
+  '给距离时册子还开着（否则这句回执跟着面板一起没了）')
+const movedTo = await page.evaluate(() => window.__mapStore.getState().center)
+check(Math.abs(movedTo[0] - 29.5) < 0.8 && Math.abs(movedTo[1] - 128.5) < 0.8,
+  `海图挪到了传说海域（${movedTo.map(n => n.toFixed(1)).join(', ')}）`)
+
+/* 兑现之后：同一格改成「已应验」，点开说出当时那句话 */
+await page.evaluate(() => window.__gameStore.setState({ collectedLegends: ['guixu'] }))
+check(await until(() => document.querySelectorAll('h4').length > 0 && document.body.innerText.includes('已应验')), '兑现后同一格改成「已应验」')
+await page.evaluate(() => {
+  const b = [...document.querySelectorAll('button[aria-label]')].find((x) => (x.getAttribute('aria-label') || '') === '归墟')
+  b?.click()
+})
+check(await until((t) => [...document.querySelectorAll('p')].some((p) => (p.textContent || '').includes(t)), 6000, '罗盘针慢下来'),
+  '点已应验的传说 → 说出当时那句话')
+
+/*
+ * 传说**不并进**全局「已点亮 N / M 格」：那一行数的是可收集的格子
+ * （港口/成就/漂流物/遗物），与「航路」同一套处理 —— 各自带自己的进度。
+ * 判据复用上面从数据层算出来的 atlasTotal，不写死数字。
+ */
+check(await until((n) => document.body.innerText.includes(`/ ${n} 格`), 6000, atlasTotal),
+  '传说不并进全局格数（与航路一致，各自带进度）')
 check(errors.length === 0, `全程 0 运行时错误${errors.length ? '（' + errors.slice(0, 2).join(' | ') + '）' : ''}`)
 
 console.log(`\n航海日志 e2e：${pass} 通过 / ${fail} 失败`)

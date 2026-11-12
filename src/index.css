@@ -1099,6 +1099,41 @@ body {
     0 3px 9px rgba(0, 0, 0, 0.6);
 }
 
+/*
+ * 空间切换（上岸走走 / 回海图）—— 同一块铜牌，换一节冷色。
+ *
+ * 【为什么必须是不透明】它原来用 bg-ocean-900/55（半透明深蓝）：
+ * 海图地名会从按钮底下透出来，实测「地中海」的半个字压在按钮上。
+ * 全站判据是"浮层 alpha ≥0.85"，这是唯一越线的一块。
+ * 【为什么换冷色而不是照抄暖铜】它换的是**空间**（海图 ↔ 岸上），不是开面板。
+ * 颜色要能一眼分开，但材质不能变：铆钉、顶棱受光、底棱背光三段完全沿用
+ * .side-plate 的配方，只把棕色换成一节青灰 —— 读作"另一块牌"，不是"另一个网站"。
+ */
+.side-plate--space {
+  background:
+    radial-gradient(circle at 5px 50%, rgba(226, 240, 255, 0.40) 0 1.3px, transparent 2.2px),
+    radial-gradient(circle at calc(100% - 5px) 50%, rgba(226, 240, 255, 0.40) 0 1.3px, transparent 2.2px),
+    linear-gradient(180deg, #33484f 0%, #1e2f36 52%, #142126 100%);
+  border: 1px solid #c9a96e;
+  color: #e6f0ee;
+}
+.side-plate--space:hover {
+  background:
+    radial-gradient(circle at 5px 50%, rgba(240, 250, 255, 0.55) 0 1.3px, transparent 2.2px),
+    radial-gradient(circle at calc(100% - 5px) 50%, rgba(240, 250, 255, 0.55) 0 1.3px, transparent 2.2px),
+    linear-gradient(180deg, #44606a 0%, #273c45 52%, #18282e 100%);
+  border-color: #e0c07a;
+}
+/* 已经在岸上（aria-pressed=true）：金边加亮 + 一点内发光，与面板的"点亮"同义 */
+.side-plate--space[aria-pressed='true'] {
+  border-color: #f0d88a;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 244, 200, 0.42),
+    inset 0 -2px 0 rgba(0, 0, 0, 0.62),
+    inset 0 0 12px rgba(240, 216, 138, 0.18),
+    0 2px 5px rgba(0, 0, 0, 0.55);
+}
+
 /* 当前打开的那个面板：铜牌被"点亮"——提亮底色 + 外发光，
    一眼能看出"我现在看的是哪一页" */
 .side-plate--active {

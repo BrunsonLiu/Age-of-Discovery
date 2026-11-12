@@ -10,7 +10,7 @@ import { ALL_SEASONS } from '@/utils/season'
 import { REGION_CN, countEchoes, echoDayFor } from '@/data/logbook'
 import { logbookArt } from '@/data/logbookArt'
 import { clueCenter } from '@/utils/harbor'
-import { nationById, storyStep } from '@/data/nations'
+import { legendDistanceNm, nationById, storyStep } from '@/data/nations'
 import type { DebrisKind } from '@/data/debris'
 
 /**
@@ -172,33 +172,48 @@ export function SightingsView() {
   )
 }
 
-/** 图鉴的一格：视觉可以分大小，命中区域统一 ≥40px */
+/**
+ * 图鉴的一格：视觉可以分大小，命中区域统一 ≥40px。
+ *
+ * 【heard 是"双轨"的分界】没找到的东西不是一回事：
+ *   · 港口、成就、漂流物、遗物 —— 玩家**没见过**，名字必须藏起来（`？`），
+ *     否则等于剧透"西边还有个岛"；
+ *   · 传说 —— 开局在国别介绍里就**听说过**它（`rumor`），地图上还钉着一个标记。
+ *     这时候再把它写成 `？`，等于把玩家已经知道的事瞒起来。
+ * 所以 `heard` 的格子：名字照写、状态写"还没到过那片海"，图标用罗盘不用锁。
+ */
 function AtlasCell({
-  label, sub, found, onClick, icon,
+  label, sub, found, onClick, icon, heard = false,
 }: {
   label: string
   sub: string
   found: boolean
   onClick: () => void
   icon?: React.ReactNode
+  /** 玩家已经听说过它（传说）：名字照写，只是标"未寻见" */
+  heard?: boolean
 }) {
+  const showName = found || heard
   return (
     <button
       type="button"
       onClick={onClick}
-      aria-label={found ? label : `${sub} · 还没见过`}
+      aria-label={found ? label : heard ? `${label} · ${sub}` : `${sub} · 还没见过`}
+      data-found={found ? '1' : '0'}
       className={`min-h-[44px] w-full text-left rounded px-2 py-1.5 border press transition-colors ${
         found
           ? 'border-gold-500/45 bg-gold-700/15 hover:bg-gold-700/25'
-          : 'border-gold-700/25 hover:border-gold-600/40'
+          : heard
+            ? 'border-gold-600/40 bg-black/20 hover:border-gold-500/60'
+            : 'border-gold-700/25 hover:border-gold-600/40'
       }`}
     >
       <span className="flex items-center gap-1.5">
-        <span className={`shrink-0 ${found ? 'text-gold-300' : 'text-gold-500/70'}`}>
-          {found ? (icon ?? <Compass size={13} />) : <Lock size={13} />}
+        <span className={`shrink-0 ${found ? 'text-gold-300' : heard ? 'text-gold-400' : 'text-gold-500/70'}`}>
+          {found || heard ? (icon ?? <Compass size={13} />) : <Lock size={13} />}
         </span>
-        <span className={`text-[12px] font-serif truncate ${found ? 'text-gold-200' : 'text-gold-500'}`}>
-          {found ? label : '？'}
+        <span className={`text-[12px] font-serif truncate ${found ? 'text-gold-200' : heard ? 'text-gold-300' : 'text-gold-500'}`}>
+          {showName ? label : '？'}
         </span>
       </span>
       <span className="block text-xs font-serif text-gold-500 mt-0.5 truncate">{sub}</span>
@@ -220,6 +235,7 @@ export function AtlasView() {
   const earned = useGameStore(s => s.achievements)
   const collected = useGameStore(s => s.collectedDebris)
   const collectedRelics = useGameStore(s => s.collectedRelics)
+  const collectedLegends = useGameStore(s => s.collectedLegends)
   const shipPosition = useGameStore(s => s.shipPosition)
   const stats = useGameStore(s => s.stats)
   const logbook = useGameStore(s => s.logbook)
@@ -231,6 +247,7 @@ export function AtlasView() {
   const gotAchievements = new Set(earned)
   const gotDebris = new Set(collected)
   const gotRelics = new Set(collectedRelics)
+  const gotLegends = new Set(collectedLegends ?? [])
   /*
    * 航路：只有选了国别的这一局才有。老存档 / 参观模式 `nation` 是 null，
    * 这一段就整块不出现 —— 缺省不显示，好过显示一个空的三格。
@@ -289,6 +306,52 @@ export function AtlasView() {
                 />
               )
             })}
+          </div>
+        </>
+      )}
+
+      {/*
+        【传说】国别故事线是"走到哪"，传说是"听说过什么"。
+        这两件事在玩家脑子里是一起的（同一个国别介绍里说出来的），
+        所以在册子里也挨着放。
+
+        【为什么它不并进上面那个"已点亮 N / M 格"】那一行数的是**可收集的格子**；
+        传说每国只有一条、且"没寻见"时名字也必须写出来（见 AtlasCell 的 heard），
+        与"藏起名字的格子"不是一类。航路也是这样处理的（自己带 3 段的进度）。
+        判据：全局那一行只数 ports/achievements/debris/relics，不数 legend。
+      */}
+      {nation && (
+        <>
+          <SectionTitle right={gotLegends.has(routesNation.legend.id) ? '已应验' : '未应验'}>传说</SectionTitle>
+          <div className="grid grid-cols-1 gap-1.5">
+            <AtlasCell
+              label={routesNation.legend.name}
+              heard
+              sub={gotLegends.has(routesNation.legend.id)
+                ? `传说 · ${routesNation.short}人说的那件事，你亲眼见到了`
+                : '传说 · 还没到过那片海'}
+              found={gotLegends.has(routesNation.legend.id)}
+              icon={<Compass size={13} />}
+              onClick={() => {
+                const lg = routesNation.legend
+                if (gotLegends.has(lg.id)) {
+                  setDetail(lg.line)
+                  setCenter([lg.lat, lg.lng])
+                  return
+                }
+                /*
+                 * 没应验的传说：给**真实距离**并把海图挪过去，但不关册子
+                 * （与未拾到的遗物同一套回执，见下方 relic 分支）。
+                 * 距离是玩家判断"这趟值不值得绕"的那个数，必须给。
+                 */
+                const pos = shipPosition
+                const nm = pos ? Math.round(legendDistanceNm(pos[0], pos[1], lg)) : null
+                setDetail(nm != null
+                  ? `传说还在那片海上。离你 ${nm.toLocaleString('zh-CN')} 海里。`
+                  : '传说还在那片海上——开过去，进 90 海里就能看见。')
+                setCenter([lg.lat, lg.lng])
+              }}
+            />
           </div>
         </>
       )}

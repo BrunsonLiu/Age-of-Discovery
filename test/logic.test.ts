@@ -257,6 +257,7 @@ import {
 } from '../src/components/deck/deckHarbor'
 import { shadeFaces as shadeHarbor } from '../src/components/deck/harborModel'
 import { harborMood, starFieldCss, QUAY_LAMPS, QUAY_POSTS } from '../src/utils/harborMood'
+import { NATIONS, legendDistanceNm, legendPending } from '../src/data/nations'
 import {
   appendLogbook, countEchoes, echoAt, echoDayFor, echoForPort, findClueFor,
   makeArrivalEntry, makeEchoEntry, makeTitleEntry, markAllRead, pickRumor, LOGBOOK_MAX,
@@ -12497,4 +12498,63 @@ console.log('== 岸上天光：同一座港，白天和夜里是两张画 ==')
   assert(/animation:\s*sceneMeteor/.test(cssAll), '流星复用 sceneMeteor 曲线（不另写一条）')
   assert(/className="harbor-meteor"/.test(hv2), '组件里真的挂了这个元素')
   assert(/\.harbor-rain\s*\{/.test(cssAll) && /harborRainFall/.test(cssAll), '雨幕的 tile 与 keyframes 都在')
+}
+
+console.log('== 图鉴的「传说」一轨 + 上岸按钮不再是半透明 ==')
+{
+  /*
+   * 【缺口是什么】国别传说在开局介绍里就说过（`rumor`），地图上也钉着标记；
+   * 但兑现一次之后 `legendPending` 返回 null、标记消失，册子里也没有它 ——
+   * "我到底找到过什么"没有下落。这一节把它补进图鉴，并且分了"听说过 / 已应验"两态。
+   */
+  const china = NATIONS.find(n => n.id === 'china')
+  assert(!!china?.legend, '大明有传说（归墟）')
+  const lg = china!.legend
+  // 距离：与 haversine 同一个来源，不是界面自己算
+  const d = legendDistanceNm(23.1, 113.3, lg)
+  // 实测 903 海里（广州 23.1,113.3 → 归墟 29.5,128.5）。留宽区间：
+  // 坐标是会调的（传说海域要在海里、A* 不压陆），断言的是"量级对、不是 0 也不是上万"
+  assert(d > 700 && d < 1300, `广州到归墟的直线距离 700~1300 海里（实测 ${Math.round(d)}）`)
+  assert(Math.abs(d - haversineNm(23.1, 113.3, lg.lat, lg.lng)) < 1e-9, 'legendDistanceNm 走 haversine，不另写一套')
+  assert(legendDistanceNm(lg.lat, lg.lng, lg) < 1, '在传说海域上距离为 0（自己到自己）')
+
+  // 两态：没兑现 → 返回它；兑现后 → null（地图标记消失，册子里仍是"已应验"）
+  assert(legendPending('china', [])?.id === 'guixu', '没兑现时 legendPending 返回它')
+  assert(legendPending('china', ['guixu']) === null, '兑现之后 legendPending 返回 null（标记从图上撤掉）')
+  assert(legendPending(null, []) === null && legendPending('spain', ['guixu'])?.id !== 'guixu',
+    '国别不同各看各的传说（不会串到别人家）')
+
+  /*
+   * 源码守卫：三件必须这么接的事。
+   * ① 图鉴里真的有一节「传说」，且它读的是 collectedLegends；
+   * ② 未应验时名字必须写出来（heard），不能用「？」把已经听过的事瞒起来；
+   * ③ 传说**不并进**全局"已点亮 N / M 格"（那一行只数可收集的格子）。
+   */
+  const lv = readFileSync(join(process.cwd(), 'src', 'components', 'panels', 'LogbookViews.tsx'), 'utf8')
+  assert(/>传说<\/SectionTitle>/.test(lv), '图鉴里有「传说」一节')
+  assert(/gotLegends\.has\(routesNation\.legend\.id\)/.test(lv), '这一节的点亮判据来自 collectedLegends')
+  // 组件里是一行裸写的 `heard`（JSX 布尔 prop 的写法）
+  assert(/^\s*heard\s*$/m.test(lv), '传说格子带 heard（名字写出来，不是「？」）')
+  {
+    // 全局格数那一行：只允许 ports / achievements / debrisKinds / RELICS 四项
+    const m = lv.match(/const litCount = ([^\n]+)/)
+    const m2 = lv.match(/const totalCount = ([^\n]+)/)
+    assert(!!m && !!m2, '图鉴顶部有 litCount / totalCount')
+    assert(!/legend/i.test(m![1]) && !/legend/i.test(m2![1]),
+      '传说不计入"已点亮 N / M 格"（与航路同一套：各自带进度）')
+  }
+
+  /*
+   * 「上岸走走」原来是半透明深蓝（bg-ocean-900/55）：海图地名从按钮底下透出来，
+   * 实测「地中海」的半个字压在按钮上。全站判据是"浮层 alpha ≥0.85"，它是唯一越线的一块。
+   */
+  const mm = readFileSync(join(process.cwd(), 'src', 'pages', 'MainMap.tsx'), 'utf8')
+  const sw = mm.slice(mm.indexOf('data-testid="view-mode-switch"') - 900, mm.indexOf('data-testid="view-mode-switch"') + 200)
+  assert(/side-plate--space/.test(mm), '空间切换用 .side-plate--space 材质')
+  assert(!/bg-ocean-9\d\d\/\d+/.test(sw), '空间切换不再用半透明深蓝底（地名会透出来）')
+  const css = readFileSync(join(process.cwd(), 'src', 'index.css'), 'utf8')
+  const spaceRule = css.slice(css.indexOf('.side-plate--space {'), css.indexOf('.side-plate--space:hover'))
+  assert(spaceRule.length > 50, 'index.css 里有 .side-plate--space 规则')
+  assert(/linear-gradient\(180deg, #33484f/.test(spaceRule), '冷色铜牌用的是实色渐变（不是半透明底）')
+  assert(/radial-gradient\(circle at 5px 50%/.test(spaceRule), '沿用 .side-plate 的铆钉（材质一致，只换颜色）')
 }
