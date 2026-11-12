@@ -1710,9 +1710,53 @@ export function createDeckShip(): DeckShip {
          */
         float ex = smoothstep(0.0, 0.17, vMapUv.x) * smoothstep(0.0, 0.17, 1.0 - vMapUv.x);
         float ey = smoothstep(0.0, 0.10, vMapUv.y) * smoothstep(0.0, 0.24, 1.0 - vMapUv.y);
-        diffuseColor.rgb *= 0.58 + 0.42 * min(ex, ey);
+        /*
+         * 边缘 0.58 → 0.72：0.58 时帆的四周是一圈明显的黑框，读作"给帆描了边"
+         * 而不是"边上有绳子"。
+         */
+        diffuseColor.rgb *= 0.72 + 0.28 * min(ex, ey);
+        /*
+         * 帆边绳（bolt rope）：帆的四周缝着一圈加粗的绳，是所有帆布件的真实做法。
+         * 在 uv 最外 2.5%（屏幕上 2~4px）提亮一档 —— 这一圈亮线让帆有"绷在
+         * 框架上"的边界，否则边缘只是渐渐变暗。
+         */
+        float edgeD = min(min(vMapUv.x, 1.0 - vMapUv.x), min(vMapUv.y, 1.0 - vMapUv.y));
+        diffuseColor.rgb *= 1.0 + 0.12 * smoothstep(0.025, 0.012, edgeD);
         float seam = abs(fract(vMapUv.x * 4.0 + 0.5) - 0.5);
         diffuseColor.rgb *= 1.0 - 0.16 * smoothstep(0.06, 0.0, seam);
+        /*
+         * ---- 横缝：帆最容易被认出来的结构 ----
+         *
+         * 【为什么必须有】贴图上原本画了 3 道横拼缝（sailCanvas），但线宽 3px
+         * 铺到一张 10 米高的帆上 = 屏幕 1 像素、alpha 0.38 —— 1440×900 的截图上
+         * 完全看不见，帆读作"一块米色塑料板"（用户第五次说"非常粗糙"）。
+         * 真实帆是**一横幅一横幅**缝成的（每幅 60~70 厘米），8 米高的帆上十几道。
+         * 这里按 uv 直接算 7 道，每道给"缝线暗 + 缝下沿亮"两笔：
+         * 只有暗线时屏幕上是均匀一条灰，加上下沿那道亮边才有"布叠了一层"的厚度。
+         */
+        float bh = fract(vMapUv.y * 7.0);
+        /*
+         * 【阈值是"屏幕像素"倒推出来的】bEdge 是 fract 单位（0~0.5），屏幕上的
+         * 宽度 = 阈值 / 7 × 帆的像素高。帆在 1440×900 里约 180px 高，所以
+         * 0.055 只有 **1.4px** —— 完全看不见（第一版改完截图还是平的）。
+         * 0.15 → 3.8px 才成线；缩帆带同理（0.024 → 4px 太细，用 0.04）。
+         */
+        float bEdge = min(bh, 1.0 - bh);
+        diffuseColor.rgb *= 1.0 - 0.24 * smoothstep(0.10, 0.0, bEdge);
+        diffuseColor.rgb *= 1.0 + 0.08 * smoothstep(0.10, 0.30, bh) * (1.0 - smoothstep(0.30, 0.50, bh));
+        /*
+         * 缩帆带（reef band）：真实帆在帆高 1/3、2/3 各有一条横向加厚的布带，
+         * 带上一排缩帆孔。远看就是"帆上有两道横杠"——帆船剪影的一部分。
+         */
+        float rb = min(abs(vMapUv.y - 0.33), abs(vMapUv.y - 0.67));
+        diffuseColor.rgb *= 1.0 - 0.14 * smoothstep(0.04, 0.0, rb);
+        /*
+         * 受风的鼓面：帆被风压成一个球面，中心正对天光最亮、四周吃不到光。
+         * 顶点位移只给了**轮廓**的鼓，漫反射在接近平光的布面上几乎不产生层次 ——
+         * 这里补一条 uv 空间的"球面明暗"（中心 +16%、边缘 −8%），零成本。
+         */
+        float belly = 1.0 - length((vMapUv - vec2(0.5, 0.44)) * vec2(1.2, 0.92));
+        diffuseColor.rgb *= 0.88 + 0.24 * clamp(belly, 0.0, 1.0);
         diffuseColor.rgb *= 1.0 + 0.16 * smoothstep(0.6, 0.0, vMapUv.y);
         // 布面整体有一点点自上而下的明暗（帆桁上沿最暗）
         diffuseColor.rgb *= 0.94 + 0.06 * smoothstep(0.0, 0.7, vMapUv.y);

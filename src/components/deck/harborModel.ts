@@ -186,7 +186,13 @@ export function createDeckHarbor(): DeckHarbor {
   const paneMat = mk(0x2b2a26)
   /* 烟囱：比屋顶暗一点的砖色 —— 用墙色会与白墙糊在一起 */
   const chimneyMat = mk(0x6b4a3a)
-  const hullMat = mk(0x6a5138, { side: THREE.DoubleSide })
+  /*
+   * 船壳 0x6a5138 → 0x7a4a30（偏红棕）。
+   * 【为什么】原来的浅棕与栈桥的木色（timber 0x4a3a28 提亮后）太接近，
+   * 停泊船与栈桥在屏幕上连成一块"木架子"（放大截图里船甲板像栈桥的延伸）。
+   * 真实商船的船壳是涂了赭石/沥青的深红棕，与栈桥的灰褐能分开。
+   */
+  const hullMat = mk(0x7a4a30, { side: THREE.DoubleSide })
   const railMat = mk(0x9c7c56, { side: THREE.DoubleSide })
   const palmMat = mk(0x2f4026)
   const flagMat = mk(0xb03a2e, { side: THREE.DoubleSide })
@@ -421,20 +427,48 @@ export function createDeckHarbor(): DeckHarbor {
       [0.5, 0], [0.3, -0.118], [0, -0.145], [-0.34, -0.132],
     ]
     const pos: number[] = []
-    const push = (x: number, y: number, z: number) => { pos.push(x, y, z) }
+    /** 每个顶点的"板缝"系数（1 = 板面，0.88 = 板缝）—— 顶点色在 shadeFaces 之后再乘 */
+    const marks: number[] = []
+    const push = (x: number, y: number, z: number, k = 1) => { pos.push(x, y, z); marks.push(k) }
     const N = RING.length
-    // 侧面（每段两个三角）
+    /*
+     * 舷弧（sheer）：甲板线在**船首与船尾抬高**，中段最低。
+     *
+     * 【为什么这是"船"最关键的一根线】挤出几何的顶边是水平的，从侧面看
+     * 船体就是一个**矩形**（40 米长的船在屏幕上 130×35px，上下两条平行的直线）——
+     * 放大截图里那条大船读作"一块红棕色的板"，加多少桅杆都救不回来。
+     * 真实帆船的舷弧很夸张（两端比中部高 15~25% 干舷），侧视是一条"微笑"的
+     * 曲线；这一条曲线一出现，同一个矩形立刻变成船。
+     */
+    const sheerAt = (x: number) => 0.26 * Math.pow(Math.min(1, Math.abs(x) / 0.5), 2.4)
+    /*
+     * 侧面沿高度分 3 带：真实的船壳是**一条条横板**钉起来的，板缝在侧视里
+     * 是 3~4 条水平暗线。一块纯色的红棕梯形不管轮廓多准，读作"木箱"
+     * （放大截图里 40 米长的大船就是一块板）。分带之后顶点色才能带出板缝；
+     * 不分带时侧面只有上下两圈顶点，任何线性插值都是"一片渐变"。
+     */
+    const BANDS = 3
     for (let i = 0; i < N; i++) {
       const [x0, z0] = RING[i]
       const [x1, z1] = RING[(i + 1) % N]
-      push(x0, 0, z0); push(x1, 0, z1); push(x1, 1, z1)
-      push(x0, 0, z0); push(x1, 1, z1); push(x0, 1, z0)
+      for (let b = 0; b < BANDS; b++) {
+        const t0 = b / BANDS
+        const t1 = (b + 1) / BANDS
+        const y0a = (1 + sheerAt(x0)) * t0
+        const y1a = (1 + sheerAt(x1)) * t0
+        const y0b = (1 + sheerAt(x0)) * t1
+        const y1b = (1 + sheerAt(x1)) * t1
+        // 每条带的**下沿**压暗 12%，上沿保持 —— 得到 3 条水平板缝
+        const kBottom = b === 0 ? 0.86 : 0.9
+        push(x0, y0a, z0, kBottom); push(x1, y1a, z1, kBottom); push(x1, y1b, z1, 1)
+        push(x0, y0a, z0, kBottom); push(x1, y1b, z1, 1); push(x0, y0b, z0, 1)
+      }
     }
     // 顶面（扇形，中心 + 每段）
     for (let i = 0; i < N; i++) {
       const [x0, z0] = RING[i]
       const [x1, z1] = RING[(i + 1) % N]
-      push(0, 1, 0); push(x0, 1, z0); push(x1, 1, z1)
+      push(0, 1, 0); push(x0, 1 + sheerAt(x0), z0); push(x1, 1 + sheerAt(x1), z1)
     }
     // 底面（反向）
     for (let i = 0; i < N; i++) {
@@ -446,7 +480,16 @@ export function createDeckHarbor(): DeckHarbor {
     g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
     g.computeVertexNormals()
     /* 船体同样要明暗：舷侧朝光的一边亮、背光的一边暗，船才有"圆"的感觉 */
-    return shadeFaces(g, 0.34)
+    const shaded = shadeFaces(g, 0.34)
+    /* 再乘板缝系数（shadeFaces 会覆盖 color，所以必须在它之后改） */
+    const cAttr = shaded.getAttribute('color')
+    for (let i = 0; i < marks.length && i < cAttr.count; i++) {
+      const k = marks[i]
+      if (k === 1) continue
+      cAttr.setXYZ(i, cAttr.getX(i) * k, cAttr.getY(i) * k, cAttr.getZ(i) * k)
+    }
+    cAttr.needsUpdate = true
+    return shaded
   })()
   const hulls = new THREE.InstancedMesh(hullGeo, hullMat, MAX_MOOR)
   hulls.name = 'deck-harbor-hulls'
@@ -491,11 +534,26 @@ export function createDeckHarbor(): DeckHarbor {
    * 停泊的船张着满帆是错的（真实是收帆系在桁上），而且一排满帆会把港口
    * 糊成一面白墙。横条的剪影也正好是"一排桅杆"的识别特征。
    */
-  const sailGeo = shadeFaces(new THREE.BoxGeometry(1, 1, 0.02))
-  const sails = new THREE.InstancedMesh(sailGeo, sailMat, MAX_MOOR * 2)
+  /*
+   * 几何必须是 1×1×1（原来是 1×1×**0.02**）。
+   * 【为什么这条是隐形 bug】0.02 是"一张薄片"的厚度，但收起的帆要用 z 当**长度**
+   * （横桁横跨船宽）；几何自己只有 0.02 时，scale.z = 1.6 算出来是 0.032 单位 ——
+   * 屏幕上 2px，四条船的帆桁全都"消失"，只剩几根光桅杆（截图里像电线杆）。
+   */
+  const sailGeo = shadeFaces(new THREE.BoxGeometry(1, 1, 1))
+  const sails = new THREE.InstancedMesh(sailGeo, sailMat, MAX_MOOR * 4)
   sails.name = 'deck-harbor-sails'
   sails.frustumCulled = false
   group.add(sails)
+  /*
+   * 帆桁本体（深色木杆）：帆卷是挂在桁上的**一卷布**，没有这根杆时屏幕上只有
+   * 一条浅米色的横条悬在桅杆上 —— 读作"晾衣杆"（截图实测）。真实桁是圆的木杆，
+   * 比帆卷细、比它深，从正面看是"深色横杆 + 浅色布卷"两层。
+   */
+  const yardBars = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), mastMat, MAX_MOOR * 4)
+  yardBars.name = 'deck-harbor-yardbars'
+  yardBars.frustumCulled = false
+  group.add(yardBars)
 
   /* ---- 棕榈 / 尖顶 / 吊臂 / 旗 ---- */
   const palmGeo = shadeFaces(new THREE.CylinderGeometry(0.045, 0.07, 1, 5))
@@ -1127,7 +1185,16 @@ export function createDeckHarbor(): DeckHarbor {
        * 船壳：长 = len、高 = len·0.11（约 2 米/18 米船长的干舷）、宽 = len·0.26。
        * 这三个比例是照着一艘 30 米卡拉维尔给的：长宽比 3.8、干舷 8%。
        */
-      const hullH = Math.max(0.18, m.len * 0.22)
+      /*
+       * 干舷 = 0.26·len，但**封顶 0.42 单位**。
+       *
+       * 【为什么要封顶】夸张只对"小到看不清"的船有意义：1.2 单位的中型船
+       * （22 米）干舷按真实比例只有 2.6 米 = 屏幕 6px，必须抬到 26% 才认得出。
+       * 但栈桥头那条主力船是 2.4 单位（43 米）—— 26% 就是 **11 米干舷**，
+       * 屏幕上成了一大块红棕色的墙（截图实测，比不改还糟）。
+       * 大船在屏幕上本来就够大，它需要的是真实比例。
+       */
+      const hullH = Math.max(0.2, Math.min(0.42, m.len * 0.26))
       /*
        * 抬到 y=0.2：海面在船位处有 ±0.3 的浪（`deckWaves` 的 amp 是全局的，
        * 港口内并不平静），船体只有 0.2~0.3 高 —— 放在 y=0 时整条船都在浪面以下，
@@ -1157,7 +1224,11 @@ export function createDeckHarbor(): DeckHarbor {
        * 还宽、比船壳高两倍，放大截图里是**一块立在船尾的方柜**，把船首到船尾
        * 的收分全盖住了。真实艉楼是船尾一截抬高的甲板室，比舷墙高一层人。
        */
-      dummy.scale.set(m.len * 0.22, hullH * 1.55, m.len * 0.5)
+      /*
+       * 0.22/1.55/0.5 → 0.2/1.32/0.34：艉楼原来占了船长的**一半**、还是船体宽的
+       * 1.1 倍，侧视里它就是"一块立着的红棕色方柜"，把舷弧与甲板线全挡掉。
+       */
+      dummy.scale.set(m.len * 0.2, hullH * 1.32, m.len * 0.34)
       dummy.updateMatrix()
       sterns.setMatrixAt(i, dummy.matrix)
 
@@ -1177,16 +1248,39 @@ export function createDeckHarbor(): DeckHarbor {
         dummy.updateMatrix()
         masts.setMatrixAt(mi++, dummy.matrix)
 
-        if (si < MAX_MOOR * 2) {
-          // 收起的横桁帆：一条窄横条，挂在桅高 62% 处，宽 = 桅高的 0.9
-          const sailY = 0.2 + m.len * (k === 0 ? 0.84 : 1.0) * 0.55
-          dummy.position.set(mx, sailY, mz)
-          dummy.rotation.set(0, m.yaw, 0)
-          /* 收起的帆是一**卷**布，不是一个面：厚度给到 0.09·len（≈2 米），
-         否则在 250 米外是一条 1 像素的线，与桅杆混在一起 */
-      dummy.scale.set(m.len * (k === 0 ? 0.5 : 0.58), Math.max(0.07, m.len * 0.1), Math.max(0.05, m.len * 0.12))
-          dummy.updateMatrix()
-          sails.setMatrixAt(si++, dummy.matrix)
+        if (si < MAX_MOOR * 4) {
+          /*
+           * 收起的横桁帆 = 一卷布挂在**横桁**上。
+           *
+           * 【轴向原来搞错了】旧代码把长度给在本地 x（= 船首方向），宽度只在
+           * z 上给 0.12 —— 于是这条"横桁"是**沿船长**的一条短木头，从甲板
+           * （正对船首）看过去只在桅杆上贴了一小块，四条桅杆像四根电线杆。
+           * 真实帆桁是**垂直桅杆、横跨船宽**的一根长杆（长度接近船宽），
+           * 收起的帆卷在它上面 —— 长度必须给 z。
+           */
+          /*
+           * 每根桅两层桁（上小下大）。只有一层时，屏幕上"一根竖杆一根横杆"是
+           * 一个**十字架**（截图实测）；真实帆船每桅有 2~4 层桁，上下逐层收短 ——
+           * 这一组"梯形排列的横杆"才是帆船停泊时的剪影。
+           */
+          for (let lv = 0; lv < 2; lv++) {
+            const sailY = 0.2 + m.len * (k === 0 ? 0.84 : 1.0) * (0.44 + 0.16 * lv)
+            const span = (k === 0 ? 0.62 : 0.74) * (1 - 0.2 * lv)
+            dummy.position.set(mx, sailY, mz)
+            dummy.rotation.set(0, m.yaw, 0)
+            dummy.scale.set(
+              Math.max(0.07, m.len * 0.1),
+              Math.max(0.055, m.len * 0.075),
+              m.len * span,
+            )
+            dummy.updateMatrix()
+            sails.setMatrixAt(si++, dummy.matrix)
+            /* 桁：同一位置、稍靠下、更细更深的一根杆（布卷挂在它下面） */
+            dummy.position.set(mx, sailY - m.len * 0.055, mz)
+            dummy.scale.set(m.len * 0.055, m.len * 0.05, m.len * span * 1.08)
+            dummy.updateMatrix()
+            yardBars.setMatrixAt(si - 1, dummy.matrix)
+          }
         }
       }
 
@@ -1213,7 +1307,8 @@ export function createDeckHarbor(): DeckHarbor {
     rails.instanceMatrix.needsUpdate = true
     sterns.instanceMatrix.needsUpdate = true
     for (let i = mi; i < MAX_MOOR * 3; i++) masts.setMatrixAt(i, zero)
-    for (let i = si; i < MAX_MOOR * 2; i++) sails.setMatrixAt(i, zero)
+    for (let i = si; i < MAX_MOOR * 4; i++) { sails.setMatrixAt(i, zero); yardBars.setMatrixAt(i, zero) }
+    yardBars.instanceMatrix.needsUpdate = true
     masts.instanceMatrix.needsUpdate = true
     sails.instanceMatrix.needsUpdate = true
 

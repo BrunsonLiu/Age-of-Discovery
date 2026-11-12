@@ -611,15 +611,24 @@ export function harborPlan(style: HarborStyle, width: number, presence: number, 
    * （船要靠桩，不会横在栈桥底下）。
    */
   const moorings: HarborMooring[] = []
+  /*
+   * 有一条船必须是"主力"：它停在**伸得最远的那条栈桥**上（离相机最近），
+   * 船长 2.1~2.4 单位（38~43 米）。其余都是 1.15~1.65 的中型商船。
+   *
+   * 【为什么】四条船一样大时，每条在屏幕上只有 60~70px 长、10px 高，
+   * 全是"红棕色的一个方块 + 两根线"（放大截图）。港口需要一条能看清
+   * 船形的船当视觉锚点 —— 真实港口里也总有一条大船系在栈桥头。
+   */
+  const farthestPier = piers.reduce((a, b) => (b.z1 < a.z1 ? b : a), piers[0])
   for (let i = 0; i < style.moorings && piers.length > 0; i++) {
-    const p = piers[i % piers.length]
+    const p = i === 0 ? farthestPier : piers[i % piers.length]
     /*
      * 一律停在栈桥的**内侧**（朝港湾中心），不是外侧。
      * 【为什么】外侧那条正好落在抛石堤的内端（x ≈ 0.72 halfW）上 —— 放大截图里
      * 一条商船**搁在石堆上**，船底与石块穿在一起。内侧离防波堤有 2 个单位。
      */
     const side = p.x > 0 ? -1 : 1
-    const len = 1.15 + 0.5 * rnd(i * 4.9 + 43)
+    const len = i === 0 ? 2.1 + 0.3 * rnd(43) : 1.15 + 0.5 * rnd(i * 4.9 + 43)
     /*
      * 船长 1.15~1.65 单位 = 21~30 米（卡拉维尔/克拉克级商船）。原来的
      * 0.9~1.4 在 22 单位外只有 60 像素长、12 像素高，配上深棕船体就是
@@ -627,10 +636,27 @@ export function harborPlan(style: HarborStyle, width: number, presence: number, 
      */
     moorings.push({
       // 船中心离栈桥中心 = 半宽 + 半个船宽 + 一点余量，贴着但不穿模
-      x: p.x + side * (p.w * 0.5 + len * 0.2 + 0.04),
-      z: p.z0 + (p.z1 - p.z0) * (0.42 + 0.2 * rnd(i * 7.7 + 37)),
-      // 船首朝海（长轴沿栈桥）：+x 转 90° 后指向 −z
-      yaw: Math.PI * 0.5 + (rnd(i * 3.3 + 41) - 0.5) * 0.22,
+      /*
+       * 横向偏移 len*0.28（原 0.2）：船身要**斜一点**停在栈桥边（见下面 yaw），
+       * 斜过来之后船的横向占位从 len*0.13 涨到 len*0.24 —— 偏移不够就会插进栈桥。
+       */
+      x: p.x + side * (p.w * 0.5 + len * 0.28 + 0.04),
+      /*
+       * 停在**栈桥末端外侧**（z 比 z1 再出 0.4~0.9），不是中段。
+       * 【为什么】中段时船与栈桥板在同一 z、x 只差 0.6 —— 从甲板望过去，
+       * 视线沿 −z 走，栈桥板正好挡住船的下半截，屏幕上只剩"栈桥尽头堆了一堆
+       * 红棕色的东西"（放大截图）。挪到末端外侧，船体整条露出来，
+       * 也符合真实靠泊：船系在栈桥头上的缆桩，不会横在栈桥中段。
+       */
+      z: p.z1 - 0.45 - 0.5 * rnd(i * 7.7 + 37),
+      /*
+       * 船首朝海（长轴沿栈桥）+ 一点偏角：+x 转 90° 后指向 −z。
+       * 【为什么要斜】完全正对海时，甲板视角看到的是**船尾的一个方块**（艉楼），
+       * 尖头尖尾的船形一点都看不到 —— 放大截图里那条船是"几块棕色板叠在一起"。
+       * 偏 0.22 rad（12°）就够露出侧舷的收分：真实靠泊的船本来也不会跟栈桥
+       * 严丝合缝地平行（缆绳一拉就有角度）。
+       */
+      yaw: Math.PI * 0.5 + (rnd(i * 3.3 + 41) - 0.5) * 0.44,
       len,
     })
   }
@@ -645,6 +671,11 @@ export function harborPlan(style: HarborStyle, width: number, presence: number, 
     const sorted = [...moorings].sort((a, b) => b.z - a.z).slice(0, 2)
     for (const m of sorted) {
       /*
+       * 缆绳拉到**最近那条栈桥的末端**，不是码头前沿。船在栈桥头外侧，
+       * 拉到岸上要横跨整条栈桥板 —— 屏幕上一根线穿过木板，比"没系"更怪。
+       */
+      const nearPier = piers.reduce((best, q) => (Math.abs(q.x - m.x) < Math.abs(best.x - m.x) ? q : best), piers[0])
+      /*
        * 船首朝海、船尾朝岸 —— 缆绳只能从**船尾**拉向岸。
        * 【为什么原来是错的】旧写法按"长轴方向 ±"取两端，船首那端在 z − len*0.44
        * （海里），拉到岸上就横跨整条栈桥，屏幕上是一根从船顶甩到码头的黑线
@@ -653,12 +684,12 @@ export function harborPlan(style: HarborStyle, width: number, presence: number, 
       const sternZ = m.z + m.len * 0.42
       lines.push({
         from: [m.x - m.len * 0.11, 0.3, sternZ],
-        to: [m.x - 0.5, deckTopY + 0.02, 0.12],
+        to: [nearPier.x - nearPier.w * 0.32, deckTopY + 0.02, nearPier.z1 * 0.55],
         sag: 0.07,
       })
       lines.push({
         from: [m.x + m.len * 0.11, 0.3, sternZ],
-        to: [m.x + 0.5, deckTopY + 0.02, 0.12],
+        to: [nearPier.x + nearPier.w * 0.32, deckTopY + 0.02, nearPier.z1 * 0.55],
         sag: 0.07,
       })
     }

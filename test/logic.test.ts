@@ -11182,7 +11182,11 @@ console.log('\n== 天数口径守卫 ==')
     assert(plan.moorings.length >= 3, `${st.id} 至少三条停泊船（${plan.moorings.length}）`)
     for (const m of plan.moorings) {
       assert(m.z < plan.deckZ0, `${st.id} 停泊船在码头外（z=${m.z.toFixed(1)} < ${plan.deckZ0}）`)
-      assert(m.len >= 0.8 && m.len <= 2.2, `${st.id} 船长 ${m.len.toFixed(2)} 单位（14~40 米，不是 100 米）`)
+      /*
+       * 0.8~2.6：栈桥头那条"主力船"是 2.1~2.4（38~43 米的大帆船），其余
+       * 1.15~1.65。上界守的是"不许做成 100 米"的那条老坑。
+       */
+      assert(m.len >= 0.8 && m.len <= 2.6, `${st.id} 船长 ${m.len.toFixed(2)} 单位（14~47 米，不是 100 米）`)
     }
     /*
      * 每条船都要**贴着某条栈桥的侧舷**（x = 栈桥中心 ± (半宽 + 半个船宽 + 余量)，
@@ -11191,9 +11195,13 @@ console.log('\n== 天数口径守卫 ==')
      * 只剩桅杆 —— 屏幕上读作"一排栅栏"（用户三次说粗糙最直接的一处）。
      */
     for (const m of plan.moorings) {
+      /*
+       * 船停在栈桥**末端外侧**（z 比 z1 再出 0.45~0.95）：中段时栈桥板会挡住
+       * 船体的下半截。判据 = x 贴着某条栈桥的侧舷 + z 在那条栈桥末端外一个船长内。
+       */
       const near = plan.piers.find((p) =>
-        Math.abs(Math.abs(m.x - p.x) - (p.w * 0.5 + m.len * 0.2 + 0.04)) < 1e-6
-        && m.z > p.z1 && m.z < p.z0)
+        Math.abs(Math.abs(m.x - p.x) - (p.w * 0.5 + m.len * 0.28 + 0.04)) < 1e-6
+        && m.z < p.z0 && m.z > p.z1 - 1.3)
       assert(!!near, `${st.id} 船（x=${m.x.toFixed(1)}, z=${m.z.toFixed(1)}）停在某条栈桥的侧舷`)
     }
     // 而且不能压在抛石堤上（外侧栈桥的船曾经搁在石堆上，放大截图能看见船底穿石）
@@ -11628,8 +11636,14 @@ console.log('\n== 天数口径守卫 ==')
       })
       assert(!!host, `${st.id} 缆绳的船上一端在某条船的船尾（${fx.toFixed(1)}, ${fz.toFixed(1)}）`)
       assert(fy > 0.2, `${st.id} 船上一端在甲板高度（y=${fy.toFixed(2)}，不能从水面里长出来）`)
-      // 岸上一端：码头前沿
-      assert(L.to[2] > 0 && L.to[2] < 0.3, `${st.id} 岸上一端在码头前沿（z=${L.to[2].toFixed(2)}）`)
+      /*
+       * 岸上一端：**某条栈桥的板上**（z 在 z1 与 0 之间）。
+       * 船停在栈桥末端外侧，缆绳只能系在它旁边那条栈桥的缆桩上 ——
+       * 从船尾一直拉到码头前沿会横穿整条栈桥板（屏幕上一根线穿过木板）。
+       */
+      assert(L.to[2] < 0 && L.to[2] > -5.2, `${st.id} 岸上一端在某条栈桥板上（z=${L.to[2].toFixed(2)}）`)
+      assert(plan.piers.some((p) => Math.abs(L.to[0] - p.x) < 0.6 && L.to[2] > p.z1),
+        `${st.id} 岸上一端落在那条栈桥的宽度范围内`)
       assert(L.to[1] >= plan.deckY - 0.05, `${st.id} 岸上一端不低于码头面（y=${L.to[1].toFixed(2)}）`)
       // ④ 下垂
       assert(L.sag > 0.05 && L.sag < 0.25, `${st.id} 有下垂（${L.sag.toFixed(2)}）`)
@@ -11638,6 +11652,18 @@ console.log('\n== 天数口径守卫 ==')
       assert(horiz < 6, `${st.id} 缆绳不横跨半个港（水平 ${horiz.toFixed(1)} 单位）`)
     }
   }
+  /*
+   * 停泊船的船体轮廓：**舷弧**（甲板线两端抬高）+ 三带板缝。
+   * 【守什么】挤出几何的顶边是水平的，侧视就是一个矩形 —— 43 米的大船在屏幕上
+   * 是"一块红棕色的板"，加多少桅杆都救不回来。舷弧那条微笑曲线是"船"的识别线。
+   */
+  const hmHull = readFileSync(join(process.cwd(), 'src', 'components', 'deck', 'harborModel.ts'), 'utf8')
+  assert(/const sheerAt = \(x: number\) => 0\.26 \* Math\.pow/.test(hmHull),
+    '船体有舷弧（甲板线两端抬高 26%，否则侧视是矩形）')
+  assert(/const BANDS = 3/.test(hmHull), '船壳沿高度分 3 带（板缝要靠顶点色分带才出得来）')
+  assert(/Math\.min\(0\.42, m\.len \* 0\.26\)/.test(hmHull),
+    '干舷封顶 0.42（43 米的主力船给 26% 就是 11 米干舷 = 一堵墙）')
+
   const hm5 = readFileSync(join(process.cwd(), 'src', 'components', 'deck', 'harborModel.ts'), 'utf8')
   assert(/name = `deck-harbor-mooringline-\$\{i\}`/.test(hm5), '缆绳网格按序命名（取证要用）')
   /*
