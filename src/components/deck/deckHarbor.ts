@@ -404,6 +404,32 @@ export function harborRadius(presence: number): number {
 }
 
 /**
+ * 港内浪高系数（0.34 = 防波堤里几乎没有浪，1 = 外海原样）。
+ *
+ * 【为什么要有】防波堤的意义就是**让堤内的水面平静**：现在从甲板上看，
+ * 停在塞维利亚港里与在比斯开湾中间的海面一模一样（同一套全局波浪），
+ * 那座防波堤就只是一个装饰。停泊时压到 0.34，船也跟着不摇 ——
+ * 一进港，整个世界安静下来，这是"到港了"最直接的体感。
+ *
+ * 【为什么 8 海里渐变而不是硬切】靠港的最后一段航程里海面该慢慢平下来；
+ * 硬切会在跨越阈值那一帧"海面忽然静止"，比不平还怪。
+ */
+export const HARBOR_CALM_NM = 8
+
+export function harborCalm(distNm: number, isSailing: boolean): number {
+  if (!Number.isFinite(distNm)) return 1
+  const t = Math.max(0, Math.min(1, 1 - distNm / HARBOR_CALM_NM))
+  const base = 1 - 0.62 * Math.pow(t, 0.8)
+  /*
+   * 停泊时再压一档：船就靠在码头边（HUD 写着 0.0 海里），堤内不该还有 0.38 的浪。
+   * **但仍要过距离这一关**：`isSailing=false` 不等于"在港里"（起手还没出航、
+   * 参观模式、或者调试时把船挪到海上）—— 只看这一个布尔会把远洋也压平。
+   */
+  if (!isSailing && distNm <= HARBOR_MAX_NM * 1.6) return Math.min(base, 0.34)
+  return base
+}
+
+/**
  * 这一刻该不该画港。
  *
  * 【为什么停泊时无条件画】`deckCoast` 里有一条规定：岸在正后方（>120°）就不画，

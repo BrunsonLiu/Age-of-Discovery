@@ -72,6 +72,13 @@ await page.evaluate(() => window.__mapStore.setState({ deckView: true }))
 await sleep(2600)
 check(await page.evaluate(() => !!window.__deckHarbor), '甲板视角里挂了港口的取证句柄')
 
+/** 读海面的浪高系数（uWaveScale = 天气浪高 × 港内 calm） */
+const readWave = () => page.evaluate(() => {
+  const sea = window.__deckScene?.getObjectByName('deck-sea')
+  const u = sea?.material?.uniforms?.uWaveScale
+  return u ? Math.round(u.value * 1000) / 1000 : null
+})
+
 /** 到港 + 读布局（停泊时可见性是"无条件"的，见 harborVisible 的注释）*/
 const gotoPort = async (portId) => {
   await page.evaluate((pid) => {
@@ -131,6 +138,16 @@ check(new Set(seen.map((s) => s.got.style)).size === 4,
 check(seen.every((s) => s.got.groupPos?.[1] > 10),
   `四个港口的岸线都在相机前方（z=${seen.map((s) => s.got.groupPos?.[1]).join('/')}）`)
 
+// -------------------------------------- ①b 港内海面必须平静（防波堤的意义）
+/*
+ * 【为什么要测这个】防波堤不是装饰：堤内该是平水。原来停泊时海面与比斯开湾
+ * 中间一模一样（同一套全局波浪），那座堤就只是几块石头。停泊压到 0.34，
+ * 而且**船与水面读同一个倍率**（否则水面平了船还在摇）。
+ */
+const waveDock = await readWave()
+check(waveDock !== null && Math.abs(waveDock - 0.34) < 0.03,
+  `停泊塞维利亚：浪高系数 ${waveDock}（期望 0.34——堤内几乎无浪）`)
+
 // ---------------------------------------------------------- ② 远洋：必须整组隐藏
 await page.evaluate(() => {
   const s = window.__gameStore.getState()
@@ -151,6 +168,10 @@ for (let i = 0; i < 14; i++) {
   if (far.visible === false) break
 }
 check(far?.visible === false, `远洋（南太平洋）时港口组隐藏（visible=${far?.visible}）`)
+
+const waveFar = await readWave()
+check(waveFar !== null && Math.abs(waveFar - 1) < 0.03,
+  `远洋：浪高系数恢复到 ${waveFar}（外海不该被压平）`)
 
 // ------------------------------------------------ ③ A/B：它真的画在像素上
 await gotoPort(6)

@@ -250,7 +250,8 @@ import { chooseLabelSides } from '../src/utils/portLabels'
 import { ports } from '../src/data/ports'
 import { tasks } from '../src/data/tasks'
 import {
-  HARBOR_MAX_NM, HARBOR_STYLES, harborPlan, harborRadius, harborStyleFor, harborVisible,
+  HARBOR_CALM_NM, HARBOR_MAX_NM, HARBOR_STYLES, harborCalm, harborPlan, harborRadius,
+  harborStyleFor, harborVisible,
 } from '../src/components/deck/deckHarbor'
 import {
   appendLogbook, countEchoes, echoAt, echoDayFor, echoForPort, findClueFor,
@@ -8833,10 +8834,14 @@ console.log('\n== 天数口径守卫 ==')
   // ---- ⑤ 接线与三条反回退守卫 ----
   {
     const view = readFileSync(join(process.cwd(), 'src', 'components', 'deck', 'DeckView.tsx'), 'utf8')
-    // 浪高：海面 shader 与船姿态必须用**同一个** look.wave
-    assert(/seaUniforms\.uWaveScale\.value = look\.wave/.test(view), '海面用天气的浪高')
-    assert(/deckShipPose\(t, 0\.72, 0\.26, look\.wave\)/.test(view),
-      '船的姿态用同一个浪高（否则船会浮在浪外）')
+    /*
+     * 浪高：海面 shader、船姿态、船高必须用**同一个** `waveAmp`
+     * （= 天气的 look.wave × 港内 calm；见 harborCalm）。
+     * 三个里任何一个自己写 look.wave，港内就会"水面平了船还在摇"。
+     */
+    assert(/uWaveScale\.value = look\.wave \* calm/.test(view), '海面用天气浪高 × 港内系数')
+    assert(/const waveAmp = look\.wave \* \(sightingRef\.current \? harborCalm/.test(view),
+      '船姿态与船高共用一个 waveAmp（否则船会浮在浪外 / 或港内船在摇而水面平）')
     // 雾：海面混的是雾色而不是天光色
     assert(/vec3 farCol = mix\(uSky \* 0\.85, uFogColor, uFogK\)/.test(view),
       '海面远处混雾色（只收窄区间不够）')
@@ -9056,8 +9061,8 @@ console.log('\n== 天数口径守卫 ==')
    */
   assert(/ship\.position\.y = seaAtShip \+ SHIP_DRAFT_LIFT/.test(view),
     '船的 y 必须是 seaAtShip + SHIP_DRAFT_LIFT（写死数字会与测试脱钩）')
-  assert(/const seaAtShip = deckWaveHeight\(0, 0, t, look\.wave\)/.test(view),
-    'seaAtShip 用与 GPU 同一个 deckWaveHeight 采船位的水面')
+  assert(/const seaAtShip = deckWaveHeight\(0, 0, t, waveAmp\)/.test(view),
+    'seaAtShip 用与 GPU 同一个 deckWaveHeight、同一个 waveAmp 采船位的水面')
   assert(!/ship\.position\.y = pose\.y/.test(view),
     '船的 y 不许用 pose.y（它只表达起伏，不等于水面高度）')
 }
@@ -11215,6 +11220,74 @@ console.log('\n== 天数口径守卫 ==')
   // 船体必须手写几何：ExtrudeGeometry 那版一个像素都不显示（真踩过）
   assert(!/new THREE\.ExtrudeGeometry/.test(hmSrc), '船体不 new ExtrudeGeometry（那版三角化后整船不可见）')
   assert(/RING/.test(hmSrc), '船体是自己列的轮廓顶点')
+}
+
+
+/*
+ * ---- 同一座港在两个视图里必须是同一座城 ----
+ *
+ * 【守什么】甲板视角（`HARBOR_STYLES`）与 2.5D 全球板（`map3d/models.ts`）
+ * 各有一套港口配色。原来 3D 那边把四个屋顶色**写死**了一遍：
+ * 加勒比给的是砖红 0xb4522f，而甲板上是茅草土黄 0x8e7a44 —— 玩家出海图看
+ * 一眼、进港看一眼，两处是两种建筑。这不是风格差异，是同一份事实抄了两遍。
+ * 现在 3D 侧从 HARBOR_STYLES 取色（只做一次 ACES 补偿），这里守三件事：
+ *  ① 源码里不再有那四个旧字面量（抄回去会红）；
+ *  ② 墙与屋顶都按 region 各四份（不是"墙统一米色"）；
+ *  ③ 三个补偿后仍是四个互不相同的色（补偿不能把两套压成一个）。
+ */
+{
+  const modelsSrc = readFileSync(join(process.cwd(), 'src', 'components', 'map3d', 'models.ts'), 'utf8')
+  assert(/from '\.\.\/deck\/deckHarbor'/.test(modelsSrc), 'map3d/models 从 deckHarbor 取色（单一来源）')
+  assert(/HARBOR_STYLES\.(europe|caribbean|asia|africa)\.wall/.test(modelsSrc), '墙色取 HARBOR_STYLES.*.wall')
+  assert(/HARBOR_STYLES\.(europe|caribbean|asia|africa)\.roof/.test(modelsSrc), '屋顶取 HARBOR_STYLES.*.roof')
+  /*
+   * 只匹配 `color: 0x...` 的**代码**（注释里会提到旧值当考古记录，那是应该留的）。
+   */
+  for (const old of ['0xb4522f', '0x8f4530', '0xb8873f', '0x6b463a']) {
+    assert(!new RegExp(`color: ${old}`).test(modelsSrc), `旧写死的屋顶色 ${old} 已删（不再抄第二份）`)
+  }
+  assert(!/houseMat: new THREE\.MeshStandardMaterial\(\{ color: 0xd8c9a4/.test(modelsSrc),
+    '墙色不再统一米色（要按海域分）')
+  // 补偿系数：写死的常量，且不能把颜色乘到溢出
+  const mLift = /const PORT_TINT_LIFT = ([\d.]+)/.exec(modelsSrc)
+  assert(!!mLift, 'ACES 补偿写成具名常量（可查、可调）')
+  const lift = Number(mLift?.[1])
+  assert(lift > 1 && lift < 1.5, `补偿系数 ${lift}（提亮一档，不是重调一套配色）`)
+  const styles = Object.values(HARBOR_STYLES)
+  const scaled = styles.map((st) => {
+    const c = { r: ((st.roof >> 16) & 255) * lift, g: ((st.roof >> 8) & 255) * lift, b: (st.roof & 255) * lift }
+    return `${Math.round(c.r)},${Math.round(c.g)},${Math.round(c.b)}`
+  })
+  assert(new Set(scaled).size === 4, `补偿之后四个屋顶色仍然互不相同（${scaled.join(' | ')}）`)
+}
+
+
+/*
+ * ---- 港内水面必须比外海平静（防波堤的意义）----
+ *
+ * 【守什么】停泊时如果海面与比斯开湾中间一模一样，那座防波堤就只是装饰。
+ * 这里守系数本身，以及**船与水面读同一个数**（一个平一个摇是最容易出的错）。
+ */
+{
+  assert(harborCalm(0, false) === 0.34, `贴岸停泊 → 0.34（实测 ${harborCalm(0, false)}）`)
+  assert(Math.abs(harborCalm(0, true) - 0.38) < 0.002, `贴岸航行 → 0.38（实测 ${harborCalm(0, true).toFixed(3)}）`)
+  assert(harborCalm(HARBOR_CALM_NM, true) === 1, `8 海里外 → 1（${harborCalm(HARBOR_CALM_NM, true)}）`)
+  assert(harborCalm(30, true) === 1 && harborCalm(30, false) === 1, '远洋 → 不干预')
+  assert(harborCalm(Number.NaN, true) === 1, 'NaN → 1（不把海面弄平）')
+  // 单调：越近越平（中间不能有凸起，否则靠港时海面会"忽然抖一下"）
+  const seq = [7, 6, 4, 2, 0].map((d) => harborCalm(d, true))
+  for (let i = 1; i < seq.length; i++) assert(seq[i] <= seq[i - 1] + 1e-9, `越近越平（${seq.map(v => v.toFixed(2)).join(' ≥ ')}）`)
+  // 停泊永远不比航行大
+  for (const d of [0, 2, 5, 8]) assert(harborCalm(d, false) <= harborCalm(d, true) + 1e-9, `停泊 ${d} 海里不高于航行`)
+
+  // 源码守卫：海面与船用同一个倍率
+  const deckSrc = readFileSync(join(process.cwd(), 'src', 'components', 'deck', 'DeckView.tsx'), 'utf8')
+  assert(/uWaveScale\.value = look\.wave \* calm/.test(deckSrc),
+    '海面浪高乘了港内系数（uWaveScale = look.wave × calm）')
+  assert(/const waveAmp = look\.wave \* \(sightingRef\.current \? harborCalm/.test(deckSrc),
+    '船姿态读同一个 waveAmp（不是各算一份）')
+  assert(/deckShipPose\(t, 0\.72, 0\.26, waveAmp\)/.test(deckSrc), '船姿态用的是 waveAmp')
+  assert(/deckWaveHeight\(0, 0, t, waveAmp\)/.test(deckSrc), '船高用的是同一个 waveAmp')
 }
 
 

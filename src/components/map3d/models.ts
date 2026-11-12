@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { HARBOR_STYLES } from '../deck/deckHarbor'
 
 /**
  * 2.5D 海图用的程序化模型（微缩港口 + 帆船）。
@@ -17,6 +18,20 @@ import * as THREE from 'three'
 
 /** 港口所属海域（与 Port.region 一致） */
 export type PortRegion = 'caribbean' | 'europe' | 'africa' | 'asia'
+
+/*
+ * 【为什么颜色从 deckHarbor 取】同一座加勒比港在两个视图里必须像同一座城：
+ * 甲板视角（`HARBOR_STYLES`）给的是木棚 + 茅草土黄，而这里原来写死成砖红
+ * 0xb4522f —— 玩家出海图看一眼、进港看一眼，两处是两种建筑。这不是"风格差异"，
+ * 是**同一份事实被抄了两遍**。
+ *
+ * 3D 这边走 Standard 材质 + ACES，同样的 sRGB 值渲染出来比甲板上的 Basic 材质
+ * 暗约一档，所以取色时统一提亮 `PORT_TINT_LIFT` —— 这是**补偿**，不是另一套配色。
+ */
+const PORT_TINT_LIFT = 1.18
+function tinted(hex: number): THREE.Color {
+  return new THREE.Color(hex).multiplyScalar(PORT_TINT_LIFT)
+}
 
 /**
  * 港口规模档位。
@@ -60,7 +75,8 @@ export interface PortModelKit {
    */
   unit: THREE.BoxGeometry
   baseMat: THREE.MeshStandardMaterial
-  houseMat: THREE.MeshStandardMaterial
+  /** 墙色按海域分（2026-11-12）：与甲板视角的 `HARBOR_STYLES` 同源 */
+  houseMat: Record<PortRegion, THREE.MeshStandardMaterial>
   /**
    * 屋顶材质：按 region 分四套。
    *
@@ -266,12 +282,18 @@ export function createPortModelKit(): PortModelKit {
       emissive: 0x2a2018,
       emissiveIntensity: 0.55,
     }),
-    houseMat: new THREE.MeshStandardMaterial({ color: 0xd8c9a4, roughness: 0.9 }),
+    houseMat: {
+      caribbean: new THREE.MeshStandardMaterial({ color: tinted(HARBOR_STYLES.caribbean.wall), roughness: 0.9 }),
+      europe: new THREE.MeshStandardMaterial({ color: tinted(HARBOR_STYLES.europe.wall), roughness: 0.9 }),
+      africa: new THREE.MeshStandardMaterial({ color: tinted(HARBOR_STYLES.africa.wall), roughness: 0.92 }),
+      asia: new THREE.MeshStandardMaterial({ color: tinted(HARBOR_STYLES.asia.wall), roughness: 0.9 }),
+    },
     roofMat: {
-      caribbean: new THREE.MeshStandardMaterial({ color: 0xb4522f, roughness: 0.85 }),
-      europe: new THREE.MeshStandardMaterial({ color: 0x8f4530, roughness: 0.85 }),
-      africa: new THREE.MeshStandardMaterial({ color: 0xb8873f, roughness: 0.9 }),
-      asia: new THREE.MeshStandardMaterial({ color: 0x6b463a, roughness: 0.85 }),
+      /* 屋顶的粗糙度按样式给：茅草/土顶更哑，瓦顶带一点高光 */
+      caribbean: new THREE.MeshStandardMaterial({ color: tinted(HARBOR_STYLES.caribbean.roof), roughness: 0.95 }),
+      europe: new THREE.MeshStandardMaterial({ color: tinted(HARBOR_STYLES.europe.roof), roughness: 0.85 }),
+      africa: new THREE.MeshStandardMaterial({ color: tinted(HARBOR_STYLES.africa.roof), roughness: 0.95 }),
+      asia: new THREE.MeshStandardMaterial({ color: tinted(HARBOR_STYLES.asia.roof), roughness: 0.8 }),
     },
     poleMat: new THREE.MeshStandardMaterial({ color: 0x3f2a14, roughness: 0.9 }),
     flagMat: new THREE.MeshStandardMaterial({ color: 0xc9483c, roughness: 0.8, side: THREE.DoubleSide }),
@@ -308,6 +330,7 @@ export function makePortModel(kit: PortModelKit, port: PortModelInput): THREE.Gr
   const g = new THREE.Group()
   const scale = portScaleOf(port)
   const roofMat = kit.roofMat[port.region] ?? kit.roofMat.europe
+  const houseMat = kit.houseMat[port.region] ?? kit.houseMat.europe
   const baseR = scale === 'major' ? 1.2 : scale === 'medium' ? 1.0 : 0.76
 
   /**
@@ -355,7 +378,7 @@ export function makePortModel(kit: PortModelKit, port: PortModelInput): THREE.Gr
 
   // ---- 小屋（屋身 + 四棱锥屋顶，成对出现）----
   const addHouse = (x: number, z: number, ry = Math.PI / 4) => {
-    const h = new THREE.Mesh(kit.house, kit.houseMat)
+    const h = new THREE.Mesh(kit.house, houseMat)
     h.position.set(x, baseTopY + 0.035, z)
     h.castShadow = true
     town.add(h)

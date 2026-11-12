@@ -8,6 +8,7 @@ import { createDeckShip, type DeckShip } from './shipModel'
 import { DECK_WAVES, deckShipPose, deckWaveHeight } from './deckWaves'
 import { findCoast, bearingWord, compassWord, wrapDeg, type CoastSighting } from './deckCoast'
 import { createDeckHarbor, type DeckHarbor } from './harborModel'
+import { harborCalm } from './deckHarbor'
 import { createDeckCoast } from './coastModel'
 import { deckEyeY, stepWalk, WALK_SPEED_M, type WalkPos } from './deckWalk'
 import { CABIN_ENTER, CABIN_EXIT, cabinEyeY, stepInCabin } from './deckCabin'
@@ -1154,8 +1155,14 @@ export default function DeckView() {
         if (kind !== lastWeatherKind) lastWeatherKind = kind
         look = approachLook(look, deckWeatherLook(kind), dt)
 
-        // 海面的浪高必须与船的姿态用同一个倍数，否则船会浮在浪外
-        seaUniforms.uWaveScale.value = look.wave
+        /*
+         * 海面的浪高必须与船的姿态用同一个倍数，否则船会浮在浪外。
+         * `calm` 在港内把两者一起压下去（防波堤里的水本来就该平，见 harborCalm）；
+         * 因为改的是**同一个** ampScale，船与水面不会各说各话。
+         */
+        const sight = sightingRef.current
+        const calm = sight ? harborCalm(sight.distNm, st.fleet.isSailing) : 1
+        seaUniforms.uWaveScale.value = look.wave * calm
         // 雾：把"远处混天光"的起点收近
         seaUniforms.uFogNear.value = 28 - 22 * look.fog
         seaUniforms.uFogFar.value = 62 - 38 * look.fog
@@ -1225,8 +1232,13 @@ export default function DeckView() {
        * 而水线泡沫带也跟着一半沉在水下被遮住（实测：中段顶点比水面低 1.5 厘米）。
        * 现在直接用 GPU 用的同一个 `deckWaveHeight` 采船位的水面高度。
        */
-      const pose = deckShipPose(t, 0.72, 0.26, look.wave)
-      const seaAtShip = deckWaveHeight(0, 0, t, look.wave)
+      /*
+       * 船与水面读同一个 `waveAmp`（= look.wave × 港内 calm）：
+       * 港内水面压平了而船还在摇，是这类画面最容易出的错。
+       */
+      const waveAmp = look.wave * (sightingRef.current ? harborCalm(sightingRef.current.distNm, st.fleet.isSailing) : 1)
+      const pose = deckShipPose(t, 0.72, 0.26, waveAmp)
+      const seaAtShip = deckWaveHeight(0, 0, t, waveAmp)
       ship.position.y = seaAtShip + SHIP_DRAFT_LIFT
       // 船有自重：姿态只跟随浪的一部分，全跟随会像一片叶子
       ship.rotation.x = pose.pitch * 0.6

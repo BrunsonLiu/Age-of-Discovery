@@ -1172,9 +1172,10 @@ export default function Map3DView() {  const mountRef = useRef<HTMLDivElement>(n
       disposables.push(
         portKit.base, portKit.house, portKit.roof, portKit.pole, portKit.flag,
         portKit.tower, portKit.towerTop, portKit.unit,
-        portKit.baseMat, portKit.houseMat, portKit.poleMat, portKit.flagMat,
+        portKit.baseMat, portKit.poleMat, portKit.flagMat,
         portKit.towerMat, portKit.woodMat, portKit.deckMat,
-        // 屋顶材质按 region 分四套（Record），要展开成单个材质再登记
+        // 墙与屋顶材质都按 region 分四套（Record），要展开成单个材质再登记
+        ...Object.values(portKit.houseMat),
         ...Object.values(portKit.roofMat),
         shipKit.hull, shipKit.deck, shipKit.mast, shipKit.sail, shipKit.yard, shipKit.bowsprit,
         shipKit.hullMat, shipKit.deckMat, shipKit.mastMat, shipKit.sailMat,
