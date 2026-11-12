@@ -536,6 +536,12 @@ export function harborPlan(style: HarborStyle, width: number, presence: number, 
         if (h.h < 0.52 * s && row === 1) continue
         // 门的正上方那格窗让位
         if (hasDoor && row === 0 && Math.abs(px - h.x) < doorW * 0.95) continue
+        /*
+         * 12% 的窗**不开**：真实老城的立面不会每格都开窗（有的是实墙、有的
+         * 封死了）。等差排列的三乘二窗格是"模型"最强的信号之一 —— 一格缺掉，
+         * 眼睛立刻把它读成一栋有历史的房子而不是一个盒子。
+         */
+        if (rnd(i * 11.3 + c * 3.7 + row * 5.9 + 21) < 0.12) continue
         panes.push({
           x: px,
           y: deckTopY + h.h * yy,

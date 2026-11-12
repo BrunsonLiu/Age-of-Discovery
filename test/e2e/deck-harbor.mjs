@@ -140,9 +140,10 @@ for (const e of EXPECT) {
     `${e.name}：${e.spire ? `有钟楼（高 ${r.spire}）` : '没有钟楼'}`)
   /*
    * 白天的立面细节：墙是一块纯色 Basic 材质，没有窗就是"一排白板"。
-   * 窗数必须是房子数的 2 倍以上（每栋至少两扇），烟囱 0 < n < 房子数。
+   * 下限按"每栋 1.4 扇"给 —— 有一成二的窗是**故意不开**的（真实老城的立面
+   * 不会每格都开窗，等差满格的窗反而是"模型"信号），所以不能按满格×2 判。
    */
-  check(r.panes >= r.houses * 2, `${e.name}：${r.panes} 扇窗（≥ ${r.houses * 2}）`)
+  check(r.panes >= r.houses * 1.4, `${e.name}：${r.panes} 扇窗（≥ ${Math.ceil(r.houses * 1.4)}）`)
   check(r.chimneys > 0 && r.chimneys < r.houses,
     `${e.name}：${r.chimneys} 个烟囱（0 < n < ${r.houses}）`)
   /* 空城问题：码头上得有人，而且不止一种身份（不然是一排复制品） */

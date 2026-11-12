@@ -249,8 +249,26 @@ export function createDeckHarbor(): DeckHarbor {
   group.add(quayWall)
 
   /* ---- 房屋墙（实例化） ---- */
-  const wallGeo = shadeFaces(new THREE.BoxGeometry(1, 1, 1))
+  /*
+   * 墙体：**沿高度分 3 段**（BoxGeometry 的 heightSegments=3），好让墙脚比墙顶暗。
+   *
+   * 【为什么要这一段】白墙是一整块纯色 —— shadeFaces 只按面朝向给一个亮度，
+   * 同一个面从上到下同色，40 像素高的墙就是一格白板。真实的墙脚被地面反溅、
+   * 潮气、人行道蹭脏，比檐下暗一档；这一条竖向渐变几乎不花成本，却让"墙"
+   * 从"色块"变成"立面"。
+   */
+  const wallGeo = shadeFaces(new THREE.BoxGeometry(1, 1, 1, 1, 3, 1))
   wallGeo.translate(0, 0.5, 0) // 原点放到地面，缩放时房子是从地面往上长
+  {
+    const pa = wallGeo.getAttribute('position')
+    const ca = wallGeo.getAttribute('color')
+    for (let i = 0; i < pa.count; i++) {
+      // 墙脚 0.84 → 檐下 1.0（顶点里的 y 已经在 translate 之后是 0..1）
+      const k = 0.84 + 0.16 * Math.min(1, Math.max(0, pa.getY(i)))
+      ca.setXYZ(i, ca.getX(i) * k, ca.getY(i) * k, ca.getZ(i) * k)
+    }
+    ca.needsUpdate = true
+  }
   const walls = new THREE.InstancedMesh(wallGeo, wallMat, MAX_HOUSE)
   walls.name = 'deck-harbor-walls'
   walls.frustumCulled = false
