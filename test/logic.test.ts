@@ -11219,6 +11219,32 @@ console.log('\n== 天数口径守卫 ==')
      * ② 在码头前沿那条带里（z 卡在岸壁与人之间，不许掉进水里）；
      * ③ **不压在栈桥上** —— 木板离水面只有 0.02，穿模一眼就看出来。
      */
+    /*
+     * 体块凹凸（第 118 轮）：用户的原话是"几何太简单，方块感重"。
+     * 三条守形状本身 —— 贴图/光照都改过了，方块感仍在，说明问题在体块。
+     */
+    assert(plan.houses.some((h) => h.jetty > 0), `${st.id} 有房子是二层挑出的`)
+    assert(plan.houses.some((h) => h.annex !== null), `${st.id} 有房子带侧向偏房`)
+    assert(plan.houses.some((h) => h.endGable) && plan.houses.some((h) => !h.endGable),
+      `${st.id} 山墙朝街与屋脊斜街两种屋顶都有（全同向 = 一排相同的红三角）`)
+    for (const h of plan.houses) {
+      if (!h.annex) continue
+      assert(Math.abs(h.annex.x) + h.annex.w * 0.5 <= plan.deckHalfW * 1.02,
+        `${st.id} 偏房不越出码头面（偏房 x=${h.annex.x.toFixed(1)}）`)
+      assert(h.annex.h < h.h, `${st.id} 偏房比主屋矮（${h.annex.h.toFixed(2)} < ${h.h.toFixed(2)}）`)
+    }
+    // 坡度抖动：同一座城的屋顶高/房高 不该是同一个数
+    /*
+     * 用**相对**极差（极差 / 最大值）而不是绝对值：非洲样式的 `roofPitch` 只有
+     * 0.18（平顶土屋），抖动同样的 ±20% 绝对极差只有 0.038 —— 那不是"坡度全一样"，
+     * 是基数小。相对极差 0.22 才是"一眼看得出坡度不同"。
+     */
+    const slopes = plan.houses.map((h) => h.roofH / h.h)
+    const slopeMax = Math.max(...slopes)
+    const slopeGap = (slopeMax - Math.min(...slopes)) / slopeMax
+    assert(slopeGap > 0.22,
+      `${st.id} 屋顶坡度逐栋不同（相对极差 ${(slopeGap * 100).toFixed(0)}%）`)
+
     assert(plan.cargo.length >= 6 && plan.cargo.length <= 24,
       `${st.id} 货堆 ${plan.cargo.length} 件（6~24）`)
     for (const c of plan.cargo) {

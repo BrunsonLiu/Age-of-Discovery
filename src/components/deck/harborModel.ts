@@ -342,6 +342,32 @@ export function createDeckHarbor(): DeckHarbor {
   walls.name = 'deck-harbor-walls'
   walls.frustumCulled = false
   group.add(walls)
+  /*
+   * ---- 打破"方块感"的两组体块（第 118 轮）----
+   *
+   * 用户的原话："几何太简单，方块感重" —— 一栋房 = 一个盒子 + 一个三角顶。
+   * 贴图、光照、调色都改过，方块感依旧，因为**形状本身**就是方的。
+   * 这里加两种真实老城最常见的体块凹凸：
+   *   ① 二层挑出（jetty）：上层比下层宽 4~7%，转角处多一条实阴影线；
+   *   ② 侧向偏房（annex）：一段更矮更小的体块贴在一侧，打断等高排屋的整齐律。
+   * 两者都复用同一份墙体几何与材质，只是多两次 setMatrixAt。
+   */
+  const upperWalls = new THREE.InstancedMesh(wallGeo, wallMat, MAX_HOUSE)
+  upperWalls.name = 'deck-harbor-walls-upper'
+  upperWalls.frustumCulled = false
+  group.add(upperWalls)
+  const jettyBands = new THREE.InstancedMesh(shadeFaces(new THREE.BoxGeometry(1, 1, 1)), plinthMat, MAX_HOUSE)
+  jettyBands.name = 'deck-harbor-jetty-bands'
+  jettyBands.frustumCulled = false
+  group.add(jettyBands)
+  const annexWalls = new THREE.InstancedMesh(wallGeo, wallMat, MAX_HOUSE)
+  annexWalls.name = 'deck-harbor-annex-walls'
+  annexWalls.frustumCulled = false
+  group.add(annexWalls)
+  const annexRoofs = new THREE.InstancedMesh(shadeFaces(new THREE.BoxGeometry(1, 1, 1)), roofMat, MAX_HOUSE)
+  annexRoofs.name = 'deck-harbor-annex-roofs'
+  annexRoofs.frustumCulled = false
+  group.add(annexRoofs)
 
   /*
    * 屋顶：**两坡顶**（屋脊平行岸线）。
@@ -996,13 +1022,58 @@ export function createDeckHarbor(): DeckHarbor {
         plinths.setMatrixAt(i, zero)
         eaves.setMatrixAt(i, zero)
         houseShadows.setMatrixAt(i, zero)
+        upperWalls.setMatrixAt(i, zero)
+        jettyBands.setMatrixAt(i, zero)
+        annexWalls.setMatrixAt(i, zero)
+        annexRoofs.setMatrixAt(i, zero)
         continue
       }
-      dummy.position.set(h.x, deckY, h.z)
-      dummy.rotation.set(0, h.yaw, 0)
-      dummy.scale.set(h.w, h.h, h.d)
-      dummy.updateMatrix()
-      walls.setMatrixAt(i, dummy.matrix)
+      /*
+       * 墙身拆成"下层 + 挑檐板 + 上层"。约定：**h.w 是上层宽度**（屋顶按它出檐），
+       * 所以下层的宽度要除以 (1 + 2·jetty)，这样挑出量只会往外张，
+       * 既有的"不越出码头面"约束（按 h.w 判）也全部仍然成立。
+       */
+      const jw = 1 + 2 * h.jetty
+      const hasJetty = h.jetty > 0
+      if (hasJetty) {
+        dummy.position.set(h.x, deckY, h.z)
+        dummy.rotation.set(0, h.yaw, 0)
+        dummy.scale.set(h.w / jw, h.h * h.splitY, h.d / jw)
+        dummy.updateMatrix()
+        walls.setMatrixAt(i, dummy.matrix)
+        dummy.position.set(h.x, deckY + h.h * h.splitY - h.h * 0.02, h.z)
+        dummy.scale.set(h.w * 1.01, Math.max(0.02, h.h * 0.04), h.d * 1.01)
+        dummy.updateMatrix()
+        jettyBands.setMatrixAt(i, dummy.matrix)
+        dummy.position.set(h.x, deckY + h.h * h.splitY, h.z)
+        dummy.scale.set(h.w, h.h * (1 - h.splitY), h.d)
+        dummy.updateMatrix()
+        upperWalls.setMatrixAt(i, dummy.matrix)
+      } else {
+        dummy.position.set(h.x, deckY, h.z)
+        dummy.rotation.set(0, h.yaw, 0)
+        dummy.scale.set(h.w, h.h, h.d)
+        dummy.updateMatrix()
+        walls.setMatrixAt(i, dummy.matrix)
+        upperWalls.setMatrixAt(i, zero)
+        jettyBands.setMatrixAt(i, zero)
+      }
+
+      /* 偏房：更矮的一段贴着主屋，平顶（地中海/都铎的加建都是平顶或单坡） */
+      if (h.annex) {
+        dummy.position.set(h.annex.x, deckY, h.annex.z)
+        dummy.rotation.set(0, h.yaw, 0)
+        dummy.scale.set(h.annex.w, h.annex.h, h.annex.d)
+        dummy.updateMatrix()
+        annexWalls.setMatrixAt(i, dummy.matrix)
+        dummy.position.set(h.annex.x, deckY + h.annex.h, h.annex.z)
+        dummy.scale.set(h.annex.w * 1.1, Math.max(0.03, h.h * 0.05), h.annex.d * 1.1)
+        dummy.updateMatrix()
+        annexRoofs.setMatrixAt(i, dummy.matrix)
+      } else {
+        annexWalls.setMatrixAt(i, zero)
+        annexRoofs.setMatrixAt(i, zero)
+      }
       /*
        * 逐栋色差（instanceColor）。
        *
@@ -1058,10 +1129,17 @@ export function createDeckHarbor(): DeckHarbor {
       dummy.updateMatrix()
       eaves.setMatrixAt(i, dummy.matrix)
 
-      /* 屋顶：挑出 14%（≈2.6 米），与檐影一起给出"屋顶压在墙上"的关系 */
+      /*
+       * 屋顶：挑出 14%（≈2.6 米），与檐影一起给出"屋顶压在墙上"的关系。
+       *
+       * `endGable` 时转 90°：屋脊垂直于岸线，立面变成一个大三角（山墙朝街）。
+       * 几何本身是"屋脊沿 x"的两坡顶，转 90° 之后长度必须用进深 d ——
+       * 直接把 w/d 在 scale 里互换，不再造第二份几何。
+       */
       dummy.position.set(h.x, deckY + h.h, h.z)
-      dummy.rotation.set(0, h.yaw, 0)
-      dummy.scale.set(h.w * 1.14, Math.max(0.05, h.roofH), h.d * 1.14)
+      dummy.rotation.set(0, h.endGable ? h.yaw + Math.PI / 2 : h.yaw, 0)
+      if (h.endGable) dummy.scale.set(h.d * 1.14, Math.max(0.05, h.roofH), h.w * 1.14)
+      else dummy.scale.set(h.w * 1.14, Math.max(0.05, h.roofH), h.d * 1.14)
       dummy.updateMatrix()
       roofs.setMatrixAt(i, dummy.matrix)
     }
@@ -1072,6 +1150,10 @@ export function createDeckHarbor(): DeckHarbor {
     plinths.instanceMatrix.needsUpdate = true
     eaves.instanceMatrix.needsUpdate = true
     houseShadows.instanceMatrix.needsUpdate = true
+    upperWalls.instanceMatrix.needsUpdate = true
+    jettyBands.instanceMatrix.needsUpdate = true
+    annexWalls.instanceMatrix.needsUpdate = true
+    annexRoofs.instanceMatrix.needsUpdate = true
 
     /* ---- 城内第三排：远屋顶（只有墙 + 屋顶，往冷灰里压） ---- */
     const nF = Math.min(MAX_FAR, pl.farHouses.length)
