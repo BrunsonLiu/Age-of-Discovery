@@ -9,6 +9,7 @@ import { useMapStore } from '@/store/useMapStore'
 import { getPreset } from '@/utils/quality'
 import { useFxStore as useFx } from '@/store/useFxStore'
 import { ports } from '@/data/ports'
+import { legendPending, nextChapter } from '@/data/nations'
 import { routes } from '@/data/routes'
 import { findNearestOceanPoint, isOnLand, fetchLandGeojsonForRender, loadLandData } from '@/utils/landCheck'
 import { getRouteGeometry, toLatLngList, type RouteGeometry } from '@/utils/routePath'
@@ -61,6 +62,7 @@ import {
   type ScreenLabel,
 } from './mapLabels3d'
 import { createSeaLayer3d, type SeaStaticItem } from './seaLayer3d'
+import { buildLegendMarks, createLegendLayer3d } from './mapLegends3d'
 import type { Waypoint } from '@/types'
 
 /**
@@ -1384,6 +1386,24 @@ export default function Map3DView() {  const mountRef = useRef<HTMLDivElement>(n
       // 玩家不会想到"这是渲染层的差别"，只会觉得这边少了东西、或者自己点不到。
       // 投影方式复用标签层：世界坐标 → 屏幕像素 → 绝对定位 DOM。
       const seaLayer = createSeaLayer3d(mount, getRelicItems)
+
+      /*
+       * ---- 传说 / 故事线的标记 ----
+       *
+       * 【为什么必须补】2D 海图有金色传说圈和三段航路的菱形，切到立体海图之后
+       * **全部消失**。玩家不会想到"这是渲染层的差别"，只会觉得"这边少了东西"，
+       * 或者干脆忘了还有一片海没去 —— 而"回来有个东西在等你"正是留存机制。
+       *
+       * 只放**当前该出现**的：传说兑现过就不再出现，故事只出现"下一段"的目的地。
+       */
+      const legendLayer = createLegendLayer3d(
+        mount,
+        buildLegendMarks(useGameStore.getState(), ports, legendPending, nextChapter),
+      )
+      scene.add(legendLayer.group)
+      allLabels.push(...legendLayer.labels)
+      measureLabels(legendLayer.labels)
+      remeasureWhenFontsReady(legendLayer.labels)
 
       // ---- 玩家船 ----
       // 船尾尾迹：航行时才出现（见 shipWake.ts）
@@ -2738,6 +2758,12 @@ export default function Map3DView() {  const mountRef = useRef<HTMLDivElement>(n
         // 现在有三类标签（港口 20 + 海名 18 + 洲名 10 = 48 个）要互相避让，
         // 逻辑写在帧循环里会越来越臃肿。见 mapLabels3d.ts。
         placeLabels(allLabels, camera, width, height, tmpV)
+        /*
+         * 传说标记的呼吸：白天在浅色海图上金色会糊，夜里更亮一档。
+         * 夜色直接问 `skyAt`（纯函数，与 2D 同源）—— `lit` 只在上面的
+         * 日相分支里存在，这里拿不到。
+         */
+        legendLayer.update(tNow / 1000, 1 - skyAt(tNow, state.routeProgress ?? 0).lit)
         // 漂流物与标签共用同一台相机、同一个临时向量（不另分配）
         seaLayer.update(camera, width, height, tmpV)
 
@@ -2759,6 +2785,7 @@ export default function Map3DView() {  const mountRef = useRef<HTMLDivElement>(n
         for (const po of portObjects) po.label.el.remove()
         for (const l of areaLabels) l.el.remove()
         seaLayer.destroy()
+        legendLayer.dispose()
         scene.traverse((o) => {
           if (o instanceof THREE.Mesh) o.geometry.dispose()
         })

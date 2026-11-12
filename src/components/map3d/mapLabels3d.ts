@@ -95,9 +95,21 @@ export function createAreaLabels(mount: HTMLElement): ScreenLabel[] {
 }
 
 /** 港口标签的元素工厂（尺寸与样式由 CSS 决定，这里只给锚点高度） */
-export function createPortLabel(mount: HTMLElement, text: string, x: number, z: number): ScreenLabel {
+export function createPortLabel(
+  mount: HTMLElement,
+  text: string,
+  x: number,
+  z: number,
+  /**
+   * 标签种类。默认 'port'；传说/故事标记传自己的种类，好让 CSS 换一套配色
+   * （金色、斜体），同时**共用同一套投影与避让** —— 三类标签必须互相避让，
+   * 各搞一套投影必然打架。
+   */
+  kind: 'port' | 'legend' | 'story' = 'port',
+): ScreenLabel {
   const el = document.createElement('div')
   el.className = 'map3d-port-label'
+  if (kind !== 'port') el.classList.add(`map3d-${kind}-label`)
   el.textContent = text
   mount.appendChild(el)
   return { el, kind: 'port', x, y: PORT_LABEL_Y, z, w: 0, h: 0, shown: true }

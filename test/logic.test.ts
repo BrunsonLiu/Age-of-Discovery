@@ -99,6 +99,7 @@ import {
 import { bowWaveLength, bowWaveSpread, KELVIN_TAN, kelvinStrength, wakeStrength, WATERLINE_Y_M } from '../src/components/deck/deckWake'
 import { CABIN_BOUNDS, CABIN_ENTER, CABIN_EXIT, cabinEyeY, cabinFloorY, clampToCabin, isInCabin, stepInCabin } from '../src/components/deck/deckCabin'
 import { clampElevation, EL_MAX, EL_MIN, EL_TIGHTEN_FROM, minElevationAt } from '../src/components/map3d/cameraLimits'
+import { buildLegendMarks } from '../src/components/map3d/mapLegends3d'
 import {
   findCoast, wrapDeg, coastLayout, coastScenePos, bearingWord,
 } from '../src/components/deck/deckCoast'
@@ -234,6 +235,7 @@ import { findSeaPath, loadSeaMask, isSeaMaskLoaded, isLandAt } from '../src/util
 import { seasonAt, SEASON_DAYS, ALL_SEASONS, inMonsoonZone } from '../src/utils/season'
 import { prevailingWindBearingAt, prevailingWindBearing, computeWindFavor } from '../src/utils/navigation'
 import { snowPhaseOf } from '../src/components/map3d/mapPeaks3d'
+import { ports as PORTS_FOR_MARKS } from '../src/data/ports'
 import { buildMap3DLayers } from '../src/components/map3d/mapLayers3d'
 import { routeCurrentFactor, currentAt } from '../src/utils/seaCurrents'
 import * as THREE from 'three'
@@ -12267,6 +12269,50 @@ console.log('\n== 天数口径守卫 ==')
   const npc = readFileSync(join(process.cwd(), 'src', 'components', 'map', 'NpcShips2D.tsx'), 'utf8')
   assert(/lastPx/.test(npc) && />=\s*2/.test(npc), '尾迹按"屏幕上移动 ≥2px"节流重画')
   assert(/wakeNmForScreen/.test(npc), '尾迹长度按当前缩放换算（屏幕长度恒定）')
+}
+
+/*
+ * ---- 3D 海图的传说 / 故事标记 ----
+ *
+ * 2D 海图上有金色传说圈和三段航路的菱形，切到立体海图之后它们曾经**全部消失**
+ * （玩家只会觉得"这边少了东西"，或者忘了还有一片海没去）。
+ * 这里守的是**语义**（图上该有什么），不是网格怎么摆。
+ */
+{
+  const spain = buildLegendMarks(
+    { nation: 'spain', collectedLegends: [], storyDone: [] },
+    PORTS_FOR_MARKS, legendPending, nextChapter,
+  )
+  assert(spain.some((m) => m.kind === 'legend'), '西班牙开局：图上有传说标记')
+  const st0 = spain.find((m) => m.kind === 'story')
+  assert(!!st0 && st0.chapter === 1, `故事标记是第 ${st0?.chapter} 段（应为 1）`)
+  // 故事标记必须**正好在目的地港口上**：偏几度会让玩家以为目的地在港外的海上
+  const havana = PORTS_FOR_MARKS.find((x) => x.id === 1)!
+  assert(!!st0 && Math.abs(st0.lat - havana.latitude) < 1e-9 && Math.abs(st0.lng - havana.longitude) < 1e-9,
+    '故事标记落在目的港口的坐标上（不是附近的海面）')
+  assert(!!st0 && st0.label === '', '故事标记不给 DOM 标签（段号画在图标里，避免和港名抢位置）')
+
+  // 传说兑现过就不再出现
+  const done = buildLegendMarks(
+    { nation: 'spain', collectedLegends: ['fountain-youth'], storyDone: [] },
+    PORTS_FOR_MARKS, legendPending, nextChapter,
+  )
+  assert(!done.some((m) => m.kind === 'legend'), '传说兑现之后标记消失（传说只发生一次）')
+
+  // 走完一段，菱形跳到下一段
+  const second = buildLegendMarks(
+    { nation: 'spain', collectedLegends: [], storyDone: ['spain-1'] },
+    PORTS_FOR_MARKS, legendPending, nextChapter,
+  )
+  assert(second.find((m) => m.kind === 'story')?.chapter === 2, '走完第 1 段之后菱形变成第 2 段')
+
+  // 没有国别（老存档 / 参观模式）时一个标记都不该有 —— 不许凭空塞一条传说
+  const none = buildLegendMarks({ nation: null }, PORTS_FOR_MARKS, legendPending, nextChapter)
+  assert(none.length === 0, '没有国别时图上没有任何传说/故事标记')
+
+  // 每个国别都有自己的传说坐标（不能是同一个点）
+  const pts = NATIONS.map((n) => `${n.legend.lat.toFixed(1)},${n.legend.lng.toFixed(1)}`)
+  assert(new Set(pts).size === NATIONS.length, '每个国别的传说坐标各不相同')
 }
 
 console.log(`\n最终结果：${passed} 通过 / ${failed} 失败`)

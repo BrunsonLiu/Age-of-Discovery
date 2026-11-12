@@ -804,6 +804,23 @@ body {
  * 但那是**系统字体**（isCustomFont: false）；没装字体的机器就会掉到宋体。
  * 写全族名后，没装的机器会用我们自托管的 411KB 子集。
  */
+/*
+ * 传说 / 故事线的标签（3D 海图）。
+ *
+ * 【为什么单独一套配色】它和港口名共用投影与避让，但语义完全不同：
+ * 港口是"这里可以停"，传说是"这里有故事"。金色 + 斜体把两者分开，
+ * 而字号**不变**（12px 是中文下限，再小就糊）。
+ */
+.map3d-legend-label {
+  color: #f4d79a;
+  font-style: italic;
+  text-shadow: 0 0 10px rgba(240, 200, 120, 0.75), 0 1px 3px #000, 0 0 3px #000;
+}
+.map3d-story-label {
+  color: #d8e6c8;
+  text-shadow: 0 0 9px rgba(200, 220, 170, 0.55), 0 1px 3px #000, 0 0 3px #000;
+}
+
 /* 港口名：跟随 3D 投影的 DOM 标签 */
 .map3d-port-label {
   position: absolute;
