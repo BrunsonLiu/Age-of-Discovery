@@ -542,6 +542,8 @@ export interface GameState {
    * 按 id 记而不是记下标——下标在老存档里是 0，会让人重走一遍。
    */
   storyDone: string[]
+  /** 上一次朝贡是第几天（-99 = 从没交过）。只有大明的「交勘合」会写它 */
+  lastTributeDay: number
 }
 
 /**

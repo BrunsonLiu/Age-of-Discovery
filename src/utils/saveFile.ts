@@ -20,7 +20,7 @@
 
 export const SAVE_KEY = 'age-of-discovery-save'
 /** 与 useGameStore.ts 的 persist version 保持一致；升版本时两处一起改 */
-export const SAVE_VERSION = 18
+export const SAVE_VERSION = 19
 
 /**
  * 导入白名单 = persist 的 partialize 字段表。
@@ -36,7 +36,7 @@ export const SAVE_FIELDS = [
   'helmAdvance', 'weather', 'dialogueSeen', 'gameMode',
   'logbook', 'claimedVictories', 'collectedDebris', 'collectedRelics', 'knownPassages',
   // 2026-11-12 开局国别与它那条传说（V17 加的字段；老存档读到 undefined 由 merge 补 null）
-  'nation', 'collectedLegends', 'storyDone',
+  'nation', 'collectedLegends', 'storyDone', 'lastTributeDay',
 ] as const
 
 export interface SaveFile {

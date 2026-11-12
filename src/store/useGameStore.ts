@@ -38,7 +38,7 @@ import {
 import { advanceDebris } from '@/utils/seaDebris'
 import { debrisGain, DEBRIS_INFO, type DebrisSpot } from '@/data/debris'
 import { findRelic, relicDistanceNm, relicInSeason, RELIC_PICKUP_NM } from '@/data/relics'
-import { nationById, legendPending, nextChapter, DEFAULT_NATION } from '@/data/nations'
+import { nationById, legendPending, nextChapter, tributeState, DEFAULT_NATION } from '@/data/nations'
 import { phenomenonAt, phenomenonEventBias, SEA_PHENOMENA } from '@/data/seaPhenomena'
 import { newlyReached } from '@/data/voyageMilestones'
 import { appendLogbook, findClueFor, makeArrivalEntry, makeEchoEntry, makeTitleEntry, markAllRead } from '@/data/logbook'
@@ -274,6 +274,8 @@ const initialGameState: GameState = {
   collectedLegends: [],
   /** 已走完的航路段落（见 data/nations 的 story[].id） */
   storyDone: [],
+  /** 上一次朝贡是第几天（-99 = 从没交过；只有大明用） */
+  lastTributeDay: -99,
 }
 
 interface GameStore extends GameState {
@@ -418,6 +420,13 @@ interface GameStore extends GameState {
    * 不要把它包装成"对抗每日衰减"，那是假的。
    */
   holdMess: () => void
+  /**
+   * 交勘合（**只有大明**）：把香料交给市舶司，换名号/士气/朝廷脸面。
+   *
+   * 判据走 `tributeState`（与界面同一份）：不在广州、冷却没到、货不够，
+   * 一律不放行 —— 界面那边按钮也据此变灰，不会出现"写着能交、点下去没反应"。
+   */
+  payTribute: () => void
   /** 第三条线：操舵挑战结算——沿当前航线真实推进一段航程，并按评级结算士气/耐久/声望 */
   finishHelmRun: (result: HelmRunResult) => void
   /**
@@ -1317,6 +1326,7 @@ export const useGameStore = create<GameStore>()(
           nation: nation.id,
           collectedLegends: [],
           storyDone: [],
+          lastTributeDay: -99,
         })
         /*
          * 海图的初始视野默认钉在伊比利亚（[34,-9]，见 useMapStore）。
@@ -2418,6 +2428,46 @@ export const useGameStore = create<GameStore>()(
         })
       }),
 
+      payTribute: () => set((state) => {
+        const st = tributeState(
+          state.nation, state.fleet.day, state.lastTributeDay,
+          state.fleet.cargo, state.fleet.currentPortId, state.fleet.isSailing,
+        )
+        if (!st || !st.ready) return state
+        let cargo = state.fleet.cargo
+        for (const g of st.rule.goods) cargo = updateCargo(cargo, g.goodId, -g.qty)
+        const newFleet = syncUsedCapacity({
+          ...state.fleet,
+          cargo,
+          fame: state.fleet.fame + st.rule.gain.fame,
+          morale: Math.min(GAME_BALANCE.MORALE_MAX, state.fleet.morale + st.rule.gain.morale),
+        })
+        const factionRep = Object.entries(st.rule.gain.faction).reduce(
+          (acc, [k, v]) => ({ ...acc, [k]: Math.max(-100, Math.min(100, (acc[k as FactionId] ?? 0) + (v ?? 0))) }),
+          { ...state.factionRep },
+        )
+        useFxStore.getState().fx(
+          {
+            kind: 'banner', tone: 'gold',
+            text: `进贡 · ${st.rule.label}`,
+            sub: `名号 +${st.rule.gain.fame} · 士气 +${st.rule.gain.morale}`,
+          },
+          'milestone',
+        )
+        return withAchievements(state, {
+          fleet: newFleet,
+          factionRep,
+          lastTributeDay: state.fleet.day,
+          notifications: [...state.notifications, {
+            id: `tribute-${state.fleet.day}`,
+            type: 'history' as const,
+            title: `进贡 · ${st.rule.label}`,
+            message: st.rule.gift,
+            timestamp: Date.now(),
+          }],
+        })
+      }),
+
       /**
        * 操舵挑战结算（第三条线：实时操作）。
        * 奖励沿当前航线「真实推进」——位置直接朝目标挪一段，
@@ -2901,6 +2951,14 @@ export const useGameStore = create<GameStore>()(
         if (version < 18) {
           if (!Array.isArray(pState.storyDone)) pState.storyDone = []
         }
+        /*
+         * v18→v19: 朝贡（只有大明用得到）。
+         * 补 -99 = "从没交过"，所以第一次进广州就能交；
+         * **不能补成 0**：第 0 天交过的话，开局当天就进冷却，玩家会以为坏了。
+         */
+        if (version < 19) {
+          if (pState.lastTributeDay === undefined) pState.lastTributeDay = -99
+        }
         return persistedState
       },
       partialize: (state) => ({
@@ -2946,6 +3004,7 @@ export const useGameStore = create<GameStore>()(
         nation: state.nation,
         collectedLegends: state.collectedLegends,
         storyDone: state.storyDone,
+        lastTributeDay: state.lastTributeDay,
       }),
       // 存档软锁修复：存档里若停在事件阶段但事件未持久化，重开时落回 playing
       merge: (persisted, current) => {
@@ -2966,6 +3025,7 @@ export const useGameStore = create<GameStore>()(
         merged.nation = merged.nation ?? null
         merged.collectedLegends = merged.collectedLegends ?? []
         merged.storyDone = merged.storyDone ?? []
+        merged.lastTributeDay = merged.lastTributeDay ?? -99
         return merged
       },
     }

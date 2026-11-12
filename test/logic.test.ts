@@ -63,7 +63,7 @@ import {
   climateGapCenter, climateLabelPx, climateRuns, OBLIQUITY_DEG, POLAR_CIRCLE_DEG,
 } from '../src/utils/climateLines'
 import { climateZoneAt, cursorLabel, readoutPlacement } from '../src/utils/cursorReadout'
-import { DEFAULT_NATION, legendPending, NATION_COUNT, NATIONS, nationById, nextChapter, storyStep } from '../src/data/nations'
+import { DEFAULT_NATION, legendPending, NATION_COUNT, NATIONS, nationById, nextChapter, storyStep, tributeState } from '../src/data/nations'
 import {
   SURF_PERIOD_PX, SURF_WIND_FULL, SURF_WIND_MIN, surfDash, surfOpacity, surfStrength, surfWeight,
 } from '../src/utils/surf'
@@ -10979,6 +10979,86 @@ console.log('\n== 天数口径守卫 ==')
   assert(/nation && \(/.test(atlasSrc), '没选国别（老存档/参观模式）时整块不出现')
   const storeSrc3 = readFileSync(join(process.cwd(), 'src', 'store', 'useGameStore.ts'), 'utf8')
   assert(/makeTitleEntry\(finaleClaim/.test(storeSrc3), '名号走的是与其它称号同一条写入路径（写进册子）')
+}
+
+
+/*
+ * ---- 朝贡（交勘合）：大明的非金钱杠杆 ----
+ *
+ * 【守什么】用户要"每个国家在这段历史有不同的故事线"。大明的身份是朝贡宗主，
+ * 所以给它一个别人没有的动作：把南洋带回来的香料交给市舶司，换名号与脸面。
+ * 这里守四件事：
+ *  ① 只有大明有这条规则（别国是 undefined，界面那块根本不出现）；
+ *  ② 换的不是钱：交付的是**船上的货**，回赐里没有金币；
+ *  ③ 判据只有一份（`tributeState`），界面与 store 共用 —— 按钮亮着就一定能交；
+ *  ④ 冷却真的挡得住：同一天连点两次只算一次。
+ */
+{
+  const china = nationById('china')
+  assert(!!china.tribute, '大明有朝贡规则')
+  assert(NATIONS.filter(n => n.tribute).length === 1, '只有大明有朝贡（别国没有这条线）')
+  const rule = china.tribute!
+  assert(rule.portId === china.portId, '朝贡只能在母港（广州）交')
+  assert(!('gold' in rule.gain), '回赐里没有金币')
+  assert(rule.gain.fame > 0 && rule.cooldownDays >= 7, `回赐有名号、冷却 ${rule.cooldownDays} 天`)
+  for (const g of rule.goods) {
+    assert(!!goods.find(x => x.id === g.goodId), `要的货 id=${g.goodId} 真的存在`)
+    assert(g.qty > 0, `要的件数 ${g.qty} 是正数`)
+    // 关键：要的货不能在广州本地便宜买到，否则"朝贡"就是左手进右手出
+    const local = portGoods.find(pg => pg.portId === rule.portId && pg.goodId === g.goodId)
+    assert(!local || local.priceModifier > 0.9, `要的货在广州不是本地特产（modifier ${local?.priceModifier ?? '无'}）`)
+  }
+
+  // ② 判据：位置 / 冷却 / 货量三关
+  const cargo = [{ goodId: 9, quantity: 6 }]
+  const ok = tributeState('china', 30, -99, cargo, 21, false)
+  assert(!!ok && ok.ready, `在广州、有 6 担香料 → 可交（${JSON.stringify(ok?.missing)}）`)
+  assert(tributeState('china', 30, -99, cargo, 12, false)?.ready === false, '在满剌加不能交（不是市舶司）')
+  assert(tributeState('china', 30, -99, [], 21, false)?.ready === false, '船上没货不能交')
+  assert(tributeState('china', 30, -99, cargo, 21, true)?.ready === false, '航行中不能交')
+  const cooling = tributeState('china', 30, 20, cargo, 21, false)
+  assert(cooling?.cooldownLeft === 10 && cooling.ready === false,
+    `冷却中：还剩 ${cooling?.cooldownLeft} 天（应 10）`)
+  assert(tributeState('china', 40, 20, cargo, 21, false)?.ready === true, '冷却到了就能再交')
+  assert(tributeState('portugal', 30, -99, cargo, 7, false) === null, '葡萄牙没有朝贡状态')
+  assert(tributeState(null, 30, -99, cargo, 21, false) === null, '没选国别就没有朝贡')
+
+  // ③ 真跑：交一次，货少了、名号涨了、进冷却
+  useGameStore.getState().initGame('merchant', 'captain', 'china')
+  const base = useGameStore.getState()
+  useGameStore.setState({
+    fleet: { ...base.fleet, day: 30, cargo: [{ goodId: 9, quantity: 6 }], usedCapacity: 6, fame: 0, morale: 70 },
+    factionRep: { ...base.factionRep, scholars: 14 },
+    lastTributeDay: -99,
+  })
+  useGameStore.getState().payTribute()
+  const paid = useGameStore.getState()
+  assert((paid.fleet.cargo.find(c => c.goodId === 9)?.quantity ?? 0) === 0,
+    `香料交出去了（剩 ${paid.fleet.cargo.find(c => c.goodId === 9)?.quantity ?? 0}）`)
+  assert(paid.fleet.fame === rule.gain.fame, `名号 +${rule.gain.fame}（实测 ${paid.fleet.fame}）`)
+  assert(paid.factionRep.scholars === 14 + (rule.gain.faction.scholars ?? 0),
+    `学者声望 ${paid.factionRep.scholars}`)
+  assert(paid.lastTributeDay === 30, `记下第 ${paid.lastTributeDay} 天交的`)
+
+  // 同一天再点：货已经没了 + 冷却，两边都不该动
+  useGameStore.setState({ fleet: { ...paid.fleet, cargo: [{ goodId: 9, quantity: 6 }] } })
+  const fameBefore = useGameStore.getState().fleet.fame
+  useGameStore.getState().payTribute()
+  assert(useGameStore.getState().fleet.fame === fameBefore, '同一天连点第二次不结算（冷却挡得住）')
+
+  // 葡萄牙船长在广州也交不了（规则根本不挂在他身上）
+  useGameStore.getState().initGame('merchant', 'captain', 'portugal')
+  const pt0 = useGameStore.getState()
+  useGameStore.setState({ fleet: { ...pt0.fleet, currentPortId: 21, cargo: [{ goodId: 9, quantity: 6 }] } })
+  const ptFame = useGameStore.getState().fleet.fame
+  useGameStore.getState().payTribute()
+  assert(useGameStore.getState().fleet.fame === ptFame, '葡萄牙船长在广州交不了勘合')
+
+  // ④ 界面守卫：港口面板用同一个判据，且带 data-service-anchor 便于取证
+  const pdSrc = readFileSync(join(process.cwd(), 'src', 'components', 'panels', 'PortDetail.tsx'), 'utf8')
+  assert(/tributeState\(/.test(pdSrc), '港口面板的按钮状态走同一份 tributeState')
+  assert(/data-service-anchor="tribute"/.test(pdSrc), '朝贡那一块有锚点（e2e 据此取证）')
+  assert(/disabled=\{!tribute\.ready\}/.test(pdSrc), '不可交时按钮是灰的（不是点了没反应）')
 }
 
 

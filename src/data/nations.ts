@@ -89,6 +89,34 @@ export interface NationFinale {
   desc: string
 }
 
+/**
+ * 朝贡规则（**只有大明有**）。
+ *
+ * 【为什么这条规则只给大明】"每个国家有不同的故事线"不是一句客套：
+ * 大明在这段历史里的身份是**朝贡贸易的宗主**，不是"又一个抢航线的欧洲王室"。
+ * 所以给它的不是又一条价格补丁，而是一个别人没有的动作：把南洋带回来的香料
+ * 交给市舶司，换名号与朝廷/学者的脸面 —— **换的不是钱**（这条线不再扩展金钱玩法），
+ * 是"别人怎么看你"，以及下次去马六甲时港口对你的态度。
+ *
+ * 【为什么要指定货、而且是指定的量】朝贡本身是"方物"制度：不是随便点一下就有赏。
+ * 香料必须从满剌加一带运回来（广州本地卖香料但贵），所以这个动作天然咬住
+ * 大明的第一段航路：满剌加买香料 → 回广州交勘合。不是任务列表，是一条真的航路。
+ */
+export interface TributeRule {
+  /** 只能在这座港交（大明的市舶司在广州） */
+  portId: number
+  /** 交付清单（货 → 件数） */
+  goods: { goodId: number; qty: number }[]
+  /** 回赐：名号 / 士气 / 势力声望（**没有金币**） */
+  gain: { fame: number; morale: number; faction: Partial<Record<FactionId, number>> }
+  /** 两次朝贡之间至少隔多少天 */
+  cooldownDays: number
+  /** 界面上的动作名 */
+  label: string
+  /** 回赐的一句 flavor */
+  gift: string
+}
+
 export interface NationStart {
   /** 士气加成（加在 70 上，封顶 100） */
   morale: number
@@ -123,6 +151,8 @@ export interface Nation {
   story: StoryChapter[]
   /** 三段走完的专属名号 */
   finale: NationFinale
+  /** 朝贡规则（只有大明有；别国是 undefined） */
+  tribute?: TributeRule
 }
 
 export const NATIONS: readonly Nation[] = [
@@ -340,6 +370,18 @@ export const NATIONS: readonly Nation[] = [
       key: 'route-china',
       name: '宝船旧航路上的人',
       desc: '满剌加、蒙巴萨、桑给巴尔。六十年前宝船队走过的那条线，你又走了一遍。',
+    },
+    /*
+     * 交勘合：把满剌加一带的香料交给市舶司。
+     * 值的不是钱——是市舶司记下你的名字，下一趟进港时他们对你的船客气一点。
+     */
+    tribute: {
+      portId: 21,
+      goods: [{ goodId: 9, qty: 6 }],
+      gain: { fame: 26, morale: 8, faction: { scholars: 12 } },
+      cooldownDays: 20,
+      label: '交勘合',
+      gift: '市舶司收下六担香料，回赐两匹宫缎——还有一句"下回带货来"。',
     },  },
 ]
 
@@ -392,4 +434,43 @@ export function storyStep(nationId: string | null | undefined, done: readonly st
   const n = NATIONS.find(x => x.id === nationId)
   if (!n) return 0
   return n.story.filter(c => done.includes(c.id)).length
+}
+
+
+/**
+ * 朝贡这一刻能不能交：**界面与 store 共用同一份判据**。
+ *
+ * 【为什么不让界面自己算】按钮上写着"可交"、点下去 store 拒绝，是本项目最忌讳的
+ * 一类错（屏幕上说的与实际发生的不一致）。所以两侧都调这一个函数：
+ * 界面拿它决定按钮灰不灰、文案写"还差几担"还是"再过几天"，store 拿它决定放不放行。
+ */
+export interface TributeStatus {
+  rule: TributeRule
+  /** 已经在这座港、且不在航行中 */
+  atPort: boolean
+  /** 冷却还剩几天（0 = 到期） */
+  cooldownLeft: number
+  /** 每样货还差多少（空数组 = 都够） */
+  missing: { goodId: number; need: number; have: number }[]
+  /** 三项全过才可交 */
+  ready: boolean
+}
+
+export function tributeState(
+  nationId: string | null | undefined,
+  day: number,
+  lastDay: number,
+  cargo: readonly { goodId: number; quantity: number }[],
+  portId: number | null,
+  isSailing: boolean,
+): TributeStatus | null {
+  if (!nationId) return null
+  const rule = NATIONS.find(n => n.id === nationId)?.tribute
+  if (!rule) return null
+  const atPort = !isSailing && portId === rule.portId
+  const cooldownLeft = Math.max(0, rule.cooldownDays - (day - (Number.isFinite(lastDay) ? lastDay : -99)))
+  const missing = rule.goods
+    .map(g => ({ goodId: g.goodId, need: g.qty, have: cargo.find(c => c.goodId === g.goodId)?.quantity ?? 0 }))
+    .filter(m => m.have < m.need)
+  return { rule, atPort, cooldownLeft, missing, ready: atPort && cooldownLeft === 0 && missing.length === 0 }
 }

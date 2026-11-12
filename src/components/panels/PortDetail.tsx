@@ -1,9 +1,11 @@
-import { Anchor, Wrench, Package, Users, Coins, Shield, Heart, Ship, Map, Compass } from 'lucide-react'
+import { Anchor, Wrench, Package, Users, Coins, Shield, Heart, Ship, Map, Compass, ScrollText } from 'lucide-react'
 import { useGameStore } from '@/store/useGameStore'
 import { useMapStore } from '@/store/useMapStore'
 import { ports } from '@/data/ports'
 import { tasks } from '@/data/tasks'
 import { GAME_BALANCE } from '@/data/gameConfig'
+import { goods } from '@/data/goods'
+import { tributeState } from '@/data/nations'
 import { OFFICERS } from '@/data/officers'
 import { CREW_CHARS } from '@/data/crewChars'
 import { officerPortrait, crewPortrait } from '@/data/portraits'
@@ -50,6 +52,9 @@ export default function PortDetail() {
   const recruitCrewMember = useGameStore(s => s.recruitCrewMember)
   const factionRep = useGameStore(s => s.factionRep)
   const setViewMode = useMapStore(s => s.setViewMode)
+  const nation = useGameStore(s => s.nation)
+  const lastTributeDay = useGameStore(s => s.lastTributeDay)
+  const payTribute = useGameStore(s => s.payTribute)
 
   const portId = fleet.currentPortId || selectedPortId
   const port = ports.find(p => p.id === portId)
@@ -95,6 +100,14 @@ export default function PortDetail() {
   const handleFeast = () => {
     holdFeast()
   }
+
+  /*
+   * 朝贡状态：与 store 用同一个函数，所以"按钮灰/亮"与"点下去成不成"必然一致。
+   * 没有国别、或这个国别没有朝贡规则（四国都是 undefined）时返回 null，整块不出现。
+   */
+  const tribute = tributeState(
+    nation, fleet.day, lastTributeDay, fleet.cargo, fleet.currentPortId, fleet.isSailing,
+  )
 
   const RECRUIT_COST = GAME_BALANCE.DEFAULT_RECRUIT_COUNT * GAME_BALANCE.CREW_COST_PER_PERSON
 
@@ -244,6 +257,72 @@ export default function PortDetail() {
                     {serviceNames[svc]}
                   </button>
                 ))}
+                {/*
+                  【大明的第六块铜牌】港口服务那张网格是玩家一眼能看见的地方；
+                  朝贡那一栏在卡片下方（要滚动才看得到）。不在这里放一个入口，
+                  这个"只有大明有"的动作就等于藏起来了 —— 实测第一次截图时
+                  它落在 y=978，整个屏幕之外。
+                  行为与修理/补给一致：滚到那一栏（不切面板）。
+                */}
+                {tribute && port.id === tribute.rule.portId && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const anchor = document.querySelector('[data-service-anchor="tribute"]')
+                      anchor?.scrollIntoView({ behavior: prefersReducedMotion() ? 'auto' : 'smooth', block: 'center' })
+                    }}
+                    data-service="tribute"
+                    aria-label="跳到交勘合那一栏"
+                    className="flex items-center gap-1.5 plate-btn rounded px-2 py-1.5 text-[13px] text-gold-300 font-serif transition-colors hover:text-gold-200"
+                  >
+                    <ScrollText size={14} />
+                    {tribute.rule.label}
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/*
+            ---- 交勘合（**只有大明**，只在广州）----
+            这是"朝贡"落到界面上的那一下：交出香料，换名号与朝廷的脸面。
+            判据走 `tributeState`（与 store 同一个函数）：
+            货不够时按钮灰着并写清"还差几担"，冷却时写"再过几天"——
+            不会出现"写着能交、点下去没反应"。
+          */}
+          {isAtPort && tribute && port.id === tribute.rule.portId && (
+            <div data-service-anchor="tribute" className="border-t border-gold-700/30 pt-2">
+              <h4 className="text-gold-300 font-serif text-[13px] mb-1.5 flex items-center gap-1">
+                <ScrollText size={12} /> {tribute.rule.label}
+              </h4>
+              <div className="space-y-1.5">
+                <div className="text-gold-400 font-serif text-[13px]">
+                  {tribute.rule.goods.map(g => {
+                    const have = fleet.cargo.find(c => c.goodId === g.goodId)?.quantity ?? 0
+                    const name = goods.find(x => x.id === g.goodId)?.nameCn ?? '货'
+                    return (
+                      <span key={g.goodId} className="mr-2">
+                        {name} ×{g.qty}
+                        <span className={have >= g.qty ? 'ink-good' : 'ink-bad'}>（船上 {have}）</span>
+                      </span>
+                    )
+                  })}
+                </div>
+                <div className="flex items-center justify-between text-[13px]">
+                  <span className="text-gold-400 font-serif">
+                    回赐：名号+{tribute.rule.gain.fame} · 士气+{tribute.rule.gain.morale}
+                  </span>
+                  <ActionButton onClick={payTribute} disabled={!tribute.ready} variant="secondary">
+                    {tribute.cooldownLeft > 0 ? `${tribute.cooldownLeft} 天后再来` : tribute.rule.label}
+                  </ActionButton>
+                </div>
+                <p className="text-gold-400 text-xs font-serif">
+                  {tribute.ready
+                    ? '市舶司收下香料，记下你的船名。'
+                    : tribute.cooldownLeft > 0
+                      ? '上一趟的勘合还在市舶司手里核着，急不来。'
+                      : '香料得从满剌加一带运回来——广州本地卖得贵。'}
+                </p>
               </div>
             </div>
           )}

@@ -294,6 +294,82 @@ check(finale.page, `册子里多了一页称号（${finale.pageText.slice(0, 14)
 check(!finale.maer, '走完之后海图上的航路标记消失（没有下一段）')
 check(finale.notice, '弹了一条称号回执')
 
+// ---- ⑧ 朝贡（交勘合）：只有大明的广州才有这一块 ----
+/*
+ * 【守什么】这是大明独有的动作：香料交给市舶司换名号。
+ * 要守的不是"有个按钮"，而是**按钮说的和实际发生的一致**：
+ *  · 货不够时按钮是灰的（不是点了没反应）；
+ *  · 够货点下去：香料真的少了、名号真的涨了；
+ *  · 交完立刻进冷却，按钮改口说"20 天后再来"。
+ * 另外守一条反向的：葡萄牙船长的港口面板里**不该**有这一块。
+ */
+await page.evaluate(() => {
+  const s = window.__gameStore.getState()
+  window.__gameStore.setState({
+    fleet: { ...s.fleet, day: s.fleet.day + 1, cargo: [{ goodId: 9, quantity: 6 }], usedCapacity: 6 },
+    gamePhase: 'playing',
+  })
+  window.__gameStore.getState().arriveAtPort(21)
+  window.__gameStore.getState().setActivePanel('port')
+})
+await sleep(900)
+const tributeUi = await page.evaluate(() => {
+  const box = document.querySelector('[data-service-anchor=tribute]')
+  if (!box) return null
+  const btn = box.querySelector('button')
+  return {
+    text: (box.textContent || '').replace(/\s+/g, ' ').trim(),
+    btnText: (btn?.textContent || '').trim(),
+    disabled: btn?.disabled ?? null,
+  }
+})
+check(!!tributeUi, `广州的港口面板里有「交勘合」（${tributeUi?.text.slice(0, 22)}…）`)
+const tile = await page.evaluate(() => !!document.querySelector('[data-service=tribute]'))
+check(tile, '港口服务那排铜牌里也有「交勘合」入口（否则这一栏要滚动才看得见）')
+check(/香料 ×6/.test(tributeUi?.text || ''), `写着要什么、要几担（${tributeUi?.text.slice(0, 18)}…）`)
+check(tributeUi?.disabled === false, `货够时按钮可点（disabled=${tributeUi?.disabled}）`)
+
+const fameBeforeTribute = await page.evaluate(() => window.__gameStore.getState().fleet.fame)
+await page.evaluate(() => {
+  const box = document.querySelector('[data-service-anchor=tribute]')
+  box?.querySelector('button')?.click()
+})
+await sleep(900)
+const afterTribute = await page.evaluate(() => {
+  const s = window.__gameStore.getState()
+  const box = document.querySelector('[data-service-anchor=tribute]')
+  const btn = box?.querySelector('button')
+  return {
+    spice: s.fleet.cargo.find(c => c.goodId === 9)?.quantity ?? 0,
+    fame: s.fleet.fame,
+    lastDay: s.lastTributeDay,
+    btnText: (btn?.textContent || '').trim(),
+    disabled: btn?.disabled ?? null,
+  }
+})
+check(afterTribute.spice === 0, `香料交出去了（剩 ${afterTribute.spice}）`)
+check(afterTribute.fame === fameBeforeTribute + 26, `名号 +26（${fameBeforeTribute} → ${afterTribute.fame}）`)
+check(/天后再来/.test(afterTribute.btnText) && afterTribute.disabled === true,
+  `交完立刻进冷却：按钮改口「${afterTribute.btnText}」且变灰`)
+
+// 反向：葡萄牙船长的港口面板里没有这一块
+await page.evaluate(() => {
+  window.__gameStore.getState().setActivePanel(null)
+  const s = window.__gameStore.getState()
+  window.__gameStore.setState({
+    nation: 'portugal',
+    fleet: { ...s.fleet, currentPortId: 7, isSailing: false },
+  })
+  window.__gameStore.getState().setActivePanel('port')
+})
+await sleep(800)
+const noTribute = await page.evaluate(() => ({
+  box: !!document.querySelector('[data-service-anchor=tribute]'),
+  port: window.__gameStore.getState().fleet.currentPortId,
+}))
+check(noTribute.port === 7 && !noTribute.box, '葡萄牙船长在里斯本看不到「交勘合」（规则不挂在他身上）')
+await page.evaluate(() => window.__gameStore.getState().setActivePanel(null))
+
 console.log(`\n报错：${errors.length ? errors.join(' | ') : '无'}`)
 check(errors.length === 0, '无页面报错')
 console.log(`\n结论：${pass} 通过 / ${fail} 失败`)
