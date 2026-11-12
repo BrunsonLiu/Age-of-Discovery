@@ -22,10 +22,17 @@ export const WAKE_SEGMENTS = 28
  *
  * 系泊时不是 0 而是 0.26：船停在水里也会有一圈贴身的细小水痕（风推的、浪打的）。
  * 完全 0 会让静止的船像"被抠图贴在海上"。
+ *
+ * 【但要跟港内系数走】在防波堤里（`harborCalm` 0.34）连浪都没有，还留一条
+ * 0.26 的尾迹就露馅了：海面是镜面，船尾却拖出一道白沫（实测截图）。
+ * 所以系泊的那一档乘 `calm` —— 港内几乎无痕（0.09），外海仍是 0.26。
+ * 航行时**不乘**：速度本身已经表达了尾迹的大小，再乘一次会把进港时的
+ * 减速尾迹压得比停泊还淡（那是反的）。
  */
-export function wakeStrength(isSailing: boolean, speedKnots: number): number {
-  if (!Number.isFinite(speedKnots)) return 0.26
-  if (!isSailing) return 0.26
+export function wakeStrength(isSailing: boolean, speedKnots: number, calm = 1): number {
+  const c = Number.isFinite(calm) ? Math.max(0, Math.min(1, calm)) : 1
+  if (!Number.isFinite(speedKnots)) return 0.26 * c
+  if (!isSailing) return 0.26 * c
   // 4 节以下几乎不动（起步那一刻没有浪），12 节满
   const k = Math.max(0, Math.min(1, (speedKnots - 4) / 8))
   return 0.42 + 0.58 * k

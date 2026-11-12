@@ -103,6 +103,8 @@ const gotoPort = async (portId) => {
       visible: g?.visible ?? null,
       groupPos: g ? [Math.round(g.position.x), Math.round(g.position.z)] : null,
       palms: h?.plan?.palms?.length ?? 0,
+      panes: h?.plan?.panes?.length ?? 0,
+      chimneys: h?.plan?.chimneys?.length ?? 0,
       spire: h?.plan?.spire ? Math.round(h.plan.spire.h * 10) / 10 : null,
       port: window.__gameStore.getState().fleet.currentPortId,
     }
@@ -132,6 +134,13 @@ for (const e of EXPECT) {
   check(r.palms === e.palms, `${e.name}：棕榈 ${r.palms} 棵`)
   check(e.spire ? r.spire !== null : r.spire === null,
     `${e.name}：${e.spire ? `有钟楼（高 ${r.spire}）` : '没有钟楼'}`)
+  /*
+   * 白天的立面细节：墙是一块纯色 Basic 材质，没有窗就是"一排白板"。
+   * 窗数必须是房子数的 2 倍以上（每栋至少两扇），烟囱 0 < n < 房子数。
+   */
+  check(r.panes >= r.houses * 2, `${e.name}：${r.panes} 扇窗（≥ ${r.houses * 2}）`)
+  check(r.chimneys > 0 && r.chimneys < r.houses,
+    `${e.name}：${r.chimneys} 个烟囱（0 < n < ${r.houses}）`)
 }
 check(new Set(seen.map((s) => s.got.style)).size === 4,
   `四个海域四种样式，各不相同（${seen.map((s) => s.got.style).join(' / ')}）`)
@@ -147,6 +156,18 @@ check(seen.every((s) => s.got.groupPos?.[1] > 10),
 const waveDock = await readWave()
 check(waveDock !== null && Math.abs(waveDock - 0.34) < 0.03,
   `停泊塞维利亚：浪高系数 ${waveDock}（期望 0.34——堤内几乎无浪）`)
+
+/*
+ * 尾迹跟着港内系数走：系泊那一档 0.26 × 0.34 = 0.088。
+ * 不跟的话，港内海面平如镜、船尾还拖一道白沫（实测截图里很清楚）。
+ */
+const wakeDock = await page.evaluate(() => {
+  const sea = window.__deckScene?.getObjectByName('deck-sea')
+  const u = sea?.material?.uniforms?.uWakeK
+  return u ? Math.round(u.value * 1000) / 1000 : null
+})
+check(wakeDock !== null && wakeDock <= 0.12,
+  `停泊：尾迹强度 ${wakeDock}（≤0.12——镜面海面上不该有白沫）`)
 
 // ---------------------------------------------------------- ② 远洋：必须整组隐藏
 await page.evaluate(() => {

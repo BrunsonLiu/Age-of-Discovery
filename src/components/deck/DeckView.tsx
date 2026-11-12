@@ -1112,6 +1112,14 @@ export default function DeckView() {
       const dt = Math.min(0.1, Math.max(0, t - tPrev))
       tPrev = t
       const st = useGameStore.getState()
+      /*
+       * 港内系数（0.34 贴岸停泊 … 1 外海）：**海面、船姿态、船高、尾迹四处共用**
+       * 这一个数。原来海面与船各算一次（同值但两处），尾迹那一处干脆没算 ——
+       * 于是港内海面平如镜、船尾还拖一道白沫（实测截图）。
+       */
+      const harborCalmK = sightingRef.current
+        ? harborCalm(sightingRef.current.distNm, st.fleet.isSailing)
+        : 1
       const skyInfo = skyAt(performance.now(), st.routeProgress ?? 0)
       const night = 1 - skyInfo.lit
 
@@ -1160,9 +1168,7 @@ export default function DeckView() {
          * `calm` 在港内把两者一起压下去（防波堤里的水本来就该平，见 harborCalm）；
          * 因为改的是**同一个** ampScale，船与水面不会各说各话。
          */
-        const sight = sightingRef.current
-        const calm = sight ? harborCalm(sight.distNm, st.fleet.isSailing) : 1
-        seaUniforms.uWaveScale.value = look.wave * calm
+        seaUniforms.uWaveScale.value = look.wave * harborCalmK
         // 雾：把"远处混天光"的起点收近
         seaUniforms.uFogNear.value = 28 - 22 * look.fog
         seaUniforms.uFogFar.value = 62 - 38 * look.fog
@@ -1185,6 +1191,7 @@ export default function DeckView() {
       seaUniforms.uWakeK.value = wakeStrength(
         st.fleet.isSailing,
         (st.fleet.ships.find((x) => x.id === st.fleet.flagshipId) ?? st.fleet.ships[0])?.speed ?? 0,
+        harborCalmK,
       )
       seaUniforms.uFogK.value = look.fog
       seaUniforms.uFogColor.value.copy(skyMat.uniforms.uFogColor.value)
@@ -1236,7 +1243,7 @@ export default function DeckView() {
        * 船与水面读同一个 `waveAmp`（= look.wave × 港内 calm）：
        * 港内水面压平了而船还在摇，是这类画面最容易出的错。
        */
-      const waveAmp = look.wave * (sightingRef.current ? harborCalm(sightingRef.current.distNm, st.fleet.isSailing) : 1)
+      const waveAmp = look.wave * harborCalmK
       const pose = deckShipPose(t, 0.72, 0.26, waveAmp)
       const seaAtShip = deckWaveHeight(0, 0, t, waveAmp)
       ship.position.y = seaAtShip + SHIP_DRAFT_LIFT

@@ -84,6 +84,10 @@ export function createDeckHarbor(): DeckHarbor {
    * "四条船只剩八根线"的真正原因（第一版以为是太小，把干舷从 2 米加到 5 米也没用）。
    * 双面渲染对这么小的背景物体没有代价，也顺手修掉"从侧面看是一条线"。
    */
+  /* 窗洞：比墙暗两档的凹口（白天唯一的立面细节） */
+  const paneMat = mk(0x2b2a26)
+  /* 烟囱：比屋顶暗一点的砖色 —— 用墙色会与白墙糊在一起 */
+  const chimneyMat = mk(0x6b4a3a)
   const hullMat = mk(0x6a5138, { side: THREE.DoubleSide })
   const railMat = mk(0x9c7c56, { side: THREE.DoubleSide })
   const palmMat = mk(0x2f4026)
@@ -91,7 +95,7 @@ export function createDeckHarbor(): DeckHarbor {
   const spireMat = mk(0x8e8578)
   /** 每个材质在 setSighting 里记下"白天的本色"，update 按 night 插值 */
   const bases = new Map<THREE.Material, THREE.Color>()
-  for (const m of [deckMat, wallMat, roofMat, stoneMat, pierMat, mastMat, sailMat, palmMat, flagMat, spireMat, hullMat, railMat]) {
+  for (const m of [deckMat, wallMat, roofMat, stoneMat, pierMat, mastMat, sailMat, palmMat, flagMat, spireMat, hullMat, railMat, paneMat, chimneyMat]) {
     bases.set(m, (m as THREE.MeshBasicMaterial).color.clone())
   }
 
@@ -319,6 +323,24 @@ export function createDeckHarbor(): DeckHarbor {
    * 屏幕上是一个白色大三角 —— 读成帐篷或帆，不是塔（实测放大截图）。
    * 塔身（Box）给出"这是个建筑"的体量，锥只做收头。
    */
+  /*
+   * 窗洞与烟囱：各一个 InstancedMesh。
+   * 【为什么不做成"在墙贴图上画窗户"】墙是 InstancedMesh + 一张纯色材质，
+   * 每栋房的宽高都不同，贴图上的窗会跟着拉伸；而且贴图在夜里还要与窗光对齐。
+   * 独立的小盒最省事：位置由 `harborPlan` 给（纯函数，可单测），几何只有两块。
+   */
+  const paneGeo = new THREE.BoxGeometry(1, 1, 1)
+  const panes = new THREE.InstancedMesh(paneGeo, paneMat, MAX_HOUSE * 6)
+  panes.name = 'deck-harbor-panes'
+  panes.frustumCulled = false
+  group.add(panes)
+  const chimneyGeo = new THREE.BoxGeometry(1, 1, 1)
+  chimneyGeo.translate(0, 0.5, 0)
+  const chimneys = new THREE.InstancedMesh(chimneyGeo, chimneyMat, MAX_HOUSE)
+  chimneys.name = 'deck-harbor-chimneys'
+  chimneys.frustumCulled = false
+  group.add(chimneys)
+
   const spireTower = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), spireMat)
   spireTower.name = 'deck-harbor-spire'
   spireTower.geometry.translate(0, 0.5, 0)
@@ -379,6 +401,33 @@ export function createDeckHarbor(): DeckHarbor {
     }
     walls.instanceMatrix.needsUpdate = true
     roofs.instanceMatrix.needsUpdate = true
+
+    /* ---- 窗洞：白天的立面细节（夜里再叠一层光点） ---- */
+    let qi = 0
+    for (const pn of pl.panes) {
+      if (qi >= MAX_HOUSE * 6) break
+      dummy.position.set(pn.x, pn.y, pn.z)
+      dummy.rotation.set(0, 0, 0)
+      dummy.scale.set(pn.w, pn.h, 0.05)
+      dummy.updateMatrix()
+      panes.setMatrixAt(qi++, dummy.matrix)
+    }
+    for (let i = qi; i < MAX_HOUSE * 6; i++) panes.setMatrixAt(i, zero)
+    panes.instanceMatrix.needsUpdate = true
+
+    /* ---- 烟囱：一半的房子有，站在屋脊上 ---- */
+    let ci = 0
+    for (let i = 0; i < nH && ci < MAX_HOUSE; i++) {
+      const ch = pl.chimneys[i] ?? pl.chimneys[ci]
+      if (!ch) continue
+      dummy.position.set(ch.x, deckY + pl.houses[i].h + pl.houses[i].roofH * 0.55, ch.z)
+      dummy.rotation.set(0, 0, 0)
+      dummy.scale.set(ch.w, ch.h, ch.w)
+      dummy.updateMatrix()
+      chimneys.setMatrixAt(ci++, dummy.matrix)
+    }
+    for (let i = ci; i < MAX_HOUSE; i++) chimneys.setMatrixAt(i, zero)
+    chimneys.instanceMatrix.needsUpdate = true
 
     /* ---- 窗光：只给亮着的那几栋（位置在房子靠海那一面） ---- */
     const wp = winGeo.getAttribute('position') as THREE.BufferAttribute

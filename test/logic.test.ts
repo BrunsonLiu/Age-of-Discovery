@@ -8839,8 +8839,8 @@ console.log('\n== 天数口径守卫 ==')
      * （= 天气的 look.wave × 港内 calm；见 harborCalm）。
      * 三个里任何一个自己写 look.wave，港内就会"水面平了船还在摇"。
      */
-    assert(/uWaveScale\.value = look\.wave \* calm/.test(view), '海面用天气浪高 × 港内系数')
-    assert(/const waveAmp = look\.wave \* \(sightingRef\.current \? harborCalm/.test(view),
+    assert(/uWaveScale\.value = look\.wave \* harborCalmK/.test(view), '海面用天气浪高 × 港内系数')
+    assert(/const waveAmp = look\.wave \* harborCalmK/.test(view),
       '船姿态与船高共用一个 waveAmp（否则船会浮在浪外 / 或港内船在摇而水面平）')
     // 雾：海面混的是雾色而不是天光色
     assert(/vec3 farCol = mix\(uSky \* 0\.85, uFogColor, uFogK\)/.test(view),
@@ -11224,6 +11224,52 @@ console.log('\n== 天数口径守卫 ==')
 
 
 /*
+ * ---- 白天的立面细节：窗洞与烟囱 ----
+ *
+ * 【守什么】房屋墙是一块纯色 Basic 材质，没有窗就是"一排白板"（实测截图）。
+ * 窗是白天唯一的立面细节，所以位置要对：**每一扇都必须落在自己那栋房的
+ * 正面墙上**（在墙外一点、在房宽之内、在墙高之内），不能飘在空中、不能
+ * 一半埋进墙里（第一版就是这样，一个窗都看不见）。
+ */
+{
+  for (const st of Object.values(HARBOR_STYLES)) {
+    const plan = harborPlan(st, 36, 1, 8)
+    assert(plan.panes.length >= plan.houses.length * 2,
+      `${st.id} 每栋房至少两扇窗（${plan.panes.length} 扇 / ${plan.houses.length} 栋）`)
+    assert(plan.panes.length <= plan.houses.length * 6,
+      `${st.id} 窗数不超过上限（${plan.panes.length} ≤ ${plan.houses.length * 6}，实例池是 6×）`)
+    for (const pn of plan.panes) {
+      // 找到这扇窗属于哪栋房（x 落在房宽之内、z 在房正面附近）
+      const host = plan.houses.find((h) => Math.abs(pn.x - h.x) <= h.w * 0.5 + 1e-6
+        && Math.abs(pn.z - (h.z - h.d * 0.5)) < 0.12)
+      assert(!!host, `${st.id} 窗 (${pn.x.toFixed(2)}, ${pn.z.toFixed(2)}) 落在某一栋房的正面墙上`)
+      if (host) {
+        assert(pn.y > plan.deckY && pn.y < plan.deckY + host.h,
+          `${st.id} 窗在墙高之内（y=${pn.y.toFixed(2)} ∈ ${plan.deckY.toFixed(2)}..${(plan.deckY + host.h).toFixed(2)}）`)
+        // 必须**整块在墙外**：否则会被墙面盖住（第一版的错）
+        assert(pn.z < host.z - host.d * 0.5, `${st.id} 窗贴在墙的外侧（z=${pn.z.toFixed(2)} < ${(host.z - host.d * 0.5).toFixed(2)}）`)
+      }
+      assert(pn.w > 0.05 && pn.h > 0.05, `${st.id} 窗有面积（${pn.w.toFixed(2)}×${pn.h.toFixed(2)}）`)
+    }
+    // 烟囱：有、但不到每栋都有（每栋都长烟囱是"工厂"不是港口）
+    assert(plan.chimneys.length > 0 && plan.chimneys.length < plan.houses.length,
+      `${st.id} 烟囱 ${plan.chimneys.length} 个（0 < n < 房子数）`)
+    for (const ch of plan.chimneys) {
+      const host = plan.houses.find((h) => Math.abs(ch.x - h.x) <= h.w * 0.5 + 1e-6)
+      assert(!!host, `${st.id} 烟囱长在某栋房的屋脊上`)
+      if (host) assert(Math.abs(ch.z - host.z) < 1e-6, '烟囱在屋脊线上（z = 房中心）')
+      assert(ch.h > 0.1 && ch.w > 0.05, `${st.id} 烟囱有尺寸（${ch.w.toFixed(2)}×${ch.h.toFixed(2)}）`)
+    }
+  }
+  // 网格命名（e2e 与取证按名字取）
+  const hmSrc2 = readFileSync(join(process.cwd(), 'src', 'components', 'deck', 'harborModel.ts'), 'utf8')
+  assert(/name = 'deck-harbor-panes'/.test(hmSrc2), '窗洞网格命名 deck-harbor-panes')
+  assert(/name = 'deck-harbor-chimneys'/.test(hmSrc2), '烟囱网格命名 deck-harbor-chimneys')
+  assert(/MAX_HOUSE \* 6/.test(hmSrc2), '窗的实例池是房子数×6（单测守这个上限）')
+}
+
+
+/*
  * ---- 同一座港在两个视图里必须是同一座城 ----
  *
  * 【守什么】甲板视角（`HARBOR_STYLES`）与 2.5D 全球板（`map3d/models.ts`）
@@ -11282,12 +11328,42 @@ console.log('\n== 天数口径守卫 ==')
 
   // 源码守卫：海面与船用同一个倍率
   const deckSrc = readFileSync(join(process.cwd(), 'src', 'components', 'deck', 'DeckView.tsx'), 'utf8')
-  assert(/uWaveScale\.value = look\.wave \* calm/.test(deckSrc),
-    '海面浪高乘了港内系数（uWaveScale = look.wave × calm）')
-  assert(/const waveAmp = look\.wave \* \(sightingRef\.current \? harborCalm/.test(deckSrc),
+  assert(/uWaveScale\.value = look\.wave \* harborCalmK/.test(deckSrc),
+    '海面浪高乘了港内系数（uWaveScale = look.wave × harborCalmK）')
+  assert(/const waveAmp = look\.wave \* harborCalmK/.test(deckSrc),
     '船姿态读同一个 waveAmp（不是各算一份）')
   assert(/deckShipPose\(t, 0\.72, 0\.26, waveAmp\)/.test(deckSrc), '船姿态用的是 waveAmp')
   assert(/deckWaveHeight\(0, 0, t, waveAmp\)/.test(deckSrc), '船高用的是同一个 waveAmp')
+}
+
+
+/*
+ * ---- 港内连尾迹都不该有 ----
+ *
+ * 【守什么】系泊时 `wakeStrength` 故意不是 0（0.26 = 贴身的细小水痕，完全 0
+ * 会让静止的船像被抠图贴上去）。但港内海面压到 0.34（`harborCalm`）之后，
+ * 那条 0.26 的白沫就露馅了：海面是镜面，船尾拖出一道白痕（实测截图）。
+ * 所以系泊那一档乘 calm，而**航行那一档不乘** —— 速度已经表达了尾迹大小，
+ * 再乘一次会把进港减速时的尾迹压得比停泊还淡（方向反了）。
+ */
+{
+  assert(wakeStrength(false, 0, 1) === 0.26, `外海系泊仍是 0.26（${wakeStrength(false, 0, 1)}）`)
+  assert(Math.abs(wakeStrength(false, 0, 0.34) - 0.088) < 0.003,
+    `港内系泊 0.26×0.34 = ${wakeStrength(false, 0, 0.34).toFixed(3)}（几乎看不见）`)
+  assert(wakeStrength(true, 12, 1) === 1, '12 节满尾迹')
+  assert(wakeStrength(true, 12, 0.34) === 1, '航行那一档不乘 calm（速度已表达）')
+  assert(wakeStrength(true, 12, 0.34) > wakeStrength(false, 0, 0.34) * 5,
+    '进港航行时的尾迹仍明显大于系泊（不能反）')
+  assert(Math.abs(wakeStrength(false, 0, Number.NaN) - 0.26) < 1e-9, 'calm 是 NaN 时按 1 算')
+  assert(wakeStrength(false, 0, 5) === 0.26, 'calm 大于 1 时夹到 1')
+
+  const view = readFileSync(join(process.cwd(), 'src', 'components', 'deck', 'DeckView.tsx'), 'utf8')
+  assert(/const harborCalmK = sightingRef\.current/.test(view),
+    '港内系数在 tick 开头算一次（海面/船/尾迹共用）')
+  assert(/wakeStrength\(\s*st\.fleet\.isSailing,[\s\S]{0,160}harborCalmK,?\s*\)/.test(view),
+    '尾迹强度收到同一个 harborCalmK')
+  assert(!/harborCalm\(sightingRef\.current\.distNm/.test(view) || (view.match(/harborCalm\(/g) ?? []).length === 1,
+    'harborCalm 不再在多处各算一次（只此一处）')
 }
 
 

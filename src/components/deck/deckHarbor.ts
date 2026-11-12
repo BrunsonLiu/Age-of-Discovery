@@ -174,6 +174,29 @@ export interface HarborHouse {
   yaw: number
 }
 
+/**
+ * 墙上的窗洞（不是窗光：白天也要看得见的那几个凹口）。
+ *
+ * 【为什么单独一层】房屋墙是 Basic 材质的一块纯色，白天读作"白板"——
+ * 一排没有窗的房子在甲板上看就是几块纸板（实测截图）。窗洞是**白天唯一的
+ * 立面细节**，也是判断"这是民居不是仓库"的依据。夜里同一位置再叠一层
+ * 加法光点（`deck-harbor-windows`）。
+ */
+export interface HarborPane {
+  x: number
+  y: number
+  z: number
+  w: number
+  h: number
+}
+
+export interface HarborChimney {
+  x: number
+  z: number
+  h: number
+  w: number
+}
+
 export interface HarborPier {
   x: number
   /** 从这条 z 向海伸出（负数） */
@@ -211,6 +234,10 @@ export interface HarborPlan {
   breakwaters: HarborBreakwater[]
   moorings: HarborMooring[]
   palms: { x: number; z: number; h: number }[]
+  /** 墙上的窗洞 */
+  panes: HarborPane[]
+  /** 屋顶上的烟囱 */
+  chimneys: HarborChimney[]
   /** 尖顶（x, z, 高度）—— 没有 spire 的样式返回 null */
   spire: { x: number; z: number; h: number } | null
   /** 吊货臂架（x, z, 臂长） */
@@ -230,6 +257,8 @@ const EMPTY_PLAN: HarborPlan = {
   breakwaters: [],
   moorings: [],
   palms: [],
+  panes: [],
+  chimneys: [],
   spire: null,
   cranes: [],
   flag: { x: 0, z: 0, h: 0 },
@@ -262,6 +291,8 @@ export function harborPlan(style: HarborStyle, width: number, presence: number, 
   const halfW = Math.min(W * 0.34, 9.5 * s)
   const rnd = (k: number) => hash01(seed * 13.7 + k)
 
+  /** 码头面顶面高度（房子站在上面） */
+  const deckTopY = 0.16 + 0.07 * s
   const nHouse = Math.round(style.houses[0] + (style.houses[1] - style.houses[0]) * rnd(1))
   const houses: HarborHouse[] = []
   for (let i = 0; i < nHouse; i++) {
@@ -291,6 +322,48 @@ export function harborPlan(style: HarborStyle, width: number, presence: number, 
       lit: rnd(i * 9.9 + 17) > 0.42,
       yaw: (rnd(i * 6.1 + 19) - 0.5) * 0.12,
     })
+  }
+
+  /*
+   * 窗与烟囱：跟着房子走。
+   * 窗**只在正面**（z 小于房中心 = 朝海那面），一排房子面对码头的那面才有窗；
+   * 正面按房宽分 2~3 个、两排（一层与二层）。背面不画（看不见，省实例）。
+   */
+  const panes: HarborPane[] = []
+  const chimneys: HarborChimney[] = []
+  for (let i = 0; i < houses.length; i++) {
+    const h = houses[i]
+    const cols = h.w > 1.4 * s ? 3 : 2
+    /*
+     * 【窗必须**贴在墙面外侧**】第一版放在 `z - d/2 - 0.01`、厚度 0.03：
+     * 一半嵌进墙里、露出来的 1.5 厘米在 18 单位外不到一个像素，而且与墙面
+     * 深度冲突 —— 白天一个窗都看不见（实测放大截图里是一排纯白墙）。
+     * 现在整块落在墙外（-0.05），厚度 0.05。
+     */
+    const zf = h.z - h.d * 0.5 - 0.05
+    for (let c = 0; c < cols; c++) {
+      const t = (c + 0.5) / cols - 0.5
+      for (const [row, yy] of [[0, 0.42], [1, 0.7]] as const) {
+        // 后排（商馆）高，两排窗都有；前排仓库矮，只开一层
+        if (h.h < 0.75 * s && row === 1) continue
+        panes.push({
+          x: h.x + t * h.w * 0.66,
+          y: deckTopY + h.h * yy,
+          z: zf,
+          w: Math.min(0.2 * s, h.w * 0.16),
+          h: Math.min(0.26 * s, h.h * 0.2),
+        })
+      }
+    }
+    // 烟囱：一半的房子有，站在屋脊上偏一侧
+    if (rnd(i * 8.3 + 71) > 0.45) {
+      chimneys.push({
+        x: h.x + h.w * (rnd(i * 5.1 + 73) - 0.5) * 0.5,
+        z: h.z,
+        h: Math.max(0.16, h.roofH * 0.7),
+        w: Math.min(0.16 * s, h.w * 0.14),
+      })
+    }
   }
 
   /* 栈桥：均匀分在码头面上，但避开最中间（那里是小艇靠泊的口） */
@@ -368,12 +441,14 @@ export function harborPlan(style: HarborStyle, width: number, presence: number, 
      */
     deckZ0: -0.2,
     deckZ1: 3.4,
-    deckY: 0.16 + 0.07 * s,
+    deckY: deckTopY,
     houses,
     piers,
     breakwaters,
     moorings,
     palms,
+    panes,
+    chimneys,
     spire: style.spire
       /*
        * 尖顶 = 方形钟楼 + 尖锥：只给一个细锥时比例是 1:11（一根针，实测）。

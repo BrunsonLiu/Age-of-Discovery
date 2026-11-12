@@ -336,12 +336,20 @@ export function sailAlphaCanvas(seed = 11): HTMLCanvasElement {
   g.fillStyle = '#ffffff'
   g.fillRect(0, S * 0.9, S, S * 0.1)
 
-  // 破洞：4~7 个不规则多边形
-  const holes = 4 + Math.floor(rnd() * 4)
+  /*
+   * 破洞：2~3 个**小**洞，靠近上缘与边缘。
+   *
+   * 【为什么从 4~7 个 8~42px 改成 2~3 个 5~14px】帆的材质是
+   * `alphaTest: 0.32` —— 洞里的像素被**丢弃**，后面什么都没有，于是透出天空的
+   * 蓝。一张 512px 的贴图铺到屏幕上约 200px 宽时，42px 的洞是 16px 的**蓝斑**，
+   * 一张帆上有五六个，读作"贴图坏了"而不是"旧帆有个洞"（实测放大截图）。
+   * 缩小之后它读作边缘磨破，那才是这个尺度上该有的细节。
+   */
+  const holes = 2 + Math.floor(rnd() * 2)
   for (let i = 0; i < holes; i++) {
     const cx = S * (0.15 + rnd() * 0.7)
-    const cy = S * (0.08 + rnd() * 0.62)
-    const r = 8 + rnd() * 34
+    const cy = S * (0.08 + rnd() * 0.42)
+    const r = 5 + rnd() * 9
     g.fillStyle = '#000'
     g.beginPath()
     const seg = 7 + Math.floor(rnd() * 4)
@@ -357,15 +365,19 @@ export function sailAlphaCanvas(seed = 11): HTMLCanvasElement {
     g.fill()
   }
 
-  // 上缘撕裂：沿顶边咬掉几口
+  /*
+   * 上缘撕裂：沿顶边咬掉几口（同样收小：40px 宽、22px 深的口子在屏幕上
+   * 是一道 15px 的蓝缺口，太抢眼）。真实帆的上缘多半是**包了绳的**，
+   * 撕裂集中在一两处。
+   */
   g.fillStyle = '#000'
-  for (let i = 0; i < 5; i++) {
+  for (let i = 0; i < 3; i++) {
     const x = rnd() * S
-    const w = 12 + rnd() * 40
+    const w = 10 + rnd() * 18
     g.beginPath()
     g.moveTo(x, 0)
     g.lineTo(x + w, 0)
-    g.lineTo(x + w * 0.5, 6 + rnd() * 22)
+    g.lineTo(x + w * 0.5, 4 + rnd() * 10)
     g.closePath()
     g.fill()
   }
