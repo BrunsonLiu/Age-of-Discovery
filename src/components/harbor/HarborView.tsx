@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Anchor, ArrowLeft, BookOpen, Hammer, MapPin, Package, Scroll } from 'lucide-react'
 import { useGameStore } from '@/store/useGameStore'
 import { useMapStore } from '@/store/useMapStore'
@@ -8,8 +8,10 @@ import { harborBackdrop } from '@/data/portImages'
 import { REGION_CN, echoForPort } from '@/data/logbook'
 import { UI_ASSETS } from '@/data/uiAssets'
 import { arrivalCountAt, clueCenter, hasAnyService, latestArrivalAt, previousArrivalAt } from '@/utils/harbor'
+import { QUAY_LAMPS, QUAY_POSTS, starFieldCss } from '@/utils/harborMood'
 import { DURATION, EASE_STANDARD, prefersReducedMotion } from '@/utils/motion'
 import { useIsMobile } from '@/hooks/useIsMobile'
+import { useHarborAmbience } from './useHarborAmbience'
 import type { PanelType } from '@/types'
 
 /**
@@ -76,7 +78,7 @@ const PLATE_STYLE: React.CSSProperties = {
  * "同色画实心块"的坑）。现在剪影压到近黑，但**边缘给一道赭石高光线**，
  * 并把背景渐变末尾收到 0.78，让轮廓靠明度差显形。
  */
-function HarborForeground() {
+function HarborForeground({ lampRef }: { lampRef: React.RefObject<SVGGElement | null> }) {
   /* bottom 18%：剪影要压在**还亮着的**城市上才有对比。
      第一版贴 bottom-0，落在已经压到近黑的下缘，桩和背景差值太小，
      截图里等于没有——"前景"不是"贴屏幕底"，是"挡在画面前面"。 */
@@ -87,9 +89,18 @@ function HarborForeground() {
       preserveAspectRatio="xMidYMax slice"
       aria-hidden="true"
     >
+      <defs>
+        {/* 灯的光晕：中心近白、外圈暖橙到透明。用梯度而不是 blur，
+            软渲染下 filter 很贵，而且像素化后梯度比 blur 干净 */}
+        <radialGradient id="harbor-lamp-halo">
+          <stop offset="0%" stopColor="#ffe3ae" stopOpacity="0.92" />
+          <stop offset="38%" stopColor="#ffbe6c" stopOpacity="0.36" />
+          <stop offset="100%" stopColor="#ff9d3c" stopOpacity="0" />
+        </radialGradient>
+      </defs>
       <g fill="#0b0704">
         <path d="M0 122 H1440 V164 H0 Z" />
-        {[96, 318, 1128, 1342].map(x => (
+        {QUAY_POSTS.map(x => (
           <g key={x}>
             <rect x={x} y={82} width={22} height={48} rx={3} stroke="#a8864c" strokeOpacity="0.38" strokeWidth="1.5" />
             <rect x={x - 6} y={77} width={34} height={10} rx={4} stroke="#a8864c" strokeOpacity="0.38" strokeWidth="1.5" />
@@ -104,6 +115,29 @@ function HarborForeground() {
       <path d="M1139 86 Q 1240 138 1342 86" stroke="#0b0704" strokeWidth="7" fill="none" strokeLinecap="round" />
       <path d="M1139 86 Q 1240 138 1342 86" stroke="#a8864c" strokeOpacity="0.28" strokeWidth="1" fill="none" />
       <path d="M1368 34 L1280 118" stroke="#0b0704" strokeWidth="4" fill="none" strokeLinecap="round" />
+
+      {/*
+        四盏码头灯 —— 夜里岸上唯一的暖光，也是"这里有人"的唯一证据。
+        位置直接取 `QUAY_LAMPS`（与上面那四根系缆桩同一份数据），不在这里另写一遍坐标：
+        两处各写一次、靠系数碰巧对上，这条坑在船首斜桅那里踩过。
+        整组的 opacity 由 `useHarborAmbience` 按日相写（白天真值 0，e2e 断言它），
+        灯芯自带 `scene-flicker`，四盏相位错开 0.53 秒 —— 同步闪会读成"呼吸灯"。
+      */}
+      <g ref={lampRef} style={{ opacity: 0 }}>
+        {QUAY_LAMPS.map((l, i) => (
+          <g key={l.x}>
+            {/* 光池：落在码头面上，压扁的椭圆 */}
+            <ellipse cx={l.x} cy={118} rx={40} ry={9} fill="url(#harbor-lamp-halo)" opacity={0.45} />
+            {/* 灯杆到灯座的一小段，让灯"挂"在桩上而不是浮着 */}
+            <path d={`M${l.x} 77 L${l.x} 71.5`} stroke="#20150c" strokeWidth={2} />
+            <circle cx={l.x} cy={l.y} r={30} fill="url(#harbor-lamp-halo)" />
+            <circle
+              cx={l.x} cy={l.y} r={2.6} fill="#ffe8bc"
+              className="scene-flicker" style={{ animationDelay: `${(-i * 0.53).toFixed(2)}s` }}
+            />
+          </g>
+        ))}
+      </g>
     </svg>
   )
 }
@@ -126,6 +160,16 @@ export default function HarborView() {
     const raf = requestAnimationFrame(() => setShown(true))
     return () => cancelAnimationFrame(raf)
   }, [])
+
+  /* 天光/天候两层：所有 opacity 由 useHarborAmbience 按 4Hz 直接写 ref，
+     不进 React（日相每帧都在变，走 state 就是每秒 60 次重渲染整棵岸上树） */
+  const amb = useHarborAmbience()
+  // 雨/雾只在真出现时挂载：一块全屏透明层也要占一次合成
+  const wet = useGameStore(s => s.weather.kind === 'rain' || s.weather.kind === 'storm')
+  const misty = useGameStore(s => s.weather.kind === 'fog')
+  // 星图只算一次：两层不同种子，相位错开，叠起来才不像一块网格
+  const starsA = useMemo(() => starFieldCss(0x51a7d3, 46), [])
+  const starsB = useMemo(() => starFieldCss(0x2c9f41, 32), [])
 
   // 键盘退路（Esc 一层层退 / A 切换）统一在 useKeyboardControls 里，
   // 这里不再自己监听：否则面板开着按 Esc 会同时关面板又回海图。
@@ -223,6 +267,142 @@ export default function HarborView() {
           background: 'radial-gradient(ellipse at 50% 38%, rgba(20,13,6,0.06) 0%, rgba(20,13,6,0.40) 72%, rgba(10,7,3,0.74) 100%)',
         }}
       />
+
+      {/* ── 天光：夜 / 黄昏 / 星 / 水面碎光 / 雨 / 雾 ────────────────────
+          全部排在中景内容板**之前**：它们只能压暗那张画，不能压暗面板上的字。
+          顺序也有讲究 —— 夜幕在下、星在上（星要透出夜幕），
+          碎光与雨雾再往上（它们贴着水面与空气，不是天空）。 */}
+      <div
+        ref={amb.veilRef}
+        className="absolute inset-0 pointer-events-none"
+        data-testid="harbor-night-veil"
+        style={{
+          // 混向具体的深蓝而不是乘一个系数：乘法会把舱影、桅杆压成纯黑，
+          // 整块画塌成一个剪影；混色至少保住轮廓（深夜最暗处仍有 ~0.09 亮度）。
+          opacity: 0,
+          // 上浅下深：天顶最蓝、城市带稍亮（那里的灯与墙还在反光），
+          // 底部回到近黑（画的下沿本来就是压暗的前景）。
+          background: 'linear-gradient(180deg, #0b1226 0%, #101a33 38%, #1a2a45 66%, #0e1526 100%)',
+        }}
+      />
+      {/*
+        黄昏 = 两层，一层染色、一层辉光。
+
+        【为什么不能只用一个 screen 层】第一版就是：一整片 `screen` 的橙盖上去，
+        A/B 实测确实变暖了（+28 级），但同一片区域的**纹理**从 0.030 掉到 0.012 ——
+        水面、船、人群全被"加亮到接近橙色"，对比度被拉平，读起来是一层橙色的雾。
+        加法混合只抬高亮度，不保留比值。
+        【为什么 multiply 染色能保住细节】它按比值缩放每个通道：
+        橙色 (1,0.63,0.35) 的乘子只压绿与蓝，红不动 → 整体偏暖，
+        而"亮处仍亮、暗处仍暗"这个**关系**没变，所以纹理还在。
+        辉光单独一层只留着海平线上方一小条，那里才该真亮。
+      */}
+      <div
+        ref={amb.warmRef}
+        className="absolute inset-0 pointer-events-none"
+        data-testid="harbor-dusk-warm"
+        style={{
+          opacity: 0,
+          mixBlendMode: 'multiply',
+          // 从水面一直暖到海平线之上：日落不是天上一条线，是"天空 + 水面一起烧"。
+          background: 'linear-gradient(0deg, rgba(255,150,84,0.62) 0%, rgba(255,152,88,0.62) 38%, rgba(255,170,104,0.50) 54%, rgba(255,186,132,0.30) 68%, rgba(255,200,160,0.12) 82%, rgba(255,210,180,0.04) 100%)',
+        }}
+      />
+      <div
+        ref={amb.warmGlowRef}
+        className="absolute inset-0 pointer-events-none"
+        data-testid="harbor-dusk-glow"
+        style={{
+          opacity: 0,
+          mixBlendMode: 'screen',
+          // 只留海平线上方一条：这是"日头本身"的余晖，宽度窄才像落日而不是晚霞滤镜
+          background: 'linear-gradient(0deg, rgba(255,132,44,0) 0%, rgba(255,132,44,0) 44%, rgba(255,150,62,0.50) 53%, rgba(255,186,118,0.18) 62%, rgba(255,200,150,0) 72%)',
+        }}
+      />
+      <div
+        ref={amb.starsRef}
+        className="absolute inset-x-0 top-0 h-[38%] pointer-events-none"
+        data-testid="harbor-stars"
+        style={{ opacity: 0 }}
+      >
+        {/* 星是静的，动的只有一颗流星。
+            第一版给整层挂 scene-twinkle：那是**整片天一起眨眼**（分层脉动），
+            捕获到低谷那一帧时天上什么都没有。真实的星在这个尺度不闪，
+            "天在动"交给每 9.5 秒一颗的流星。 */}
+        <div className="absolute inset-0" style={{ backgroundImage: starsA, backgroundRepeat: 'no-repeat' }} />
+        <div className="absolute inset-0" style={{ backgroundImage: starsB, backgroundRepeat: 'no-repeat', opacity: 0.75 }} />
+        <span className="harbor-meteor" />
+      </div>
+      <div
+        ref={amb.glintRef}
+        className="absolute pointer-events-none"
+        data-testid="harbor-glint"
+        style={{
+          /*
+           * 水面在下半屏的左侧那一大片（e2e 统计"水面船队"取 x 0.55~0.88 / y 0.50~0.66）。
+           * 第一版把碎光铺到 x 0.34~1.0 / y 0.44~0.74、点距 37×23px：
+           * 屏幕上是一片**雪粒**，还盖在船帆与人群身上（暗光下 screen 混合把点全顶出来）。
+           * 现在点距放大到 76×49（密度降到 1/4），遮罩收到真的水域，
+           * 整体再乘一个上限 —— 碎光该是"水在反光"，不该是"下雪"。
+           */
+          left: '4%', right: '14%', top: '50%', height: '24%',
+          opacity: 0,
+          mixBlendMode: 'screen',
+          // 软边：没有这道椭圆遮罩，碎光就是屏幕上的一块矩形
+          WebkitMaskImage: 'radial-gradient(ellipse 58% 52% at 44% 52%, #000 0%, rgba(0,0,0,0.42) 56%, transparent 84%)',
+          maskImage: 'radial-gradient(ellipse 58% 52% at 44% 52%, #000 0%, rgba(0,0,0,0.42) 56%, transparent 84%)',
+        }}
+      >
+        <div
+          className="absolute inset-0 scene-sparkle"
+          style={{
+            backgroundImage: 'radial-gradient(circle, rgba(255,241,214,0.7) 0 1px, rgba(255,241,214,0) 1.5px)',
+            backgroundSize: '76px 49px',
+            animationDuration: '2.1s',
+            opacity: 0.55,
+          }}
+        />
+        <div
+          className="absolute inset-0 scene-sparkle"
+          style={{
+            backgroundImage: 'radial-gradient(circle, rgba(255,232,196,0.7) 0 0.9px, rgba(255,232,196,0) 1.4px)',
+            backgroundSize: '57px 37px',
+            animationDuration: '3.3s',
+            animationDelay: '-1.4s',
+            opacity: 0.4,
+          }}
+        />
+      </div>
+      {wet && (
+        <div
+          ref={amb.rainRef}
+          className="absolute inset-0 pointer-events-none harbor-rain"
+          data-testid="harbor-rain"
+          style={{ opacity: 0 }}
+        />
+      )}
+      {misty && (
+        <div
+          ref={amb.fogRef}
+          className="absolute inset-0 pointer-events-none"
+          data-testid="harbor-fog"
+          style={{
+            opacity: 0,
+            // 雾要**换目标色**而不是压低对比：白障把远处推成一片灰白
+            // 峰值压在城市带（34%），近处与天顶都留薄一点：雾是"看不见远处"，
+            // 不是"整屏盖一层白纸"。0.20/0.52 时实测只像"有点灰"，远处没被吞掉。
+            background: 'linear-gradient(180deg, rgba(214,226,232,0.24) 0%, rgba(216,228,234,0.74) 32%, rgba(214,226,232,0.44) 58%, rgba(206,218,226,0.16) 100%)',
+          }}
+        >
+          <div
+            className="absolute inset-0 scene-fog"
+            style={{
+              background: 'radial-gradient(ellipse 30% 20% at 30% 52%, rgba(232,240,244,0.55) 0%, rgba(232,240,244,0) 70%)',
+              animationDuration: '22s',
+            }}
+          />
+        </div>
+      )}
 
       {/* ── 中景：地点铭牌 / 见闻 / 服务入口 ──────────────────────── */}
       {/*
@@ -415,7 +595,7 @@ export default function HarborView() {
       </div>
 
       {/* ── 前景：码头剪影，压住画面下缘，不接任何点击 ─────────────── */}
-      {!isMobile && <HarborForeground />}
+      {!isMobile && <HarborForeground lampRef={amb.lampsRef} />}
     </div>
   )
 }

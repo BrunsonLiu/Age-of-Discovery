@@ -10,6 +10,21 @@ import { OCEAN_LABELS, REGION_LABELS } from '@/data/mapLayers'
  * 各写一份就会让两个视图看到不同的地名。
  */
 
+/*
+ * 洋名的四向深褐描边。
+ *
+ * 【为什么光有发光不够】原来是 `0 0 8px rgba(244,228,193,0.4)`：一圈**更亮**的米色晕。
+ * 压在深蓝海面上没事（实测 3.5:1），但"英吉利海峡"这类名字横跨海峡，
+ * 字框一半压在**浅米色陆地**（rgb 164,147,116）上时，奶油字与底色只有 **1.73:1**
+ * ——对比度审计里它是全屏唯一不达标的一段。发光是同色，救不了"底色变亮"。
+ * 改正向描边（Google 地图在卫星图上的做法）：字的边界由深褐给出，
+ * 与填充 12:1，压在任何底色上都立得住。
+ */
+const OCEAN_HALO =
+  '-1px -1px 0 rgba(26,18,8,0.55), 1px -1px 0 rgba(26,18,8,0.55), ' +
+  '-1px 1px 0 rgba(26,18,8,0.55), 1px 1px 0 rgba(26,18,8,0.55), ' +
+  '0 0 8px rgba(26,18,8,0.35)'
+
 function createLabelIcon(text: string, isOcean: boolean) {
   /*
    * 【这四行样式都是量出来的，不是调出来的】
@@ -42,7 +57,7 @@ function createLabelIcon(text: string, isOcean: boolean) {
     font-style: ${isOcean ? 'italic' : 'normal'};
     letter-spacing: ${letterSpacing};
     white-space: nowrap;
-    text-shadow: 0 0 8px rgba(244, 228, 193, 0.4);
+    text-shadow: ${isOcean ? OCEAN_HALO : '0 0 8px rgba(244, 228, 193, 0.4)'};
     pointer-events: none;
     user-select: none;
   ">${text}</div>`

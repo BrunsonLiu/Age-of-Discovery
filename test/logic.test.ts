@@ -256,6 +256,7 @@ import {
   harborStyleFor, harborVisible, lampReflectionLen,
 } from '../src/components/deck/deckHarbor'
 import { shadeFaces as shadeHarbor } from '../src/components/deck/harborModel'
+import { harborMood, starFieldCss, QUAY_LAMPS, QUAY_POSTS } from '../src/utils/harborMood'
 import {
   appendLogbook, countEchoes, echoAt, echoDayFor, echoForPort, findClueFor,
   makeArrivalEntry, makeEchoEntry, makeTitleEntry, markAllRead, pickRumor, LOGBOOK_MAX,
@@ -12376,4 +12377,114 @@ if (failed > 0) process.exit(1)
     '远洋时关掉浅水（否则浅水带停在上一处岸的位置）')
   assert(/const cl = coastLayout\(sightingRef\.current\.presence\)/.test(dv2),
     '岸线坐标与海岸几何用同一个 coastLayout（一定对齐）')
+}
+
+console.log('== 岸上天光：同一座港，白天和夜里是两张画 ==')
+{
+  /*
+   * 岸上那张远景是**画**，画里的光是固定的正午；而游戏一昼夜 8 分钟实时推进，
+   * 玩家会在岸上看着日落。之前不管几点上岸，屏幕上永远是同一个正午 ——
+   * 海图有 VintageMapOverlay、甲板有 litK、3D 海图有日相调灯，只有岸上没接。
+   * 这条测试钉住的是"哪个量管哪一层"以及它的**边界**：白天必须严格归零
+   * （否则 e2e 量到的白天亮度会被一层灰吃掉），夜里必须真黑。
+   */
+  const noon = harborMood(0, 'clear')
+  assert(noon.veil === 0 && noon.stars === 0 && noon.lamps === 0 && noon.warm === 0,
+    '正午：夜幕/星/灯/暖光 全部严格为 0（不是 0.01 的"保险值"）')
+  assert(Math.abs(noon.shimmer - 1) < 1e-9, `正午水面碎光满值（${noon.shimmer}）`)
+
+  const deepNight = harborMood(1, 'clear')
+  assert(Math.abs(deepNight.veil - 0.80) < 1e-9, `深夜夜幕 0.80（${deepNight.veil}；0.86 时城的轮廓糊掉）`)
+  assert(deepNight.stars === 1 && deepNight.lamps === 1, '深夜：星与岸上的灯都是满值')
+  /* 碎光在夜里不归零：太阳没了还有月亮，水面上该剩一条淡银 */
+  assert(Math.abs(deepNight.shimmer - 0.30) < 1e-9, `深夜碎光留 0.30（月亮，${deepNight.shimmer}）`)
+  assert(deepNight.warm === 0, '深夜没有暖光（只有日头贴海平线那一刻才有）')
+
+  /* 暖光只有一个峰：lit=0.34（太阳贴着海平线）。两侧必须归零，不能整夜发橙 */
+  const dusk = harborMood(0.66, 'clear')
+  assert(Math.abs(dusk.warm - 0.62) < 1e-9, `黄昏暖光峰值 0.62（${dusk.warm.toFixed(3)}）`)
+  assert(dusk.warm > harborMood(0.5, 'clear').warm && harborMood(0.5, 'clear').warm > harborMood(0.1, 'clear').warm,
+    '暖光是单峰：黄昏 > 傍晚 > 白天')
+
+  /* 灯比天黑得早：太阳一贴海平线（night≈0.35）就该点上了 */
+  assert(harborMood(0.35, 'clear').lamps > 0.1, `天还没黑透就先点灯（night 0.35 时 ${harborMood(0.35, 'clear').lamps.toFixed(3)}）`)
+  assert(harborMood(0.2, 'clear').lamps === 0, '大白天不点灯')
+
+  /* 星星只在天真的黑了之后出现（天还亮着就有星 = 白天看见星座） */
+  assert(harborMood(0.5, 'clear').stars === 0, '太阳还在海平线上时没有星')
+  assert(harborMood(0.7, 'clear').stars > 0.1, '天黑之后才有星')
+
+  /*
+   * 天候是另一根轴：阴天的"灰"不能靠 night 表达（晚上 8 点下不下雨一样黑）。
+   * 暴雨在**正午**也要把画面压下去 —— 这是"天候真的改变了画面"的判据。
+   */
+  const stormNoon = harborMood(0, 'storm')
+  assert(stormNoon.veil > 0.3, `正午暴雨也要压暗（veil ${stormNoon.veil.toFixed(2)}；靠 night 的话正午恒为 0）`)
+  assert(stormNoon.rain > 0.55 && stormNoon.stars === 0, '暴雨：雨幕最重、云底之下没有星')
+  assert(harborMood(0.1, 'rain').rain > 0.3 && harborMood(0.1, 'cloudy').rain === 0,
+    '只有下雨/暴雨才有雨幕（阴云不下雨）')
+  /* 雾天隔着白障看不清灯：灯的亮度要打掉四成 */
+  assert(harborMood(1, 'fog').lamps < harborMood(1, 'clear').lamps * 0.7,
+    `雾天灯火被打掉四成（${harborMood(1, 'fog').lamps.toFixed(2)} vs 1）`)
+  assert(harborMood(0.4, 'fog').fog > 0.5 && harborMood(0.4, 'clear').fog === 0, '只有雾天有雾幕')
+
+  /* 全局不变量：扫一遍日相 × 天候，每个量都必须落在 [0,1] 且没有 NaN */
+  const kinds = ['clear', 'cloudy', 'rain', 'storm', 'fog'] as const
+  let bad = ''
+  for (const k of kinds) {
+    for (let i = 0; i <= 50; i++) {
+      const m = harborMood(i / 50, k)
+      for (const [key, v] of Object.entries(m)) {
+        if (!Number.isFinite(v) || v < 0 || v > 1) bad = `${k}@${(i / 50).toFixed(2)} ${key}=${v}`
+      }
+    }
+  }
+  assert(bad === '', `日相×天候 250 组全部在 [0,1]（越界：${bad || '无'}）`)
+
+  /* 夜幕随夜色单调不减：曲线可以陡，但不能忽明忽暗 */
+  let mono = true
+  for (let i = 1; i <= 50; i++) {
+    if (harborMood(i / 50, 'clear').veil < harborMood((i - 1) / 50, 'clear').veil - 1e-9) mono = false
+  }
+  assert(mono, '夜幕随夜色单调不减（禁止出现"半夜突然变亮"）')
+
+  /*
+   * 星点：60 颗星的 SVG 是 60 个节点 + 60 个动画，而它们只是背景。
+   * 这里是一个 div + 若干段 radial-gradient —— 判据是"段数对、坐标合法、可复现"。
+   */
+  const sf = starFieldCss(1234, 40)
+  assert((sf.match(/radial-gradient\(/g) ?? []).length === 40, '星图按请求的颗数生成 gradient 段')
+  const coords = [...sf.matchAll(/circle at ([\d.]+)% ([\d.]+)%/g)].map(m => [Number(m[1]), Number(m[2])])
+  assert(coords.length === 40, '每一段都有百分比坐标（铺在任意尺寸的容器里都成立）')
+  assert(coords.every(([x, y]) => x >= 0 && x <= 100 && y >= 0 && y <= 88),
+    '所有星都在 0~100% × 0~88% 内（下面 12% 留给城市与山，不放星）')
+  assert(!/NaN|undefined/.test(sf), '星图里没有 NaN/undefined（会把整段 background-image 丢弃）')
+  assert(starFieldCss(1234, 40) === sf, '同一种子两次生成完全相同（不随刷新换星图）')
+  assert(starFieldCss(999, 40) !== sf, '不同种子不同星图（两层叠加才不像网格）')
+  /* 上密下疏：被 pow(rnd,1.5) 压过的分布，上半区的星一定多于下半区 */
+  const upper = coords.filter(([, y]) => y < 44).length
+  assert(upper > coords.length * 0.55, `星是上密下疏（上半区 ${upper}/${coords.length}）`)
+
+  /*
+   * 灯与系缆桩是**同一份数据**：灯挂在柱头上。分两个坐标系各写一遍位置，
+   * 屏幕一缩放就会错开（"两处各算一次、靠系数互相抵消才碰巧对上"这条坑踩过）。
+   */
+  assert(QUAY_LAMPS.length === QUAY_POSTS.length && QUAY_LAMPS.length === 4, '四盏灯对四根系缆桩')
+  assert(QUAY_LAMPS.every((l, i) => Math.abs(l.x - (QUAY_POSTS[i] + 11)) < 1e-9),
+    '每盏灯正对柱心（柱宽 22，灯在 x+11）')
+  assert(QUAY_LAMPS.every(l => l.y < 82 && l.y > 40), '灯在柱顶之上、又不高到脱离画框')
+
+  /* 源码守卫：三条"必须这么接"的接线 */
+  const hv2 = readFileSync(join(process.cwd(), 'src', 'components', 'harbor', 'HarborView.tsx'), 'utf8')
+  assert(/data-testid="harbor-night-veil"/.test(hv2), '夜幕层有稳定锚点（e2e 量它）')
+  assert(/\{wet && \(/.test(hv2) && /\{misty && \(/.test(hv2),
+    '雨/雾只在真出现时挂载（一块全屏透明层也要占一次合成）')
+  assert(/useHarborAmbience\(\)/.test(hv2), '天光的读写只走 useHarborAmbience 一处')
+  const amb2 = readFileSync(join(process.cwd(), 'src', 'components', 'harbor', 'useHarborAmbience.ts'), 'utf8')
+  /* 用带括号的调用形态匹配：注释里出现「不用 useState」这句说明不算违规 */
+  assert(!/useState\(/.test(amb2) && !/\.setState\(/.test(amb2),
+    '天光不进 React 状态（日相每帧都在变，走 state 就是每秒 60 次重渲染整棵岸上树）')
+  assert(/< 250/.test(amb2) && /0\.004/.test(amb2),
+    '按 4Hz + 0.004 门限写 opacity（每帧写会触发整屏样式重算）')
+  assert(/skyAt\(performance\.now\(\), st\.routeProgress/.test(amb2), '日相读 skyClock 的唯一来源，不自己算相位')
 }

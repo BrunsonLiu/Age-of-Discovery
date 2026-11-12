@@ -1363,3 +1363,30 @@ body {
   outline: 2px solid #e0b76a;
   outline-offset: 2px;
 }
+
+/* ========== 岸上：雨幕（HarborView） ==========
+ * 为什么是一张 tile 而不是 repeating-linear-gradient：90° 的重复渐变只有**无限长的竖线**，
+ * 沿自身方向平移看不出在动。雨要"落"，就得是有限长的雨丝，所以画一小块 SVG 短丝，
+ * 平铺后让 background-position 走满一格 —— 一格即周期，循环无缝。
+ *
+ * 【两版都错了，最后量出来的是第三版】
+ *   ①tile 9×60、丝长 26、alpha 0.55 → 一片白色短杠，像条形码；天空带 A/B 最大差 92 级。
+ *   ②tile 14×62、丝长 16、alpha 0.26 → 反过来太稀太短，屏幕上是一堆"小勾"，像撒了纸屑。
+ *   ③现在：间距 7px（密）、丝长 22（长）、alpha 0.13（极淡）。雨在静止画面里本来就是
+ *     "一片很淡的纹理"，不是"一根根看得很清的水柱"—— 靠**多而淡**、不靠**少而亮**。
+ *   判据：天空带 A/B 最大差 25~35 级、均差 ~1 级；超过 50 就是"白色短杠"。
+ */
+.harbor-rain {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='7' height='52'%3E%3Crect width='1' height='22' y='0' fill='%23cfe0ec' fill-opacity='0.13'/%3E%3C/svg%3E");
+  background-size: 7px 52px;
+  background-repeat: repeat;
+  mix-blend-mode: screen;
+  /* 旋转后四角会露出空白，放大一圈补住 */
+  transform: rotate(9deg) scale(1.3);
+  transform-origin: center center;
+  animation: harborRainFall 0.45s linear infinite;
+}
+@keyframes harborRainFall {
+  from { background-position: 0 0; }
+  to { background-position: 0 52px; }
+}
