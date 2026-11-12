@@ -5,7 +5,7 @@ import {
 } from './deckCoast'
 import {
   harborPlan, harborRadius, harborStyleFor, harborVisible,
-  type HarborPlan, type HarborStyle,
+  type FolkKind, type HarborFolk, type HarborPlan, type HarborStyle,
 } from './deckHarbor'
 import { texFrom } from './shipTextures'
 
@@ -29,6 +29,7 @@ const MAX_PIER = 5
 const MAX_MOOR = 6
 const MAX_PALM = 8
 const MAX_CRANE = 3
+const MAX_FOLK = 14
 
 export interface DeckHarbor {
   group: THREE.Group
@@ -341,6 +342,40 @@ export function createDeckHarbor(): DeckHarbor {
   chimneys.frustumCulled = false
   group.add(chimneys)
 
+  /*
+   * ---- 码头上的人 ----
+   * 三种衣服颜色各一个 InstancedMesh（搬运工土黄 / 水手深蓝 / 闲站米白），
+   * 头单独一个（统一深色，远处只有一个点）。总共 4 次 draw call，
+   * 换来"这座城里有人在干活"。每帧只做很小的上下起伏（走路的样子）。
+   */
+  const folkBodyMat: Record<FolkKind, THREE.MeshBasicMaterial> = {
+    /* 搬运工用偏亮的土黄（与码头面 0x9a9184 太近就糊成一片）、水手深蓝、闲站米白 */
+    porter: mk(0x7d5a36),
+    sailor: mk(0x33465f),
+    idle: mk(0xc4b79c),
+  }
+  const folkHeadMat = mk(0x6b5744)
+  for (const m of [...Object.values(folkBodyMat), folkHeadMat]) bases.set(m, m.color.clone())
+
+  const folkBodyGeo = new THREE.BoxGeometry(1, 1, 1)
+  folkBodyGeo.translate(0, 0.5, 0)
+  const folkBody: Record<FolkKind, THREE.InstancedMesh> = {
+    porter: new THREE.InstancedMesh(folkBodyGeo, folkBodyMat.porter, MAX_FOLK),
+    sailor: new THREE.InstancedMesh(folkBodyGeo, folkBodyMat.sailor, MAX_FOLK),
+    idle: new THREE.InstancedMesh(folkBodyGeo, folkBodyMat.idle, MAX_FOLK),
+  }
+  for (const [k, m] of Object.entries(folkBody)) {
+    m.name = `deck-harbor-folk-${k}`
+    m.frustumCulled = false
+    group.add(m)
+  }
+  /* 头：6×4 段的球，远处读作一个圆点（用 Box 会读成"方脑袋"） */
+  const folkHeadGeo = new THREE.SphereGeometry(0.5, 6, 4)
+  const folkHead = new THREE.InstancedMesh(folkHeadGeo, folkHeadMat, MAX_FOLK)
+  folkHead.name = 'deck-harbor-folk-head'
+  folkHead.frustumCulled = false
+  group.add(folkHead)
+
   const spireTower = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), spireMat)
   spireTower.name = 'deck-harbor-spire'
   spireTower.geometry.translate(0, 0.5, 0)
@@ -367,6 +402,39 @@ export function createDeckHarbor(): DeckHarbor {
   const zero = new THREE.Matrix4().makeScale(0, 0, 0)
   let plan: HarborPlan | null = null
   let style: HarborStyle = harborStyleFor('europe')
+
+  let folkList: { f: HarborFolk; slot: number }[] = []
+  let curDeckY = 0
+
+  /**
+   * 把人写进实例矩阵。`t` 用来做很小的上下起伏（走路），
+   * 幅度只有身高的 7% —— 远处看是"在动"，不是"在跳"。
+   */
+  function writeFolk(t: number) {
+    const used: Record<FolkKind, number> = { porter: 0, sailor: 0, idle: 0 }
+    for (let i = 0; i < folkList.length; i++) {
+      const { f } = folkList[i]
+      const bob = Math.sin(t * 2.4 + f.phase) * f.h * 0.07
+      dummy.position.set(f.x, curDeckY + bob, f.z)
+      dummy.rotation.set(0, f.yaw, 0)
+      // 躯干：宽 = 身高的 30%（肩宽 1.7 米的人约 0.5 米），厚 22%
+      dummy.scale.set(f.h * 0.3, f.h * 0.72, f.h * 0.22)
+      dummy.updateMatrix()
+      folkBody[f.kind].setMatrixAt(used[f.kind]++, dummy.matrix)
+
+      dummy.position.set(f.x, curDeckY + bob + f.h * 0.78, f.z)
+      dummy.rotation.set(0, f.yaw, 0)
+      dummy.scale.set(f.h * 0.26, f.h * 0.26, f.h * 0.26)
+      dummy.updateMatrix()
+      folkHead.setMatrixAt(i, dummy.matrix)
+    }
+    for (const k of ['porter', 'sailor', 'idle'] as FolkKind[]) {
+      for (let i = used[k]; i < MAX_FOLK; i++) folkBody[k].setMatrixAt(i, zero)
+      folkBody[k].instanceMatrix.needsUpdate = true
+    }
+    for (let i = folkList.length; i < MAX_FOLK; i++) folkHead.setMatrixAt(i, zero)
+    folkHead.instanceMatrix.needsUpdate = true
+  }
 
   function apply(pl: HarborPlan) {
     const { deckHalfW, deckZ0, deckZ1, deckY } = pl
@@ -414,6 +482,17 @@ export function createDeckHarbor(): DeckHarbor {
     }
     for (let i = qi; i < MAX_HOUSE * 6; i++) panes.setMatrixAt(i, zero)
     panes.instanceMatrix.needsUpdate = true
+
+    /* ---- 码头上的人（矩阵在 update 里每帧重写，这里先摆到位） ---- */
+    folkList = pl.folk.slice(0, MAX_FOLK).map((f) => ({ f, slot: 0 }))
+    {
+      const used: Record<FolkKind, number> = { porter: 0, sailor: 0, idle: 0 }
+      for (const item of folkList) {
+        item.slot = used[item.f.kind]++
+      }
+    }
+    curDeckY = deckY
+    writeFolk(0)
 
     /* ---- 烟囱：一半的房子有，站在屋脊上 ---- */
     let ci = 0
@@ -730,6 +809,8 @@ export function createDeckHarbor(): DeckHarbor {
         m.opacity = 1
         m.transparent = false
       }
+      // 码头上的人在动（很小的起伏，幅度 7% 身高）
+      if (folkList.length) writeFolk(t)
       // 窗光：只在夜里、且被雾削
       winMat.opacity = Math.max(0, Math.min(1, night)) * (1 - Math.min(1, fogK) * 0.9)
       const breath = 0.9 + 0.1 * Math.sin(t * 0.7)

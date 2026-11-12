@@ -105,6 +105,8 @@ const gotoPort = async (portId) => {
       palms: h?.plan?.palms?.length ?? 0,
       panes: h?.plan?.panes?.length ?? 0,
       chimneys: h?.plan?.chimneys?.length ?? 0,
+      folk: h?.plan?.folk?.length ?? 0,
+      folkKinds: [...new Set((h?.plan?.folk ?? []).map((f) => f.kind))],
       spire: h?.plan?.spire ? Math.round(h.plan.spire.h * 10) / 10 : null,
       port: window.__gameStore.getState().fleet.currentPortId,
     }
@@ -141,6 +143,9 @@ for (const e of EXPECT) {
   check(r.panes >= r.houses * 2, `${e.name}：${r.panes} 扇窗（≥ ${r.houses * 2}）`)
   check(r.chimneys > 0 && r.chimneys < r.houses,
     `${e.name}：${r.chimneys} 个烟囱（0 < n < ${r.houses}）`)
+  /* 空城问题：码头上得有人，而且不止一种身份（不然是一排复制品） */
+  check(r.folk >= 4, `${e.name}：码头上 ${r.folk} 个人`)
+  check(r.folkKinds.length >= 2, `${e.name}：至少两种身份（${r.folkKinds.join('/')}）`)
 }
 check(new Set(seen.map((s) => s.got.style)).size === 4,
   `四个海域四种样式，各不相同（${seen.map((s) => s.got.style).join(' / ')}）`)
@@ -261,6 +266,22 @@ const nightDiff = await page.evaluate(async ([a, b]) => {
   return lit
 }, [shotA, nightShot])
 check(nightDiff > 60, `推到夜里之后有 ${nightDiff} 个像素变亮（码头与房屋的窗光）`)
+
+// 人的网格存在且实例数正确（按身份各一个 + 一个头）
+const folkMesh = await page.evaluate(() => {
+  const scene = window.__deckScene
+  const names = ['deck-harbor-folk-porter', 'deck-harbor-folk-sailor', 'deck-harbor-folk-idle', 'deck-harbor-folk-head']
+  const out = {}
+  for (const n of names) {
+    const m = scene?.getObjectByName(n)
+    out[n.replace('deck-harbor-folk-', '')] = m ? { count: m.count, visible: m.visible } : null
+  }
+  return out
+})
+/* 注意：InstancedMesh 的 count 是**实例池容量**，不是实际人数（人数由 plan 判据守） */
+check(Object.values(folkMesh).every((v) => v && v.visible),
+  `人的四个网格都在，实例池 ${Object.values(folkMesh)[0]?.count ?? '—'}/个（${
+    Object.entries(folkMesh).map(([k, v]) => `${k}${v?.visible ? '✓' : '✗'}`).join(' ')}）`)
 
 console.log(`\n报错：${errors.length ? errors.join(' | ') : '无'}`)
 check(errors.length === 0, '无页面错误')

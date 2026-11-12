@@ -190,6 +190,34 @@ export interface HarborPane {
   h: number
 }
 
+/** 码头上的人的三种身份（只影响衣服颜色与站位，不影响任何数值） */
+export type FolkKind = 'porter' | 'sailor' | 'idle'
+
+/**
+ * 码头上的一个人（远景剪影）。
+ *
+ * 【为什么要有】房子、栈桥、防波堤都做完之后，这座城里**一个人都没有** ——
+ * 画面上读作"模型"而不是"地方"。人在 18 单位外只有十来个像素，但正是这十来个
+ * 像素（会动、会挡、会聚成三两个一组）让港口活起来。
+ *
+ * 【为什么尺寸夸张】真实 1.7 米 = 0.09 世界单位，在 18 单位外是 **5 像素** ——
+ * 那是噪点，不是人。0.13~0.17 单位（2.3~3 米）时屏幕上是 3×8 像素，
+ * 实测仍然读不出来（而且一半会被停泊船挡住）。给到 0.19~0.24（3.5~4.3 米）
+ * 才有 5×13 像素：能看出"一个人站在那"。与灯塔同一个取舍 ——
+ * 远处的识别特征允许放大，比例尺由 HUD 的数字负责。
+ */
+export interface HarborFolk {
+  x: number
+  z: number
+  /** 朝向（弧度，0 = 面向内陆） */
+  yaw: number
+  kind: FolkKind
+  /** 身高（世界单位） */
+  h: number
+  /** 走路的相位（每人的摇摆不同步） */
+  phase: number
+}
+
 export interface HarborChimney {
   x: number
   z: number
@@ -238,6 +266,8 @@ export interface HarborPlan {
   panes: HarborPane[]
   /** 屋顶上的烟囱 */
   chimneys: HarborChimney[]
+  /** 码头上的人 */
+  folk: HarborFolk[]
   /** 尖顶（x, z, 高度）—— 没有 spire 的样式返回 null */
   spire: { x: number; z: number; h: number } | null
   /** 吊货臂架（x, z, 臂长） */
@@ -259,6 +289,7 @@ const EMPTY_PLAN: HarborPlan = {
   palms: [],
   panes: [],
   chimneys: [],
+  folk: [],
   spire: null,
   cranes: [],
   flag: { x: 0, z: 0, h: 0 },
@@ -293,6 +324,8 @@ export function harborPlan(style: HarborStyle, width: number, presence: number, 
 
   /** 码头面顶面高度（房子站在上面） */
   const deckTopY = 0.16 + 0.07 * s
+  /** 码头面靠海那一侧的边（人不能站到边上掉进水里） */
+  const deckNearZ = -0.2
   const nHouse = Math.round(style.houses[0] + (style.houses[1] - style.houses[0]) * rnd(1))
   const houses: HarborHouse[] = []
   for (let i = 0; i < nHouse; i++) {
@@ -362,6 +395,37 @@ export function harborPlan(style: HarborStyle, width: number, presence: number, 
         z: h.z,
         h: Math.max(0.16, h.roofH * 0.7),
         w: Math.min(0.16 * s, h.w * 0.14),
+      })
+    }
+  }
+
+  /*
+   * 码头上的人。
+   *
+   * 【为什么只撒在 z < 0.65 那条带】房子从 z=0.72 起，栈桥从 z=0.16 伸出去。
+   * 中间那条 0.1~0.65 的窄带是**码头前沿**（卸货、系缆绳、等人），人站那里
+   * 既不与房子穿模、也不站在水里 —— 一条带就避开了两类错，不用做碰撞。
+   *
+   * 【为什么成组】均匀撒点是"雨滴"，三两个凑一处才是"有人在做一件事"。
+   * 所以先撒几个"堆"，再在每个堆周围撒人。
+   */
+  const folk: HarborFolk[] = []
+  {
+    const nFolk = Math.max(4, Math.min(14, Math.round(houses.length * 1.25)))
+    const groups = 2 + Math.floor(rnd(83) * 2)
+    const kinds: FolkKind[] = ['porter', 'sailor', 'idle']
+    for (let i = 0; i < nFolk; i++) {
+      const g = i % groups
+      /* 只在视野中部撒（±0.62 halfW）：撒满整条岸时一半的人落在画面外或被栈桥挡住 */
+      const gx = (rnd(g * 4.1 + 87) - 0.5) * 1.24 * halfW
+      const gz = 0.02 + rnd(g * 6.7 + 89) * 0.4
+      folk.push({
+        x: Math.max(-halfW * 0.7, Math.min(halfW * 0.7, gx + (rnd(i * 3.3 + 91) - 0.5) * 0.9)),
+        z: Math.max(deckNearZ + 0.14, Math.min(0.5, gz + (rnd(i * 5.9 + 93) - 0.5) * 0.24)),
+        yaw: (rnd(i * 7.1 + 97) - 0.5) * 2.4 + (i % 2 === 0 ? 0 : Math.PI),
+        kind: kinds[Math.floor(rnd(i * 2.3 + 101) * 3) % 3],
+        h: (0.19 + 0.05 * rnd(i * 9.7 + 103)) * (0.9 + 0.08 * s),
+        phase: rnd(i * 8.9 + 107) * Math.PI * 2,
       })
     }
   }
@@ -439,7 +503,7 @@ export function harborPlan(style: HarborStyle, width: number, presence: number, 
      * 铺到内陆 3.4 之后，房子站的地方变成石砌码头，草与树被挡在城后面 ——
      * 这才是港口该有的地面，也顺手解决了"树穿房"。
      */
-    deckZ0: -0.2,
+    deckZ0: deckNearZ,
     deckZ1: 3.4,
     deckY: deckTopY,
     houses,
@@ -449,6 +513,7 @@ export function harborPlan(style: HarborStyle, width: number, presence: number, 
     palms,
     panes,
     chimneys,
+    folk,
     spire: style.spire
       /*
        * 尖顶 = 方形钟楼 + 尖锥：只给一个细锥时比例是 1:11（一根针，实测）。

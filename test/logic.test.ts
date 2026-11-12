@@ -11270,6 +11270,52 @@ console.log('\n== 天数口径守卫 ==')
 
 
 /*
+ * ---- 码头上要有人（不然是一座空城）----
+ *
+ * 【守什么】房子、栈桥、防波堤都做完之后，整座城里一个人都没有 —— 画面上
+ * 读作"模型"而不是"地方"。这里守四件事：
+ *  ① 人只站在**码头前沿那条带**（z 在码头面之内、房子之前）——
+ *     一条带同时避开"站在水里"与"穿进房子"，不需要做碰撞；
+ *  ② 人都在视野中部（撒满整条岸时一半落在画面外）；
+ *  ③ 至少两种身份（装卸/行船/闲站的衣服颜色不同，一眼能看出不是复制品）；
+ *  ④ 身高落在"可读但不离谱"的区间（<0.15 单位只有 5 像素，>0.3 比房子还高）。
+ */
+{
+  for (const st of Object.values(HARBOR_STYLES)) {
+    const plan = harborPlan(st, 36, 1, 5)
+    assert(plan.folk.length >= 4 && plan.folk.length <= 14,
+      `${st.id} 码头上 ${plan.folk.length} 个人（4~14）`)
+    for (const f of plan.folk) {
+      assert(f.z >= plan.deckZ0 && f.z <= 0.62,
+        `${st.id} 人站在码头前沿（z=${f.z.toFixed(2)} ∈ ${plan.deckZ0}..0.62）`)
+      assert(Math.abs(f.x) <= plan.deckHalfW * 0.72,
+        `${st.id} 人在视野中部（|x|=${Math.abs(f.x).toFixed(1)} ≤ ${(plan.deckHalfW * 0.72).toFixed(1)}）`)
+      assert(f.h >= 0.15 && f.h <= 0.3, `${st.id} 身高 ${f.h.toFixed(2)} 单位（0.15~0.3）`)
+      assert(Number.isFinite(f.yaw) && Number.isFinite(f.phase), `${st.id} 朝向与相位都是数`)
+    }
+    const kinds = new Set(plan.folk.map((f) => f.kind))
+    assert(kinds.size >= 2, `${st.id} 至少两种身份（${[...kinds].join('/')}）`)
+    // 确定性：同一个港每次进来是同样几个人（不能每次刷新都换一批）
+    const again = harborPlan(st, 36, 1, 5)
+    assert(JSON.stringify(plan.folk) === JSON.stringify(again.folk), `${st.id} 同港同人（确定性）`)
+    // 不同的港不能是同一批人
+    const other = harborPlan(st, 36, 1, 17)
+    assert(JSON.stringify(plan.folk.map((f) => f.x)) !== JSON.stringify(other.folk.map((f) => f.x)),
+      `${st.id} 不同的港站的不是同一批人`)
+  }
+  // 网格命名（e2e / 取证按名字取）
+  const hmSrc3 = readFileSync(join(process.cwd(), 'src', 'components', 'deck', 'harborModel.ts'), 'utf8')
+  for (const k of ['porter', 'sailor', 'idle']) {
+    assert(hmSrc3.includes('deck-harbor-folk-${k}') || hmSrc3.includes(`deck-harbor-folk-${k}`),
+      `人（${k}）的网格按身份命名`)
+  }
+  assert(/deck-harbor-folk-head/.test(hmSrc3), '头单独一个网格（远处读作一个圆点）')
+  // 走路只是很小的起伏：幅度必须远小于身高（否则像在跳）
+  assert(/f\.h \* 0\.07/.test(hmSrc3), '起伏幅度是身高的 7%（读作在走，不是在跳）')
+}
+
+
+/*
  * ---- 同一座港在两个视图里必须是同一座城 ----
  *
  * 【守什么】甲板视角（`HARBOR_STYLES`）与 2.5D 全球板（`map3d/models.ts`）
