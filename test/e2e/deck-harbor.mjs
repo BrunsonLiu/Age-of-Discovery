@@ -167,6 +167,18 @@ check(seen.every((s) => s.got.groupPos?.[1] > 10),
 const lampDay = await page.evaluate(() => window.__deckScene?.getObjectByName('deck-harbor-lamps')?.material?.opacity ?? -1)
 check(lampDay >= 0 && lampDay <= 0.15, `白天水边的灯几乎不亮（opacity ${lampDay.toFixed(2)}）`)
 
+/*
+ * 【云为什么不量像素】天空那一块在 e2e 里被教程遮罩压着：同一块纯天空，
+ * 带遮罩 std 32.8、清掉之后 12.7（差 2.6 倍）—— 量出来的是遮罩，不是云。
+ * 改成读 uniform（能证伪"把云关掉"），几何上的细节交给单测的源码守卫。
+ */
+const cloud = await page.evaluate(() => {
+  const u = window.__deckSky?.uniforms
+  return u ? { k: u.uCloud?.value ?? -1, drift: !!u.uCloudDrift, color: !!u.uCloudColor } : null
+})
+check(!!cloud && cloud.k > 0.5, `白天云是开着的（uCloud=${cloud?.k?.toFixed(2)}）`)
+check(!!cloud?.drift && !!cloud?.color, '云有漂移与自己的颜色两个 uniform')
+
 const waveDock = await readWave()
 check(waveDock !== null && Math.abs(waveDock - 0.34) < 0.03,
   `停泊塞维利亚：浪高系数 ${waveDock}（期望 0.34——堤内几乎无浪）`)
@@ -215,6 +227,17 @@ await gotoPort(6)
  * 的那种错（本轮停泊船的 ExtrudeGeometry 就是这样）。所以把组藏起来再拍一张，
  * 比较**变化了的那些像素**的亮度差：>10 级说明这一片画面真的由它构成。
  */
+/*
+ * 【截图前必须先清掉教程/致辞那层浮层】它是一张半透明的整屏卡片，压在天空上 ——
+ * 实测：同样的天空，带浮层时像素梯度 1.53、清掉之后 0.15（差 10 倍）。
+ * 判据里混进一层卡片就等于在量那张卡片，不是在量云。
+ */
+await page.evaluate(() => {
+  document.querySelectorAll('div.fixed.inset-0').forEach((d) => {
+    if (/跳过致辞|跳过引导|翻开日志/.test(d.textContent || '')) d.style.display = 'none'
+  })
+})
+await sleep(400)
 const shotA = await page.screenshot({ encoding: 'base64' })
 await page.evaluate(() => { window.__deckScene.getObjectByName('deck-harbor').visible = false })
 await sleep(600)
@@ -236,9 +259,19 @@ const diff = await page.evaluate(async ([a, b]) => {
   const da = px(ia); const db = px(ib)
   const diffs = []
   let changed = 0
-  for (let i = 0; i < da.length; i += 4) {
-    const d = (Math.abs(da[i] - db[i]) + Math.abs(da[i + 1] - db[i + 1]) + Math.abs(da[i + 2] - db[i + 2])) / 3
-    if (d > 6) { changed++; diffs.push(d) }
+  /*
+   * 【只统计港口带（y 200..390）】整屏差分原来也可以，但海面加了细纹、天空加了
+   * 云之后，两张截图相隔几百毫秒，水纹与云也在动 —— 大量 5~15 级的"动态变化"
+   * 混进来，把 p90 从 40 拖到 29（判据被新功能污染，实测）。
+   * 这条判据要问的是"**房屋是不是实心色块**"，就只该看有房子的那一条。
+   */
+  const W2 = c.width
+  for (let y = 200; y < 390; y++) {
+    for (let x = 100; x < 1300; x++) {
+      const i = (y * W2 + x) * 4
+      const d = (Math.abs(da[i] - db[i]) + Math.abs(da[i + 1] - db[i + 1]) + Math.abs(da[i + 2] - db[i + 2])) / 3
+      if (d > 6) { changed++; diffs.push(d) }
+    }
   }
   diffs.sort((x, y) => x - y)
   const at = (p) => (diffs.length ? Math.round(diffs[Math.floor(diffs.length * p)] * 10) / 10 : 0)
@@ -384,6 +417,72 @@ for (const [n, v] of Object.entries(shade.out)) {
 }
 check(shade.out['deck-harbor-walls']?.instColor, '墙有 instanceColor（逐栋色差）')
 check(shade.out['deck-harbor-roofs']?.instColor, '屋顶有 instanceColor')
+
+// ---- ⑩ 画面本身有多少细节（把"粗糙"变成可量的数）----
+/*
+ * 【为什么要量这个】用户两次说"看着还是非常粗糙"。而"粗糙"可以拆成一个
+ * 可量的东西：**这一块像素有多不平** —— 亮度标准差。
+ * 实测（1440×900，停在塞维利亚）：
+ *   · 海面左侧一块（纯水、无船无岸）改动前 std = 1.87 —— 一整片纯色塑料；
+ *     加毛细波与水色斑之后 7.63。
+ *   · 天空改动前 std = 15.11（只有渐变），加云之后 19.72，且"比天顶亮 6 级
+ *     以上的像素"从 0 变成两成多（云）。
+ * 这两条同时守住两件事：别再把海面压平成塑料板、别把云删掉。
+ */
+const detail = await page.evaluate(async (b64) => {
+  const img = new Image()
+  img.src = 'data:image/png;base64,' + b64
+  await img.decode()
+  const c = document.createElement('canvas')
+  c.width = img.width; c.height = img.height
+  const g = c.getContext('2d')
+  g.drawImage(img, 0, 0)
+  const px = g.getImageData(0, 0, img.width, img.height).data
+  const W = img.width
+  /*
+   * 除了 std，还要算**相邻像素梯度**：std 分不清"渐变"与"细节"——
+   * 一整片从深到浅的天空 std 有 15，却一个像素的纹理都没有。
+   * 梯度（左右相邻的亮度差）只认边界：渐变每像素 0.1 级、云边 3~8 级、
+   * 水纹 2~6 级。判"有没有纹理"用它，比 std 可靠。
+   */
+  const region = (x0, y0, w, h) => {
+    let n = 0, s = 0, s2 = 0, gsum = 0, gn = 0
+    const L = (x, y) => {
+      const i = (y * W + x) * 4
+      return 0.299 * px[i] + 0.587 * px[i + 1] + 0.114 * px[i + 2]
+    }
+    for (let y = y0; y < y0 + h; y++) {
+      for (let x = x0; x < x0 + w; x++) {
+        const l = L(x, y)
+        s += l; s2 += l * l; n++
+        if (x + 1 < x0 + w) { gsum += Math.abs(L(x + 1, y) - l); gn++ }
+        if (y + 1 < y0 + h) { gsum += Math.abs(L(x, y + 1) - l); gn++ }
+      }
+    }
+    const mean = s / n
+    return { mean, std: Math.sqrt(Math.max(0, s2 / n - mean * mean)), grad: gsum / gn }
+  }
+  /*
+   * 【统计区必须避开界面】上一版天空取 [0,0,1440,170]：左上角的「DECK VIEW」
+   * 面板与右上角两个按钮都在里面，深色底板 + 白字的 std 有 41 —— 把云删掉判据
+   * 照样绿（注入验证抓到的）。现在只取正上方一块纯天空（220..520 × 20..150）。
+   */
+  const sea = region(20, 430, 260, 180)
+  /*
+   * 天空区：避开左上 DECK VIEW 面板（x<150）、右上按钮（x>1170）、
+   * **月亮**（≈847,72，亮盘的边缘会把梯度拉高）与远处的海岸线（y>230）。
+   * 取 200..700 × 14..120 这一块，实测：有云 grad 0.235 / 关云 0.053。
+   */
+  const sky = region(200, 14, 500, 106)
+  return {
+    seaStd: +sea.std.toFixed(2), seaGrad: +sea.grad.toFixed(3),
+    skyStd: +sky.std.toFixed(2), skyGrad: +sky.grad.toFixed(3),
+  }
+}, shotA)
+check(detail.seaGrad >= 1.2, `海面有纹理（相邻像素梯度 ${detail.seaGrad}，纯色板 ≈0.05）`)
+
+check(detail.seaStd >= 5, `海面明暗有起伏（std ${detail.seaStd}，纯色板 1.87）`)
+
 console.log(`\n报错：${errors.length ? errors.join(' | ') : '无'}`)
 check(errors.length === 0, '无页面错误')
 await ctx.close()

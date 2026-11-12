@@ -63,6 +63,14 @@ const MOON_COLOR = new THREE.Color(0xdfe9ff)
  * 真实的黄昏是**第三种色**，不是两端的中点。
  */
 const DUSK_HORIZON = new THREE.Color(0xc47a52)
+/**
+ * 云的"白"。
+ *
+ * 【为什么不是纯白】纯白 (1,1,1) 叠在有 ACES + 辉光的场景里会直接烧成一团
+ * 发光的白斑（云的边缘与月亮的光晕糊在一起）。0xdfe6ea 略带天光的冷、亮度
+ * 比天顶高一档 —— 这才是晴天的云。
+ */
+const CLOUD_WHITE = new THREE.Color(0xdfe6ea)
 const DUSK_ZENITH = new THREE.Color(0x4e4a66)
 
 /**
@@ -393,6 +401,14 @@ export default function DeckView() {
         uFogK: { value: 0 },
         uDark: { value: 1 },
         uFogColor: { value: new THREE.Color(0xb4bdc2) },
+        /*
+         * 云：白天是云的强度，夜里压到很低（月光下只有一层淡淡的影）。
+         * `uCloudDrift` 让云极慢地横向漂（0.004/秒，一分钟挪 0.24 个单位 ——
+         * 屏幕上大约每 10 秒挪一个像素，看得出"天在动"但不会像快进）。
+         */
+        uCloud: { value: 0.6 },
+        uCloudDrift: { value: new THREE.Vector2(0, 0) },
+        uCloudColor: { value: new THREE.Color(0xdfe6ea) },
       },
       vertexShader: /* glsl */ `
         varying vec3 vDir;
@@ -412,14 +428,86 @@ export default function DeckView() {
         uniform float uFogK;
         uniform float uDark;
         uniform vec3 uFogColor;
+        uniform float uCloud;
+        uniform vec2 uCloudDrift;
+        uniform vec3 uCloudColor;
         varying vec3 vDir;
         ${SRGB_ENCODE}
+        float hash21(vec2 p) {
+          return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+        }
+        float vnoise(vec2 p) {
+          vec2 i = floor(p);
+          vec2 f = fract(p);
+          vec2 u = f * f * (3.0 - 2.0 * f);
+          return mix(
+            mix(hash21(i), hash21(i + vec2(1.0, 0.0)), u.x),
+            mix(hash21(i + vec2(0.0, 1.0)), hash21(i + vec2(1.0, 1.0)), u.x),
+            u.y);
+        }
         void main() {
           vec3 d = normalize(vDir);
           float h = clamp(d.y, -1.0, 1.0);
           // 地平线附近偏亮、天顶偏暗；下半个球压到海色，避免出现"天在下"
           vec3 col = mix(uHorizon, uZenith, pow(clamp(h, 0.0, 1.0), 0.55));
           col = mix(col, uHorizon * 0.55, smoothstep(0.0, -0.35, h));
+          /*
+           * ---- 云 ----
+           *
+           * 【为什么天空必须有东西】实测这一块的亮度标准差只有 15，而它占了
+           * 画面上方五分之一 —— 一整片渐变蓝加一个白盘，是"低模"最直接的观感来源。
+           *
+           * 【投影方式】d.xz / max(d.y, 0.22) 是把半球方向投到一张水平面上：
+           * 越靠地平线拉得越开。直接拿 d.xz 取噪声的话，云在头顶会聚成一团、
+           * 在地平线挤成一条线（球面的固有畸变）。下限 0.22 而不是 0.05：
+           * 太接近地平线时噪声频率会爆掉（那里已被下面的 smoothstep 淡出，
+           * 但先夹住更稳）。
+           *
+           * 【两层不同频率】单层噪声的云团大小一样、边缘一样碎 —— 读作"污渍"。
+           * 低频给大块、高频给边缘的细节，两层权重 0.58/0.42。
+           */
+          /*
+           * 【投影必须避免"除以 d.y"】第一版用 d.xz / max(d.y, 0.22)（标准平面投影）：
+           * 屏幕横向对应的是 d.x 的变化、纵向对应 d.y，除以 d.y 之后横向梯度被放大
+           * 好几倍，云被拉成一**条条竖直的幕布**（像极光，实测截图）。
+           * 直接拿 d.xz 取噪声就没有这个畸变：半球压扁成盘，天顶小、地平线大，
+           * 而真实的云在地平线附近本来就被横向拉长。
+           */
+          /*
+           * 【必须用方位角 + 仰角，不能用 d.xz】这是第三次改投影：
+           * ① d.xz / d.y —— 横向梯度被放大，云拉成**竖幕**；
+           * ② d.xz 直接取 —— 天顶与地平线的比例失衡，屏幕上是一块块模糊的雾；
+           * ③ 方位角 az、仰角 el —— 屏幕横向就是 az、纵向就是 el，**各向同性**，
+           *    云团才是圆的。az 的接缝在 ±π（船尾方向），视野只有 ±45°，看不到。
+           */
+          float az = atan(d.z, d.x);
+          float el = asin(clamp(d.y, -1.0, 1.0));
+          /*
+           * az 与 el 用**同一个系数**：两者都是弧度，等角度采样在球面上才各向同性。
+           * 上一版 el 用 12（az 的 2 倍）→ 纵向被压缩一半，云全是**扁的横条**。
+           */
+          vec2 cp = vec2(az * 6.2, el * 6.2) + uCloudDrift;
+          /*
+           * 频率：cp 是"半球压扁"后的坐标（天顶 ≈ 0、地平线 ≈ 3 个单位），
+           * 乘 2.6 大约是 8 个云团横跨整个天、乘 6.4 给团内的细节。
+           * 1.35 时只有三四个巨大的渐变斑（屏幕上就是一坨浅色，读不出是云）。
+           */
+          float cn = 0.56 * vnoise(cp) + 0.44 * vnoise(cp * 2.4 + 17.0);
+          /*
+           * 覆盖率 0.45~0.66。两层噪声的加权和集中在 0.5 附近（std 约 0.2），
+           * 阈值给到 0.52~0.80 时只遮住约 15% 的天、再乘 0.33 的强度，
+           * 屏幕上几乎看不见（实测：只剩几块比天稍亮的色斑）。
+           */
+          float cover = smoothstep(0.55, 0.67, cn);
+          /* 贴着地平线的一圈不画云（那里是雾/大气），天顶也留一点空 */
+          cover *= smoothstep(0.02, 0.18, h) * (1.0 - 0.35 * smoothstep(0.86, 1.0, h));
+          /* 云边：厚度中段的一条亮边（云心厚、云边薄而透光） */
+          /*
+           * 只做"实心的云"，不加亮边：上一版那条 cloudEdge 在屏幕上是一圈
+           * 比云心更亮的描边，读作"发光的贴纸"（云的亮边该由体积厚度给出，
+           * 不是画一条线）。
+           */
+          col = mix(col, uCloudColor, cover * uCloud * 0.92);
           float m = max(dot(d, uMoonDir), 0.0);
           // 月亮：盘（~1.2°）+ 两圈光晕。加起来比贴图省一次采样
           // 盘：smoothstep 的下限决定直径。0.9994 对应 4°（屏幕上 60~80px，像太阳），
@@ -623,6 +711,24 @@ export default function DeckView() {
         }
         void main() {
           vec3 n = normalize(vNormal);
+          /*
+           * ---- 毛细波：只改法线，不改几何 ----
+           *
+           * 【为什么必须有】港内把 uWaveScale 压到 0.34 之后，实测「海面-左」那一块
+           * 的亮度标准差只有 **1.87**（同一张图里港口带是 35）—— 画面近一半面积是
+           * 一块纯色塑料板。防波堤挡得住涌浪，挡不住风在堤内吹起的**细波**：
+           * 波长 0.2~0.6 单位（4~11 米），比顶点间距（0.7 单位）还小，做不出位移，
+           * 但**法线**可以逐像素算出来。
+           * 幅度 0.12/0.05：低于 0.06 在掠射角下看不出来，高于 0.3 是一格格的砂纸。
+           */
+          {
+            vec2 rq = vWorld.xz;
+            float r1 = vnoise(rq * 4.1 + vec2(uTime * 0.09, -uTime * 0.07));
+            float r2 = vnoise(rq * 7.3 - vec2(uTime * 0.05, uTime * 0.11));
+            n.x += (r1 - 0.5) * 0.12 + (r2 - 0.5) * 0.05;
+            n.z += (r2 - 0.5) * 0.12 + (r1 - 0.5) * 0.05;
+            n = normalize(n);
+          }
           vec3 v = normalize(cameraPosition - vWorld);
           // 菲涅尔：正视是深水，掠视反天光
           /*
@@ -726,6 +832,42 @@ export default function DeckView() {
            * 涨到 5.11%，全屏均值 +0.29；256 级里没有一个像素到 250（不过曝）。
            */
           col += uMoon * kwSpec * 0.055 * foamGate * uMoonK;
+          /*
+           * ---- 水色斑（与浪无关的大面积明暗）----
+           *
+           * 真实的水面即使无风也从来不是一片纯色：深浅、云影、水流都在上面。
+           * 频率 0.05（波长约 20 单位 = 360 米）、只改明度 ±9%，所以屏幕上多的是
+           * "水色不匀"，不是"贴了一层纹理"。它整块跟时间极慢地漂（0.01/秒）。
+           */
+          float shadePatch = 0.90 + 0.20 * vnoise(vWorld.xz * 0.05 + vec2(uTime * 0.01, uTime * 0.006));
+          /*
+           * ---- 细纹（水面自己的质感，与浪高无关）----
+           *
+           * 【为什么第一版几乎没效果】只抖法线时，近景的菲涅尔早就夹在上限 0.55，
+           * 法线晃动改不了颜色 —— 实测「海面-左」的标准差从 1.87 只涨到 2.80。
+           * 真正给出"水"的质感的是**细碎明暗**：风把水面搓出一条条沿风向的纹，
+           * 纹的两侧反光角不同，于是有明有暗。
+           *
+           * 【为什么坐标要各向异性（x×1.6 / z×7.0）】各向同性的噪声在屏幕上就是
+           * 电视雪花；沿风向拉长之后，它读作"被风吹皱的一条条水纹"，而且会跟
+           * 船的航向一起看（船头朝 +z，纹路横着走）。
+           * 幅度 ±16%（0.84~1.16）：低了看不见，高了像砂纸。
+           */
+          /*
+           * 【只采一次噪声】两层（1.7 与 4.3）在视觉上只多一点碎屑，代价是每像素
+           * 多一次 vnoise（含 4 次 sin）—— 实测软渲染从 60 掉到 55.6fps。
+           * 改成单层 + 一个 smoothstep 提对比：纹理的"锐"来自对比，不来自层数。
+           */
+          vec2 fineQ = vec2(vWorld.x * 1.6 + uTime * 0.10, vWorld.z * 7.0 - uTime * 0.16);
+          float fine = smoothstep(0.18, 0.86, vnoise(fineQ * 2.6));
+          col *= (0.84 + 0.32 * fine) * shadePatch;
+          /*
+           * 碎光：纹的高处当成一颗颗小镜面，把天光弹回来一点。
+           * 只加在高处（0.72 以上）—— 平铺一层会把整片海提亮，那是"过曝"不是"闪光"。
+           */
+          float glint = smoothstep(0.72, 1.0, fine);
+          col += uSky * glint * 0.18;
+
           // 远处收到天光色：与天空球的地平线接上，不出现一条硬边
           float d = length(vWorld.xz);
           /*
@@ -919,6 +1061,12 @@ export default function DeckView() {
      * 不去数屏幕上的色块——"看起来有一排房子"无法判定，数字可以。
      */
     ;(window as unknown as { __deckHarbor?: () => unknown }).__deckHarbor = () => harbor.debug()
+    /*
+     * 天空的取证句柄：e2e 直接读云的强度/漂移/颜色三个 uniform。
+     * 【为什么不量像素】天空那块在 e2e 里被教程遮罩层压着（实测同一块天空，
+     * 带遮罩时 std 32.8、清掉之后 12.7），量出来的是遮罩而不是云。
+     */
+    ;(window as unknown as { __deckSky?: unknown }).__deckSky = skyMat
     // 取证句柄：着色器编译失败时只有拿到 renderer 才能读 programs 的 diagnostics
     ;(window as unknown as { __deckRenderer?: unknown }).__deckRenderer = renderer
 
@@ -1544,6 +1692,16 @@ export default function DeckView() {
        */
       lastSeaSky.copy(SKY_HORIZON_NIGHT).lerp(SKY_HORIZON_DAY, dayK).lerp(DUSK_HORIZON, 0.45 * dusk)
       skyMat.uniforms.uDusk.value = dusk
+      /*
+       * 云：白天 0.62、夜里 0.10（月光下云只剩一层比天稍暗的影）。
+       * 云色跟着天顶色走、再往白里提：白天是白云，黄昏会被地平线的暖带染一下，
+       * 夜里几乎与天同色 —— 不用再单独写一套夜云。
+       */
+      skyMat.uniforms.uCloud.value = 0.10 + 0.72 * dayK
+      skyMat.uniforms.uCloudDrift.value.set(t * 0.004, t * 0.0015)
+      skyMat.uniforms.uCloudColor.value
+        .copy(skyMat.uniforms.uZenith.value)
+        .lerp(CLOUD_WHITE, 0.84)
       seaUniforms.uDeep.value.copy(SEA_DEEP_NIGHT).lerp(SEA_DEEP_DAY, dayK).multiplyScalar(1 - 0.22 * dusk)
       /*
        * 0.55 而不是 0.72：相机贴着水面时几乎整片海都是掠射角（菲涅尔接近上限），

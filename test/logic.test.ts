@@ -11470,6 +11470,48 @@ console.log('\n== 天数口径守卫 ==')
 
 
 /*
+ * ---- 画面本身的细节：水纹与云 ----
+ *
+ * 【守什么】用户两次说"看着还是非常粗糙"。可量的那一半是"这块像素有多不平"：
+ * 港内把浪压平之后，海面左侧一块的亮度标准差只有 1.87 —— 一整片纯色塑料板。
+ * 这一层加的是**不依赖几何**的细节（法线/颜色上的噪声），所以守的是结构：
+ *  ① 海面有毛细波法线（波长比顶点间距还小，只能逐像素算）；
+ *  ② 有沿风向拉长的细纹（各向同性 = 电视雪花）；
+ *  ③ 天空的云用**方位角 + 仰角**取噪声（用 d.xz/d.y 会把云拉成竖幕，改过三次）；
+ *  ④ 云随昼夜：白天开、夜里几乎关掉（月光下不该是白天的云）。
+ */
+{
+  const dv = readFileSync(join(process.cwd(), 'src', 'components', 'deck', 'DeckView.tsx'), 'utf8')
+  // ① 毛细波
+  assert(/n\.x \+= \(r1 - 0\.5\) \* 0\.12/.test(dv), '海面有毛细波（逐像素扰动法线）')
+  assert(/vnoise\(rq \* 4\.1/.test(dv), '毛细波用世界坐标的噪声（不随浪高变）')
+  // ② 细纹：各向异性 + 单层采样（性能）
+  assert(/vec2 fineQ = vec2\(vWorld\.x \* 1\.6/.test(dv) && /vWorld\.z \* 7\.0/.test(dv),
+    '细纹的坐标各向异性（沿风向拉长，否则是电视雪花）')
+  assert(/smoothstep\(0\.18, 0\.86, vnoise\(fineQ \* 2\.6\)\)/.test(dv),
+    '细纹是**单层**噪声 + smoothstep 提对比（两层采样把帧率拖到 55.6）')
+  assert(/col \*= \(0\.84 \+ 0\.32 \* fine\) \* shadePatch/.test(dv),
+    '细纹乘进颜色（只抖法线时，近景菲涅尔已饱和，几乎看不出变化）')
+  // 水色斑必须在"远方混雾"之前（否则远处把它洗掉）
+  const patchAt = dv.indexOf('* shadePatch')
+  const fogAt = dv.indexOf('float d = length(vWorld.xz)')
+  assert(patchAt > 0 && fogAt > patchAt, '水色斑在远方混雾之前（否则远处被洗平）')
+  // ③ 云的投影
+  assert(/float az = atan\(d\.z, d\.x\)/.test(dv) && /float el = asin\(clamp\(d\.y/.test(dv),
+    '云用方位角 + 仰角取噪声（用 d.xz/d.y 会拉成竖幕）')
+  assert(/vec2 cp = vec2\(az \* 6\.2, el \* 6\.2\)/.test(dv),
+    'az 与 el 用同一个系数（等角度采样才各向同性；不同系数会把云压扁）')
+  assert(/col = mix\(col, uCloudColor, cover \* uCloud \* 0\.92\)/.test(dv),
+    '云混进天空色（不是画一圈亮边）')
+  // ④ 云随昼夜
+  assert(/uCloud\.value = 0\.10 \+ 0\.72 \* dayK/.test(dv), '云随昼夜：白天 0.82、夜里 0.10')
+  assert(/uCloudDrift\.value\.set\(t \* 0\.004/.test(dv), '云会漂（极慢，一分钟 0.24 个单位）')
+  // 取证句柄（e2e 读 uniform —— 天空那块被教程遮罩压着，量像素量到的是遮罩）
+  assert(/__deckSky\?: unknown \}\)\.__deckSky = skyMat/.test(dv), '暴露天空句柄给 e2e')
+}
+
+
+/*
  * ---- 灯在水面上的倒影 ----
  *
  * 【守什么】灯挂着、水里却没像，等于灯悬在空气中。倒影长度跟灯高走
