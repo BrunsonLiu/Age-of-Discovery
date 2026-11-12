@@ -6,7 +6,7 @@ import { useMapStore } from '@/store/useMapStore'
 import { skyAt } from '@/utils/skyClock'
 import { createDeckShip, type DeckShip } from './shipModel'
 import { DECK_WAVES, deckShipPose, deckWaveHeight } from './deckWaves'
-import { findCoast, bearingWord, compassWord, wrapDeg, type CoastSighting } from './deckCoast'
+import { findCoast, coastLayout, bearingWord, compassWord, wrapDeg, type CoastSighting } from './deckCoast'
 import { createDeckHarbor, type DeckHarbor } from './harborModel'
 import { harborCalm } from './deckHarbor'
 import { createDeckCoast } from './coastModel'
@@ -601,6 +601,13 @@ export default function DeckView() {
       uBowZ: { value: 0.83 },
       uSternZ: { value: -0.83 },
       uWakeK: { value: 0 },
+      /*
+       * 岸线（世界坐标）：海面要用它画**近岸浅水**与**岸边浪花**。
+       * 只在有岸时有效（uShoreK = 1）；远洋时 0，海面保持原样。
+       */
+      uShoreZ: { value: -1 },
+      uShoreHalfW: { value: 0 },
+      uShoreK: { value: 0 },
       uAmp: { value: DECK_WAVES.map((w) => w.amp) },
       uLen: { value: DECK_WAVES.map((w) => w.len) },
       uSteep: { value: DECK_WAVES.map((w) => w.steep) },
@@ -678,6 +685,9 @@ export default function DeckView() {
         uniform float uBowZ;
         uniform float uSternZ;
         uniform float uWakeK;
+        uniform float uShoreZ;
+        uniform float uShoreHalfW;
+        uniform float uShoreK;
         varying vec3 vWorld;
         varying vec3 vNormal;
         varying float vCrest;
@@ -868,8 +878,53 @@ export default function DeckView() {
           float glint = smoothstep(0.72, 1.0, fine);
           col += uSky * glint * 0.18;
 
-          // 远处收到天光色：与天空球的地平线接上，不出现一条硬边
+          /*
+           * ---- 近岸浅水与岸边浪花 ----
+           *
+           * 【为什么这条最要紧】画面里最长的线是海陆交界，而在加上这一层之前它是
+           * 一条**硬边**：深蓝的海直接切到绿的岸，一像素过渡都没有 —— 这是整幅图
+           * 最像"低模"的地方（比房子和船都显眼）。
+           * 真实的海岸有三层：深水 → 浅水（透出沙底，偏青绿）→ 岸边白沫。
+           *
+           * 岸线的世界坐标由 coastLayout 给（与海岸几何同一个函数），所以浅水带
+           * 和岸线**一定对齐**；uShoreK 在远洋时为 0（没有岸就没有浅水）。
+           */
+          float shoreD = uShoreZ - vWorld.z;
+          /* 横向只在岸线覆盖的那一段里画（岸宽 2×半径，向两侧各留 10% 的淡出） */
+          float lateral = 1.0 - smoothstep(uShoreHalfW * 0.75, uShoreHalfW * 0.98, abs(vWorld.x));
+          /* 纵向：水线两侧各一条 —— 岸后不画（那里是坡面），前方 6.5 单位淡出 */
+          float shallow = smoothstep(-0.9, 0.0, shoreD) * (1.0 - smoothstep(0.0, 6.5, shoreD)) * lateral * uShoreK;
+          vec3 shallowTint = mix(uDeep, vec3(0.24, 0.50, 0.46), 0.62);
+          col = mix(col, shallowTint + uSky * 0.05, shallow * 0.72);
+          /*
+           * 岸边白沫：贴着水线的一条高斯带，沿 x 与时间起伏（不是一条直线）。
+           * 强度 0.3 —— 再高就成了"画上去的白线"。
+           */
+          float surfBand = exp(-pow((shoreD - 0.25) / 0.62, 2.0)) * lateral * uShoreK;
+          float surfWob = 0.55 + 0.45 * sin(vWorld.x * 1.9 + uTime * 1.4) * sin(vWorld.x * 0.7 - uTime * 0.9);
+          col += uSky * surfBand * surfWob * 0.30;
+
+          /*
+           * ---- 空气透视（晴天也有的那一层）----
+           *
+           * 【为什么必须有】实测近处与远处海面的亮度都是 77 —— 整片海是**同一个
+           * 明度**，只有细纹在动。真实的海往远处会**泛白**：视线穿过更长的空气，
+           * 混进地平线的天光。这一层让海面有纵深，也让海天交界不再是"两块色"。
+           *
+           * 【为什么不靠菲涅尔】相机只比水面高 2 米多，20 米外就已经是掠射角，
+           * 菲涅尔在那之后全被 clamp 到上限 0.55 —— 远近压成了同一个值，
+           * 这正是"海面均匀"的直接原因。
+           */
           float d = length(vWorld.xz);
+          /*
+           * 【为什么是 uSky × 1.9】uSky 是海面用的天光色，它本身被压暗过
+           * （见上面菲涅尔那段的注释）—— 直接混进去与海色差不到 2 级，实测
+           * mean 77.2 一点没动。乘 1.9 才回到"地平线附近天光"的亮度。
+           */
+          float haze = smoothstep(12.0, 56.0, d) * 0.55;
+          col = mix(col, uSky * 1.9, haze);
+
+          // 远处收到天光色：与天空球的地平线接上，不出现一条硬边
           /*
            * 远处混天光：晴天的起点是 28~62，浓雾时收到 6~24（只看得到船头）。
            * 用 uniform 而不是写死，是因为雾天必须让"海面尽头"提前消失 ——
@@ -1336,6 +1391,18 @@ export default function DeckView() {
       const halfLenWorld = SHIP_HALF_LENGTH * SHIP_SCALE
       seaUniforms.uBowZ.value = halfLenWorld * 0.92
       seaUniforms.uSternZ.value = -halfLenWorld * 0.88
+      /*
+       * 岸线：与海岸几何用同一个 coastLayout（presence 决定远近、width 决定宽度）。
+       * 没有 sighting（远洋）时 uShoreK = 0 —— 否则浅水带会停在上一处岸的位置。
+       */
+      if (sightingRef.current) {
+        const cl = coastLayout(sightingRef.current.presence)
+        seaUniforms.uShoreZ.value = cl.radius
+        seaUniforms.uShoreHalfW.value = cl.width * 0.5
+        seaUniforms.uShoreK.value = 1
+      } else {
+        seaUniforms.uShoreK.value = 0
+      }
       seaUniforms.uWakeK.value = wakeStrength(
         st.fleet.isSailing,
         (st.fleet.ships.find((x) => x.id === st.fleet.flagshipId) ?? st.fleet.ships[0])?.speed ?? 0,

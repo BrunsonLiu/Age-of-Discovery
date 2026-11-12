@@ -422,7 +422,13 @@ export function harborPlan(style: HarborStyle, width: number, presence: number, 
       w,
       h,
       d: w * (0.62 + 0.4 * rnd(i * 4.4 + 13)),
-      roofH: h * style.roofPitch,
+      /*
+       * 屋顶高度 = 房高 × 坡度 × 0.56。
+       * 【为什么是 0.56】原来是 h × 坡度（欧洲 0.75）—— 屋顶有房高的 75%，
+       * 再加 14% 的挑檐、又是在 20 单位外的俯视角，屏幕上屋顶比墙还大，
+       * 一排房子读作"一排红帽子"。真实的地中海排屋屋顶只占房高的 25~35%。
+       */
+      roofH: h * style.roofPitch * 0.56,
       lit: rnd(i * 9.9 + 17) > 0.42,
       yaw: (rnd(i * 6.1 + 19) - 0.5) * 0.12,
     })

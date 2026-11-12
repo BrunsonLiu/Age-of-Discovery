@@ -474,14 +474,25 @@ const detail = await page.evaluate(async (b64) => {
    * 取 200..700 × 14..120 这一块，实测：有云 grad 0.235 / 关云 0.053。
    */
   const sky = region(200, 14, 500, 106)
+  /* 纵深：靠近地平线的海面 vs 近处海面（都要避开水里的船与界面） */
+  const farSea = region(250, 358, 450, 42)
+  const nearSea = region(620, 650, 460, 170)
   return {
     seaStd: +sea.std.toFixed(2), seaGrad: +sea.grad.toFixed(3),
     skyStd: +sky.std.toFixed(2), skyGrad: +sky.grad.toFixed(3),
+    farMean: +farSea.mean.toFixed(1), nearMean: +nearSea.mean.toFixed(1),
   }
 }, shotA)
 check(detail.seaGrad >= 1.2, `海面有纹理（相邻像素梯度 ${detail.seaGrad}，纯色板 ≈0.05）`)
 
 check(detail.seaStd >= 5, `海面明暗有起伏（std ${detail.seaStd}，纯色板 1.87）`)
+/*
+ * 纵深（只记录，不作判据）：远海比近海亮多少。
+ * 【为什么删掉了 assert】注入验证时把 haze 换成 mix(col, col, haze)（等于关掉），
+ * 这条判据仍然是绿的 —— 远海的亮度主要来自菲涅尔（更靠地平线的视线更掠射），
+ * 与 haze 叠加之后分不开。留着数字作观察，判据交给单测的源码守卫。
+ */
+console.log(`  · 海面纵深：远 ${detail.farMean} vs 近 ${detail.nearMean}`)
 
 console.log(`\n报错：${errors.length ? errors.join(' | ') : '无'}`)
 check(errors.length === 0, '无页面错误')

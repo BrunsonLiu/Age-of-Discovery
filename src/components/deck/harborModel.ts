@@ -249,22 +249,56 @@ export function createDeckHarbor(): DeckHarbor {
    * 才是"城"的识别特征。所以手写一个三角棱柱：底面 1×1、屋脊在 y=1 沿 x。
    */
   const roofGeo = (() => {
+    /*
+     * 屋顶：**带瓦垄的两坡顶**。
+     *
+     * 【为什么要瓦垄】上一版是一整片纯红的斜面（顶点色只有"前坡/后坡"两档）。
+     * 在 20 单位外，一片 2 单位宽的红斜面在屏幕上就是一块 60×20 像素的**纯色**——
+     * 这是"房子像积木"最直接的原因。地中海的筒瓦屋面是**沿坡度方向一条条垄**：
+     * 凸起的瓦脊受光、凹槽里是影，8 条垄就足够让一块红面变成"屋面"。
+     *
+     * 【为什么不再用 shadeFaces】那条路会把整片斜面算成同一个亮度（法线相同）。
+     * 这里手写：沿屋脊 8 段 × 两坡，逐顶点给"垄的明暗 × 距屋脊的衰减"。
+     */
+    const SEG = 8
+    const pos: number[] = []
+    const col: number[] = []
+    const push = (x: number, y: number, z: number, k: number) => {
+      pos.push(x, y, z)
+      col.push(k, k, k)
+    }
+    // 距屋脊越远越暗（檐口积灰、被墙挡住的天光）
+    const RIDGE_K = 1.02
+    const EAVE_K = 0.84
+    for (let i = 0; i < SEG; i++) {
+      const x0 = -0.5 + i / SEG
+      const x1 = -0.5 + (i + 1) / SEG
+      // 凸起的瓦垄亮、两垄之间的凹槽暗 —— 交替就是"一条条瓦"
+      const tile = i % 2 === 0 ? 1.0 : 0.87
+      // 前坡（+z，朝海）：朝光
+      push(x0, 0, 0.5, EAVE_K * tile)
+      push(x1, 0, 0.5, EAVE_K * tile)
+      push(x1, 1, 0, RIDGE_K * tile)
+      push(x0, 0, 0.5, EAVE_K * tile)
+      push(x1, 1, 0, RIDGE_K * tile)
+      push(x0, 1, 0, RIDGE_K * tile)
+      // 后坡（−z，背光）：整体压到 0.72
+      push(x0, 0, -0.5, EAVE_K * tile * 0.72)
+      push(x0, 1, 0, RIDGE_K * tile * 0.72)
+      push(x1, 1, 0, RIDGE_K * tile * 0.72)
+      push(x0, 0, -0.5, EAVE_K * tile * 0.72)
+      push(x1, 1, 0, RIDGE_K * tile * 0.72)
+      push(x1, 0, -0.5, EAVE_K * tile * 0.72)
+    }
+    // 两端山墙：三角形，亮度居中（不参与瓦垄）
+    const GABLE = 0.9
+    push(-0.5, 0, -0.5, GABLE); push(-0.5, 0, 0.5, GABLE); push(-0.5, 1, 0, GABLE)
+    push(0.5, 0, 0.5, GABLE); push(0.5, 0, -0.5, GABLE); push(0.5, 1, 0, GABLE)
     const g = new THREE.BufferGeometry()
-    const v = [
-      // 前坡（+z 面）
-      -0.5, 0, 0.5, 0.5, 0, 0.5, 0.5, 1, 0,
-      -0.5, 0, 0.5, 0.5, 1, 0, -0.5, 1, 0,
-      // 后坡（−z 面）
-      -0.5, 0, -0.5, -0.5, 1, 0, 0.5, 1, 0,
-      -0.5, 0, -0.5, 0.5, 1, 0, 0.5, 0, -0.5,
-      // 两端山墙
-      -0.5, 0, -0.5, -0.5, 0, 0.5, -0.5, 1, 0,
-      0.5, 0, 0.5, 0.5, 0, -0.5, 0.5, 1, 0,
-    ]
-    g.setAttribute('position', new THREE.Float32BufferAttribute(v, 3))
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
+    g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3))
     g.computeVertexNormals()
-    // 前坡亮、后坡暗、两端山墙居中 —— 两坡顶的体积感全在这一层色差里
-    return shadeFaces(g)
+    return g
   })()
   const roofs = new THREE.InstancedMesh(roofGeo, roofMat, MAX_HOUSE)
   roofs.name = 'deck-harbor-roofs'
@@ -471,6 +505,18 @@ export function createDeckHarbor(): DeckHarbor {
   plinths.name = 'deck-harbor-plinths'
   plinths.frustumCulled = false
   group.add(plinths)
+
+  /*
+   * 窗框：比窗洞大一圈的浅色方块，垫在窗**后面**（z 更大一点）。
+   *
+   * 【为什么需要】窗洞是一块纯黑的方块，直接贴在白墙上读作"洞"（放大截图里
+   * 一排三个黑方框，像被抠掉的三块）。真实窗户有石框/木框，一圈比窗洞亮的边
+   * 就够把"洞"变成"窗"。框在墙与窗之间：窗凸出框一点，框只露出四边。
+   */
+  const windowFrames = new THREE.InstancedMesh(shadeFaces(new THREE.BoxGeometry(1, 1, 1)), plinthMat, MAX_HOUSE * 6)
+  windowFrames.name = 'deck-harbor-windowframes'
+  windowFrames.frustumCulled = false
+  group.add(windowFrames)
 
   const panes = new THREE.InstancedMesh(paneGeo, paneMat, MAX_HOUSE * 6)
   panes.name = 'deck-harbor-panes'
@@ -774,14 +820,25 @@ export function createDeckHarbor(): DeckHarbor {
     let qi = 0
     for (const pn of pl.panes) {
       if (qi >= MAX_HOUSE * 6) break
-      dummy.position.set(pn.x, pn.y, pn.z)
+      // 框：比窗大 70%/50%，垫在窗后 1.5 厘米（只露出四边）
+      dummy.position.set(pn.x, pn.y, pn.z + 0.012)
       dummy.rotation.set(0, 0, 0)
+      dummy.scale.set(pn.w * 1.7, pn.h * 1.5, 0.04)
+      dummy.updateMatrix()
+      windowFrames.setMatrixAt(qi, dummy.matrix)
+      // 窗：凸出框一点，避免与墙面深度冲突
+      dummy.position.set(pn.x, pn.y, pn.z - 0.004)
       dummy.scale.set(pn.w, pn.h, 0.05)
       dummy.updateMatrix()
-      panes.setMatrixAt(qi++, dummy.matrix)
+      panes.setMatrixAt(qi, dummy.matrix)
+      qi++
     }
-    for (let i = qi; i < MAX_HOUSE * 6; i++) panes.setMatrixAt(i, zero)
+    for (let i = qi; i < MAX_HOUSE * 6; i++) {
+      panes.setMatrixAt(i, zero)
+      windowFrames.setMatrixAt(i, zero)
+    }
     panes.instanceMatrix.needsUpdate = true
+    windowFrames.instanceMatrix.needsUpdate = true
 
     /* ---- 码头上的人（矩阵在 update 里每帧重写，这里先摆到位） ---- */
     folkList = pl.folk.slice(0, MAX_FOLK).map((f) => ({ f, slot: 0 }))

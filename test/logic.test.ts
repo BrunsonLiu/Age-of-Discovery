@@ -11296,7 +11296,8 @@ console.log('\n== 天数口径守卫 ==')
     assert(new RegExp(`shadeFaces\\(new THREE\\.${geo.replace(/[()]/g, '\\$&')}`).test(hm),
       `${geo} 过了 shadeFaces`)
   }
-  assert(/return shadeFaces\(g\)/.test(hm), '手写的两坡顶也烘了')
+  /* 屋顶改成手写瓦垄（自己给顶点色），不再走 shadeFaces —— 见文件末尾那一条 */
+  assert(/const SEG = 8/.test(hm), '屋顶是手写的瓦垄几何（8 段）')
   // 逐栋色差
   assert(/walls\.setColorAt\(i, tone\)/.test(hm) && /roofs\.setColorAt\(i, tone\)/.test(hm),
     '墙与屋顶按栋给色差（八栋房子不能是一条等亮度的白带）')
@@ -11910,3 +11911,52 @@ console.log('\n== 天数口径守卫 ==')
 
 console.log(`\n最终结果：${passed} 通过 / ${failed} 失败`)
 if (failed > 0) process.exit(1)
+
+/*
+ * ---- 屋面的瓦垄、窗框、屋顶比例、海面的纵深 ----
+ *
+ * 【守什么】上一轮补了明暗与色差之后仍然是"一排积木"。原因有三个，都是**比例与
+ * 分节**，不是"细节不够"：
+ *  ① 屋顶是一整片纯红斜面（法线相同 → 同一个亮度）→ 改成一垄一垄的瓦；
+ *  ② 屋顶占房高 75%、再加 14% 挑檐 → 屏幕上屋顶比墙大；
+ *  ③ 窗洞是一块纯黑 → 读作"洞"，加一圈窗框才成"窗"。
+ * 另加一条海面的：近处与远处亮度原本都是 77（菲涅尔上限把远近压平），
+ * 加空气透视之后远处必须比近处亮。
+ */
+{
+  const hm2 = readFileSync(join(process.cwd(), 'src', 'components', 'deck', 'harborModel.ts'), 'utf8')
+  // ① 瓦垄
+  assert(/const tile = i % 2 === 0 \? 1\.0 : 0\.87/.test(hm2),
+    '屋顶的瓦垄是交替明暗（凸起的瓦脊亮、凹槽暗）')
+  assert(/const RIDGE_K = 1\.02/.test(hm2) && /const EAVE_K = 0\.84/.test(hm2),
+    '距屋脊越远越暗（檐口积灰、被墙挡住的天光）')
+  // ② 窗框
+  assert(/name = 'deck-harbor-windowframes'/.test(hm2), '窗框网格命名 deck-harbor-windowframes')
+  assert(/windowFrames\.setMatrixAt\(qi, dummy\.matrix\)/.test(hm2), '窗框按窗逐扇写（与窗同一个 qi）')
+  assert(/pn\.w \* 1\.7, pn\.h \* 1\.5/.test(hm2), '框比窗大 70%/50%（只露出四边）')
+  // ③ 屋顶比例
+  const dh = readFileSync(join(process.cwd(), 'src', 'components', 'deck', 'deckHarbor.ts'), 'utf8')
+  assert(/roofH: h \* style\.roofPitch \* 0\.56/.test(dh),
+    '屋顶 = 房高 × 坡度 × 0.56（原先是 ×1.0，屏幕上屋顶比墙大）')
+  /* 用真布局验：任何样式下屋顶都不能高过墙的 65%，也不能没有坡 */
+  for (const st of Object.values(HARBOR_STYLES)) {
+    const plan = harborPlan(st, 36, 1, 4)
+    const worst = Math.max(...plan.houses.map((h) => h.roofH / h.h))
+    assert(worst <= 0.65, `${st.id} 屋顶/墙高 最坏 ${worst.toFixed(2)} ≤ 0.65（一排红帽子）`)
+    /* 下限 0.08：非洲样式是"平顶土屋"（坡度 0.2），本来就不该有陡顶 */
+    assert(worst >= 0.08, `${st.id} 屋顶也不是平的（${worst.toFixed(2)} ≥ 0.08）`)
+  }
+  // ④ 海面纵深
+  const dv2 = readFileSync(join(process.cwd(), 'src', 'components', 'deck', 'DeckView.tsx'), 'utf8')
+  assert(/float haze = smoothstep\(12\.0, 56\.0, d\) \* 0\.55/.test(dv2), '远处混天光（空气透视）')
+  assert(/col = mix\(col, uSky \* 1\.9, haze\)/.test(dv2),
+    '混的是提亮后的天光（uSky 本身压暗过，×1.0 时与海色差不到 2 级）')
+  // ⑤ 近岸浅水与浪花
+  assert(/float shallow = smoothstep\(-0\.9, 0\.0, shoreD\)/.test(dv2), '近岸有一条浅水带')
+  assert(/float surfBand = exp\(-pow\(\(shoreD - 0\.25\) \/ 0\.62, 2\.0\)\)/.test(dv2),
+    '岸边有一条会起伏的白沫（不是直线）')
+  assert(/seaUniforms\.uShoreK\.value = 0/.test(dv2),
+    '远洋时关掉浅水（否则浅水带停在上一处岸的位置）')
+  assert(/const cl = coastLayout\(sightingRef\.current\.presence\)/.test(dv2),
+    '岸线坐标与海岸几何用同一个 coastLayout（一定对齐）')
+}
