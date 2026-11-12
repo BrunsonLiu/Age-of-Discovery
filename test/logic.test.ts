@@ -11764,6 +11764,21 @@ console.log('\n== 天数口径守卫 ==')
     '每个鼓包画"本体 + 迎光面"两笔（只画一个均匀的圆 = 一堆同亮度的泡泡）')
   assert(/g\.fillRect\(0, h \* 0\.46, w, h \* 0\.52\)/.test(cb),
     '云底阴影的填充矩形与渐变起点对齐（错开会在云中间留下一条笔直的接缝）')
+
+  /*
+   * 云按**离太阳的角距**给明暗：向着太阳的一侧被前向散射照亮，背对的是
+   * "逆光的灰团"。全体一个 tone 时天上每朵云同亮度，完全没有光的来向。
+   */
+  assert(/Math\.cos\(az - SUN_AZ\)/.test(cb), '云的明暗跟着离太阳的角距走')
+  /*
+   * 银边（silver lining）：用屏幕空间导数判轮廓。两道门缺一不可 ——
+   * 梯度（只在轮廓上非零）+ alpha 门（云心的 alpha 也是渐变的，
+   * 只靠梯度会在云里画出一道亮弧，这个坑踩了两轮）。
+   */
+  assert(/vec2 grad = vec2\(dFdx\(diffuseColor\.a\), dFdy\(diffuseColor\.a\)\)/.test(cb),
+    '银边用屏幕空间导数判轮廓（比再采一张贴图便宜）')
+  assert(/float edgeOnly = 1\.0 - smoothstep\(0\.78, 0\.95, diffuseColor\.a\)/.test(cb),
+    '银边必须再乘 alpha 门（否则云心也会亮出一道弧）')
   assert(/lerp\(CLOUD_WHITE, 0\.90\)/.test(dv), '云色先往白里推到 0.90（留 10% 天蓝在云底）')
   assert(/uCloudDrift\.value\.set\(t \* 0\.004/.test(dv), '云会漂（极慢，一分钟 0.24 个单位）')
   // 取证句柄（e2e 读 uniform —— 天空那块被教程遮罩压着，量像素量到的是遮罩）

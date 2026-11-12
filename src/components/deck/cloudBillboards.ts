@@ -56,9 +56,15 @@ function makeCloudCanvas(seed: number, w = 768, h = 576): HTMLCanvasElement {
    * 云的体积感靠"顶亮、底暗"的落差，纯白在 8bit 里没有上浮空间 —— 高光画不上去。
    * 底色压到 226 之后，鼓包的迎光面才能用 255 画出来（相差 29 级）。
    */
+  /*
+   * 【alpha 必须在轮廓之前保持 1】原来是 1 → 0.96(62%) → 0.5(88%) → 0：
+   * 云**内部**的 alpha 一路在变，屏幕空间导数（银边靠它判轮廓）在云心里
+   * 也非零 —— 结果是一道**穿过云心的亮弧**（截图实测，两轮才找到）。
+   * 改成 1 一直到 80%，最后 20% 半径才收掉：内部平、只有轮廓有梯度。
+   */
   base.addColorStop(0, 'rgba(214,223,237,1)')
-  base.addColorStop(0.62, 'rgba(218,227,240,0.96)')
-  base.addColorStop(0.88, 'rgba(226,234,245,0.5)')
+  base.addColorStop(0.80, 'rgba(220,228,241,1)')
+  base.addColorStop(0.92, 'rgba(226,234,245,0.72)')
   base.addColorStop(1, 'rgba(230,238,247,0)')
   g.save()
   g.translate(cx0, cy0)
@@ -97,6 +103,8 @@ function makeCloudCanvas(seed: number, w = 768, h = 576): HTMLCanvasElement {
     const body = g.createRadialGradient(px, py, 0, px, py, rr)
     body.addColorStop(0, `rgba(238,243,250,${alpha})`)
     body.addColorStop(0.55, `rgba(226,233,244,${alpha * 0.86})`)
+    // 外圈 alpha 收到 0 但要**短**（0.85→1 的 15%），内部才不会又有梯度
+    body.addColorStop(0.85, `rgba(222,230,242,${alpha * 0.30})`)
     body.addColorStop(1, 'rgba(220,228,240,0)')
     g.fillStyle = body
     g.beginPath()
@@ -153,6 +161,12 @@ function makeCloudCanvas(seed: number, w = 768, h = 576): HTMLCanvasElement {
   ;(window as unknown as { __cloudCanvas?: HTMLCanvasElement }).__cloudCanvas = c
   return c
 }
+
+/**
+ * 太阳的方位角（与 DeckView 的 `sunAz` 同一份朝向：(0.34, 0, 0.92) 归一化）。
+ * 云只需要"哪一侧朝向太阳"，不需要太阳的仰角，所以这里只存方位角。
+ */
+const SUN_AZ = Math.atan2(0.34, 0.92)
 
 /** 一片云的摆放（方位角 / 仰角 / 尺寸，全部是弧度） */
 interface CloudSpot {
@@ -225,7 +239,12 @@ export function createCloudLayer(): {
       w: wAng,
       h: wAng * (0.52 + 0.16 * rnd()),
       rot: (rnd() - 0.5) * 0.10,
-      tone: 0.86 + 0.22 * rnd(),
+      /*
+       * 明暗跟着**离太阳的角距**走：向着太阳那一侧的云被前向散射照亮（亮、
+       * 略暖），背对太阳那一侧的云是"逆光的灰团"。全体一个 tone 时，天上
+       * 每朵云都是同一个亮度，完全没有光的来向。
+       */
+      tone: (0.84 + 0.22 * rnd()) * (0.86 + 0.30 * (0.5 + 0.5 * Math.cos(az - SUN_AZ))),
     })
   }
 
@@ -250,6 +269,45 @@ export function createCloudLayer(): {
       depthTest: true,
       side: THREE.DoubleSide,
     })
+    /*
+     * ---- 银边（silver lining）----
+     *
+     * 真实积云最美的一笔是朝向太阳那一侧的边被照透，一圈发亮 —— 静态贴图里
+     * 做不出来（它不知道镜头朝哪、太阳在哪）。这里在片元里补一次采样：
+     * 往**太阳方向**偏移 1.8% 再取一次 alpha，
+     *   `aHere - aSun > 0` 说明"这一像素不透明、朝太阳那一侧是空的"
+     *   → 那就是轮廓朝光的一侧，加一圈暖白。
+     *
+     * 偏移方向在 uv 空间是常数（billboard 都朝镜头、太阳方位固定），
+     * 一次纹理采样换一圈光，比再加一张贴图便宜得多。
+     */
+    mat.onBeforeCompile = (shader) => {
+      shader.uniforms.uSunUv = { value: new THREE.Vector2(0.32, 0.95).normalize() }
+      shader.fragmentShader = shader.fragmentShader
+        .replace('#include <common>', '#include <common>\nuniform vec2 uSunUv;')
+        .replace('#include <map_fragment>', `#include <map_fragment>
+          /*
+           * 【为什么用屏幕空间导数，不额外采一张】第一版是"往太阳方向偏移
+           * 1.8% 再取 alpha，差值 >0 就加亮"：云的**内部**只要 alpha 有一点
+           * 起伏（底盘与鼓包的交界）就满足条件，屏幕上是一道**穿过云心的亮弧**
+           * （截图实测）。dFdx/dFdy 拿的是"这一像素 alpha 的真实梯度"，只在
+           * 轮廓上非零；再用"梯度方向背离太阳"判朝向 —— 这一侧才是迎光边。
+           * 代价 0 次采样。
+           */
+          vec2 grad = vec2(dFdx(diffuseColor.a), dFdy(diffuseColor.a));
+          float gm = length(grad);
+          float facing = gm > 1e-5 ? clamp(-dot(grad / gm, uSunUv), 0.0, 1.0) : 0.0;
+          /*
+           * 【必须再乘一道 alpha 门】鼓包的 alpha 在**云心**也是渐变的，
+           * 只靠梯度会在云里画出一整条亮弧（两轮都没绕过去）。加一道
+           * "只在半透明的轮廓像素上"的掩码：内部 alpha≈1 被排除，
+           * 银边只剩最外那 1~2 像素 —— 那正是真实银边的宽度。
+           */
+          float edgeOnly = 1.0 - smoothstep(0.78, 0.95, diffuseColor.a);
+          float rim = smoothstep(0.0012, 0.008, gm) * facing * edgeOnly;
+          diffuseColor.rgb += vec3(1.0, 0.95, 0.84) * rim * 1.30 * diffuseColor.a;
+        `)
+    }
     const mesh = new THREE.InstancedMesh(geo, mat, Math.ceil(spots.length / VARIANTS))
     mesh.name = `deck-cloud-quads-${v}`
     mesh.frustumCulled = false
