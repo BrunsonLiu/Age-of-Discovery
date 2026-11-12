@@ -7,7 +7,7 @@ import {
   harborPlan, harborRadius, harborStyleFor, harborVisible, lampReflectionLen,
   type FolkKind, type HarborFolk, type HarborPlan, type HarborStyle,
 } from './deckHarbor'
-import { texFrom } from './shipTextures'
+import { rng, texFrom } from './shipTextures'
 
 /**
  * 靠港近景的几何层：把 `deckHarbor` 算出的布局变成 mesh。
@@ -75,6 +75,65 @@ export function shadeFaces<T extends THREE.BufferGeometry>(geo: T, contrast = 0.
   geo.setAttribute('color', new THREE.BufferAttribute(arr, 3))
   return geo
 }
+/**
+ * 灰泥墙贴图（512²，乘在墙色上）。
+ *
+ * 四层，每一层对应真实墙面上的一种痕迹：
+ *   ① 大尺度斑块（26 个径向渐变，±6%）—— 不同批次的修补、干湿差；
+ *   ② 细颗粒（±5/255）—— 石灰的骨料；
+ *   ③ 雨痕（10 条从檐口垂下的竖条）—— 墙面上最真实的一类脏；
+ *   ④ 墙脚（底部 18% 加深 20%）—— 地面反溅的潮气。
+ * 全部是**乘性**的暗化（没有任何亮化），因为石灰墙越旧只会越暗。
+ */
+function stuccoCanvas(seed = 3): HTMLCanvasElement {
+  const S = 512
+  const c = document.createElement('canvas')
+  c.width = S
+  c.height = S
+  const g = c.getContext('2d')!
+  const r = rng(seed)
+  g.fillStyle = '#f6f3ec'
+  g.fillRect(0, 0, S, S)
+  for (let i = 0; i < 26; i++) {
+    const x = r() * S
+    const y = r() * S
+    const rad = 40 + r() * 130
+    const tone = Math.round(255 * (0.90 + r() * 0.10))
+    const grd = g.createRadialGradient(x, y, 0, x, y, rad)
+    grd.addColorStop(0, `rgba(${tone - 8},${tone - 10},${tone - 16},0.45)`)
+    grd.addColorStop(1, `rgba(${tone - 8},${tone - 10},${tone - 16},0)`)
+    g.fillStyle = grd
+    g.fillRect(0, 0, S, S)
+  }
+  const img = g.getImageData(0, 0, S, S)
+  const d = img.data
+  for (let i = 0; i < d.length; i += 4) {
+    const n = (r() - 0.5) * 9
+    d[i] += n
+    d[i + 1] += n
+    d[i + 2] += n
+  }
+  g.putImageData(img, 0, 0)
+  for (let i = 0; i < 10; i++) {
+    const x = r() * S
+    const w = 2 + r() * 6
+    const grd = g.createLinearGradient(0, 0, 0, S)
+    grd.addColorStop(0, 'rgba(118,112,98,0.14)')
+    grd.addColorStop(0.65, 'rgba(118,112,98,0.035)')
+    grd.addColorStop(1, 'rgba(118,112,98,0)')
+    g.fillStyle = grd
+    g.fillRect(x, 0, w, S)
+  }
+  const foot = g.createLinearGradient(0, S, 0, S * 0.82)
+  foot.addColorStop(0, 'rgba(92,86,72,0.22)')
+  foot.addColorStop(1, 'rgba(92,86,72,0)')
+  g.fillStyle = foot
+  g.fillRect(0, S * 0.82, S, S * 0.18)
+  return c
+}
+
+/** 码头上的货堆上限 */
+const MAX_CARGO = 24
 const MAX_FOLK = 14
 const MAX_LAMP = 10
 const MAX_LINE = 4
@@ -166,7 +225,17 @@ export function createDeckHarbor(): DeckHarbor {
   const mk = (color: number, extra: Partial<THREE.MeshBasicMaterialParameters> = {}) =>
     new THREE.MeshBasicMaterial({ color, vertexColors: true, ...extra })
   const deckMat = mk(0x6b5b45)
-  const wallMat = mk(0xd8cdb6)
+  /*
+   * 墙：加一张**灰泥贴图**。
+   *
+   * 【为什么这一层终于要贴图了】墙面是港口面积最大的平面，一直以来只有
+   * "纯色 × 面朝向的亮度 × 竖向渐变"。顶点色能做的只有这几样，做不出**斑驳**：
+   * 真实的石灰墙有几层修补、雨痕、盐渍，几十厘米到几米的尺度上亮度差 5~10%，
+   * 而这正是"墙"与"白卡纸"的区别。贴图是乘性的（材质色 × map），
+   * 所以换样式（欧洲白墙 / 南洋木墙）时墙色照样能变，斑驳跟着走。
+   */
+  const stuccoTex = texFrom(stuccoCanvas(5))
+  const wallMat = mk(0xd8cdb6, { map: stuccoTex })
   const roofMat = mk(0x9c4a33)
   const stoneMat = mk(0x8a8377)
   const pierMat = mk(0x4a3a28)
@@ -572,6 +641,35 @@ export function createDeckHarbor(): DeckHarbor {
   yardBars.name = 'deck-harbor-yardbars'
   yardBars.frustumCulled = false
   group.add(yardBars)
+
+  /*
+   * ---- 码头上的货：板条箱 / 木桶 / 麻袋 ----
+   *
+   * 【为什么这三样】码头前沿原来只有人，一件货都没有 —— 而"这里是码头"最强的
+   * 信号恰恰是货。三样东西的剪影截然不同（方的、圆的、鼓的），混在一起才像
+   * 一堆待卸的杂货，全做成箱子会读成"积木堆"。
+   *
+   * 三个 InstancedMesh（各 24 个槽），共 3 次 draw call。
+   * 箱子与麻袋的几何都要 `translate(0, 0.5, 0)`：这样缩放就是"从地面长高"。
+   */
+  const crateGeo = shadeFaces(new THREE.BoxGeometry(1, 1, 1), 0.5)
+  crateGeo.translate(0, 0.5, 0)
+  const crates = new THREE.InstancedMesh(crateGeo, mk(0x9a7b52), MAX_CARGO)
+  crates.name = 'deck-harbor-crates'
+  crates.frustumCulled = false
+  group.add(crates)
+  const barrelGeo = shadeFaces(new THREE.CylinderGeometry(0.5, 0.44, 1, 8), 0.5)
+  barrelGeo.translate(0, 0.5, 0)
+  const barrels = new THREE.InstancedMesh(barrelGeo, mk(0x7d5a38), MAX_CARGO)
+  barrels.name = 'deck-harbor-barrels'
+  barrels.frustumCulled = false
+  group.add(barrels)
+  const sackGeo = shadeFaces(new THREE.SphereGeometry(0.5, 6, 4), 0.5)
+  sackGeo.translate(0, 0.42, 0)
+  const sacks = new THREE.InstancedMesh(sackGeo, mk(0xc0a87a), MAX_CARGO)
+  sacks.name = 'deck-harbor-sacks'
+  sacks.frustumCulled = false
+  group.add(sacks)
 
   /* ---- 棕榈 / 尖顶 / 吊臂 / 旗 ---- */
   const palmGeo = shadeFaces(new THREE.CylinderGeometry(0.045, 0.07, 1, 5))
@@ -1344,6 +1442,21 @@ export function createDeckHarbor(): DeckHarbor {
     yardBars.instanceMatrix.needsUpdate = true
     masts.instanceMatrix.needsUpdate = true
     sails.instanceMatrix.needsUpdate = true
+
+    /* ---- 货堆 ---- */
+    for (const m of [crates, barrels, sacks]) for (let i = 0; i < MAX_CARGO; i++) m.setMatrixAt(i, zero)
+    for (let i = 0; i < Math.min(MAX_CARGO, pl.cargo.length); i++) {
+      const cg = pl.cargo[i]
+      dummy.position.set(cg.x, deckY, cg.z)
+      dummy.rotation.set(0, cg.yaw, 0)
+      dummy.scale.set(cg.w, cg.h, cg.d)
+      dummy.updateMatrix()
+      const target = cg.kind === 'crate' ? crates : cg.kind === 'barrel' ? barrels : sacks
+      target.setMatrixAt(i, dummy.matrix)
+    }
+    crates.instanceMatrix.needsUpdate = true
+    barrels.instanceMatrix.needsUpdate = true
+    sacks.instanceMatrix.needsUpdate = true
 
     /* ---- 棕榈 ---- */
     const nPal = Math.min(MAX_PALM, pl.palms.length)

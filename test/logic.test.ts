@@ -11213,6 +11213,23 @@ console.log('\n== 天数口径守卫 ==')
           `${st.id} 船（x=${m.x.toFixed(1)}）没压在抛石堤上`)
       }
     }
+    /*
+     * 货堆：码头前沿唯一"有货"的证据。三件事：
+     * ① 数量在 6 件以上（少于这个数读不出"码头在卸货"）；
+     * ② 在码头前沿那条带里（z 卡在岸壁与人之间，不许掉进水里）；
+     * ③ **不压在栈桥上** —— 木板离水面只有 0.02，穿模一眼就看出来。
+     */
+    assert(plan.cargo.length >= 6 && plan.cargo.length <= 24,
+      `${st.id} 货堆 ${plan.cargo.length} 件（6~24）`)
+    for (const c of plan.cargo) {
+      assert(c.z > plan.deckZ0 && c.z < 0.62,
+        `${st.id} 货在码头前沿（z=${c.z.toFixed(2)}）`)
+      for (const p of plan.piers) {
+        const clear = Math.abs(c.x - p.x) - (p.w * 0.5 + c.w * 0.5)
+        assert(clear > -0.02 || c.z < p.z0 - 0.1,
+          `${st.id} 货不压在栈桥上（间隙 ${clear.toFixed(2)}）`)
+      }
+    }
     assert(plan.palms.length === st.palms, `${st.id} 棕榈 ${plan.palms.length} 棵`)
     assert(plan.cranes.length === 2, `${st.id} 两台吊货臂架`)
   }

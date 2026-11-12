@@ -271,6 +271,27 @@ export function lampReflectionLen(lampY: number): number {
   return Math.min(3.4, y * 2.2)
 }
 
+/** 码头上的货堆（板条箱 / 木桶 / 麻袋） */
+export type CargoKind = 'crate' | 'barrel' | 'sack'
+
+/**
+ * 码头前沿的一件货。
+ *
+ * 【为什么必须有】码头前沿（栈桥两侧那条窄带）原来是空的 —— 只有十几个人，
+ * 没有一件**货**。而"这里是码头"最强的信号恰恰是货：板条箱叠着、木桶排着、
+ * 麻袋堆在栈桥口。它们就在相机的正前方 20 米，屏幕上每件 10~25 像素，
+ * 是这一层唯一还能"加物件"而不显得刻意的位置。
+ */
+export interface HarborCargo {
+  x: number
+  z: number
+  w: number
+  h: number
+  d: number
+  yaw: number
+  kind: CargoKind
+}
+
 /** 码头上的人的三种身份（只影响衣服颜色与站位，不影响任何数值） */
 export type FolkKind = 'porter' | 'sailor' | 'idle'
 
@@ -349,6 +370,8 @@ export interface HarborPlan {
   panes: HarborPane[]
   /** 屋顶上的烟囱 */
   chimneys: HarborChimney[]
+  /** 码头上的货堆 */
+  cargo: HarborCargo[]
   /** 码头上的人 */
   folk: HarborFolk[]
   /** 水边的灯 */
@@ -377,6 +400,7 @@ const EMPTY_PLAN: HarborPlan = {
   palms: [],
   panes: [],
   chimneys: [],
+  cargo: [],
   folk: [],
   lamps: [],
   lines: [],
@@ -572,6 +596,64 @@ export function harborPlan(style: HarborStyle, width: number, presence: number, 
     }
   }
 
+  /* 栈桥：均匀分在码头面上，但避开最中间（那里是小艇靠泊的口） */
+  const piers: HarborPier[] = []
+  for (let i = 0; i < style.piers; i++) {
+    const t = (i + 0.5) / style.piers
+    const x = (t - 0.5) * 1.72 * halfW
+    if (Math.abs(x) < halfW * 0.12) continue
+    const reach = (2.2 + 2.6 * rnd(i * 3.9 + 23)) * s
+    piers.push({ x, z0: 0.16, z1: -reach, w: 0.34 * s })
+  }
+
+  /*
+   * 码头前沿的货堆。
+   *
+   * 位置规则与栈桥绑：每件货摆在**某条栈桥的根部两侧**（卸货就是从这里下来的），
+   * 沿 z 散在 0.06~0.52 那条带上。这样"货在哪"永远讲得通，也不与房子穿模。
+   */
+  const cargo: HarborCargo[] = []
+  if (piers.length > 0) {
+    const nCargo = 7 + Math.floor(rnd(191) * 5)
+    for (let i = 0; i < nCargo; i++) {
+      const base = piers[i % piers.length]
+      const side = rnd(i * 3.1 + 193) > 0.5 ? 1 : -1
+      const kind: CargoKind = i % 3 === 0 ? 'barrel' : i % 3 === 1 ? 'crate' : 'sack'
+      /*
+       * 横向偏移：贴着栈桥的边（半宽 + 货的半宽 + 余量）。货堆不能压在栈桥上，
+       * 否则从甲板看过去会与木板穿模 —— 木板离水面只有 0.02。
+       */
+      const half = kind === 'barrel' ? 0.12 : 0.14
+      cargo.push({
+        x: base.x + side * (base.w * 0.5 + half + 0.04 + 0.16 * rnd(i * 5.7 + 197)),
+        z: 0.06 + 0.5 * rnd(i * 7.3 + 199),
+        /*
+         * 尺寸 0.22~0.33 单位（4~6 米）。真实板条箱 0.8 米 = 0.044 单位 =
+         * 屏幕 1 像素 —— 按真实比例做出来，码头上什么都没有。0.2 时是 4px，
+         * 能看出"有东西"但读不出是什么；0.26 起才像箱/桶。
+         */
+        w: (kind === 'barrel' ? 0.22 : 0.26) * (0.8 + 0.5 * rnd(i * 2.9 + 203)),
+        h: (kind === 'barrel' ? 0.26 : 0.2) * (0.8 + 0.5 * rnd(i * 4.3 + 207)),
+        d: (kind === 'barrel' ? 0.22 : 0.26) * (0.8 + 0.5 * rnd(i * 6.1 + 211)),
+        yaw: (rnd(i * 8.7 + 213) - 0.5) * 0.9,
+        kind,
+      })
+      // 三分之一再叠一件在上头（码头上的货是堆的，不是摆的）
+      if (rnd(i * 9.9 + 217) > 0.66) {
+        const below = cargo[cargo.length - 1]
+        cargo.push({
+          x: below.x + (rnd(i * 3.3 + 219) - 0.5) * 0.06,
+          z: below.z + (rnd(i * 5.1 + 221) - 0.5) * 0.06,
+          w: below.w * 0.82,
+          h: below.h * 0.8,
+          d: below.d * 0.82,
+          yaw: below.yaw + 0.5,
+          kind: below.kind === 'sack' ? 'crate' : 'sack',
+        })
+      }
+    }
+  }
+
   /*
    * 码头上的人。
    *
@@ -592,25 +674,26 @@ export function harborPlan(style: HarborStyle, width: number, presence: number, 
       /* 只在视野中部撒（±0.62 halfW）：撒满整条岸时一半的人落在画面外或被栈桥挡住 */
       const gx = (rnd(g * 4.1 + 87) - 0.5) * 1.24 * halfW
       const gz = 0.02 + rnd(g * 6.7 + 89) * 0.4
+      /*
+       * 避开货堆：人站在箱子里面是这一层最容易露馅的一种穿模。
+       * 货堆最多 20 件、人最多 14 个，逐对比较的代价可以忽略。
+       */
+      let gx2 = Math.max(-halfW * 0.7, Math.min(halfW * 0.7, gx + (rnd(i * 3.3 + 91) - 0.5) * 0.9))
+      const gz2 = Math.max(deckNearZ + 0.14, Math.min(0.5, gz + (rnd(i * 5.9 + 93) - 0.5) * 0.24))
+      for (const cg of cargo) {
+        if (Math.abs(cg.x - gx2) < cg.w * 0.7 && Math.abs(cg.z - gz2) < cg.d * 0.7) {
+          gx2 += (gx2 > cg.x ? 1 : -1) * (cg.w * 0.9)
+        }
+      }
       folk.push({
-        x: Math.max(-halfW * 0.7, Math.min(halfW * 0.7, gx + (rnd(i * 3.3 + 91) - 0.5) * 0.9)),
-        z: Math.max(deckNearZ + 0.14, Math.min(0.5, gz + (rnd(i * 5.9 + 93) - 0.5) * 0.24)),
+        x: gx2,
+        z: gz2,
         yaw: (rnd(i * 7.1 + 97) - 0.5) * 2.4 + (i % 2 === 0 ? 0 : Math.PI),
         kind: kinds[Math.floor(rnd(i * 2.3 + 101) * 3) % 3],
         h: (0.19 + 0.05 * rnd(i * 9.7 + 103)) * (0.9 + 0.08 * s),
         phase: rnd(i * 8.9 + 107) * Math.PI * 2,
       })
     }
-  }
-
-  /* 栈桥：均匀分在码头面上，但避开最中间（那里是小艇靠泊的口） */
-  const piers: HarborPier[] = []
-  for (let i = 0; i < style.piers; i++) {
-    const t = (i + 0.5) / style.piers
-    const x = (t - 0.5) * 1.72 * halfW
-    if (Math.abs(x) < halfW * 0.12) continue
-    const reach = (2.2 + 2.6 * rnd(i * 3.9 + 23)) * s
-    piers.push({ x, z0: 0.16, z1: -reach, w: 0.34 * s })
   }
 
   /*
@@ -780,6 +863,7 @@ export function harborPlan(style: HarborStyle, width: number, presence: number, 
     palms,
     panes,
     chimneys,
+    cargo,
     folk,
     lamps,
     lines,
