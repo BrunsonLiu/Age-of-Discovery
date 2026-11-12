@@ -4,7 +4,7 @@ import {
   type CoastSighting,
 } from './deckCoast'
 import {
-  harborPlan, harborRadius, harborStyleFor, harborVisible,
+  harborPlan, harborRadius, harborStyleFor, harborVisible, lampReflectionLen,
   type FolkKind, type HarborFolk, type HarborPlan, type HarborStyle,
 } from './deckHarbor'
 import { texFrom } from './shipTextures'
@@ -61,6 +61,35 @@ function makeGlow(): THREE.Texture {
   grad.addColorStop(1, 'rgba(255,170,90,0)')
   g.fillStyle = grad
   g.fillRect(0, 0, S, S)
+  return texFrom(c)
+}
+
+/**
+ * 倒影用的竖向渐变：靠灯那端亮、靠相机那端散开变淡。
+ * `v` 方向（平面躺平后是 z）从 0（近相机）到 1（灯的投影点）。
+ */
+function makeReflectTexture(): THREE.Texture {
+  const W = 16
+  const H = 96
+  const c = document.createElement('canvas')
+  c.width = W
+  c.height = H
+  const g = c.getContext('2d')!
+  const grad = g.createLinearGradient(0, H, 0, 0)
+  grad.addColorStop(0, 'rgba(255,226,170,0)')
+  grad.addColorStop(0.35, 'rgba(255,214,150,0.35)')
+  grad.addColorStop(0.8, 'rgba(255,226,170,0.85)')
+  grad.addColorStop(1, 'rgba(255,240,200,1)')
+  g.fillStyle = grad
+  g.fillRect(0, 0, W, H)
+  /* 横向再柔一下边缘（倒影的边缘不该是硬直边） */
+  const side = g.createLinearGradient(0, 0, W, 0)
+  side.addColorStop(0, 'rgba(0,0,0,1)')
+  side.addColorStop(0.5, 'rgba(0,0,0,0)')
+  side.addColorStop(1, 'rgba(0,0,0,1)')
+  g.globalCompositeOperation = 'destination-out'
+  g.fillStyle = side
+  g.fillRect(0, 0, W, H)
   return texFrom(c)
 }
 
@@ -412,6 +441,31 @@ export function createDeckHarbor(): DeckHarbor {
   lampPoints.frustumCulled = false
   group.add(lampPoints)
 
+  /*
+   * ---- 灯在水面上的倒影 ----
+   * 一块躺平的加法面片，从灯的水面投影点朝 −z（相机方向）拉长。
+   * 【为什么不是真反射】真反射要一张反射 RT（多一遍全场景渲染），为了几盏灯
+   * 不值。而"倒影"在小尺度上要表达的信息只有两件：**灯在水面上有像**、
+   * **像朝相机方向被拉长**。一条带渐变的面片就够。
+   */
+  const reflectTex = makeReflectTexture()
+  const reflectGeo = new THREE.PlaneGeometry(1, 1)
+  reflectGeo.rotateX(-Math.PI / 2)
+  const reflectMat = new THREE.MeshBasicMaterial({
+    map: reflectTex,
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    opacity: 0,
+    fog: false,
+    toneMapped: false,
+  })
+  const reflect = new THREE.InstancedMesh(reflectGeo, reflectMat, MAX_LAMP)
+  reflect.name = 'deck-harbor-lampglow'
+  reflect.frustumCulled = false
+  reflect.renderOrder = 2
+  group.add(reflect)
+
   const spireTower = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), spireMat)
   spireTower.name = 'deck-harbor-spire'
   spireTower.geometry.translate(0, 0.5, 0)
@@ -550,6 +604,19 @@ export function createDeckHarbor(): DeckHarbor {
       }
       lampPosts.instanceMatrix.needsUpdate = true
       lp.needsUpdate = true
+
+      /* 倒影：从灯的投影点朝 −z 拉长（相机在船尾，看向 +z） */
+      for (let i = 0; i < MAX_LAMP; i++) {
+        const l = i < nL ? pl.lamps[i] : null
+        if (!l) { reflect.setMatrixAt(i, zero); continue }
+        const len = lampReflectionLen(l.y)
+        dummy.position.set(l.x, 0.014, l.z - len * 0.5)
+        dummy.rotation.set(0, 0, 0)
+        dummy.scale.set(0.36 + 0.14 * l.k, 1, len)
+        dummy.updateMatrix()
+        reflect.setMatrixAt(i, dummy.matrix)
+      }
+      reflect.instanceMatrix.needsUpdate = true
     }
 
     /* ---- 烟囱：一半的房子有，站在屋脊上 ---- */
@@ -888,6 +955,8 @@ export function createDeckHarbor(): DeckHarbor {
        */
       lampMat.opacity = Math.min(1, (0.25 + 0.75 * night)) * (1 - Math.min(1, fogK) * 0.85)
       lampMat.size = (0.42 + 0.16 * night) * (1 + curPresence * 0.5)
+      /* 倒影比灯本身淡一档，雾里削得更狠（水面上的像最先被雾吃掉） */
+      reflectMat.opacity = Math.min(1, 0.2 + 0.8 * night) * (1 - Math.min(1, fogK) * 0.95)
       // 窗光：只在夜里、且被雾削
       winMat.opacity = Math.max(0, Math.min(1, night)) * (1 - Math.min(1, fogK) * 0.9)
       const breath = 0.9 + 0.1 * Math.sin(t * 0.7)

@@ -210,6 +210,21 @@ export interface HarborLamp {
   k: number
 }
 
+/**
+ * 灯在水面上的倒影长度（世界单位）。
+ *
+ * 【为什么倒影要"躺"在水面上、朝相机方向拉长】真实的水面倒影不是"灯下面的
+ * 一团亮"，而是**沿视线方向**被拉成一条竖带（水面波纹把像横向揉开、纵向拉长）。
+ * 相机在船尾看着 +z，所以这条带从灯的水面投影点朝 −z（相机）延伸。
+ *
+ * 【长度为什么跟灯高走】越高的光源，倒影越长（几何上就是 y/视线角）。给 1.6 倍
+ * 是为了在小尺度上读得出来 —— 按严格反射该是 tan 关系，但那是"景别"，不是比例尺。
+ */
+export function lampReflectionLen(lampY: number): number {
+  const y = Number.isFinite(lampY) ? Math.max(0, lampY) : 0
+  return Math.min(3.4, y * 2.2)
+}
+
 /** 码头上的人的三种身份（只影响衣服颜色与站位，不影响任何数值） */
 export type FolkKind = 'porter' | 'sailor' | 'idle'
 

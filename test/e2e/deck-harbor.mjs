@@ -265,12 +265,14 @@ const nightState = await page.evaluate(async () => {
   }
   await sleep(900)
   const lamp = window.__deckScene?.getObjectByName('deck-harbor-lamps')
+  const glow = window.__deckScene?.getObjectByName('deck-harbor-lampglow')
   const wall = window.__deckScene?.getObjectByName('deck-harbor-walls')
   const win = window.__deckScene?.getObjectByName('deck-harbor-windows')
   return {
     night: window.__deckHarbor?.()?.night ?? 0,
     litK: window.__deckHarbor?.()?.litK ?? 1,
     lampOp: lamp?.material?.opacity ?? 0,
+    glowOp: glow?.material?.opacity ?? 0,
     winOp: win?.material?.opacity ?? 0,
     wall: wall?.material?.color.getHexString() ?? '',
   }
@@ -278,6 +280,8 @@ const nightState = await page.evaluate(async () => {
 check(nightState.night > 0.8, `推到深夜（night=${nightState.night.toFixed(2)}）`)
 check(nightState.lampOp > 0.6, `水边的灯亮起来（opacity ${nightState.lampOp.toFixed(2)}）`)
 check(nightState.winOp > 0.5, `墙上的窗光也亮（opacity ${nightState.winOp.toFixed(2)}）`)
+/* 灯挂着、水里没像 = 灯悬在空气中 */
+check(nightState.glowOp > 0.5, `灯在水面有倒影（opacity ${nightState.glowOp.toFixed(2)}）`)
 /* 夜里墙必须真的暗下去：与白天那张 shotA 相比，litK 是唯一的口径 */
 check(nightState.litK < 0.35, `夜里整座城暗下来（litK ${nightState.litK.toFixed(2)} < 0.35）`)
 

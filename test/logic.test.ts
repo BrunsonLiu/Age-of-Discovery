@@ -251,7 +251,7 @@ import { ports } from '../src/data/ports'
 import { tasks } from '../src/data/tasks'
 import {
   HARBOR_CALM_NM, HARBOR_MAX_NM, HARBOR_STYLES, harborCalm, harborPlan, harborRadius,
-  harborStyleFor, harborVisible,
+  harborStyleFor, harborVisible, lampReflectionLen,
 } from '../src/components/deck/deckHarbor'
 import {
   appendLogbook, countEchoes, echoAt, echoDayFor, echoForPort, findClueFor,
@@ -11367,6 +11367,30 @@ console.log('\n== 天数口径守卫 ==')
   const order = hmSrc4.indexOf('m.color.lerp(fogColor')
   const after = hmSrc4.indexOf('m.color.multiplyScalar(litK)')
   assert(order > 0 && after > order, '先混雾色、再乘昼夜系数（反过来夜里会被雾提亮）')
+}
+
+
+/*
+ * ---- 灯在水面上的倒影 ----
+ *
+ * 【守什么】灯挂着、水里却没像，等于灯悬在空气中。倒影长度跟灯高走
+ * （越高的光源像越长），但要有上限（否则灯杆一高，亮条会横穿半个港）。
+ */
+{
+  assert(lampReflectionLen(0) === 0, '没有灯就没有倒影')
+  assert(Math.abs(lampReflectionLen(0.7) - 1.54) < 0.01, `灯高 0.7 → 倒影 ${lampReflectionLen(0.7).toFixed(2)}`)
+  assert(lampReflectionLen(5) === 3.4, `上限 3.4（${lampReflectionLen(5)}）`)
+  assert(lampReflectionLen(0.3) < lampReflectionLen(0.6), '灯越高倒影越长（单调）')
+  assert(lampReflectionLen(Number.NaN) === 0, 'NaN → 0')
+  assert(lampReflectionLen(-1) === 0, '负高度 → 0')
+
+  const hm = readFileSync(join(process.cwd(), 'src', 'components', 'deck', 'harborModel.ts'), 'utf8')
+  assert(/name = 'deck-harbor-lampglow'/.test(hm), '倒影网格命名 deck-harbor-lampglow')
+  assert(/reflectMat\.opacity = Math\.min\(1, 0\.2 \+ 0\.8 \* night\)/.test(hm),
+    '倒影随 night 亮（白天是 0.2 的底，几乎看不见）')
+  assert(/reflectMat\.opacity[\s\S]{0,140}fogK/.test(hm), '倒影在雾里削得更狠（水面上的像最先被雾吃掉）')
+  assert(/dummy\.position\.set\(l\.x, 0\.014, l\.z - len \* 0\.5\)/.test(hm),
+    '倒影从灯的投影点朝 −z（相机方向）铺开')
 }
 
 
