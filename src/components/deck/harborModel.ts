@@ -297,6 +297,32 @@ export function createDeckHarbor(): DeckHarbor {
   group.add(quayFace)
 
   /*
+   * 岸壁的压顶石：一整块 Box 换成**一排石块**。
+   * 块间留 0.012 的缝，露出后面那块深色底衬（quayFace）—— 竖缝是"石砌"最强
+   * 的信号；每块再给 0.86~1.06 的随机明暗（instanceColor），避免整条边一个亮度。
+   */
+  const MAX_QUAY_STONE = 240
+  const quayStoneGeo = shadeFaces(new THREE.BoxGeometry(1, 1, 1))
+  quayStoneGeo.translate(0, 0.5, 0)
+  const quayStones = new THREE.InstancedMesh(quayStoneGeo, stoneMat, MAX_QUAY_STONE)
+  quayStones.name = 'deck-harbor-quaystones'
+  quayStones.frustumCulled = false
+  group.add(quayStones)
+
+  /*
+   * 系缆桩：桩身 + 顶帽各一个实例（同一个圆柱几何池，两倍槽位）。
+   * 半径 0.035（≈0.6 米）、高 0.12（≈2 米）—— 真实系缆桩 0.3 米粗、0.5 米高，
+   * 按真实比例做出来在 18 单位外是 1 像素，等于没有。
+   */
+  const MAX_BOLLARD = 24
+  const bollardGeo = shadeFaces(new THREE.CylinderGeometry(0.5, 0.56, 1, 7), 0.5)
+  bollardGeo.translate(0, 0.5, 0)
+  const bollards = new THREE.InstancedMesh(bollardGeo, mk(0x3c3630), MAX_BOLLARD * 2)
+  bollards.name = 'deck-harbor-bollards'
+  bollards.frustumCulled = false
+  group.add(bollards)
+
+  /*
    * 码头外沿的压条：一条比码头面亮一档的窄带。
    * 【为什么需要】码头面（尤其加勒比的木色）与水面的明度接近时，两者读成一片
    * —— 实测广州与哈瓦那的截图上，房子像直接站在泥滩上，看不出"这是一道人工的岸"。
@@ -1011,6 +1037,39 @@ export function createDeckHarbor(): DeckHarbor {
     /* 前沿矮墙：横贯全宽，落在房子之前（z=0.1）、压住缝的下半截 */
     quayWall.scale.set(deckHalfW * 2.02, Math.min(0.26, deckY * 0.78), 0.12)
     quayWall.position.set(0, deckY, 0.1)
+
+    /* ---- 压顶石：沿 x 一排，贴在岸壁外皮上 ---- */
+    for (let i = 0; i < MAX_QUAY_STONE; i++) {
+      const st = i < pl.quayStones.length ? pl.quayStones[i] : null
+      if (!st) { quayStones.setMatrixAt(i, zero); continue }
+      dummy.position.set(st.x, -0.14, deckZ0 - 0.035 + st.dz)
+      dummy.rotation.set(0, 0, 0)
+      dummy.scale.set(st.w, deckY + 0.145, 0.11)
+      dummy.updateMatrix()
+      quayStones.setMatrixAt(i, dummy.matrix)
+      tone.setScalar(st.k)
+      quayStones.setColorAt(i, tone)
+    }
+    quayStones.instanceMatrix.needsUpdate = true
+    if (quayStones.instanceColor) quayStones.instanceColor.needsUpdate = true
+
+    /* ---- 系缆桩：桩身 + 顶帽 ---- */
+    for (let i = 0; i < MAX_BOLLARD * 2; i++) bollards.setMatrixAt(i, zero)
+    for (let i = 0; i < Math.min(MAX_BOLLARD, pl.bollards.length); i++) {
+      const b = pl.bollards[i]
+      // 桩身
+      dummy.position.set(b.x, deckY, deckZ0 + 0.06)
+      dummy.rotation.set(0, 0, 0)
+      dummy.scale.set(0.07, 0.12, 0.07)
+      dummy.updateMatrix()
+      bollards.setMatrixAt(i * 2, dummy.matrix)
+      // 顶帽（略大一点，桩才不是一根光柱）
+      dummy.position.set(b.x, deckY + 0.12, deckZ0 + 0.06)
+      dummy.scale.set(0.095, 0.022, 0.095)
+      dummy.updateMatrix()
+      bollards.setMatrixAt(i * 2 + 1, dummy.matrix)
+    }
+    bollards.instanceMatrix.needsUpdate = true
 
     /* ---- 房屋 ---- */
     const nH = Math.min(MAX_HOUSE, pl.houses.length)

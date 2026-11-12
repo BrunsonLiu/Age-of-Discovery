@@ -11245,6 +11245,22 @@ console.log('\n== 天数口径守卫 ==')
     assert(slopeGap > 0.22,
       `${st.id} 屋顶坡度逐栋不同（相对极差 ${(slopeGap * 100).toFixed(0)}%）`)
 
+    /*
+     * 岸壁的压顶石：一条"有齿"的边（块间留缝、前沿参差）才像石砌码头。
+     * 一整块 Box 的岸线在屏幕上是一条十几米不变的水平边，读作水泥台。
+     */
+    assert(plan.quayStones.length > 40 && plan.quayStones.length <= 240,
+      `${st.id} 压顶石 ${plan.quayStones.length} 块（够密才读得出砌筑）`)
+    for (const q of plan.quayStones) {
+      assert(Math.abs(q.dz) <= 0.03, `${st.id} 压顶石前沿参差 ±0.03 内（${q.dz.toFixed(3)}）`)
+      assert(q.k >= 0.85 && q.k <= 1.07, `${st.id} 压顶石明暗系数 ${q.k.toFixed(2)}`)
+    }
+    // 系缆桩：码头边一排（船靠上来系缆绳的地方，不能一根都没有）
+    assert(plan.bollards.length >= 8, `${st.id} 系缆桩 ${plan.bollards.length} 根`)
+    for (const b of plan.bollards) {
+      assert(Math.abs(b.x) <= plan.deckHalfW, `${st.id} 系缆桩在码头面内（x=${b.x.toFixed(1)}）`)
+    }
+
     assert(plan.cargo.length >= 6 && plan.cargo.length <= 24,
       `${st.id} 货堆 ${plan.cargo.length} 件（6~24）`)
     for (const c of plan.cargo) {

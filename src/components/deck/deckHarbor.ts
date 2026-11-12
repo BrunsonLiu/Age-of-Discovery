@@ -298,6 +298,28 @@ export function lampReflectionLen(lampY: number): number {
   return Math.min(3.4, y * 2.2)
 }
 
+/**
+ * 岸壁上的一块压顶石。
+ *
+ * 【为什么要把一整块岸壁拆成石块】岸壁原来是一整块 Box —— 从甲板上看，
+ * 码头朝水的那一面是**一条笔直的水平边**，十几米长一个像素不变，读作"水泥台"。
+ * 真实码头是石块砌的：块与块之间有竖缝、每块高度略差、前沿略有参差。
+ * 一条"有齿"的边就够把"水泥台"变成"石砌码头"。
+ */
+export interface HarborQuayStone {
+  x: number
+  w: number
+  /** 前沿前后参差（±0.025 单位） */
+  dz: number
+  /** 这块的明暗系数（0.86~1.06） */
+  k: number
+}
+
+/** 系缆桩（码头边一排，船靠上来系缆绳的地方） */
+export interface HarborBollard {
+  x: number
+}
+
 /** 码头上的货堆（板条箱 / 木桶 / 麻袋） */
 export type CargoKind = 'crate' | 'barrel' | 'sack'
 
@@ -397,6 +419,10 @@ export interface HarborPlan {
   panes: HarborPane[]
   /** 屋顶上的烟囱 */
   chimneys: HarborChimney[]
+  /** 岸壁的压顶石（沿 x 一排） */
+  quayStones: HarborQuayStone[]
+  /** 系缆桩 */
+  bollards: HarborBollard[]
   /** 码头上的货堆 */
   cargo: HarborCargo[]
   /** 码头上的人 */
@@ -427,6 +453,8 @@ const EMPTY_PLAN: HarborPlan = {
   palms: [],
   panes: [],
   chimneys: [],
+  quayStones: [],
+  bollards: [],
   cargo: [],
   folk: [],
   lamps: [],
@@ -670,6 +698,35 @@ export function harborPlan(style: HarborStyle, width: number, presence: number, 
     if (Math.abs(x) < halfW * 0.12) continue
     const reach = (2.2 + 2.6 * rnd(i * 3.9 + 23)) * s
     piers.push({ x, z0: 0.16, z1: -reach, w: 0.34 * s })
+  }
+
+  /*
+   * 岸壁的压顶石：沿 x 一排，宽度 0.24~0.38、前沿前后参差、逐块明暗不同。
+   * 块间留 0.012 的缝（露出后面那块深色的底衬）—— 竖缝是"石砌"最强的信号。
+   */
+  const quayStones: HarborQuayStone[] = []
+  {
+    const span = halfW * 2.7
+    let cx = -span / 2
+    while (cx < span / 2 && quayStones.length < 240) {
+      const w = 0.24 + 0.14 * rnd(cx * 7.3 + 251)
+      quayStones.push({
+        x: cx + w * 0.5,
+        w,
+        dz: (rnd(cx * 5.9 + 257) - 0.5) * 0.05,
+        k: 0.86 + 0.2 * rnd(cx * 3.1 + 253),
+      })
+      cx += w + 0.012
+    }
+  }
+
+  /*
+   * 系缆桩：沿岸每 ~1.55 单位一根。船靠上来系缆绳的地方 —— 原来码头边
+   * 一根桩都没有，缆绳直接系在"地"上（放大截图里很怪）。
+   */
+  const bollards: HarborBollard[] = []
+  for (let bx = -halfW * 0.92; bx <= halfW * 0.92; bx += 1.55) {
+    bollards.push({ x: bx + (rnd(bx * 3.3 + 261) - 0.5) * 0.3 })
   }
 
   /*
@@ -929,6 +986,8 @@ export function harborPlan(style: HarborStyle, width: number, presence: number, 
     palms,
     panes,
     chimneys,
+    quayStones,
+    bollards,
     cargo,
     folk,
     lamps,
