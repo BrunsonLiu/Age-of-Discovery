@@ -577,8 +577,14 @@ export default function DeckView() {
            * 这里用同一个 cn 取两个阈值：宽窗（0.560~0.600）当稀薄外圈、
            * 窄窗（0.600~0.616）当实心核。零额外采样，云立刻有"体积边界"。
            */
-          float coverWide = smoothstep(0.560, 0.600, cn);
-          float coverCore = smoothstep(0.600, 0.616, cn);
+          /*
+           * 【窗口宽度决定"模糊"还是"云"】0.560~0.600（宽 0.04）时，cn 的空间
+           * 梯度约 0.15/单位、cp 每单位约 150px —— 外圈过渡跨 **40 像素**，
+           * 整片天读作"JPEG 糊掉的白斑"（放大实测）。收到 0.012 之后约 12px，
+           * 外圈才是"边缘在散开的雾"，而不是一层虚焦。
+           */
+          float coverWide = smoothstep(0.588, 0.600, cn);
+          float coverCore = smoothstep(0.600, 0.608, cn);
           /* 贴着地平线的一圈不画云（那里是雾/大气），天顶也留一点空 */
           /*
            * 低空起云、高空留白：0.35/0.86 → 0.55/0.50~0.95。
@@ -612,7 +618,11 @@ export default function DeckView() {
            * mix 的 1/3，云心与云边差 8%，仍然是一块平白。按真实区间铺开之后，
            * 厚的地方能到 1.24、薄的边缘落到 0.80，云才开始"有受光面"。
            */
-          vec3 cloudCol = uCloudColor * mix(0.80, 1.24, smoothstep(0.596, 0.730, cn));
+          /*
+           * 亮度区间 0.596~0.690（不是 0.730）：cn 在云里很少超过 0.70，
+           * 上限给 0.730 时整个云体只用上混色的 60%，云心与云边只差一档。
+           */
+          vec3 cloudCol = uCloudColor * mix(0.80, 1.26, smoothstep(0.596, 0.690, cn));
           /*
            * 云面的絮状明暗：一层高频噪声（+14%）把"一块平白"变成"有棉絮的团"。
            * 只靠 cn 的坡度时，云内 cn 变化很小 —— 云心到云边几乎同色，
@@ -621,7 +631,7 @@ export default function DeckView() {
           cloudCol *= 0.93 + 0.14 * vnoise(cq * 7.3 + 61.0);
           cloudCol *= mix(0.80, 1.0, smoothstep(0.02, 0.30, h));
           /* 外圈半透（0.45）+ 内核实心：两层叠出"边缘在散开"的体积感 */
-          col = mix(col, cloudCol * 0.92, coverWide * uCloud * 0.45);
+          col = mix(col, cloudCol * 0.92, coverWide * uCloud * 0.38);
           col = mix(col, cloudCol, coverCore * uCloud * 0.98);
           float m = max(dot(d, uMoonDir), 0.0);
           // 月亮：盘（~1.2°）+ 两圈光晕。加起来比贴图省一次采样

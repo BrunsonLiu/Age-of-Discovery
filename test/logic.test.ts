@@ -8729,6 +8729,21 @@ console.log('\n== 天数口径守卫 ==')
     assert(/frame % 8 === 0/.test(view), '近岸每 8 帧算一次（不必每帧）')
     assert(/data-testid="deck-coast-hud"/.test(view), 'HUD 要有最近陆地的读数')
     /*
+     * 岸上的树：**两种剪影 + 成丛**。原来 160 棵同一种锥体、u 均匀随机，
+     * 屏幕上是等间距的一排同形状 —— 整幅画面里最明显的"程序生成"痕迹。
+     */
+    const coastSrc = readFileSync(join(process.cwd(), 'src', 'components', 'deck', 'coastModel.ts'), 'utf8')
+    assert(/const pineGeo = new THREE\.IcosahedronGeometry\(1, 0\)/.test(coastSrc),
+      '岸上有第二种树（圆顶伞松）—— 全是锥体时是同一个形状重复几十次')
+    assert(/for \(let g = 0; g < 9 && k < TREES \+ PINES - 8; g\+\+\)/.test(coastSrc),
+      '树成丛（9 丛、丛间留空档），不是等距散布')
+    assert(/pines\.setMatrixAt\(pi\+\+, m\)/.test(coastSrc) && /trees\.setMatrixAt\(ti\+\+, m\)/.test(coastSrc),
+      '两种树各自写进自己的实例池（不能全塞进一个）')
+    assert(/pineMat\.color\.copy\(RIDGE_NIGHT\)\.lerp\(RIDGE_DAY, 1 - night\)/.test(coastSrc),
+      '伞松也要跟夜色一起暗（否则夜里岸上浮着两团亮绿）')
+    assert(/pineMat\.dispose\(\)/.test(coastSrc) && /pineGeo\.dispose\(\)/.test(coastSrc),
+      '新增的材质与几何要 dispose（切视图会重建）')
+    /*
      * 【天空与海面**不许**自己编码】—— 第 66 轮把这条判据整个翻了过来。
      *
      * 船上视角接了后处理：画面先渲进**线性 HalfFloat** 的 RT，再由 `post.ts` 的
@@ -11668,9 +11683,13 @@ console.log('\n== 天数口径守卫 ==')
    * 第 122 轮：单层轮廓 → 两层（外圈薄雾 + 内核实心）。一条等值线切出来的云
    * 是"剪纸"；两层才有"边缘在散开"的体积感。
    */
-  assert(/float coverWide = smoothstep\(0\.560, 0\.600, cn\)/.test(dv)
-    && /float coverCore = smoothstep\(0\.600, 0\.616, cn\)/.test(dv),
-    '云是两层轮廓（外圈 0.560~0.600 半透、内芯 0.600~0.616 实心）')
+  /*
+   * 【窗口宽度 = 屏幕上的过渡宽度】0.04 的宽窗 → 40px 的虚焦（整片天像 JPEG
+   * 糊掉的白斑）；0.012 → 12px，才是"边缘在散开"。内芯 0.008 → 8px。
+   */
+  assert(/float coverWide = smoothstep\(0\.588, 0\.600, cn\)/.test(dv)
+    && /float coverCore = smoothstep\(0\.600, 0\.608, cn\)/.test(dv),
+    '云是两层轮廓（外圈 0.588~0.600 半透、内芯 0.600~0.608 实心；窗口不能放宽）')
   assert(/vec2 wq = vec2\(vnoise\(cp \* 0\.75 \+ 3\.1\)/.test(dv) && /vec2 cq = cp \+ wq \* 0\.55/.test(dv),
     '云的采样坐标被一层低频噪声揉过（等值线才是团块状，不是抹刀痕）')
   assert(/cloudCol \*= 0\.93 \+ 0\.14 \* vnoise\(cq \* 7\.3 \+ 61\.0\)/.test(dv),
@@ -11684,7 +11703,7 @@ console.log('\n== 天数口径守卫 ==')
    * 亮度区间按**阈值之后**的区间（0.596~0.730）铺开：原来的 smoothstep(0.50,0.78)
    * 只用到了 1/3，云心与云边只差 8%，读作一块平白。
    */
-  assert(/vec3 cloudCol = uCloudColor \* mix\(0\.80, 1\.24, smoothstep\(0\.596, 0\.730, cn\)\)/.test(dv),
+  assert(/vec3 cloudCol = uCloudColor \* mix\(0\.80, 1\.26, smoothstep\(0\.596, 0\.690, cn\)\)/.test(dv),
     '云体色按厚度分档（一坨平色读作白斑）')
   /*
    * ---- 第 122 轮：太阳 ----
@@ -11700,7 +11719,7 @@ console.log('\n== 天数口径守卫 ==')
   assert(/const alt = \(5 \+ 10 \*/.test(altSrc),
     '太阳仰角压在 5°~15°（照真实日相会跑出画面，碎光也落到镜头背后）')
 
-  assert(/col = mix\(col, cloudCol \* 0\.92, coverWide \* uCloud \* 0\.45\)/.test(dv)
+  assert(/col = mix\(col, cloudCol \* 0\.92, coverWide \* uCloud \* 0\.38\)/.test(dv)
     && /col = mix\(col, cloudCol, coverCore \* uCloud \* 0\.98\)/.test(dv),
     '云混进天空色（外圈半透 + 内核实心，不是画一圈亮边）')
   assert(/0\.18 \* vnoise\(cq \* 5\.70 \+ 41\.0\)/.test(dv),

@@ -1669,13 +1669,27 @@ export function createDeckHarbor(): DeckHarbor {
          * 独立的石凳**、彼此露着水（实测）—— 抛石堤的识别特征恰恰是"连成一片
          * 但顶面凹凸"，不是"一串墩子"。
          */
-        dummy.scale.set(hh * 2.0, hh, hh * 1.15)
+        /*
+         * 顶面不能是平的：石块再绕 x/z 各歪 ±0.12 rad，顶面就变成一串
+         * 高低不平的面 —— 抛石堤的识别特征在**轮廓**，不在颜色。
+         */
+        dummy.rotation.set(
+          (hash01(arm * 41 + k * 13 + 7) - 0.5) * 0.24,
+          armYaw + (hash01(arm * 7 + k * 3) - 0.5) * 0.36,
+          (hash01(arm * 43 + k * 19 + 11) - 0.5) * 0.24,
+        )
+        dummy.scale.set(hh * 2.0, hh * (0.75 + 0.5 * hash01(arm * 23 + k * 29 + 13)), hh * 1.15)
         dummy.updateMatrix()
-        bws.setMatrixAt(bi++, dummy.matrix)
+        bws.setMatrixAt(bi, dummy.matrix)
+        // 逐块明暗：整条堤一个色时，顶面仍然是一块"水泥板"
+        tone.setScalar(0.78 + 0.34 * hash01(arm * 53 + k * 31 + 17))
+        bws.setColorAt(bi, tone)
+        bi++
       }
     }
     for (let i = bi; i < MAX_BW; i++) bws.setMatrixAt(i, zero)
     bws.instanceMatrix.needsUpdate = true
+    if (bws.instanceColor) bws.instanceColor.needsUpdate = true
 
     /* ---- 停泊商船 ---- */
     const nM = Math.min(MAX_MOOR, pl.moorings.length)

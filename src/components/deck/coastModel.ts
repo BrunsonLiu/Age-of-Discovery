@@ -224,15 +224,31 @@ export function createDeckCoast(): DeckCoast {
    * 【为什么用 InstancedMesh】160 棵树逐个 Mesh 就是 160 次 draw call；实例化之后
    * 只有 1 次。它们全是同一个锥体（用不着各自不同），只差位置与缩放。
    */
-  const TREES = 160
+  /*
+   * 两种树：
+   *   cypress（锥形）：地中海柏/松的窄剪影，高而瘦；
+   *   pine（扁圆顶）：伞松的树冠，矮而宽。
+   * 【为什么要两种】全是同一种锥体时，一排树在屏幕上是**同一个形状重复几十次**，
+   * 而且它们全站在脊线上、间距均匀 —— 这是整幅画面里最明显的"程序生成"痕迹。
+   * 两种剪影（尖的、圆的）+ 成丛成片（有疏有密）立刻把这条规律打散。
+   */
+  const TREES = 96
+  const PINES = 54
   const treeGeo = new THREE.ConeGeometry(1, 1, 6)
-  // 树的颜色跟山脊的树线接近，夜里一起变暗（不做光照：远处的小锥体不需要明暗）
+  // 扁圆顶：二十面体压扁一半，正面看是"伞松"的团块树冠（6 个面够远看）
+  const pineGeo = new THREE.IcosahedronGeometry(1, 0)
+  // 树的颜色跟山脊的树线接近，夜里一起变暗（不做光照：远处的小树不需要明暗）
   const treeMat = new THREE.MeshBasicMaterial({ color: 0x2a3326 })
   const trees = new THREE.InstancedMesh(treeGeo, treeMat, TREES)
   trees.name = 'deck-coast-trees'
   trees.frustumCulled = false
   group.add(trees)
-  const treeSpots: { u: number, t: number, h: number, w: number }[] = []
+  const pineMat = new THREE.MeshBasicMaterial({ color: 0x33402a })
+  const pines = new THREE.InstancedMesh(pineGeo, pineMat, PINES)
+  pines.name = 'deck-coast-pines'
+  pines.frustumCulled = false
+  group.add(pines)
+  const treeSpots: { u: number, t: number, h: number, w: number, pine: boolean }[] = []
   {
     // 用固定种子撒点：每次启动同一片林子（船在动、岸已定，树不该跳来跳去）
     /*
@@ -242,13 +258,35 @@ export function createDeckCoast(): DeckCoast {
      * 脊线上（t 0.9~1.0，会突出轮廓）、40% 在坡中，并且整体加大到 0.3~0.9，
      * 颜色也压得更深，才读得出"岸上有林子"。
      */
-    for (let k = 0; k < TREES; k++) {
-      const u = 0.06 + 0.88 * hash01(k * 3.7 + 1)
-      const onRidge = hash01(k * 2.9 + 7) < 0.6
-      const t = onRidge ? 0.9 + 0.1 * hash01(k * 7.9 + 5) : 0.55 + 0.3 * hash01(k * 7.9 + 5)
-      const h = onRidge ? 0.34 + 0.5 * hash01(k * 11.3 + 9) : 0.18 + 0.26 * hash01(k * 11.3 + 9)
-      const w = 0.7 + 0.7 * hash01(k * 5.1 + 3) // 冠幅
-      treeSpots.push({ u, t, h, w })
+    /*
+     * 【成丛，不是等距】原来的 u 是 `0.06 + 0.88·hash01(k)` —— 均匀随机，
+     * 屏幕上是**等间距的一排**。改成 9 丛：每丛一个中心 u、一个 ±0.02~0.07 的
+     * 半径、5~13 棵，丛与丛之间留出**空档**（真实的海岸就是一丛一丛的）。
+     * 再加 8 棵孤树填在空档里（不然空档太齐，像被人扫过）。
+     */
+    const addTree = (u: number, k: number, pine: boolean) => {
+      const onRidge = hash01(k * 2.9 + 7) < 0.72
+      const t = onRidge ? 0.88 + 0.12 * hash01(k * 7.9 + 5) : 0.5 + 0.34 * hash01(k * 7.9 + 5)
+      const h = pine
+        ? (onRidge ? 0.22 + 0.16 * hash01(k * 11.3 + 9) : 0.16 + 0.1 * hash01(k * 11.3 + 9))
+        : (onRidge ? 0.34 + 0.52 * hash01(k * 11.3 + 9) : 0.2 + 0.24 * hash01(k * 11.3 + 9))
+      const w = pine ? 1.5 + 1.1 * hash01(k * 5.1 + 3) : 0.6 + 0.6 * hash01(k * 5.1 + 3)
+      treeSpots.push({ u: Math.min(0.985, Math.max(0.015, u)), t, h, w, pine })
+    }
+    let k = 0
+    for (let g = 0; g < 9 && k < TREES + PINES - 8; g++) {
+      const cu = 0.07 + 0.86 * hash01(g * 4.1 + 1)
+      const spread = 0.018 + 0.05 * hash01(g * 6.3 + 2)
+      const n = 4 + Math.floor(9 * hash01(g * 8.7 + 3))
+      for (let j = 0; j < n && k < TREES + PINES - 8; j++, k++) {
+        const u = cu + (hash01(k * 3.7 + 11) - 0.5) * spread * 2
+        // 每丛里约 1/3 是伞松（真实的海岸林是混的，但柏树占多数）
+        addTree(u, k, hash01(k * 13.1 + 17) < 0.34)
+      }
+    }
+    // 孤树：填在丛与丛之间
+    for (let j = 0; j < 8 && k < TREES + PINES; j++, k++) {
+      addTree(0.05 + 0.9 * hash01(k * 6.9 + 23), k, hash01(k * 9.7 + 29) < 0.4)
     }
   }
 
@@ -497,15 +535,33 @@ export function createDeckCoast(): DeckCoast {
       {
         const depth = layout.width * 0.14
         const m = new THREE.Matrix4()
+        const zeroM = new THREE.Matrix4().makeScale(0, 0, 0)
+        let ti = 0
+        let pi = 0
         for (let k = 0; k < treeSpots.length; k++) {
           const sp = treeSpots[k]
           // 与山脊几何共用同一份高度剖面：树一定落在坡面上
           const y = ridgeHeightAt(sp.u) * layout.ridgeHeight * sp.t
-          m.makeScale(sp.w * 0.13, sp.h, sp.w * 0.13)
-          m.setPosition((sp.u - 0.5) * layout.width, y, (0.06 - 0.11 * sp.t) * depth - 0.02 * depth)
-          trees.setMatrixAt(k, m)
+          const x = (sp.u - 0.5) * layout.width
+          const z = (0.06 - 0.11 * sp.t) * depth - 0.02 * depth
+          if (sp.pine) {
+            /*
+             * 伞松：扁圆顶。二十面体是**以中心为原点**的球，所以要把球心抬到
+             * `y + 0.30·h`（半高约 0.375·h），树冠才坐在地上而不是埋一半。
+             */
+            m.makeScale(sp.w * 0.12, sp.h * 0.75, sp.w * 0.12)
+            m.setPosition(x, y + sp.h * 0.30, z)
+            pines.setMatrixAt(pi++, m)
+          } else {
+            m.makeScale(sp.w * 0.13, sp.h, sp.w * 0.13)
+            m.setPosition(x, y, z)
+            trees.setMatrixAt(ti++, m)
+          }
         }
+        for (let i = ti; i < TREES; i++) trees.setMatrixAt(i, zeroM)
+        for (let i = pi; i < PINES; i++) pines.setMatrixAt(i, zeroM)
         trees.instanceMatrix.needsUpdate = true
+        pines.instanceMatrix.needsUpdate = true
         for (let k = 0; k < rocksShore.length; k++) {
           const u = 0.14 + 0.72 * hash01(k * 13.7 + 2)
           const sc = 0.16 + 0.30 * hash01(k * 9.3 + 4)
@@ -536,6 +592,8 @@ export function createDeckCoast(): DeckCoast {
       rockMat.color.lerp(horizon, 0.26 * far)
       // 岸树与礁石跟着一起退到天色里（否则远岸的树是"贴在雾上的黑点"）
       treeMat.color.copy(RIDGE_NIGHT).lerp(RIDGE_DAY, 1 - night).multiplyScalar(0.42)
+      // 伞松比柏树亮一档（阔叶树冠的受光面积更大），夜里同样压暗
+      pineMat.color.copy(RIDGE_NIGHT).lerp(RIDGE_DAY, 1 - night).multiplyScalar(0.50)
       treeMat.color.lerp(horizon, 0.30 * far)
       shoreMat.color.copy(ROCK_NIGHT).lerp(ROCK_DAY, 1 - night)
       shoreMat.color.lerp(horizon, 0.26 * far)
@@ -633,6 +691,8 @@ export function createDeckCoast(): DeckCoast {
       rimMat.dispose()
       // 岸树（实例化）与礁石的材质也要释放；几何由 sceneDispose 统一收
       treeMat.dispose()
+    pineMat.dispose()
+    pineGeo.dispose()
       shoreMat.dispose()
       trees.dispose()
       sceneDispose(group)
