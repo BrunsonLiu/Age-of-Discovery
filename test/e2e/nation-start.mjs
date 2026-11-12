@@ -262,6 +262,38 @@ check(afterStory.name === '蒙巴萨' && afterStory.step === '2',
   `标记跳到第二段（${afterStory.step} · ${afterStory.name}）`)
 check(afterStory.notice, '弹了一条航路回执')
 
+// 走完剩下两段：第三段结束时必须发一个专属名号，并在册子里多一页
+await page.evaluate(() => {
+  const arrive = (portId) => {
+    const s = window.__gameStore.getState()
+    window.__gameStore.setState({
+      fleet: { ...s.fleet, day: s.fleet.day + 1, currentPortId: null, isSailing: true },
+      gamePhase: 'playing',
+    })
+    window.__gameStore.getState().arriveAtPort(portId)
+  }
+  arrive(16)   // 蒙巴萨：第二段
+  arrive(17)   // 桑给巴尔：第三段
+})
+await sleep(900)
+const finale = await page.evaluate(() => {
+  const s = window.__gameStore.getState()
+  const pageOne = s.logbook.find(e => e.title === '称号 · 宝船旧航路上的人')
+  return {
+    done: s.storyDone.length,
+    claimed: s.claimedVictories.includes('route-china'),
+    page: !!pageOne,
+    pageText: pageOne?.text ?? '',
+    maer: !!document.querySelector('.story-mark-icon'),
+    notice: (s.notifications || []).some(n => /宝船旧航路上的人/.test(n.title)),
+  }
+})
+check(finale.done === 3, `三段走完（${finale.done}）`)
+check(finale.claimed, '名号记进了门号表（route-china）')
+check(finale.page, `册子里多了一页称号（${finale.pageText.slice(0, 14)}…）`)
+check(!finale.maer, '走完之后海图上的航路标记消失（没有下一段）')
+check(finale.notice, '弹了一条称号回执')
+
 console.log(`\n报错：${errors.length ? errors.join(' | ') : '无'}`)
 check(errors.length === 0, '无页面报错')
 console.log(`\n结论：${pass} 通过 / ${fail} 失败`)

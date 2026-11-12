@@ -1832,25 +1832,47 @@ export const useGameStore = create<GameStore>()(
            *
            * 【为什么奖励里没有金币】航路是荣誉与风向，不是账本（用户定的方向）。
            */
-          let storyDone = state.storyDone
           const chapter = nextChapter(state.nation, state.storyDone)
-          if (chapter && chapter.portId === portId) {
-            storyDone = [...state.storyDone, chapter.id]
+          const chapterGain = chapter && chapter.portId === portId ? chapter : null
+          const storyDone = chapterGain ? [...state.storyDone, chapterGain.id] : state.storyDone
+          if (chapterGain) {
             const next = nextChapter(state.nation, storyDone)
             useFxStore.getState().fx(
               {
                 kind: 'banner', tone: 'gold',
-                text: `航路 · ${chapter.name}`,
+                text: `航路 · ${chapterGain.name}`,
                 sub: next
-                  ? `名号 +${chapter.gain.fame} · 下一段：${next.name}`
-                  : `名号 +${chapter.gain.fame} · 这条航路走完了`,
+                  ? `名号 +${chapterGain.gain.fame} · 下一段：${next.name}`
+                  : `名号 +${chapterGain.gain.fame} · 这条航路走完了`,
               },
               'milestone',
             )
           }
-          const chapterGain = nextChapter(state.nation, state.storyDone)?.portId === portId
-            ? nextChapter(state.nation, state.storyDone)!
+
+          /*
+           * ---- 三段走完：给一个只属于这条航路的名号 ----
+           *
+           * 【为什么要有这一步】三段如果只留着"走完了"三个字，那条线没有收尾：
+           * 玩家记得自己跑过三个港，却记不住"我是谁"。称号是本作一直在用的收尾
+           * （见 checkVictories 与航海日志的「称号」页），它不改数值、只决定
+           * 后世怎么记载你 —— 而且会真的在册子里多出一页。
+           *
+           * 【为什么用 claimedVictories 记】与其它称号同一套去重：
+           * 重复靠港不会重发，导入旧存档也不会。
+           */
+          const finale = nationById(state.nation).finale
+          const finaleDue = storyDone.length >= 3
+            && !state.claimedVictories.includes(finale.key)
+          const finaleClaim: VictoryClaim | null = finaleDue
+            ? { key: finale.key, name: finale.name, desc: finale.desc }
             : null
+          if (finaleClaim) {
+            logbook = appendLogbook(logbook, makeTitleEntry(finaleClaim, state.fleet.day))
+            useFxStore.getState().fx(
+              { kind: 'banner', tone: 'gold', text: `称号 · ${finaleClaim.name}`, sub: '这条航路写进了册子 · 海还在，明天照常出航' },
+              'milestone',
+            )
+          }
           return {
             fleet: {
               ...state.fleet,
@@ -1882,6 +1904,21 @@ export const useGameStore = create<GameStore>()(
                 }
               : {}),
             storyDone,
+            ...(finaleClaim
+              ? {
+                  claimedVictories: [...state.claimedVictories, finaleClaim.key],
+                  notifications: [
+                    ...state.notifications,
+                    {
+                      id: `finale-${finaleClaim.key}`,
+                      type: 'achievement' as const,
+                      title: `称号 · ${finaleClaim.name}`,
+                      message: finaleClaim.desc,
+                      timestamp: Date.now(),
+                    },
+                  ],
+                }
+              : {}),
             // 记下"从哪来"：currentRoute 马上就要清空，回程建议要用它
             lastPortId: state.currentRoute?.fromPortId ?? state.lastPortId,
             currentRoute: null,

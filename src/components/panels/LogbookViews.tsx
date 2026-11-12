@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Anchor, Compass, Lock, MapPin, Package, ScrollText, Sparkles } from 'lucide-react'
+import { Anchor, Compass, Flag, Lock, MapPin, Package, ScrollText, Sparkles } from 'lucide-react'
 import { useGameStore } from '@/store/useGameStore'
 import { useMapStore } from '@/store/useMapStore'
 import { ports } from '@/data/ports'
@@ -10,6 +10,7 @@ import { ALL_SEASONS } from '@/utils/season'
 import { REGION_CN, countEchoes, echoDayFor } from '@/data/logbook'
 import { logbookArt } from '@/data/logbookArt'
 import { clueCenter } from '@/utils/harbor'
+import { nationById, storyStep } from '@/data/nations'
 import type { DebrisKind } from '@/data/debris'
 
 /**
@@ -230,6 +231,16 @@ export function AtlasView() {
   const gotAchievements = new Set(earned)
   const gotDebris = new Set(collected)
   const gotRelics = new Set(collectedRelics)
+  /*
+   * 航路：只有选了国别的这一局才有。老存档 / 参观模式 `nation` 是 null，
+   * 这一段就整块不出现 —— 缺省不显示，好过显示一个空的三格。
+   */
+  const nation = useGameStore(s => s.nation)
+  const storyDone = useGameStore(s => s.storyDone)
+  const gotStory = new Set(storyDone ?? [])
+  const routesNation = nationById(nation)
+  const step = storyStep(nation, storyDone ?? [])
+  const storyLen = nation ? routesNation.story.length : 0
   // 航季：图鉴要如实标「此季在 / 此季不在」
   const day = useGameStore(s => s.fleet.day)
   const debrisKinds = Object.keys(DEBRIS_INFO) as DebrisKind[]
@@ -246,6 +257,41 @@ export function AtlasView() {
         <span className="text-gold-500 text-[12px] font-serif">/ {totalCount} 格</span>
         <span className="ml-auto text-gold-500 text-[12px] font-serif">缺的格子慢慢来</span>
       </div>
+
+      {/*
+        【航路】三段是**国别故事线**（见 data/nations 的 story）：
+        每一格是一个目的地港，走到那一格才点亮；点已点亮的那格，它会说出当时那句话。
+        把故事线放进册子而不是飘在屏幕上，是因为它的性质与遗物、成就一样——
+        "这一局我真的做过"。
+      */}
+      {nation && (
+        <>
+          <SectionTitle right={`${step}/${storyLen}`}>航路</SectionTitle>
+          <div className="grid grid-cols-3 gap-1.5">
+            {routesNation.story.map((c, i) => {
+              const got = gotStory.has(c.id)
+              const port = ports.find(p => p.id === c.portId)
+              return (
+                <AtlasCell
+                  key={c.id}
+                  label={c.name}
+                  /* 格子只有三列宽（约 170px）：「第 N 段 · 港口」会被截成
+                     「第 1 段 · 马…」，所以副标题只放目的地港名（4 字内一定放得下），
+                     段号与来历放到点击后的详情行里 */
+                  sub={port?.nameCn ?? ''}
+                  found={got}
+                  icon={<Flag size={13} />}
+                  onClick={() => setDetail(
+                    got
+                      ? c.line
+                      : `第 ${i + 1} 段：${c.name}（${port?.nameCn ?? '那座港'}）。开过去，靠上码头才算过。`,
+                  )}
+                />
+              )
+            })}
+          </div>
+        </>
+      )}
 
       <SectionTitle right={`${discoveredPorts.length}/${ports.length}`}>港口</SectionTitle>
       <div className="grid grid-cols-2 gap-1.5">

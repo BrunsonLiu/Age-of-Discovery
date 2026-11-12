@@ -72,6 +72,23 @@ export interface StoryChapter {
   line: string
 }
 
+/**
+ * 走完三段航路给的**专属名号**（每国一个，不重复）。
+ *
+ * 【为什么走完要给一个名号】三段走完如果只留一句"这条航路走完了"，
+ * 那条线就没有收尾——玩家会记住"跑了三个港"，但不会记住"我是谁"。
+ * 称号是本作一直在用的收尾方式（见 data/titles 与 checkVictories）：
+ * 它不改数值，只决定"后世怎么记载你"，而且会写进航海日志的册子里。
+ */
+export interface NationFinale {
+  /** 进 `claimedVictories` 的键：`route-<nationId>`，保证只领一次 */
+  key: string
+  /** 册子上的名字 */
+  name: string
+  /** 册子上的那一页（一句半，写你怎么走到这儿） */
+  desc: string
+}
+
 export interface NationStart {
   /** 士气加成（加在 70 上，封顶 100） */
   morale: number
@@ -104,6 +121,8 @@ export interface Nation {
   legend: NationLegend
   /** 这一国在这个时代真正走过的那条航线：三段，顺序不能乱 */
   story: StoryChapter[]
+  /** 三段走完的专属名号 */
+  finale: NationFinale
 }
 
 export const NATIONS: readonly Nation[] = [
@@ -144,7 +163,11 @@ export const NATIONS: readonly Nation[] = [
         line: '达伽马在卡利卡特说“我们来寻找基督徒和香料”，果阿后来成了这条航线的账房。',
       },
     ],
-  },
+    finale: {
+      key: 'route-portugal',
+      name: '绕过风暴角的人',
+      desc: '从西非的城堡到果阿的码头，这条航线是你一程一程走完的。里斯本的海图室会给你留一格。',
+    },  },
   {
     id: 'spain',
     name: '西班牙',
@@ -182,7 +205,11 @@ export const NATIONS: readonly Nation[] = [
         line: '卡塔赫纳的炮台护着这条黄金通道——账本比大炮更能守住它。',
       },
     ],
-  },
+    finale: {
+      key: 'route-spain',
+      name: '西印度航线的老手',
+      desc: '哈瓦那、韦拉克鲁斯、卡塔赫纳——三座港的税吏都记得你的船名。',
+    },  },
   {
     id: 'england',
     name: '英格兰',
@@ -220,7 +247,11 @@ export const NATIONS: readonly Nation[] = [
         line: '抢来的东西要有人肯收，哈瓦那的商人从不问来路。',
       },
     ],
-  },
+    finale: {
+      key: 'route-england',
+      name: '不问来路的船长',
+      desc: '托尔图加、皇家港、哈瓦那。你走过的这三个码头，没有一个会问货是从哪来的。',
+    },  },
   {
     id: 'netherlands',
     name: '荷兰',
@@ -258,7 +289,11 @@ export const NATIONS: readonly Nation[] = [
         line: '马六甲海峡卡着东西方的咽喉，谁在这儿设关卡，谁就能对香料定价。',
       },
     ],
-  },
+    finale: {
+      key: 'route-netherlands',
+      name: '东印度的账房',
+      desc: '好望角、巴达维亚、马六甲。胡椒、肉桂、丁香的价格，在你手里过了一遍。',
+    },  },
   {
     id: 'china',
     name: '大明',
@@ -301,7 +336,11 @@ export const NATIONS: readonly Nation[] = [
         line: '榜葛剌进贡的那头“麒麟”就是从这一带运上船的——其实是长颈鹿。',
       },
     ],
-  },
+    finale: {
+      key: 'route-china',
+      name: '宝船旧航路上的人',
+      desc: '满剌加、蒙巴萨、桑给巴尔。六十年前宝船队走过的那条线，你又走了一遍。',
+    },  },
 ]
 
 export const NATION_COUNT = NATIONS.length

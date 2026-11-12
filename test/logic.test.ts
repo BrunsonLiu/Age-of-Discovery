@@ -10911,6 +10911,78 @@ console.log('\n== 天数口径守卫 ==')
 
 
 /*
+ * ---- 走完三段航路：专属名号与册子上的那一页 ----
+ *
+ * 【守什么】三段走完如果只留一句"这条航路走完了"，那条线没有收尾：
+ * 玩家记得自己跑过三个港，但记不住"我是谁"。这里守三件事：
+ *  ① 五国的名号各不相同（不能五条航路最后都叫"老船长"）；
+ *  ② 走完第三段才发，走两段不发（发早了等于把收尾提前）；
+ *  ③ 只发一次 —— 反复靠同一座港、导入旧存档都不会重发（走 claimedVictories 那套去重）。
+ */
+{
+  const keys = NATIONS.map(n => n.finale.key)
+  const names = NATIONS.map(n => n.finale.name)
+  assert(new Set(keys).size === NATION_COUNT, `五个名号的键各不相同（${keys.join(' / ')}）`)
+  assert(new Set(names).size === NATION_COUNT, `五个名号的名字各不相同（${names.join(' / ')}）`)
+  for (const n of NATIONS) {
+    assert(n.finale.key === `route-${n.id}`, `${n.name}的名号键是 route-${n.id}（实测 ${n.finale.key}）`)
+    assert(n.finale.desc.length > 10 && n.finale.desc.length <= 60,
+      `${n.name}的名号有一句话的落款（${n.finale.desc.length} 字）`)
+  }
+
+  // 真跑：大明从广州一路开到桑给巴尔
+  useGameStore.getState().initGame('merchant', 'captain', 'china')
+  const go = (portId: number) => {
+    const st0 = useGameStore.getState()
+    useGameStore.setState({
+      fleet: { ...st0.fleet, day: st0.fleet.day + 1, currentPortId: null, isSailing: true },
+      gamePhase: 'playing',
+      shipPosition: [0, 0],
+    })
+    useGameStore.getState().arriveAtPort(portId)
+  }
+  go(12) // 满剌加
+  go(16) // 蒙巴萨
+  const mid = useGameStore.getState()
+  assert(mid.storyDone.length === 2, `走到第二段只记两段（${mid.storyDone.length}）`)
+  assert(!mid.claimedVictories.includes('route-china'), '走两段还不给名号（收尾不能提前）')
+  assert(!mid.logbook.some(e => e.title.includes('宝船旧航路上的人')), '册子里还没有那一页')
+
+  go(17) // 桑给巴尔
+  const end = useGameStore.getState()
+  assert(end.storyDone.length === 3, `三段走完（${end.storyDone.length}）`)
+  assert(end.claimedVictories.includes('route-china'), `名号记进门号表（${JSON.stringify(end.claimedVictories)}）`)
+  const page = end.logbook.find(e => e.title === '称号 · 宝船旧航路上的人')
+  assert(!!page, `册子里多了一页「称号 · 宝船旧航路上的人」（现有 ${end.logbook.length} 页）`)
+  assert(page?.kind === 'title', '那一页的类型是"称号"（与其它名号同一档）')
+  assert((page?.text ?? '').includes('满剌加'), `那一页写着走过的三个港（${page?.text?.slice(0, 16)}…）`)
+
+  // 再靠一次：不许重发
+  const pagesBefore = end.logbook.length
+  go(17)
+  const again = useGameStore.getState()
+  assert(again.claimedVictories.filter(k => k === 'route-china').length === 1, '名号只记一次')
+  assert(again.logbook.filter(e => e.title === '称号 · 宝船旧航路上的人').length === 1,
+    `册子里只有一页（${again.logbook.filter(e => e.title === '称号 · 宝船旧航路上的人').length}）`)
+  /*
+   * 【为什么不是"页数不变"】再靠一次是**新的一天**，到港见闻本来就该多写一页
+   * （`makeArrivalEntry` 按 day+portId 去重）。这里要守的是"不再多出称号页"：
+   * 多出来的最多一页，而且不是 title 类型。
+   */
+  const newPages = again.logbook.slice(0, again.logbook.length - pagesBefore)
+  assert(again.logbook.length - pagesBefore <= 1, `再靠一次最多多一页（${again.logbook.length - pagesBefore} 页）`)
+  assert(!newPages.some(e => e.kind === 'title'), '多出来的那页不是称号页（名号不重发）')
+
+  // 图鉴里的「航路」一节：有国别才出现，且按 storyDone 点亮
+  const atlasSrc = readFileSync(join(process.cwd(), 'src', 'components', 'panels', 'LogbookViews.tsx'), 'utf8')
+  assert(/航路/.test(atlasSrc) && /storyStep\(nation/.test(atlasSrc), '图鉴里有「航路」一节，进度走 storyStep')
+  assert(/nation && \(/.test(atlasSrc), '没选国别（老存档/参观模式）时整块不出现')
+  const storeSrc3 = readFileSync(join(process.cwd(), 'src', 'store', 'useGameStore.ts'), 'utf8')
+  assert(/makeTitleEntry\(finaleClaim/.test(storeSrc3), '名号走的是与其它称号同一条写入路径（写进册子）')
+}
+
+
+/*
  * ---- 岸边浪线：强弱必须真的来自风速，虚线周期必须能无缝回卷 ----
  *
  * 【守什么】浪线看起来像"贴图"，但它带着一个承诺：**风越大浪越明显**。
