@@ -57,6 +57,12 @@ const SKY_HORIZON_DAY = new THREE.Color(0xb2cee2)
 const SEA_DEEP_NIGHT = new THREE.Color(0x02060b)
 const SEA_DEEP_DAY = new THREE.Color(0x0d2a3f)
 const MOON_COLOR = new THREE.Color(0xdfe9ff)
+/**
+ * 太阳的直射光色（碎光与天空亮心共用）。
+ * 暖白 0xfff2d8：偏到这个程度在海上正好（再黄一点白云会脏，再白一点
+ * 与月光的 0xdfe9ff 分不出日夜）。
+ */
+const SUN_LIGHT = new THREE.Color(0xfff2d8)
 /*
  * 黄昏的颜色：日出/日落时地平线偏橙、天顶偏紫。
  * 【为什么必须有】只有"夜蓝 ↔ 日蓝"两端时，`lit≈0.45` 的那一段是**灰的**
@@ -395,6 +401,18 @@ export default function DeckView() {
      * 第一版把月亮放在左上方画面外，结果只剩船尾一团无主的白光（实测截图）。
      */
     const moonDir = new THREE.Vector3(0.34, 0.20, 0.92).normalize()
+    /*
+     * ---- 太阳方向 ----
+     *
+     * 【方位角与月亮相同、仰角压到 5°~15°】这是刻意的取舍：
+     *   · 仰角照真实日相走（正午 70°）的话，太阳会**跑到画面外**（视野顶边
+     *     只在海平线上方 18°），碎光也落到镜头背后 —— 玩家永远看不到它；
+     *   · 压到 15° 以内，太阳永远挂在小镇右上方，海面那条碎光带从它脚下铺到
+     *     镜头前。代价是"正午的太阳偏低"，但这个视角的观感比天文严谨重要。
+     * 仰角仍随日相在 5°~15° 之间起伏，黄昏时它会压到屋脊上（那一幕很好看）。
+     */
+    const sunAz = new THREE.Vector3(0.34, 0, 0.92).normalize()
+    const sunDir = new THREE.Vector3()
 
     // ---- 天空：一个内表面球，渐变 + 月亮盘与光晕（不要贴图）----
     const skyGeo = new THREE.SphereGeometry(180, 32, 20)
@@ -406,6 +424,9 @@ export default function DeckView() {
         uHorizon: { value: SKY_HORIZON_NIGHT.clone() },
         uMoonDir: { value: moonDir.clone() },
         uMoonColor: { value: MOON_COLOR.clone() },
+        uSunDir: { value: sunDir.clone() },
+        uSunColor: { value: SUN_LIGHT.clone() },
+        uSunK: { value: 1 },
         // 月亮亮度：白天该淡到只剩一个白盘，夜里才是光源（见 fragment）
         uMoonK: { value: 1 },
         uDusk: { value: 0 },
@@ -433,6 +454,9 @@ export default function DeckView() {
         uniform vec3 uZenith;
         uniform vec3 uHorizon;
         uniform vec3 uMoonDir;
+        uniform vec3 uSunDir;
+        uniform vec3 uSunColor;
+        uniform float uSunK;
         uniform vec3 uMoonColor;
         uniform float uMoonK;
         uniform float uDusk;
@@ -544,14 +568,28 @@ export default function DeckView() {
            * （放大截图实测：云与天之间没有任何可见的边界）。0.025 时还有 25px；
            * 收到 0.008 之后边缘 ≈ 8px，才是积云的轮廓。
            */
-          float cover = smoothstep(0.594, 0.602, cn);
+          /*
+           * ---- 两层轮廓：外圈薄雾 + 内核实心 ----
+           *
+           * 【为什么单层轮廓读作"剪纸"】一个阈值只给出**一条**等高线：云就是一块
+           * 边缘干净的白片，和纸剪的没区别。真实的积云边缘是一段**渐稀的雾**
+           * （水汽密度从核心往外降），外圈半透、内核实。
+           * 这里用同一个 cn 取两个阈值：宽窗（0.560~0.600）当稀薄外圈、
+           * 窄窗（0.600~0.616）当实心核。零额外采样，云立刻有"体积边界"。
+           */
+          float coverWide = smoothstep(0.560, 0.600, cn);
+          float coverCore = smoothstep(0.600, 0.616, cn);
           /* 贴着地平线的一圈不画云（那里是雾/大气），天顶也留一点空 */
           /*
            * 低空起云、高空留白：0.35/0.86 → 0.55/0.50~0.95。
            * 上一版云大片堆在天顶（h > 0.6），屏幕上半部被糊住、地平线附近反而空 ——
            * 真实的积云是**低空一层**，抬头看天顶是清的。
            */
-          cover *= smoothstep(0.02, 0.18, h) * (1.0 - 0.55 * smoothstep(0.50, 0.95, h));
+          {
+            float hm = smoothstep(0.02, 0.18, h) * (1.0 - 0.55 * smoothstep(0.50, 0.95, h));
+            coverWide *= hm;
+            coverCore *= hm;
+          }
           /* 云边：厚度中段的一条亮边（云心厚、云边薄而透光） */
           /*
            * 只做"实心的云"，不加亮边：上一版那条 cloudEdge 在屏幕上是一圈
@@ -568,15 +606,23 @@ export default function DeckView() {
            * —— 只差 5 级。真实积云比蓝天亮 40~70 级（白云的漫反射远高于瑞利散射的
            * 天光）。0.74 的暗部甚至比天还暗，于是"云"读成一块**灰气**。
            */
-          vec3 cloudCol = uCloudColor * mix(0.86, 1.16, smoothstep(0.50, 0.78, cn));
           /*
-           * 云面的絮状明暗：一层高频噪声（+12%）把"一块平白"变成"有棉絮的团"。
+           * 亮度区间按**阈值之后的区间**给（0.596~0.73）：原来的 smoothstep(0.50,0.78)
+           * 横跨整个 cn 值域，而云里 cn 只在 0.60~0.70 之间变 —— 实际只用到
+           * mix 的 1/3，云心与云边差 8%，仍然是一块平白。按真实区间铺开之后，
+           * 厚的地方能到 1.24、薄的边缘落到 0.80，云才开始"有受光面"。
+           */
+          vec3 cloudCol = uCloudColor * mix(0.80, 1.24, smoothstep(0.596, 0.730, cn));
+          /*
+           * 云面的絮状明暗：一层高频噪声（+14%）把"一块平白"变成"有棉絮的团"。
            * 只靠 cn 的坡度时，云内 cn 变化很小 —— 云心到云边几乎同色，
            * 一块 400px 的白斑没有任何内部结构（放大截图就是这个观感）。
            */
-          cloudCol *= 0.94 + 0.12 * vnoise(cq * 7.3 + 61.0);
-          cloudCol *= mix(0.82, 1.0, smoothstep(0.02, 0.28, h));
-          col = mix(col, cloudCol, cover * uCloud * 0.98);
+          cloudCol *= 0.93 + 0.14 * vnoise(cq * 7.3 + 61.0);
+          cloudCol *= mix(0.80, 1.0, smoothstep(0.02, 0.30, h));
+          /* 外圈半透（0.45）+ 内核实心：两层叠出"边缘在散开"的体积感 */
+          col = mix(col, cloudCol * 0.92, coverWide * uCloud * 0.45);
+          col = mix(col, cloudCol, coverCore * uCloud * 0.98);
           float m = max(dot(d, uMoonDir), 0.0);
           // 月亮：盘（~1.2°）+ 两圈光晕。加起来比贴图省一次采样
           // 盘：smoothstep 的下限决定直径。0.9994 对应 4°（屏幕上 60~80px，像太阳），
@@ -602,6 +648,29 @@ export default function DeckView() {
            */
           col += uMoonColor * pow(m, 300.0) * 0.16 * uMoonK;
           col += uMoonColor * pow(m, 70.0) * 0.030 * uMoonK;
+          /*
+           * ---- 太阳：盘 + 前向散射的亮区 ----
+           *
+           * 【为什么这一条比加云、加雾、调渐变都重要】在这之前，这个视角的天空
+           * **没有光源**：只有一条从上到下的渐变，云是浮在上面的白块。真实的天空
+           * 有一处明显的亮心（太阳周围的前向散射），整片天是**绕着它**亮的；
+           * 海面上的碎光也是从那一处铺过来的。
+           *
+           * 三层，全部只靠一个 dot：
+           *   ① 盘：smoothstep(0.9995, 0.9998)（约 1.5°），加满到过曝的白；
+           *   ② 内晕 pow(24)：太阳附近 30° 内整片提亮 —— 这是"天绕着一处亮"；
+           *   ③ 外晕 pow(4)：整半个天空的柔和暖调，让渐变有方向。
+           * 强度乘 uSunK（夜里为 0），所以月亮那一套完全不受影响。
+           */
+          float sunDot = max(dot(d, uSunDir), 0.0);
+          /*
+           * 内晕 0.55 → 0.16、外晕 0.13 → 0.05：第一版把半个天顶糊成一片白
+           * （截图里太阳成了"一团雾"）。太阳的亮区应该集中在 15° 以内，
+           * 外面靠天空本身的渐变就够了。
+           */
+          col += uSunColor * smoothstep(0.99950, 0.99988, sunDot) * 2.20 * uSunK;
+          col += uSunColor * pow(sunDot, 60.0) * 0.30 * uSunK;
+          col += uSunColor * pow(sunDot, 12.0) * 0.16 * uSunK;
           // 黄昏整体压暗：日落时天比白天暗，不压的话"黄昏"会亮成一盏粉灯
           col *= 1.0 - 0.30 * uDusk;
           /*
@@ -659,6 +728,9 @@ export default function DeckView() {
       uSky: { value: SKY_HORIZON_NIGHT.clone().multiplyScalar(0.9) },
       uMoon: { value: MOON_COLOR.clone() },
       uMoonK: { value: 1 },
+      uSunDir: { value: sunDir.clone() },
+      uSunColor: { value: SUN_LIGHT.clone() },
+      uSunK: { value: 1 },
       uWaveScale: { value: 1 },
       uFogNear: { value: 28 },
       uFogFar: { value: 62 },
@@ -747,6 +819,9 @@ export default function DeckView() {
         uniform vec3 uSky;
         uniform vec3 uMoon;
         uniform float uMoonK;
+        uniform vec3 uSunDir;
+        uniform vec3 uSunColor;
+        uniform float uSunK;
         uniform float uFogNear;
         uniform float uFogFar;
         uniform float uFogK;
@@ -943,13 +1018,75 @@ export default function DeckView() {
            */
           vec2 fineQ = vec2(vWorld.x * 1.6 + uTime * 0.10, vWorld.z * 7.0 - uTime * 0.16);
           float fine = smoothstep(0.18, 0.86, vnoise(fineQ * 2.6));
-          col *= (0.84 + 0.32 * fine) * shadePatch;
+          /*
+           * ---- 细节随距离衰减（治的是"海面像灯芯绒"）----
+           *
+           * 【为什么这是那层布纹的真正原因】细纹的波长 ≈ 0.055 世界单位（约 30 厘米），
+           * 在 20 单位外只有 **2~3 个像素** —— 它已经低于屏幕的采样率，于是不是
+           * "看到细纹"，而是**混叠成一片规则的条纹**（像灯芯绒、像平纹布）。
+           * 真实的海不会这样：30 厘米的毛细波在 100 米外根本看不见，远处只剩
+           * 涌浪的大起伏与镜面反光，所以远处的海**更平、更像镜面**。
+           *
+           * nearK 让细纹的对比随距离收到 28%，同时远处的大块明暗（shadePatch）
+           * 保持不变 —— 层次从"细碎纹理"换成"大块色斑"，这才是近处波涛、远处
+           * 平镜的水面。判据：同一张图里近处海面的高频梯度必须明显高于远处。
+           */
+          float camDist = length(cameraPosition - vWorld);
+          float nearK = 1.0 - smoothstep(4.0, 26.0, camDist);
+          /*
+           * 用**中心化**的乘子（均值严格 1.0）：原来的 0.84 + 0.32·fine 均值
+           * 是 1.0，但把幅度随距离缩小时会连带把远处压暗 —— 远处该更亮（反天光）。
+           */
+          col *= 1.0 + (fine - 0.5) * 0.34 * (0.28 + 0.72 * nearK);
+          col *= shadePatch;
           /*
            * 碎光：纹的高处当成一颗颗小镜面，把天光弹回来一点。
            * 只加在高处（0.72 以上）—— 平铺一层会把整片海提亮，那是"过曝"不是"闪光"。
            */
           float glint = smoothstep(0.72, 1.0, fine);
-          col += uSky * glint * 0.18;
+          col += uSky * glint * 0.18 * nearK;
+          /*
+           * ---- 太阳的碎光（白天唯一让海面读成"水"的东西）----
+           *
+           * 【为什么必须有】在这之前，海面的高光项只服务月亮（乘 uMoonK），
+           * 白天等于**一点镜面都没有** —— 于是整片海只有漫反射的明暗起伏，
+           * 读作"有纹路的蓝布"。真实海面在白天最抢眼的就是那一串碎钻似的反光。
+           *
+           * 【为什么用 gate 而不是再采一层噪声】gate 已经在算（0.2~1.9 的噪声门，
+           * 3.6 的频率），平方之后正好给出"稀疏的一颗颗"；再叠细纹的高位，
+           * 亮点就落在波峰上而不是随机撒。多采一次噪声在软渲染上是 3~5% 的帧时，
+           * 不值得。
+           *
+           * 指数 220：比月光的 900 宽一档 —— 太阳是一个面光源，碎光是"一片片
+           * 闪"，不是针尖。
+           */
+          {
+            vec3 sd = normalize(uSunDir);
+            vec3 hs = normalize(sd + v);
+            float sh = max(dot(nn, hs), 0.0);
+            /*
+             * 分两层，因为"一整条白色大道"和"碎钻"是两种东西：
+             *  ① 路：指数 150 的宽高光，乘噪声门与细纹 -> 一条断断续续的光带，
+             *     远处也看得见（这是"太阳在海上的路"）；
+             *  ② 钻：**按世界坐标切格子**（0.038 单位 ≈ 20 厘米一格）取哈希，
+             *     只有少数格子亮起来。这一层只在近处给（乘 nearK）—— 远处格子
+             *     小于一个像素，会变成满屏闪烁的噪点。
+             *
+             * 【第一版的问题】只做 ①，强度 1.9、指数 220：屏幕上是**一条 80 像素
+             * 宽的白色糊带**，从镇子一直铺到镜头前，像泼了一地的水银（截图实测）。
+             * 真实的海面碎光是一颗颗几像素的亮点，中间的暗水面看得很清楚。
+             */
+            float road = pow(sh, 150.0) * gate * gate * (0.25 + 0.75 * fine);
+            col += uSunColor * road * 0.55 * uSunK;
+            /*
+             * 格子用**插值噪声**而不是 floor+hash：floor 切出来的是**轴对齐的正方形**，
+             * 近处每一个方块都看得见（第一版的光带像贴了马赛克）。噪声插值之后
+             * 是一团团圆的亮斑，读作"水面上跳动的一颗颗"。
+             */
+            float cell = vnoise(vWorld.xz * 21.0 + 17.0);
+            float sparkle = smoothstep(0.64, 0.92, cell) * pow(sh, 120.0);
+            col += uSunColor * sparkle * 1.45 * nearK * uSunK;
+          }
 
           /*
            * ---- 近岸浅水与岸边浪花 ----
@@ -1468,6 +1605,22 @@ export default function DeckView() {
       moon.intensity = 2.1 * lightMul
       // 雾里看不到月亮：下面那处再乘一次 (1 − 雾)
       skyMat.uniforms.uMoonK.value = 0.06 + 0.94 * night
+      /*
+       * 太阳：仰角 5°~15°（随日相起伏），方位角固定（见 `sunAz` 的注释）。
+       * `sunK` 是"太阳在地平线之上"的程度 —— 夜里归零，天空的亮心与海面的
+       * 碎光一起消失，月亮那一套完全不受影响。
+       */
+      {
+        const alt = (5 + 10 * Math.max(0, Math.min(1, skyInfo.lit))) * Math.PI / 180
+        sunDir.copy(sunAz).multiplyScalar(Math.cos(alt))
+        sunDir.y = Math.sin(alt)
+        sunDir.normalize()
+        const sunK = Math.pow(Math.max(0, Math.min(1, skyInfo.lit)), 0.7)
+        skyMat.uniforms.uSunDir.value.copy(sunDir)
+        seaUniforms.uSunDir.value.copy(sunDir)
+        skyMat.uniforms.uSunK.value = sunK
+        seaUniforms.uSunK.value = sunK
+      }
       /*
        * 补光也要跟着日相：白天船体在阳光下不该是全黑的。
        * 实测（停泊白昼截图）：fill 固定 0.85 时船壳与帆接近纯黑，

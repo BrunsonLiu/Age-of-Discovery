@@ -259,7 +259,17 @@ export function createDeckHarbor(): DeckHarbor {
   /* 墙基：房子脚下的石砌勒脚（比墙暗一档，给"房子站在地上"一个接触） */
   const plinthMat = mk(0x9a9081)
   /* 窗洞：比墙暗两档的凹口（白天唯一的立面细节） */
-  const paneMat = mk(0x2b2a26)
+  /*
+   * 窗洞的玻璃：0x2b2a26（近黑）→ 0x3c4954（深板岩蓝灰）。
+   *
+   * 【为什么这条比再加窗框有用】正午的立面上一排**纯黑方块**是这个视角最明显
+   * 的"低模记号"——真实窗玻璃在白天反的是天光，是**深蓝灰**、并且随朝向明暗
+   * 不同（有的亮到发白，有的近黑）。纯黑只有"洞"这一个读法。
+   * 逐扇色差（instanceColor）在下面写入时给 0.5~1.5 的倍率，于是同一面墙上
+   * 有亮窗、暗窗、暖色内景窗，那一排窗格才不再是"打了一排孔"。
+   */
+  const paneMat = mk(0x2a2724)
+  const paneGlassMat = mk(0x3c4954)
   /* 烟囱：比屋顶暗一点的砖色 —— 用墙色会与白墙糊在一起 */
   const chimneyMat = mk(0x6b4a3a)
   /*
@@ -282,7 +292,7 @@ export function createDeckHarbor(): DeckHarbor {
   const spireCapMat = mk(0x596069)
   /** 每个材质在 setSighting 里记下"白天的本色"，update 按 night 插值 */
   const bases = new Map<THREE.Material, THREE.Color>()
-  for (const m of [deckMat, wallMat, roofMat, stoneMat, pierMat, mastMat, sailMat, palmMat, flagMat, spireMat, spireCapMat, hullMat, railMat, paneMat, chimneyMat, plinthMat]) {
+  for (const m of [deckMat, wallMat, roofMat, stoneMat, pierMat, mastMat, sailMat, palmMat, flagMat, spireMat, spireCapMat, hullMat, railMat, paneMat, paneGlassMat, chimneyMat, plinthMat]) {
     bases.set(m, (m as THREE.MeshBasicMaterial).color.clone())
   }
 
@@ -868,7 +878,7 @@ export function createDeckHarbor(): DeckHarbor {
   windowFrames.frustumCulled = false
   group.add(windowFrames)
 
-  const panes = new THREE.InstancedMesh(paneGeo, paneMat, MAX_HOUSE * 6)
+  const panes = new THREE.InstancedMesh(paneGeo, paneGlassMat, MAX_HOUSE * 6)
   panes.name = 'deck-harbor-panes'
   panes.frustumCulled = false
   group.add(panes)
@@ -1203,28 +1213,41 @@ export function createDeckHarbor(): DeckHarbor {
        *
        * 【为什么这是"粗糙"的第二个来源】八栋房子共用一个材质、一个色值，
        * 屏幕上就是**一条等亮度的白带**：明暗只区分"正面/侧面"，分不出
-       * "这一栋"与"那一栋"。真实码头边的墙有新有旧、有的刷过有的没刷，
-       * ±8% 的亮度差 + 一点色相偏移就够让眼把它们数成八栋。
+       * "这一栋"与"那一栋"。真实码头边的墙有新有旧、有的刷过有的没刷。
        *
-       * 【为什么不改材质】每栋一个材质 = 每栋一个 draw call；instanceColor
-       * 是逐实例的一个 vec3，零额外绘制。
+       * 【第 122 轮：只抖亮度不够，必须抖色相】±8% 亮度得到的是"同一种颜色
+       * 有深有浅"，屏幕上仍是一条色带。改成从样式的 `wallTints` 里按 hash 取
+       * **一条彩色乘子**（赭黄 / 陶粉 / 淡橄榄 / 灰青），再叠一层亮度抖动 ——
+       * 相邻两栋的色相不同，眼睛才开始把墙数成"一栋一栋的房子"。
        */
-      tone.setRGB(
-        (0.94 + 0.12 * hash01(i * 4.7 + 23)) * (1.0 + 0.03 * hash01(i * 8.3 + 5)),
-        (0.94 + 0.12 * hash01(i * 4.7 + 23)) * (1.0 + 0.01 * hash01(i * 8.3 + 5)),
-        (0.94 + 0.12 * hash01(i * 4.7 + 23)) * (0.97 + 0.02 * hash01(i * 8.3 + 5)),
-      )
+      const pal = style.wallTints
+      const wt = pal[Math.min(pal.length - 1, Math.floor(hash01(i * 9.7 + 61) * pal.length))]
+      const wv = 0.93 + 0.14 * hash01(i * 4.7 + 23)
+      tone.setRGB(wv * wt[0], wv * wt[1], wv * wt[2])
       walls.setColorAt(i, tone)
+      /*
+       * 挑出的上层与偏房必须**跟着同一个色**：三者共用 wallMat，但各有自己的
+       * instanceColor —— 不设时那两截是材质本色，于是"带挑出的房子"上下两色，
+       * 一眼就是拼接的。矩阵为 zero 的槽位设了也无害。
+       */
+      upperWalls.setColorAt(i, tone)
+      annexWalls.setColorAt(i, tone)
       /*
        * 屋顶同样抖，而且**不只抖亮度**：陶瓦从橙红到暗褐都有，只调亮度的结果是
        * "同一种红有深有浅"，仍然是一条色带。给一点点色相偏移（红多/黄多）
        * 才能把"一片红"打散成十几片瓦。
        */
-      const rv = 0.86 + 0.22 * hash01(i * 6.1 + 29)
+      /*
+       * 屋顶是这座城**面积最大的彩色面**（一排 40~60px 高的梯形），所以它的
+       * 色差比墙更值得给足：0.86~1.08 的亮度 + ±5% 色相，在屏幕上仍然是
+       * "一整片同一种红"。改成 0.70~1.12 的亮度（旧瓦发暗、新瓦发亮）
+       * 加 ±12% 的红/黄偏移（陶瓦从橙红到暗褐），一片红才散成十几片瓦。
+       */
+      const rv = 0.70 + 0.42 * hash01(i * 6.1 + 29)
       tone.setRGB(
-        rv * (1.0 + 0.05 * hash01(i * 2.3 + 31)),
-        rv * (0.93 + 0.07 * hash01(i * 3.9 + 37)),
-        rv * (0.88 + 0.06 * hash01(i * 5.1 + 41)),
+        rv * (0.93 + 0.14 * hash01(i * 2.3 + 31)),
+        rv * (0.88 + 0.12 * hash01(i * 3.9 + 37)),
+        rv * (0.84 + 0.12 * hash01(i * 5.1 + 41)),
       )
       roofs.setColorAt(i, tone)
 
@@ -1288,6 +1311,8 @@ export function createDeckHarbor(): DeckHarbor {
     walls.instanceMatrix.needsUpdate = true
     roofs.instanceMatrix.needsUpdate = true
     if (walls.instanceColor) walls.instanceColor.needsUpdate = true
+    if (upperWalls.instanceColor) upperWalls.instanceColor.needsUpdate = true
+    if (annexWalls.instanceColor) annexWalls.instanceColor.needsUpdate = true
     if (roofs.instanceColor) roofs.instanceColor.needsUpdate = true
     plinths.instanceMatrix.needsUpdate = true
     eaves.instanceMatrix.needsUpdate = true
@@ -1347,6 +1372,16 @@ export function createDeckHarbor(): DeckHarbor {
       dummy.scale.set(pn.w, pn.h, 0.05)
       dummy.updateMatrix()
       panes.setMatrixAt(qi, dummy.matrix)
+      /*
+       * 逐扇玻璃的色差：0.5~1.5 倍率 + 一组偏暖的内景窗（约 12%）。
+       * 只抖亮度时窗还是"同一种黑有深有浅"；加一组暖色窗之后，立面才有
+       * "有的窗反天、有的窗里点着灯/挂着帘"的混杂感。
+       */
+      const gk = 0.5 + 1.0 * hash01(qi * 3.7 + 71)
+      const warm = hash01(qi * 5.3 + 73) > 0.88
+      if (warm) tone.setRGB(gk * 1.15, gk * 0.86, gk * 0.62)
+      else tone.setRGB(gk * 0.94, gk * 0.99, gk * 1.08)
+      panes.setColorAt(qi, tone)
       qi++
     }
     for (let i = qi; i < MAX_HOUSE * 6; i++) {
@@ -1354,6 +1389,7 @@ export function createDeckHarbor(): DeckHarbor {
       windowFrames.setMatrixAt(i, zero)
     }
     panes.instanceMatrix.needsUpdate = true
+    if (panes.instanceColor) panes.instanceColor.needsUpdate = true
     windowFrames.instanceMatrix.needsUpdate = true
 
     /* ---- 码头上的人（矩阵在 update 里每帧重写，这里先摆到位） ---- */

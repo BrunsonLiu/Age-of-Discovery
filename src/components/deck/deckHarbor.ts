@@ -51,6 +51,17 @@ export interface HarborStyle {
   sail: 'square' | 'junk'
   /** 窗光色（暖黄 / 偏橙 / 偏白） */
   lamp: [number, number, number]
+  /**
+   * 墙面调色板（**乘**在 `wall` 上，逐栋按 hash 取一条）。
+   *
+   * 【为什么必须逐栋换色相，而不只是换亮度】一套样式只有一个 `wall` 色值，
+   * 逐栋只抖 ±8% 亮度时，屏幕上得到的是"一种颜色有深有浅"——它仍然是一条色带。
+   * 真实的地中海/伊比利亚港是**粉墙、赭墙、奶白墙、淡青墙**混在一条街上：
+   * 相邻两栋的色相不同，眼睛才开始把它们数成"一栋一栋的房子"。
+   * 三个分量都贴 1.0，最大偏离 15%：换样式（白墙→木棚→土屋→青瓦）时
+   * 每一栋仍然落在该海域的色系里，不会出现"广州的粉墙"。
+   */
+  wallTints: readonly (readonly [number, number, number])[]
 }
 
 /**
@@ -79,6 +90,14 @@ export const HARBOR_STYLES: Record<HarborStyleId, HarborStyle> = {
     quay: 0x6c6659,
     sail: 'square',
     lamp: [1.5, 1.05, 0.6],
+    /* 奶白 / 赭黄 / 陶粉 / 淡橄榄 / 灰青 —— 里斯本与塞维利亚的真实街色 */
+    wallTints: [
+      [1.0, 1.0, 1.0],
+      [1.10, 0.90, 0.64],
+      [1.06, 0.82, 0.76],
+      [0.97, 1.0, 0.85],
+      [0.93, 0.96, 1.02],
+    ],
   },
   /* 哈瓦那 / 托尔图加 / 皇家港：木棚 + 茅草顶 + 木栈桥 + 棕榈 */
   caribbean: {
@@ -98,6 +117,13 @@ export const HARBOR_STYLES: Record<HarborStyleId, HarborStyle> = {
     quay: 0x423323,
     sail: 'square',
     lamp: [1.45, 1.0, 0.5],
+    /* 新木 / 旧木（发灰）/ 刷过白灰 / 日晒褪色 —— 加勒比木棚的四种状态 */
+    wallTints: [
+      [1.0, 1.0, 1.0],
+      [0.88, 0.88, 0.86],
+      [1.08, 1.06, 1.0],
+      [1.02, 0.91, 0.78],
+    ],
   },
   /* 广州 / 满剌加 / 果阿：木构 + 青瓦（带翘檐）+ 石堤 + 硬帆 */
   asia: {
@@ -117,6 +143,13 @@ export const HARBOR_STYLES: Record<HarborStyleId, HarborStyle> = {
     quay: 0x625d53,
     sail: 'junk',
     lamp: [1.55, 0.95, 0.45],
+    /* 白灰墙 / 原木 / 青灰砖 / 淡赭 —— 广州与南洋的临水街面 */
+    wallTints: [
+      [1.03, 1.03, 1.02],
+      [0.95, 0.87, 0.77],
+      [0.86, 0.89, 0.92],
+      [1.05, 0.97, 0.86],
+    ],
   },
   /* 埃尔米纳 / 蒙巴萨 / 桑给巴尔：平顶土屋 + 珊瑚石 + 少量棕榈 */
   africa: {
@@ -136,6 +169,13 @@ export const HARBOR_STYLES: Record<HarborStyleId, HarborStyle> = {
     quay: 0x6f6653,
     sail: 'square',
     lamp: [1.5, 1.0, 0.52],
+    /* 夯土 / 珊瑚石刷白 / 赭红土 / 深色土 —— 东非海岸的土屋 */
+    wallTints: [
+      [1.0, 1.0, 1.0],
+      [1.1, 1.09, 1.06],
+      [1.06, 0.88, 0.74],
+      [0.85, 0.83, 0.8],
+    ],
   },
 }
 

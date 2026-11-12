@@ -11605,10 +11605,29 @@ console.log('\n== 天数口径守卫 ==')
     '细纹的坐标各向异性（沿风向拉长，否则是电视雪花）')
   assert(/smoothstep\(0\.18, 0\.86, vnoise\(fineQ \* 2\.6\)\)/.test(dv),
     '细纹是**单层**噪声 + smoothstep 提对比（两层采样把帧率拖到 55.6）')
-  assert(/col \*= \(0\.84 \+ 0\.32 \* fine\) \* shadePatch/.test(dv),
-    '细纹乘进颜色（只抖法线时，近景菲涅尔已饱和，几乎看不出变化）')
+  /*
+   * 第 122 轮：细纹的幅度改成**随距离衰减**（nearK）—— 0.055 世界单位的波长
+   * 在 20 单位外只有 2~3 像素，低于采样率就混叠成"灯芯绒"。这是那层布纹的根因。
+   * 用**中心化**乘子（均值 1.0）：按幅度缩放时不能把远处连带压暗。
+   */
+  assert(/col \*= 1\.0 \+ \(fine - 0\.5\) \* 0\.34 \* \(0\.28 \+ 0\.72 \* nearK\)/.test(dv),
+    '细纹乘进颜色，且幅度随距离衰减（远处的细纹必须消失，否则混叠成布纹）')
+  assert(/float nearK = 1\.0 - smoothstep\(4\.0, 26\.0, camDist\)/.test(dv),
+    'nearK 由相机距离给出（4~26 单位内从 1 降到 0）')
+  /*
+   * 太阳的碎光：白天海面唯一的镜面项。分"路"（宽高光，远处可见）与"钻"
+   * （按世界坐标切格子的稀疏亮点，只在近处给）。
+   */
+  assert(/float road = pow\(sh, 150\.0\) \* gate \* gate/.test(dv),
+    '太阳的光路（宽高光，乘噪声门才断得开）')
+  assert(/float cell = vnoise\(vWorld\.xz \* 21\.0 \+ 17\.0\)/.test(dv),
+    '碎钻用插值噪声取格子（floor+hash 切出来的是轴对齐的正方形）')
+  assert(/sparkle \* 1\.45 \* nearK \* uSunK/.test(dv),
+    '碎钻只在近处（远处格子小于一像素，会变成满屏闪噪）')
+
   // 水色斑必须在"远方混雾"之前（否则远处把它洗掉）
-  const patchAt = dv.indexOf('* shadePatch')
+  // 写法从 `(… ) * shadePatch` 改成了 `col *= shadePatch`，判据跟着改
+  const patchAt = dv.indexOf('*= shadePatch')
   const fogAt = dv.indexOf('float d = length(vWorld.xz)')
   assert(patchAt > 0 && fogAt > patchAt, '水色斑在远方混雾之前（否则远处被洗平）')
   // ③ 云的投影
@@ -11620,21 +11639,45 @@ console.log('\n== 天数口径守卫 ==')
    * 云的**边缘宽度** = 窗口 / cn 的空间梯度。这三条守的就是"别又变回一层雾"：
    * 窗口 0.12 → 80px（读作白气）、0.008 → 8px（积云的轮廓）。
    */
-  assert(/float cover = smoothstep\(0\.594, 0\.602, cn\)/.test(dv),
-    '云的阈值窗口只有 0.008（窗口大了边缘就跨几十像素，云变成雾）')
+  /*
+   * 第 122 轮：单层轮廓 → 两层（外圈薄雾 + 内核实心）。一条等值线切出来的云
+   * 是"剪纸"；两层才有"边缘在散开"的体积感。
+   */
+  assert(/float coverWide = smoothstep\(0\.560, 0\.600, cn\)/.test(dv)
+    && /float coverCore = smoothstep\(0\.600, 0\.616, cn\)/.test(dv),
+    '云是两层轮廓（外圈 0.560~0.600 半透、内芯 0.600~0.616 实心）')
   assert(/vec2 wq = vec2\(vnoise\(cp \* 0\.75 \+ 3\.1\)/.test(dv) && /vec2 cq = cp \+ wq \* 0\.55/.test(dv),
     '云的采样坐标被一层低频噪声揉过（等值线才是团块状，不是抹刀痕）')
-  assert(/cloudCol \*= 0\.94 \+ 0\.12 \* vnoise\(cq \* 7\.3 \+ 61\.0\)/.test(dv),
+  assert(/cloudCol \*= 0\.93 \+ 0\.14 \* vnoise\(cq \* 7\.3 \+ 61\.0\)/.test(dv),
     '云面有絮状明暗（一块平白读作"涂抹"）')
   /*
    * 云体色（第 114 轮）：厚度 → 亮度，再乘一条仰角阴影。
    * 守两件事：① 云色**不是** uCloudColor 的平涂（那样是一坨白斑）；
    * ② 三层 fbm（第三层把边缘打毛，否则云团是圆的）。
    */
-  assert(/vec3 cloudCol = uCloudColor \* mix\(0\.86, 1\.16, smoothstep\(0\.50, 0\.78, cn\)\)/.test(dv),
+  /*
+   * 亮度区间按**阈值之后**的区间（0.596~0.730）铺开：原来的 smoothstep(0.50,0.78)
+   * 只用到了 1/3，云心与云边只差 8%，读作一块平白。
+   */
+  assert(/vec3 cloudCol = uCloudColor \* mix\(0\.80, 1\.24, smoothstep\(0\.596, 0\.730, cn\)\)/.test(dv),
     '云体色按厚度分档（一坨平色读作白斑）')
-  assert(/col = mix\(col, cloudCol, cover \* uCloud \* 0\.98\)/.test(dv),
-    '云混进天空色（不是画一圈亮边）')
+  /*
+   * ---- 第 122 轮：太阳 ----
+   *
+   * 这个视角原来**天空没有光源**：一条渐变 + 浮在上面的白云。真实的天空有
+   * 一处亮心，海上的碎光也从那一处铺过来。三条判据守太阳盘、散射、与夜间关闭。
+   */
+  assert(/col \+= uSunColor \* smoothstep\(0\.99950, 0\.99988, sunDot\) \* 2\.20 \* uSunK/.test(dv),
+    '天空有太阳盘（乘 uSunK：夜里必须消失）')
+  assert(/col \+= uSunColor \* pow\(sunDot, 60\.0\) \* 0\.30 \* uSunK/.test(dv),
+    '太阳周围有内晕（天绕着一处亮）')
+  const altSrc = readFileSync(join(process.cwd(), 'src', 'components', 'deck', 'DeckView.tsx'), 'utf8')
+  assert(/const alt = \(5 \+ 10 \*/.test(altSrc),
+    '太阳仰角压在 5°~15°（照真实日相会跑出画面，碎光也落到镜头背后）')
+
+  assert(/col = mix\(col, cloudCol \* 0\.92, coverWide \* uCloud \* 0\.45\)/.test(dv)
+    && /col = mix\(col, cloudCol, coverCore \* uCloud \* 0\.98\)/.test(dv),
+    '云混进天空色（外圈半透 + 内核实心，不是画一圈亮边）')
   assert(/0\.18 \* vnoise\(cq \* 5\.70 \+ 41\.0\)/.test(dv),
     '第三层高频噪声（云边缘要被打毛，两层只剩圆斑）')
   // ④ 云随昼夜
@@ -11729,6 +11772,28 @@ console.log('\n== 天数口径守卫 ==')
   assert(/const BANDS = 3/.test(hmHull), '船壳沿高度分 3 带（板缝要靠顶点色分带才出得来）')
   assert(/Math\.min\(0\.42, m\.len \* 0\.26\)/.test(hmHull),
     '干舷封顶 0.42（43 米的主力船给 26% 就是 11 米干舷 = 一堵墙）')
+
+  /*
+   * ---- 第 122 轮：配色与玻璃 ----
+   *
+   * ① 墙面的色相必须逐栋不同：只抖亮度得到的是"一种颜色有深有浅"，仍是一条色带。
+   *    判据直接数 deckHarbor.ts 里的调色板：四套样式各 ≥4 条墙色。
+   * ② 窗玻璃不能是近黑：正午立面上的一排纯黑方块是最明显的"低模记号"。
+   */
+  {
+    const dh = readFileSync(join(process.cwd(), 'src', 'components', 'deck', 'deckHarbor.ts'), 'utf8')
+    const palettes = dh.match(/wallTints: \[/g) ?? []
+    assert(palettes.length === 4, `四套样式都给了墙面调色板（实际 ${palettes.length} 套）`)
+    // 每套里的一行墙色形如 "      [1.06, 0.92, 0.72],"
+    const rows = dh.match(/^ {6}\[\s*[\d.]+,\s*[\d.]+,\s*[\d.]+\],$/gm) ?? []
+    assert(rows.length >= 16, `四套至少 16 条墙色（实际 ${rows.length} 条）`)
+  }
+  assert(/const pal = style\.wallTints/.test(hmHull), '逐栋墙色从样式的调色板取（不是只抖亮度）')
+  assert(/upperWalls\.setColorAt\(i, tone\)/.test(hmHull),
+    '挑出的上层与偏房跟主屋同一个色（否则带挑出的房子上下两色）')
+  assert(/const paneGlassMat = mk\(0x3c4954\)/.test(hmHull),
+    '窗玻璃是板岩蓝灰（反天光），不是近黑')
+  assert(/panes\.setColorAt\(qi, tone\)/.test(hmHull), '逐扇玻璃有明暗差（一排孔 -> 一排窗）')
 
   /*
    * 屋脊瓦：屋顶在甲板上是**平视**的一个三角，两坡的分界只靠顶点色差 2% ——
