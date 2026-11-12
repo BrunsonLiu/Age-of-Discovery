@@ -6,6 +6,7 @@ import { LineGeometry } from 'three/examples/jsm/lines/LineGeometry.js'
 import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js'
 import { useGameStore } from '@/store/useGameStore'
 import { useMapStore } from '@/store/useMapStore'
+import { getPreset } from '@/utils/quality'
 import { useFxStore as useFx } from '@/store/useFxStore'
 import { ports } from '@/data/ports'
 import { routes } from '@/data/routes'
@@ -359,7 +360,13 @@ export default function Map3DView() {  const mountRef = useRef<HTMLDivElement>(n
 
       // ---- 渲染器 ----
       renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'low-power' })
-      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5))
+      /*
+       * 分辨率上限跟**画质档位**走（低 0.85 / 中 1.15 / 高 1.5）。
+       * 这一层原来写死 1.5，在 2 倍屏上等于 2.25 倍像素 —— 核显直接掉帧，
+       * 而下面的自适应要跑好几秒才降下来，玩家先看到的就是"一开 3D 就卡"。
+       */
+      const preset0 = getPreset()
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, preset0.pixelCap))
       renderer.setSize(width, height)
       /*
        * ---- 后处理（只做辉光）----
@@ -2005,7 +2012,7 @@ export default function Map3DView() {  const mountRef = useRef<HTMLDivElement>(n
         if (rawMs > 0 && rawMs < 100) frameMsBuf.push(rawMs)
         if (frameMsBuf.length >= 40) {
           if (tNow - lastRatioChangeAt > 3000) {
-            const next = decidePixelRatio(renderer!.getPixelRatio(), frameMsBuf)
+            const next = decidePixelRatio(renderer!.getPixelRatio(), frameMsBuf, Math.min(window.devicePixelRatio, getPreset().pixelCap) * getPreset().minScale)
             if (next !== null) {
               renderer!.setPixelRatio(next)
               lastRatioChangeAt = tNow

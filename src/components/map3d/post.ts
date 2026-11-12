@@ -48,6 +48,14 @@ export interface Map3DPost {
    * 两个场景的"亮部"分布不同，阈值就不能共用一个。
    */
   setThreshold(t: number): void
+  /**
+   * 画质档位用：抗锯齿 / 颗粒 / 辉光倍率的一次性设置。
+   * 【为什么不复用 setBloom】setBloom 是"绝对强度"，而档位要的是"相对当前场景
+   * 预设的倍率"（海图 0.62、船上 0.38 是两套值，倍率才能同时适用）。
+   */
+  setFxaa(on: boolean): void
+  setGrain(v: number): void
+  setBloomScale(k: number): void
   dispose(): void
 }
 
@@ -326,6 +334,10 @@ export function createMap3DPost(renderer: THREE.WebGLRenderer): Map3DPost {
 
   ;(compositeMat.uniforms.uFxaa as { value: number }).value = noAA ? 0 : 1
 
+  /** 档位里的辉光倍率（0~1.5）。draw 时乘到 uBloom 上 */
+  let bloomScale = 1
+  let baseBloom = BLOOM_STRENGTH
+
   let on = true
   let w = 2
   let h = 2
@@ -360,7 +372,18 @@ export function createMap3DPost(renderer: THREE.WebGLRenderer): Map3DPost {
     },
     setBloom(strength) {
       // 直接写 uniform：改一个局部变量不会传进 shader（第一版就是这么错的）
-      compositeMat.uniforms.uBloom.value = Number.isFinite(strength) ? Math.max(0, strength) : 0
+      baseBloom = Number.isFinite(strength) ? Math.max(0, strength) : 0
+      compositeMat.uniforms.uBloom.value = baseBloom * bloomScale
+    },
+    setFxaa(on) {
+      ;(compositeMat.uniforms.uFxaa as { value: number }).value = on ? 1 : 0
+    },
+    setGrain(v) {
+      ;(compositeMat.uniforms.uGrain as { value: number }).value = Number.isFinite(v) ? Math.max(0, v) : 0
+    },
+    setBloomScale(k) {
+      bloomScale = Number.isFinite(k) ? Math.max(0, k) : 1
+      compositeMat.uniforms.uBloom.value = baseBloom * bloomScale
     },
     setThreshold(t) {
       brightMat.uniforms.uThreshold.value = Number.isFinite(t) ? Math.max(0, Math.min(1, t)) : BLOOM_THRESHOLD

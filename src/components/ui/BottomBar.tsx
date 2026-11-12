@@ -8,6 +8,7 @@ import { daysToDestination } from '@/utils/voyage'
 import { shipSprite } from '@/data/shipSprites'
 import ResourceCluster from '@/components/ui/ResourceCluster'
 import SoundToggle from '@/components/ui/SoundToggle'
+import QualityToggle from '@/components/ui/QualityToggle'
 import ShipCard from '@/components/ui/ShipCard'
 import { durabilityColor, loadColor } from '@/utils/shipVitals'
 
@@ -392,6 +393,7 @@ export default function BottomBar() {
           <div className="hidden md:block w-px h-4 bg-gold-600/45" />
           <SoundToggle />
           <div className="hidden md:block w-px h-4 bg-gold-600/45" />
+          <QualityToggle />
           <button
             onClick={resetGame}
             className="p-1.5 rounded text-gold-400 hover:text-gold-200 hover:bg-gold-700/30 press transition-all"

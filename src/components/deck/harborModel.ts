@@ -155,6 +155,13 @@ export interface DeckHarbor {
    * @param isSailing 停泊时无条件显示（见 `harborVisible` 的注释）
    */
   setSighting(s: CoastSighting | null, isSailing: boolean): void
+  /**
+   * 装饰层开关（画质档位）。
+   * 【关掉的是什么】压顶石（40~80 块实例）/ 系缆桩 / 护木 / 货堆 / 屋脊瓦 /
+   * 第三排屋顶 —— 它们在 20 米外只有 2~6 像素，是"看不清的细节"里最典型的一批。
+   * 关掉不影响任何一栋房子的轮廓与体块（那些是"看得见的细节"）。
+   */
+  setDetail(on: boolean): void
   /** night 0..1；horizon/fog 与海岸同一套大气透视 */
   update(t: number, night: number, fogK: number, fogColor: THREE.Color): void
   dispose(): void
@@ -1843,6 +1850,11 @@ export function createDeckHarbor(): DeckHarbor {
 
   return {
     group,
+    setDetail(on) {
+      for (const m of [quayStones, bollards, fenders, crates, barrels, sacks, ridges, farWalls, farRoofs]) {
+        m.visible = on
+      }
+    },
     setSighting(s, isSailing) {
       if (!s || !harborVisible(s.distNm, isSailing)) {
         group.visible = false

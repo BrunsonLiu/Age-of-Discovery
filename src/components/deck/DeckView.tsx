@@ -4,6 +4,7 @@ import { Anchor, Footprints, X } from 'lucide-react'
 import { useGameStore } from '@/store/useGameStore'
 import { useMapStore } from '@/store/useMapStore'
 import { skyAt } from '@/utils/skyClock'
+import { getPreset, onQualityChange } from '@/utils/quality'
 import { createDeckShip, type DeckShip } from './shipModel'
 import { DECK_WAVES, deckShipPose, deckWaveHeight } from './deckWaves'
 import { findCoast, coastLayout, bearingWord, compassWord, wrapDeg, type CoastSighting } from './deckCoast'
@@ -359,7 +360,18 @@ export default function DeckView() {
       const w = window as unknown as { __shaderError?: unknown[] }
       w.__shaderError = [...(w.__shaderError ?? []), { vs: dump(vs), fs: dump(fs) }]
     }
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5))
+    /*
+     * 分辨率上限由**画质档位**决定，不再写死 1.5：
+     * 低档 0.85（核显：1440×900 → 1224×765，像素少 30%）、中 1.15、高 1.5。
+     */
+    let preset = getPreset()
+    /*
+     * 分辨率与自适应状态提到这里（而不是帧循环里）：`applyPreset` 定义在
+     * post 创建处，早于帧循环 —— 放在后面会撞 TDZ（Cannot access before init）。
+     */
+    let basePR = Math.min(window.devicePixelRatio, preset.pixelCap)
+    let prScale = 1
+    renderer.setPixelRatio(basePR)
     renderer.setSize(width, height)
     renderer.toneMapping = THREE.ACESFilmicToneMapping
     renderer.toneMappingExposure = 1.05
@@ -1176,6 +1188,24 @@ export default function DeckView() {
      */
     post.setThreshold(0.78)
     post.setBloom(0.38)
+    /*
+     * 档位 → 后处理与装饰层。
+     * `applyPreset` 是**唯一**的写入口：初始化调一次，玩家在 UI 切档位时再调一次。
+     * 抗锯齿/颗粒/辉光都是 uniform，切换零重建；装饰层只是 visible 开关。
+     */
+    const applyPreset = () => {
+      preset = getPreset()
+      post.setBloomScale(preset.bloom)
+      post.setGrain(preset.grain)
+      const noAA = new URLSearchParams(location.search).get('noaa') === '1'
+      post.setFxaa(preset.fxaa && !noAA)
+      harbor.setDetail(preset.extraDetail)
+      basePR = Math.min(window.devicePixelRatio, preset.pixelCap)
+      prScale = 1
+      renderer.setPixelRatio(basePR)
+    }
+    applyPreset()
+    const offQuality = onQualityChange(() => applyPreset())
     // 取证句柄：探针要能开/关辉光做同帧 A/B
     ;(window as unknown as { __deckPost?: unknown }).__deckPost = post
     /*
@@ -1388,8 +1418,6 @@ export default function DeckView() {
      * 观感是"稍微柔一点"，而不是掉帧。
      * 阈值给 23ms 而不是 16.7：留一点抖动余量，避免在 55~60 之间来回跳。
      */
-    const basePR = Math.min(window.devicePixelRatio, 1.5)
-    let prScale = 1
     let accT = 0
     let accN = 0
     let lastAdjust = 0
@@ -1402,8 +1430,8 @@ export default function DeckView() {
       accT = 0
       accN = 0
       if (now - lastAdjust < 2) return
-      if (avg > 0.023 && prScale > 0.6) {
-        prScale = Math.max(0.6, prScale - 0.12)
+      if (avg > 0.023 && prScale > preset.minScale) {
+        prScale = Math.max(preset.minScale, prScale - 0.12)
         renderer.setPixelRatio(basePR * prScale)
         lastAdjust = now
       } else if (avg < 0.0175 && prScale < 0.999) {
@@ -1955,6 +1983,7 @@ export default function DeckView() {
       coast.dispose()
       harbor.dispose()
       rain.dispose()
+      offQuality()
       post.dispose()
       renderer.dispose()
       renderer.domElement.remove()

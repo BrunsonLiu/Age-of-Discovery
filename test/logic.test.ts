@@ -8905,7 +8905,14 @@ console.log('\n== 天数口径守卫 ==')
   assert(/brightMat\.uniforms\.uThreshold\.value =/.test(post),
     'setThreshold 直接写 uniform')
   // 关掉辉光仍走合成 —— 这条判据的像素级验证在 probe-deck-post.mjs
-  assert(/uBloom\.value = Number\.isFinite\(strength\)/.test(post), 'setBloom 挡住 NaN')
+  /*
+   * setBloom 现在只记 baseBloom，uniform 在 setBloomScale 里乘倍率再写 ——
+   * NaN 仍然要在这里挡住（否则倍率一乘，整个辉光变 NaN，画面直接黑）。
+   */
+  assert(/baseBloom = Number\.isFinite\(strength\) \? Math\.max\(0, strength\) : 0/.test(post),
+    'setBloom 挡住 NaN')
+  assert(/uBloom\.value = baseBloom \* bloomScale/.test(post),
+    '辉光强度 = 场景预设 × 画质倍率（档位切换不重建管线）')
 }
 
 /*
