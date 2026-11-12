@@ -175,6 +175,27 @@ export interface HarborHouse {
 }
 
 /**
+ * 城内第三排「远屋顶」。
+ *
+ * 【为什么必须再加一排】前两排都在 z=0.7~1.9，从甲板看过去，城就是**一条贴岸
+ * 的房子带**；带子上面直接接草地与松树 —— 读作"码头边一排仓库"，而不是一座城
+ * （1440×900 截图实测）。真实港口的天际线是三层：临街仓库、后排商馆、再后面
+ * 一片更密更高的屋顶，一层比一层淡（空气透视）。
+ *
+ * 【为什么只给墙 + 屋顶】这一排在 40 单位外，窗与烟囱都不到两个像素，
+ * 建模成本全白花；三层的高度差与色差才是它要提供的信号。
+ */
+export interface HarborFarHouse {
+  x: number
+  z: number
+  w: number
+  h: number
+  d: number
+  roofH: number
+  yaw: number
+}
+
+/**
  * 墙上的窗洞（不是窗光：白天也要看得见的那几个凹口）。
  *
  * 【为什么单独一层】房屋墙是 Basic 材质的一块纯色，白天读作"白板"——
@@ -310,6 +331,8 @@ export interface HarborPlan {
   deckZ1: number
   deckY: number
   houses: HarborHouse[]
+  /** 城内第三排（只有墙与屋顶，向灰蓝里压，做空气透视） */
+  farHouses: HarborFarHouse[]
   piers: HarborPier[]
   breakwaters: HarborBreakwater[]
   moorings: HarborMooring[]
@@ -339,6 +362,7 @@ const EMPTY_PLAN: HarborPlan = {
   deckZ1: 0,
   deckY: 0,
   houses: [],
+  farHouses: [],
   piers: [],
   breakwaters: [],
   moorings: [],
@@ -414,7 +438,12 @@ export function harborPlan(style: HarborStyle, width: number, presence: number, 
      * 房子像钟楼，天际线全是尖顶）。0.42·s 让前排仓库 12 米、后排商馆 16 米，
      * 才是"码头边一排三四层的房子"。
      */
-    const h = (back ? 0.56 : 0.42) * s * (0.85 + 0.35 * rnd(i * 5.7 + 9))
+    /*
+     * 高度抖动 0.85~1.2 → 0.78~1.33：原来的区间只有 ±1 米，一排房顶几乎齐平，
+     * 天际线是一条红线（这正是"积木感"的一半）。真实街面上的房子是一栋三层
+     * 挨着一栋两层，差一层人才读得出"这是一座城"。
+     */
+    const h = (back ? 0.56 : 0.42) * s * (0.78 + 0.55 * rnd(i * 5.7 + 9))
     const x = (t - 0.5) * 2 * halfW + (rnd(i * 7.3 + 3) - 0.5) * (halfW / nHouse) * 0.5
     houses.push({
       x,
@@ -432,6 +461,39 @@ export function harborPlan(style: HarborStyle, width: number, presence: number, 
       lit: rnd(i * 9.9 + 17) > 0.42,
       yaw: (rnd(i * 6.1 + 19) - 0.5) * 0.12,
     })
+  }
+
+  /*
+   * 第三排：城内的远屋顶（只有墙与屋顶，由模型压向灰蓝）。
+   *
+   * z 上限卡在 `deckZ1`（3.4）以内：越过它就站到草地上、脚下露一条绿边；
+   * x 照前排同一个约束（|x| + w/2 ≤ halfW），否则悬在水上。
+   * 数量 10~15、每栋更窄 —— **密**才是"一片屋顶"，少数几栋只会读成"又三栋房子"。
+   */
+  const farHouses: HarborFarHouse[] = []
+  {
+    const nFar = 10 + Math.floor(rnd(151) * 6)
+    for (let i = 0; i < nFar; i++) {
+      const t = (i + 0.5) / nFar
+      const w = (0.5 + 0.36 * rnd(i * 3.7 + 157)) * s
+      /*
+       * 远排**必须比后排高**，不能更矮。甲板视角的视线几乎是平的（眼高 1.5、
+       * 远排在 27 单位外）：后排房顶 1.45 时，远排若只有 1.1，整排会被挡得
+       * 一个像素都看不见（按直线求交算过）。0.55~1.0·s（17~32 米，四五层）
+       * 才在前排屋脊之上露出一层屋顶 —— 这也是真实港口天际线的样子。
+       */
+      const h = (0.55 + 0.45 * rnd(i * 9.1 + 167)) * s
+      farHouses.push({
+        x: Math.max(-halfW * 0.82, Math.min(halfW * 0.82, (t - 0.5) * 1.5 * halfW + (rnd(i * 5.3 + 161) - 0.5) * 0.4 * s)),
+        z: 2.15 + 1.15 * rnd(i * 7.9 + 163),
+        w,
+        h,
+        d: w * (0.62 + 0.4 * rnd(i * 4.1 + 173)),
+        // 屋顶比前两排更陡：远排要的是"层叠的坡面"，平顶在这里只是几条横线
+        roofH: h * style.roofPitch * 0.66,
+        yaw: (rnd(i * 2.9 + 179) - 0.5) * 0.34,
+      })
+    }
   }
 
   /*
@@ -538,27 +600,38 @@ export function harborPlan(style: HarborStyle, width: number, presence: number, 
     { x0: halfW * 0.98, z0: -0.1, x1: halfW * 0.72, z1: -armLen * 0.94, h: 0.3 * s },
   ]
 
-  /* 停泊商船：在防波堤内侧、栈桥外侧，朝向大致对着口子 */
+  /*
+   * 停泊商船：**沿着栈桥的侧舷**停，不是停在栈桥底下。
+   *
+   * 【为什么重写】原来按 `x = ±halfW(0.34+0.16t)`、`z = −0.8` 放 —— 那个位置
+   * 正好落在栈桥板的投影里（栈桥从 z=0.16 伸到 −2.2~−4.8，x 也重叠）：从甲板
+   * 望过去，四条船**全被木板盖住**，只剩桅杆从板边戳出来。探针把船心投到屏幕
+   * (852,410)，正落在栈桥中段 —— 用户看到的"一排栅栏"就是这些桅杆。
+   * 贴着栈桥侧舷停靠之后，船体在板旁边露出来，也才是真实的靠泊方式
+   * （船要靠桩，不会横在栈桥底下）。
+   */
   const moorings: HarborMooring[] = []
-  for (let i = 0; i < style.moorings; i++) {
-    const side = i % 2 === 0 ? -1 : 1
-    const t = Math.floor(i / 2) + 1
+  for (let i = 0; i < style.moorings && piers.length > 0; i++) {
+    const p = piers[i % piers.length]
+    /*
+     * 一律停在栈桥的**内侧**（朝港湾中心），不是外侧。
+     * 【为什么】外侧那条正好落在抛石堤的内端（x ≈ 0.72 halfW）上 —— 放大截图里
+     * 一条商船**搁在石堆上**，船底与石块穿在一起。内侧离防波堤有 2 个单位。
+     */
+    const side = p.x > 0 ? -1 : 1
+    const len = 1.15 + 0.5 * rnd(i * 4.9 + 43)
+    /*
+     * 船长 1.15~1.65 单位 = 21~30 米（卡拉维尔/克拉克级商船）。原来的
+     * 0.9~1.4 在 22 单位外只有 60 像素长、12 像素高，配上深棕船体就是
+     * 海面上的一条暗痕 —— 认不出是船。
+     */
     moorings.push({
-      x: side * (halfW * (0.34 + 0.16 * t) + (rnd(i * 5.3 + 31) - 0.5) * 0.6),
-      /*
-       * 【第一条船要贴着栈桥】前几条在 z=−0.8 一带（离相机只有 16 单位），
-       * 屏幕上是"一条真的船"；后面的退到 −3~−6，只贡献桅杆林。
-       * 全放在远处时四条船在 250 米外只剩八根细线 —— 甲板上根本读不出"码头边
-       * 停着船"（实测截图）。近一条远三条，才是真实港口的样子。
-       */
-      z: i === 0 ? -0.8 : -(2.8 + 1.2 * t + 0.5 * rnd(i * 7.7 + 37)),
-      yaw: Math.PI * (0.5 + side * 0.08) + (rnd(i * 3.3 + 41) - 0.5) * 0.3,
-      /*
-       * 船长：0.9~1.4 世界单位 = 16~26 米。**不能乘 presence**——
-       * 那是"景别"，乘上去会做出 100 米长的商船（第一版就是这样：屏幕上
-       * 两块深棕大板横在码头上，把房子全挡住，实测截图）。
-       */
-      len: 0.9 + 0.5 * rnd(i * 4.9 + 43),
+      // 船中心离栈桥中心 = 半宽 + 半个船宽 + 一点余量，贴着但不穿模
+      x: p.x + side * (p.w * 0.5 + len * 0.2 + 0.04),
+      z: p.z0 + (p.z1 - p.z0) * (0.42 + 0.2 * rnd(i * 7.7 + 37)),
+      // 船首朝海（长轴沿栈桥）：+x 转 90° 后指向 −z
+      yaw: Math.PI * 0.5 + (rnd(i * 3.3 + 41) - 0.5) * 0.22,
+      len,
     })
   }
 
@@ -571,20 +644,22 @@ export function harborPlan(style: HarborStyle, width: number, presence: number, 
   {
     const sorted = [...moorings].sort((a, b) => b.z - a.z).slice(0, 2)
     for (const m of sorted) {
-      // 船的 +x 端（船首）：绕 Y 转了 yaw 之后，长轴方向是 (cos yaw, 0, −sin yaw)
-      const dx = Math.cos(m.yaw) * m.len * 0.44
-      const dz = -Math.sin(m.yaw) * m.len * 0.44
-      const bowY = 0.28
-      // 船首系到它右前方一点、船尾系到左前方一点 —— 形成"八"字
+      /*
+       * 船首朝海、船尾朝岸 —— 缆绳只能从**船尾**拉向岸。
+       * 【为什么原来是错的】旧写法按"长轴方向 ±"取两端，船首那端在 z − len*0.44
+       * （海里），拉到岸上就横跨整条栈桥，屏幕上是一根从船顶甩到码头的黑线
+       * （放大截图里像一根鞭子）。真实靠泊是尾缆两根呈"八"字。
+       */
+      const sternZ = m.z + m.len * 0.42
       lines.push({
-        from: [m.x + dx, bowY, m.z + dz],
-        to: [m.x + dx * 0.55 + 0.9, deckTopY + 0.02, 0.12],
-        sag: 0.1,
+        from: [m.x - m.len * 0.11, 0.3, sternZ],
+        to: [m.x - 0.5, deckTopY + 0.02, 0.12],
+        sag: 0.07,
       })
       lines.push({
-        from: [m.x - dx, bowY, m.z - dz],
-        to: [m.x - dx * 0.55 - 0.9, deckTopY + 0.02, 0.12],
-        sag: 0.12,
+        from: [m.x + m.len * 0.11, 0.3, sternZ],
+        to: [m.x + 0.5, deckTopY + 0.02, 0.12],
+        sag: 0.07,
       })
     }
   }
@@ -633,6 +708,7 @@ export function harborPlan(style: HarborStyle, width: number, presence: number, 
     deckZ1: 3.4,
     deckY: deckTopY,
     houses,
+    farHouses,
     piers,
     breakwaters,
     moorings,

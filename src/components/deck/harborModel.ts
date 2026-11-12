@@ -78,6 +78,16 @@ export function shadeFaces<T extends THREE.BufferGeometry>(geo: T, contrast = 0.
 const MAX_FOLK = 14
 const MAX_LAMP = 10
 const MAX_LINE = 4
+/** 城内第三排（远屋顶）的上限 */
+const MAX_FAR = 16
+/**
+ * 远排的"空气透视"色：乘以实例色时把它往冷灰蓝推一点。
+ *
+ * 【为什么是乘、不是直接换成雾色】这一层的实例色是**乘性**的（材质基色 × instanceColor），
+ * 无法把对比度换成雾色；能做的只有"整体偏冷一点"。真实 27 单位外的屋顶比近处
+ * 的墙更接近天空色，这条乘法就是这句话的近似 —— 亮度基本不动，蓝分量抬 4%。
+ */
+const FAR_HAZE = new THREE.Color(0.86, 0.90, 0.97)
 
 export interface DeckHarbor {
   group: THREE.Group
@@ -260,7 +270,7 @@ export function createDeckHarbor(): DeckHarbor {
      * 【为什么不再用 shadeFaces】那条路会把整片斜面算成同一个亮度（法线相同）。
      * 这里手写：沿屋脊 8 段 × 两坡，逐顶点给"垄的明暗 × 距屋脊的衰减"。
      */
-    const SEG = 8
+    const SEG = 10
     const pos: number[] = []
     const col: number[] = []
     const push = (x: number, y: number, z: number, k: number) => {
@@ -273,8 +283,15 @@ export function createDeckHarbor(): DeckHarbor {
     for (let i = 0; i < SEG; i++) {
       const x0 = -0.5 + i / SEG
       const x1 = -0.5 + (i + 1) / SEG
-      // 凸起的瓦垄亮、两垄之间的凹槽暗 —— 交替就是"一条条瓦"
-      const tile = i % 2 === 0 ? 1.0 : 0.87
+      /*
+       * 凸起的瓦垄亮、两垄之间的凹槽暗。
+       *
+       * 【8 段 → 10 段，对比 0.87 → 0.89/0.95】8 段时一条垄 = 房宽/8 ≈ 3 米，
+       * 放大截图里是一排**木板条**（对比 13% 又太重，读成"贴了木饰面"）。
+       * 10 段（屏幕上一段 6~14px）+ 三档节奏（每 3 条一道深缝）才像瓦：
+       * 规律到"一明一暗"会被眼睛当成条纹图案，节奏一乱就变成材质。
+       */
+      const tile = i % 3 === 0 ? 1.0 : i % 2 === 0 ? 0.95 : 0.89
       // 前坡（+z，朝海）：朝光
       push(x0, 0, 0.5, EAVE_K * tile)
       push(x1, 0, 0.5, EAVE_K * tile)
@@ -304,6 +321,23 @@ export function createDeckHarbor(): DeckHarbor {
   roofs.name = 'deck-harbor-roofs'
   roofs.frustumCulled = false
   group.add(roofs)
+
+  /*
+   * 城内第三排（远屋顶）：只复用墙与屋顶的几何 + 材质。
+   *
+   * 【为什么共用材质而不复制】逐栋色差走的是 `instanceColor`，而它是 **mesh**
+   * 的属性（three 按 object 选 program 参数），同一个 material 可以同时服务两个
+   * InstancedMesh。复制一份材质就得在 `applyStyle` 的夜间基色同步里再记一份
+   * —— 那正是"黄昏重算后跳回欧洲默认色"踩过的坑。
+   */
+  const farWalls = new THREE.InstancedMesh(wallGeo, wallMat, MAX_FAR)
+  farWalls.name = 'deck-harbor-far-walls'
+  farWalls.frustumCulled = false
+  group.add(farWalls)
+  const farRoofs = new THREE.InstancedMesh(roofGeo, roofMat, MAX_FAR)
+  farRoofs.name = 'deck-harbor-far-roofs'
+  farRoofs.frustumCulled = false
+  group.add(farRoofs)
 
   /* ---- 窗光：每栋房子门口两点 + 檐下一点 ---- */
   const winGeo = new THREE.BufferGeometry()
@@ -446,9 +480,9 @@ export function createDeckHarbor(): DeckHarbor {
    * 屏幕上就是一排**看不见的线**，四条船只剩"水面上几个点"（实测截图）。
    * 与灯塔同样处理：远处的识别特征允许夸张，比例尺由 HUD 的数字负责。
    */
-  const mastGeoShip = shadeFaces(new THREE.CylinderGeometry(0.07, 0.085, 1, 6))
+  const mastGeoShip = shadeFaces(new THREE.CylinderGeometry(0.055, 0.07, 1, 6))
   mastGeoShip.translate(0, 0.5, 0)
-  const masts = new THREE.InstancedMesh(mastGeoShip, mastMat, MAX_MOOR * 2)
+  const masts = new THREE.InstancedMesh(mastGeoShip, mastMat, MAX_MOOR * 3)
   masts.name = 'deck-harbor-masts'
   masts.frustumCulled = false
   group.add(masts)
@@ -505,6 +539,32 @@ export function createDeckHarbor(): DeckHarbor {
   plinths.name = 'deck-harbor-plinths'
   plinths.frustumCulled = false
   group.add(plinths)
+
+  /*
+   * 房屋投在码头面上的影子。
+   *
+   * 【为什么这是"粗糙"里最便宜的一块】这一层的所有东西都是**没有阴影的**：
+   * 房子、栈桥、人都像"贴在"石面上，因为它们与地面之间没有明暗关系。
+   * 而光照方向是固定的（`HARBOR_LIGHT` 从内陆上方来），于是房子的正面
+   * （朝海那一面）本来就是背光的，影子正好落在码头上、正对相机 —— 一圈暗带
+   * 就能把"一排纸片"变成"下午的码头"。
+   *
+   * 【为什么是矩形而不是投影形状】太阳仰角高（0.75 的 y 分量），影长 ≈ 房高；
+   * 在这个景别（22~40 单位、房子 40px 高）上，矩形与真实投影的差别不到一个像素。
+   */
+  const shadowGeo = new THREE.PlaneGeometry(1, 1)
+  shadowGeo.rotateX(-Math.PI / 2)
+  const shadowMat = new THREE.MeshBasicMaterial({
+    color: 0x141a22,
+    transparent: true,
+    opacity: 0.3,
+    depthWrite: false,
+    toneMapped: false,
+  })
+  const houseShadows = new THREE.InstancedMesh(shadowGeo, shadowMat, MAX_HOUSE)
+  houseShadows.name = 'deck-harbor-house-shadows'
+  houseShadows.frustumCulled = false
+  group.add(houseShadows)
 
   /*
    * 窗框：比窗洞大一圈的浅色方块，垫在窗**后面**（z 更大一点）。
@@ -761,6 +821,7 @@ export function createDeckHarbor(): DeckHarbor {
         roofs.setMatrixAt(i, zero)
         plinths.setMatrixAt(i, zero)
         eaves.setMatrixAt(i, zero)
+        houseShadows.setMatrixAt(i, zero)
         continue
       }
       dummy.position.set(h.x, deckY, h.z)
@@ -785,8 +846,17 @@ export function createDeckHarbor(): DeckHarbor {
         (0.94 + 0.12 * hash01(i * 4.7 + 23)) * (0.97 + 0.02 * hash01(i * 8.3 + 5)),
       )
       walls.setColorAt(i, tone)
-      /* 屋顶同样抖：瓦有新有旧，全同一个红也是一条色带 */
-      tone.setScalar(0.88 + 0.2 * hash01(i * 6.1 + 29))
+      /*
+       * 屋顶同样抖，而且**不只抖亮度**：陶瓦从橙红到暗褐都有，只调亮度的结果是
+       * "同一种红有深有浅"，仍然是一条色带。给一点点色相偏移（红多/黄多）
+       * 才能把"一片红"打散成十几片瓦。
+       */
+      const rv = 0.86 + 0.22 * hash01(i * 6.1 + 29)
+      tone.setRGB(
+        rv * (1.0 + 0.05 * hash01(i * 2.3 + 31)),
+        rv * (0.93 + 0.07 * hash01(i * 3.9 + 37)),
+        rv * (0.88 + 0.06 * hash01(i * 5.1 + 41)),
+      )
       roofs.setColorAt(i, tone)
 
       // 勒脚：比墙略宽、略深，给"房子站在地上"一个接触
@@ -794,6 +864,18 @@ export function createDeckHarbor(): DeckHarbor {
       dummy.scale.set(h.w * 1.05, Math.min(0.15, h.h * 0.16), h.d * 1.05)
       dummy.updateMatrix()
       plinths.setMatrixAt(i, dummy.matrix)
+
+      /*
+       * 影子：从墙脚朝**海那侧**（−z，也就是朝相机）铺一条，长度 ≈ 房高 × 0.9
+       * （太阳仰角 0.75 的 y 分量 ≈ 45°以上）。只铺前排与后排，远排（farHouses）
+       * 不铺 —— 它们在 30 单位外，影子会被前排自己的影子盖住。
+       */
+      const shLen = h.h * 0.9
+      dummy.position.set(h.x, deckY + 0.004, h.z - h.d * 0.5 - shLen * 0.5)
+      dummy.rotation.set(0, h.yaw, 0)
+      dummy.scale.set(h.w * 1.06, 1, shLen)
+      dummy.updateMatrix()
+      houseShadows.setMatrixAt(i, dummy.matrix)
 
       /* 檐影：墙顶一条暗带（比墙宽 12%） */
       dummy.position.set(h.x, deckY + h.h - 0.02, h.z)
@@ -815,6 +897,36 @@ export function createDeckHarbor(): DeckHarbor {
     if (roofs.instanceColor) roofs.instanceColor.needsUpdate = true
     plinths.instanceMatrix.needsUpdate = true
     eaves.instanceMatrix.needsUpdate = true
+    houseShadows.instanceMatrix.needsUpdate = true
+
+    /* ---- 城内第三排：远屋顶（只有墙 + 屋顶，往冷灰里压） ---- */
+    const nF = Math.min(MAX_FAR, pl.farHouses.length)
+    for (let i = 0; i < MAX_FAR; i++) {
+      const f = i < nF ? pl.farHouses[i] : null
+      if (!f) { farWalls.setMatrixAt(i, zero); farRoofs.setMatrixAt(i, zero); continue }
+      dummy.position.set(f.x, deckY, f.z)
+      dummy.rotation.set(0, f.yaw, 0)
+      dummy.scale.set(f.w, f.h, f.d)
+      dummy.updateMatrix()
+      farWalls.setMatrixAt(i, dummy.matrix)
+      dummy.position.set(f.x, deckY + f.h, f.z)
+      dummy.scale.set(f.w * 1.12, Math.max(0.04, f.roofH), f.d * 1.12)
+      dummy.updateMatrix()
+      farRoofs.setMatrixAt(i, dummy.matrix)
+      /*
+       * 逐栋色差照旧（±10%），再整体乘 FAR_HAZE。远排的色差要比前排**小**：
+       * 距离会把差异吃掉，远处一片屋顶本来就该读成一片，而不是十几块色片。
+       */
+      const v = 0.95 + 0.1 * hash01(i * 4.7 + 211)
+      tone.setRGB(v, v, v * 1.01).multiply(FAR_HAZE)
+      farWalls.setColorAt(i, tone)
+      tone.setScalar(0.92 + 0.14 * hash01(i * 6.1 + 223)).multiply(FAR_HAZE)
+      farRoofs.setColorAt(i, tone)
+    }
+    farWalls.instanceMatrix.needsUpdate = true
+    farRoofs.instanceMatrix.needsUpdate = true
+    if (farWalls.instanceColor) farWalls.instanceColor.needsUpdate = true
+    if (farRoofs.instanceColor) farRoofs.instanceColor.needsUpdate = true
 
     /* ---- 窗洞：白天的立面细节（夜里再叠一层光点） ---- */
     let qi = 0
@@ -1027,7 +1139,7 @@ export function createDeckHarbor(): DeckHarbor {
       dummy.updateMatrix()
       hulls.setMatrixAt(i, dummy.matrix)
 
-      dummy.position.set(m.x, 0.2 + hullH * 0.78, m.z)
+      dummy.position.set(m.x, 0.2 + hullH * 0.9, m.z)
       dummy.rotation.set(0, m.yaw, 0)
       dummy.scale.set(m.len * 1.03, Math.max(0.03, m.len * 0.03), m.len * 0.95)
       dummy.updateMatrix()
@@ -1040,7 +1152,12 @@ export function createDeckHarbor(): DeckHarbor {
         m.z - Math.cos(m.yaw + Math.PI / 2) * m.len * 0.33,
       )
       dummy.rotation.set(0, m.yaw, 0)
-      dummy.scale.set(m.len * 0.3, hullH * 1.9, m.len * 0.62)
+      /*
+       * 宽 0.22·len（比船体窄）、高 1.55·干舷。原来是 0.3/1.9 —— 艉楼比船体
+       * 还宽、比船壳高两倍，放大截图里是**一块立在船尾的方柜**，把船首到船尾
+       * 的收分全盖住了。真实艉楼是船尾一截抬高的甲板室，比舷墙高一层人。
+       */
+      dummy.scale.set(m.len * 0.22, hullH * 1.55, m.len * 0.5)
       dummy.updateMatrix()
       sterns.setMatrixAt(i, dummy.matrix)
 
@@ -1072,11 +1189,30 @@ export function createDeckHarbor(): DeckHarbor {
           sails.setMatrixAt(si++, dummy.matrix)
         }
       }
+
+      /*
+       * 船首斜桅：从船头伸向前上方的斜杆。
+       *
+       * 【为什么必须有】两根直桅 + 两条横帆的剪影只有"竖线 + 横线"——
+       * 四条船并排就是一排栅栏（用户三次说"粗糙"里最直接的一处）。帆船剪影里
+       * 唯一的长斜线就是斜桅，它一出现，同一堆线条立刻读成"船"。
+       * Euler 是 XYZ（矩阵 Rx·Ry·Rz，作用顺序 z→y→x）：先绕 z 把 +y 倒向本地 +x
+       * （船首），再绕 y 转到这艘船的朝向 —— 直接写 rotation.x 会让它游到水里。
+       */
+      if (mi < MAX_MOOR * 3) {
+        const bx = m.x + Math.cos(m.yaw) * m.len * 0.44
+        const bz = m.z - Math.sin(m.yaw) * m.len * 0.44
+        dummy.position.set(bx, 0.2 + hullH * 0.8, bz)
+        dummy.rotation.set(0, m.yaw, -1.05)
+        dummy.scale.set(0.62, m.len * 0.42, 0.62)
+        dummy.updateMatrix()
+        masts.setMatrixAt(mi++, dummy.matrix)
+      }
     }
     hulls.instanceMatrix.needsUpdate = true
     rails.instanceMatrix.needsUpdate = true
     sterns.instanceMatrix.needsUpdate = true
-    for (let i = mi; i < MAX_MOOR * 2; i++) masts.setMatrixAt(i, zero)
+    for (let i = mi; i < MAX_MOOR * 3; i++) masts.setMatrixAt(i, zero)
     for (let i = si; i < MAX_MOOR * 2; i++) sails.setMatrixAt(i, zero)
     masts.instanceMatrix.needsUpdate = true
     sails.instanceMatrix.needsUpdate = true

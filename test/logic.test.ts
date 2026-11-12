@@ -11184,11 +11184,51 @@ console.log('\n== 天数口径守卫 ==')
       assert(m.z < plan.deckZ0, `${st.id} 停泊船在码头外（z=${m.z.toFixed(1)} < ${plan.deckZ0}）`)
       assert(m.len >= 0.8 && m.len <= 2.2, `${st.id} 船长 ${m.len.toFixed(2)} 单位（14~40 米，不是 100 米）`)
     }
-    // 最近那条要离码头近（否则整排都是远处的细线）
-    assert(Math.min(...plan.moorings.map(m => -m.z)) < 1.6,
-      `${st.id} 至少一条船贴着码头（最近的 z=${Math.min(...plan.moorings.map(m => m.z)).toFixed(1)}）`)
+    /*
+     * 每条船都要**贴着某条栈桥的侧舷**（x = 栈桥中心 ± (半宽 + 半个船宽 + 余量)，
+     * z 落在栈桥的范围内）。第 114 轮从"离岸多近"改成这条判据：原来船按
+     * x/z 独立摆放，正好落在栈桥板的投影里，从甲板看过去船体被木板整个盖住，
+     * 只剩桅杆 —— 屏幕上读作"一排栅栏"（用户三次说粗糙最直接的一处）。
+     */
+    for (const m of plan.moorings) {
+      const near = plan.piers.find((p) =>
+        Math.abs(Math.abs(m.x - p.x) - (p.w * 0.5 + m.len * 0.2 + 0.04)) < 1e-6
+        && m.z > p.z1 && m.z < p.z0)
+      assert(!!near, `${st.id} 船（x=${m.x.toFixed(1)}, z=${m.z.toFixed(1)}）停在某条栈桥的侧舷`)
+    }
+    // 而且不能压在抛石堤上（外侧栈桥的船曾经搁在石堆上，放大截图能看见船底穿石）
+    for (const m of plan.moorings) {
+      for (const b of plan.breakwaters) {
+        const x0 = Math.min(b.x0, b.x1) - 0.5
+        const x1 = Math.max(b.x0, b.x1) + 0.5
+        assert(!(m.x > x0 && m.x < x1 && m.z > b.z1 - 3.5),
+          `${st.id} 船（x=${m.x.toFixed(1)}）没压在抛石堤上`)
+      }
+    }
     assert(plan.palms.length === st.palms, `${st.id} 棕榈 ${plan.palms.length} 棵`)
     assert(plan.cranes.length === 2, `${st.id} 两台吊货臂架`)
+  }
+
+  /*
+   * ⑤ 城内第三排（远屋顶）：第 114 轮加的城纵深。
+   * 守三件事：数量够密、站在码头面上、**最高的那栋必须高过前排** ——
+   * 甲板视角的视线几乎是平的（眼高 1.5、远排 27 单位外），比前排矮就一个像素
+   * 也看不见（按直线求交算过）。这三条一破，"城"就退回一条贴岸的房子带。
+   */
+  for (const st of styles) {
+    const plan = harborPlan(st, 36, 1, 6)
+    assert(plan.farHouses.length >= 8 && plan.farHouses.length <= 16,
+      `${st.id} 城内第三排 ${plan.farHouses.length} 栋（8~16）`)
+    const frontMax = Math.max(...plan.houses.map(h => h.h))
+    for (const f of plan.farHouses) {
+      assert(Math.abs(f.x) + f.w * 0.5 <= plan.deckHalfW,
+        `${st.id} 远排 x=${f.x.toFixed(1)} 不越出码头面（半宽 ${plan.deckHalfW.toFixed(1)}）`)
+      assert(f.z > plan.deckZ0 && f.z < plan.deckZ1,
+        `${st.id} 远排站在码头面上（z=${f.z.toFixed(2)}）`)
+      assert(f.h > 0 && f.roofH > 0, `${st.id} 远排有墙高与屋顶高`)
+    }
+    assert(Math.max(...plan.farHouses.map(f => f.h)) > frontMax,
+      `${st.id} 远排最高的屋顶高过前排（否则整排被挡在后面）`)
   }
 
   // ③ 同一个港每次都是同一座城
@@ -11297,7 +11337,7 @@ console.log('\n== 天数口径守卫 ==')
       `${geo} 过了 shadeFaces`)
   }
   /* 屋顶改成手写瓦垄（自己给顶点色），不再走 shadeFaces —— 见文件末尾那一条 */
-  assert(/const SEG = 8/.test(hm), '屋顶是手写的瓦垄几何（8 段）')
+  assert(/const SEG = 10/.test(hm), '屋顶是手写的瓦垄几何（10 段）')
   // 逐栋色差
   assert(/walls\.setColorAt\(i, tone\)/.test(hm) && /roofs\.setColorAt\(i, tone\)/.test(hm),
     '墙与屋顶按栋给色差（八栋房子不能是一条等亮度的白带）')
@@ -11500,12 +11540,36 @@ console.log('\n== 天数口径守卫 ==')
   // ③ 云的投影
   assert(/float az = atan\(d\.z, d\.x\)/.test(dv) && /float el = asin\(clamp\(d\.y/.test(dv),
     '云用方位角 + 仰角取噪声（用 d.xz/d.y 会拉成竖幕）')
-  assert(/vec2 cp = vec2\(az \* 6\.2, el \* 6\.2\)/.test(dv),
+  assert(/vec2 cp = vec2\(az \* 9\.5, el \* 9\.5\)/.test(dv),
     'az 与 el 用同一个系数（等角度采样才各向同性；不同系数会把云压扁）')
-  assert(/col = mix\(col, uCloudColor, cover \* uCloud \* 0\.92\)/.test(dv),
+  /*
+   * 云的**边缘宽度** = 窗口 / cn 的空间梯度。这三条守的就是"别又变回一层雾"：
+   * 窗口 0.12 → 80px（读作白气）、0.008 → 8px（积云的轮廓）。
+   */
+  assert(/float cover = smoothstep\(0\.594, 0\.602, cn\)/.test(dv),
+    '云的阈值窗口只有 0.008（窗口大了边缘就跨几十像素，云变成雾）')
+  assert(/vec2 wq = vec2\(vnoise\(cp \* 0\.75 \+ 3\.1\)/.test(dv) && /vec2 cq = cp \+ wq \* 0\.55/.test(dv),
+    '云的采样坐标被一层低频噪声揉过（等值线才是团块状，不是抹刀痕）')
+  assert(/cloudCol \*= 0\.94 \+ 0\.12 \* vnoise\(cq \* 7\.3 \+ 61\.0\)/.test(dv),
+    '云面有絮状明暗（一块平白读作"涂抹"）')
+  /*
+   * 云体色（第 114 轮）：厚度 → 亮度，再乘一条仰角阴影。
+   * 守两件事：① 云色**不是** uCloudColor 的平涂（那样是一坨白斑）；
+   * ② 三层 fbm（第三层把边缘打毛，否则云团是圆的）。
+   */
+  assert(/vec3 cloudCol = uCloudColor \* mix\(0\.86, 1\.16, smoothstep\(0\.50, 0\.78, cn\)\)/.test(dv),
+    '云体色按厚度分档（一坨平色读作白斑）')
+  assert(/col = mix\(col, cloudCol, cover \* uCloud \* 0\.98\)/.test(dv),
     '云混进天空色（不是画一圈亮边）')
+  assert(/0\.18 \* vnoise\(cq \* 5\.70 \+ 41\.0\)/.test(dv),
+    '第三层高频噪声（云边缘要被打毛，两层只剩圆斑）')
   // ④ 云随昼夜
-  assert(/uCloud\.value = 0\.10 \+ 0\.72 \* dayK/.test(dv), '云随昼夜：白天 0.82、夜里 0.10')
+  /*
+   * 白天 0.96：0.82 时云只是"提亮一点的天"，混合后仍是灰蓝（实测云心 187/193/202）。
+   * 白云的漫反射接近全反射，权重 >0.9 才有"白"这个读感。
+   */
+  assert(/uCloud\.value = 0\.10 \+ 0\.86 \* dayK/.test(dv), '云随昼夜：白天 0.96、夜里 0.10')
+  assert(/lerp\(CLOUD_WHITE, 0\.90\)/.test(dv), '云色先往白里推到 0.90（留 10% 天蓝在云底）')
   assert(/uCloudDrift\.value\.set\(t \* 0\.004/.test(dv), '云会漂（极慢，一分钟 0.24 个单位）')
   // 取证句柄（e2e 读 uniform —— 天空那块被教程遮罩压着，量像素量到的是遮罩）
   assert(/__deckSky\?: unknown \}\)\.__deckSky = skyMat/.test(dv), '暴露天空句柄给 e2e')
@@ -11543,7 +11607,8 @@ console.log('\n== 天数口径守卫 ==')
  * 看久了会发现它在漂。真实的系泊是船首与船尾各一根、斜着拉到码头 ——
  * 这是"八"字，一眼能读出"这条船被系住了"。守四件事：
  *  ① 只给离岸最近的一两条船（远处的船要拉 90 米缆，比"没系"更怪）；
- *  ② 船上一端在自己船的端点上（距船中心 ≈ 船长 × 0.44）；
+ *  ② 船上一端在**船尾两侧**（船首朝海，缆绳只能从船尾拉向岸；旧写法按长轴
+ *     两端取点，船首那端在海里，缆绳横跨整条栈桥 —— 截图里像一根甩起来的鞭子）；
  *  ③ 岸上一端在码头前沿（z 在小正数、y 在码头面高度）；
  *  ④ 有下垂（绷成直线读作"一根钢筋"）。
  */
@@ -11557,12 +11622,11 @@ console.log('\n== 天数口径守卫 ==')
       const [fx, fy, fz] = L.from
       // 属于哪条船：端点应该在那条船的船首/船尾
       const host = plan.moorings.find((m) => {
-        const dx = Math.cos(m.yaw) * m.len * 0.44
-        const dz = -Math.sin(m.yaw) * m.len * 0.44
-        return (Math.abs(fx - (m.x + dx)) < 1e-6 && Math.abs(fz - (m.z + dz)) < 1e-6)
-          || (Math.abs(fx - (m.x - dx)) < 1e-6 && Math.abs(fz - (m.z - dz)) < 1e-6)
+        const sternZ = m.z + m.len * 0.42
+        return Math.abs(fz - sternZ) < 1e-6
+          && (Math.abs(fx - (m.x - m.len * 0.11)) < 1e-6 || Math.abs(fx - (m.x + m.len * 0.11)) < 1e-6)
       })
-      assert(!!host, `${st.id} 缆绳的船上一端在某条船的艏/艉（${fx.toFixed(1)}, ${fz.toFixed(1)}）`)
+      assert(!!host, `${st.id} 缆绳的船上一端在某条船的船尾（${fx.toFixed(1)}, ${fz.toFixed(1)}）`)
       assert(fy > 0.2, `${st.id} 船上一端在甲板高度（y=${fy.toFixed(2)}，不能从水面里长出来）`)
       // 岸上一端：码头前沿
       assert(L.to[2] > 0 && L.to[2] < 0.3, `${st.id} 岸上一端在码头前沿（z=${L.to[2].toFixed(2)}）`)
@@ -11926,8 +11990,12 @@ if (failed > 0) process.exit(1)
 {
   const hm2 = readFileSync(join(process.cwd(), 'src', 'components', 'deck', 'harborModel.ts'), 'utf8')
   // ① 瓦垄
-  assert(/const tile = i % 2 === 0 \? 1\.0 : 0\.87/.test(hm2),
-    '屋顶的瓦垄是交替明暗（凸起的瓦脊亮、凹槽暗）')
+  /*
+   * 三档节奏（每 3 条一道深缝）而不是"一明一暗"：严格交替会被眼睛读成**条纹图案**，
+   * 节奏一乱才变成材质。第 114 轮从 8 段改 10 段（8 段一条垄 ≈ 3 米，是木板条）。
+   */
+  assert(/const tile = i % 3 === 0 \? 1\.0 : i % 2 === 0 \? 0\.95 : 0\.89/.test(hm2),
+    '屋顶的瓦垄是交替明暗（凸起的瓦脊亮、凹槽暗，三档节奏）')
   assert(/const RIDGE_K = 1\.02/.test(hm2) && /const EAVE_K = 0\.84/.test(hm2),
     '距屋脊越远越暗（檐口积灰、被墙挡住的天光）')
   // ② 窗框
