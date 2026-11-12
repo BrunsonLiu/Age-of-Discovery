@@ -68,7 +68,7 @@ export const HARBOR_STYLES: Record<HarborStyleId, HarborStyle> = {
     wall: 0xd8cdb6,
     roof: 0x9c4a33,
     timber: 0x4a3a28,
-    stone: 0x8a8377,
+    stone: 0x6f6a61,
     roofPitch: 0.75,
     houses: [7, 10],
     piers: 4,
@@ -76,7 +76,7 @@ export const HARBOR_STYLES: Record<HarborStyleId, HarborStyle> = {
     spire: true,
     palms: 0,
     banner: 0xb03a2e,
-    quay: 0x7c7568,
+    quay: 0x6c6659,
     sail: 'square',
     lamp: [1.5, 1.05, 0.6],
   },
@@ -87,7 +87,7 @@ export const HARBOR_STYLES: Record<HarborStyleId, HarborStyle> = {
     wall: 0xb08a5c,
     roof: 0x8e7a44,
     timber: 0x5a4430,
-    stone: 0x6f6455,
+    stone: 0x5b5346,
     roofPitch: 0.55,
     houses: [5, 8],
     piers: 3,
@@ -95,7 +95,7 @@ export const HARBOR_STYLES: Record<HarborStyleId, HarborStyle> = {
     spire: false,
     palms: 7,
     banner: 0x2f6b4f,
-    quay: 0x4c3a29,
+    quay: 0x423323,
     sail: 'square',
     lamp: [1.45, 1.0, 0.5],
   },
@@ -106,7 +106,7 @@ export const HARBOR_STYLES: Record<HarborStyleId, HarborStyle> = {
     wall: 0xc9b189,
     roof: 0x4a5560,
     timber: 0x4a3524,
-    stone: 0x7d7a70,
+    stone: 0x64615a,
     roofPitch: 0.62,
     houses: [8, 11],
     piers: 4,
@@ -114,7 +114,7 @@ export const HARBOR_STYLES: Record<HarborStyleId, HarborStyle> = {
     spire: false,
     palms: 5,
     banner: 0xc0392b,
-    quay: 0x706a5f,
+    quay: 0x625d53,
     sail: 'junk',
     lamp: [1.55, 0.95, 0.45],
   },
@@ -125,7 +125,7 @@ export const HARBOR_STYLES: Record<HarborStyleId, HarborStyle> = {
     wall: 0xc4a06a,
     roof: 0x8a7550,
     timber: 0x4f3c26,
-    stone: 0x8f8574,
+    stone: 0x736b5c,
     roofPitch: 0.18,
     houses: [6, 9],
     piers: 3,
@@ -133,7 +133,7 @@ export const HARBOR_STYLES: Record<HarborStyleId, HarborStyle> = {
     spire: false,
     palms: 6,
     banner: 0x7a5230,
-    quay: 0x7f7460,
+    quay: 0x6f6653,
     sail: 'square',
     lamp: [1.5, 1.0, 0.52],
   },
@@ -383,8 +383,21 @@ export function harborPlan(style: HarborStyle, width: number, presence: number, 
   /** 码头面顶面高度（房子站在上面） */
   const deckTopY = 0.16 + 0.07 * s
   /** 码头面靠海那一侧的边（人不能站到边上掉进水里） */
-  const deckNearZ = -0.2
-  const nHouse = Math.round(style.houses[0] + (style.houses[1] - style.houses[0]) * rnd(1))
+  /*
+   * 码头面靠海那一侧的边。
+   *
+   * 【为什么从 −0.2 推到 −0.45】0.2 时，从甲板上看"房子底部 → 水面"之间只有
+   * 十几像素的深褐色 —— 房子像**直接浮在水上**，整座港没有"岸"这个厚度。
+   * 铺到 −0.45（≈8 米）之后房子脚下有一条能看清的石面，压顶石与矮墙也才有
+   * 地方站。人仍然站在 +0.14 之后，不会掉进水里。
+   */
+  const deckNearZ = -0.45
+  /*
+   * 房数取区间的**偏上**一半：房子之间的缝是"一排独立盒子"的元凶 ——
+   * 缝里直接露出背后的草地与松树，视线就穿到城后面去了。
+   * 7~10 栋时随机取值平均只有 8.5 栋，实测那张全景里能数出 3 道明显的缝。
+   */
+  const nHouse = Math.round(style.houses[1] - (style.houses[1] - style.houses[0]) * 0.3 * rnd(1))
   const houses: HarborHouse[] = []
   for (let i = 0; i < nHouse; i++) {
     const t = (i + 0.5) / nHouse
@@ -402,7 +415,7 @@ export function harborPlan(style: HarborStyle, width: number, presence: number, 
      * 才是"码头边一排三四层的房子"。
      */
     const h = (back ? 0.56 : 0.42) * s * (0.85 + 0.35 * rnd(i * 5.7 + 9))
-    const x = (t - 0.5) * 2 * halfW + (rnd(i * 7.3 + 3) - 0.5) * (halfW / nHouse) * 0.9
+    const x = (t - 0.5) * 2 * halfW + (rnd(i * 7.3 + 3) - 0.5) * (halfW / nHouse) * 0.5
     houses.push({
       x,
       z: back ? 1.35 + 0.5 * rnd(i * 2.2 + 11) : 0.72 + 0.18 * rnd(i * 2.2 + 11),
@@ -424,7 +437,7 @@ export function harborPlan(style: HarborStyle, width: number, presence: number, 
   const chimneys: HarborChimney[] = []
   for (let i = 0; i < houses.length; i++) {
     const h = houses[i]
-    const cols = h.w > 1.4 * s ? 3 : 2
+    const cols = h.w > 1.05 * s ? 3 : 2
     /*
      * 【窗必须**贴在墙面外侧**】第一版放在 `z - d/2 - 0.01`、厚度 0.03：
      * 一半嵌进墙里、露出来的 1.5 厘米在 18 单位外不到一个像素，而且与墙面
@@ -436,7 +449,7 @@ export function harborPlan(style: HarborStyle, width: number, presence: number, 
       const t = (c + 0.5) / cols - 0.5
       for (const [row, yy] of [[0, 0.42], [1, 0.7]] as const) {
         // 后排（商馆）高，两排窗都有；前排仓库矮，只开一层
-        if (h.h < 0.75 * s && row === 1) continue
+        if (h.h < 0.52 * s && row === 1) continue
         panes.push({
           x: h.x + t * h.w * 0.66,
           y: deckTopY + h.h * yy,
@@ -632,8 +645,8 @@ export function harborPlan(style: HarborStyle, width: number, presence: number, 
       : null,
     /* 吊货臂架：两台，摆在码头上（港口才有的"在干活"的符号） */
     cranes: [
-      { x: -halfW * 0.55, z: 0.42, arm: 1.5 * s },
-      { x: halfW * 0.62, z: 0.5, arm: 1.65 * s },
+      { x: -halfW * 0.55, z: 0.42, arm: 0.62 * s },
+      { x: halfW * 0.62, z: 0.5, arm: 0.7 * s },
     ],
     flag: { x: -halfW * 0.2, z: 0.5, h: 1.6 * s },
   }

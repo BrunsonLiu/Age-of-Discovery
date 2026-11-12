@@ -253,6 +253,7 @@ import {
   HARBOR_CALM_NM, HARBOR_MAX_NM, HARBOR_STYLES, harborCalm, harborPlan, harborRadius,
   harborStyleFor, harborVisible, lampReflectionLen,
 } from '../src/components/deck/deckHarbor'
+import { shadeFaces as shadeHarbor } from '../src/components/deck/harborModel'
 import {
   appendLogbook, countEchoes, echoAt, echoDayFor, echoForPort, findClueFor,
   makeArrivalEntry, makeEchoEntry, makeTitleEntry, markAllRead, pickRumor, LOGBOOK_MAX,
@@ -11224,6 +11225,104 @@ console.log('\n== 天数口径守卫 ==')
 
 
 /*
+ * ---- 让"纯色纸片"有体积：烘在几何上的明暗 ----
+ *
+ * 【守什么】这一层的材质全是 `MeshBasicMaterial` + 一个纯色，房子就是一块矩形
+ * 色块 —— 用户的原话是"看着还是非常粗糙"。改法只有一个方向：**同一个面上，
+ * 朝向不同的面亮度不同**（正面亮、侧面暗、顶面最亮），而且这些亮度必须
+ * ① 由法线决定（不是拍脑袋的固定值）、② 落在合理区间、③ 与昼夜插值相乘之后
+ * 仍然分得开（夜里整座城一起暗，但房子之间的明暗不能消失）。
+ */
+{
+  const g = shadeHarbor(new THREE.BoxGeometry(1, 1, 1))
+  const n = g.getAttribute('normal')
+  const c = g.getAttribute('color')
+  assert(!!c && c.count === n.count, `顶点色按顶点给（${c?.count} = ${n.count}）`)
+  let top = 0, front = 0, bottom = 0, litSide = 0, darkSide = 0
+  for (let i = 0; i < n.count; i++) {
+    const nx = n.getX(i), ny = n.getY(i), nz = n.getZ(i)
+    if (ny > 0.99) top = c.getX(i)
+    if (nz > 0.99) front = c.getX(i)
+    if (ny < -0.99) bottom = c.getX(i)
+    /*
+     * 光在 **+x 上方**（HARBOR_LIGHT = (0.35,0.75,0.55)）→ 朝 +x 的面亮。
+     * 相机在船尾看向 +z 时，屏幕左 = 世界 +x（右手系），也就是说**我们看到的是
+     * 每栋房子暗的那一侧墙**（−x）—— 这正是截图里房子右墙偏深的来源。
+     */
+    if (nx > 0.99) litSide = c.getX(i)
+    if (nx < -0.99) darkSide = c.getX(i)
+  }
+  assert(top > front && front > bottom, `顶 ${top.toFixed(2)} > 正面 ${front.toFixed(2)} > 底 ${bottom.toFixed(2)}`)
+  assert(litSide > darkSide + 0.1, `朝光侧 ${litSide.toFixed(2)} 明显亮于背光侧 ${darkSide.toFixed(2)}（左右墙分得开）`)
+  assert(top < 1.2 && bottom >= 0.3, `亮度在 0.3~1.2（顶 ${top.toFixed(2)} / 底 ${bottom.toFixed(2)}）`)
+  // 连续：屋顶前坡（45°）应落在"顶"与"正面"之间 —— 硬阈值分档会把两坡分成同色
+  const slope = shadeHarbor((() => {
+    const q = new THREE.BufferGeometry()
+    q.setAttribute('position', new THREE.Float32BufferAttribute([
+      -0.5, 0, 0.5, 0.5, 0, 0.5, 0.5, 1, 0,
+      -0.5, 0, 0.5, 0.5, 1, 0, -0.5, 1, 0,
+    ], 3))
+    q.computeVertexNormals()
+    return q
+  })())
+  const slopeC = slope.getAttribute('color').getX(0)
+  /*
+   * 45° 前坡吃到 y 与 z 两个分量（d = 0.707·0.75 + 0.707·0.55 = 0.92），
+   * 比水平面（d = 0.75）还亮 —— 这是对的物理，不是 bug。要守的是
+   * **前坡与竖直正面之间有明确差异**（否则两坡顶读成一块平板）。
+   */
+  assert(slopeC > front + 0.05,
+    `45° 前坡 ${slopeC.toFixed(2)} 比竖直正面 ${front.toFixed(2)} 亮一档以上（两坡分得开）`)
+  // 背光坡（法线 −z 一侧）必须明显暗于正面
+  const backSlope = shadeHarbor((() => {
+    const q = new THREE.BufferGeometry()
+    q.setAttribute('position', new THREE.Float32BufferAttribute([
+      -0.5, 0, -0.5, -0.5, 1, 0, 0.5, 1, 0,
+      -0.5, 0, -0.5, 0.5, 1, 0, 0.5, 0, -0.5,
+    ], 3))
+    q.computeVertexNormals()
+    return q
+  })()).getAttribute('color').getX(0)
+  assert(backSlope < front - 0.1, `背光坡 ${backSlope.toFixed(2)} 明显暗于正面 ${front.toFixed(2)}`)
+  // 幂等：重复烘焙不改结果（apply 会被反复调用）
+  const before = c.getX(0)
+  shadeHarbor(g)
+  assert(g.getAttribute('color').getX(0) === before, '重复烘焙结果一致（幂等）')
+
+  const hm = readFileSync(join(process.cwd(), 'src', 'components', 'deck', 'harborModel.ts'), 'utf8')
+  // 所有实体几何都必须过 shadeFaces（漏一个 = 那块变纯黑）
+  assert(/vertexColors: true/.test(hm), '实体材质开 vertexColors（否则烘焙的色不起作用）')
+  for (const geo of ['BoxGeometry(1, 1, 1)', 'CylinderGeometry(0.08, 0.08, 1, 5)', 'ConeGeometry(0.5, 1, 4)', 'SphereGeometry(0.5, 6, 4)']) {
+    assert(new RegExp(`shadeFaces\\(new THREE\\.${geo.replace(/[()]/g, '\\$&')}`).test(hm),
+      `${geo} 过了 shadeFaces`)
+  }
+  assert(/return shadeFaces\(g\)/.test(hm), '手写的两坡顶也烘了')
+  // 逐栋色差
+  assert(/walls\.setColorAt\(i, tone\)/.test(hm) && /roofs\.setColorAt\(i, tone\)/.test(hm),
+    '墙与屋顶按栋给色差（八栋房子不能是一条等亮度的白带）')
+  assert(/if \(walls\.instanceColor\) walls\.instanceColor\.needsUpdate = true/.test(hm),
+    'instanceColor 标脏（忘了这一句 = 色差永远不生效）')
+  // 结构：岸壁、檐影、勒脚、吊臂立柱
+  for (const name of ['deck-harbor-quayface', 'deck-harbor-eaves', 'deck-harbor-plinths', 'deck-harbor-craneposts']) {
+    assert(hm.includes(`'${name}'`), `新网格命名 ${name}（取证与判据按名字取）`)
+  }
+  // 防波堤：一定是"一堆石头"，不是一整块板
+  assert(/const BW_PER_ARM = 10/.test(hm), '防波堤每臂 10 块石头（一整块板读作水泥台）')
+  assert(/for \(let k = 0; k < BW_PER_ARM; k\+\+\)/.test(hm), '石头沿臂逐块摆')
+  // 白天不许点灯
+  assert(/lampMat\.opacity = Math\.min\(1, \(0\.06 \+ 0\.94 \* night\)\)/.test(hm),
+    '水边的灯白天 0.06（原来是 0.25 —— 正午的码头上挂着几个黄点）')
+  /*
+   * 【夜间插值的基色必须与样式同步】`update` 用 bases 里的"白天本色"重算颜色：
+   * 只同步墙/屋顶/石堤时，栈桥、码头面、旗、塔身会在黄昏那一次重算跳回默认色。
+   */
+  for (const m of ['pierMat', 'deckMat', 'flagMat', 'spireMat']) {
+    assert(new RegExp(`bases\\.set\\(${m},`).test(hm), `applyStyle 同步了 ${m} 的基色（否则夜里跳回欧洲默认色）`)
+  }
+}
+
+
+/*
  * ---- 白天的立面细节：窗洞与烟囱 ----
  *
  * 【守什么】房屋墙是一块纯色 Basic 材质，没有窗就是"一排白板"（实测截图）。
@@ -11356,8 +11455,8 @@ console.log('\n== 天数口径守卫 ==')
    * ③ 只在夜里亮：opacity 里的底值必须是"黄昏就点上"的那种小常数，
    * 而不是 1（白天 1 的话，一排黄点挂在白天的码头上）。
    */
-  assert(/lampMat\.opacity = Math\.min\(1, \(0\.25 \+ 0\.75 \* night\)\)/.test(hmSrc4),
-    '灯的亮度随 night 走（黄昏 0.25 起亮）')
+  assert(/lampMat\.opacity = Math\.min\(1, \(0\.06 \+ 0\.94 \* night\)\)/.test(hmSrc4),
+    '灯的亮度随 night 走（白天 0.06、夜里 1：正午不许挂黄点）')
   assert(/lampMat\.opacity[\s\S]{0,120}fogK/.test(hmSrc4), '雾里要削（否则"能见度 100 米"时 7 海里外的灯还亮着）')
   /*
    * 昼夜与雾的**顺序**：必须"先混雾色、再乘昼夜"。

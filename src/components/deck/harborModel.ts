@@ -29,6 +29,52 @@ const MAX_PIER = 5
 const MAX_MOOR = 6
 const MAX_PALM = 8
 const MAX_CRANE = 3
+/** 防波堤每臂的石块数（一块整板读不出"抛石堤"，见 apply 里的说明） */
+const BW_PER_ARM = 10
+const MAX_BW = BW_PER_ARM * 2 + 2
+
+/**
+ * 假光照的入射方向（世界坐标）。
+ *
+ * 【为什么港口不用真光照】这一层的几何是**几十个 InstancedMesh + 纯色 Basic
+ * 材质**：换成 Standard/Lambert 要一盏灯、一套法线、还会拖着色器变体与批次。
+ * 而它要表达的只有一件事 —— **同一个面上朝向不同的面亮度不同**。
+ *
+ * 方向取 (0.35, 0.75, 0.55)：太阳在**左上方偏海**（屏幕左 = 世界 +x，见
+ * `deckCoast` 的方位约定），所以朝 +x 的墙面亮、朝 −x 的暗、屋顶最亮。
+ */
+const HARBOR_LIGHT = new THREE.Vector3(0.35, 0.75, 0.55).normalize()
+
+/**
+ * 给几何烘一层"面朝向"的明暗，写进顶点色。
+ *
+ * 【为什么在几何上烘、而不是逐帧算】港口是静止的背景：房子、码头、栈桥都不会动，
+ * 光照方向也不会变（这一层的太阳是固定的）。所以**烘一次**，运行时零成本，
+ * 而且 InstancedMesh 的所有实例共用同一份顶点色 —— 加 8 栋房子不增加任何计算。
+ *
+ * 【为什么必须烘，不是"可选的美化"】这一层的材质全是 `MeshBasicMaterial` +
+ * 一个纯色：一栋房子就是一个**矩形色块**，屋顶就是一个红色梯形。玩家读到的是
+ * "纸片"，无论模型多准（这是用户「看着还是非常粗糙」的直接来源）。
+ * 加一层明暗之后，同一个几何立刻有体积：正面亮、侧面暗、屋顶最亮。
+ *
+ * `contrast` 是明暗幅度：0 = 全平（回到改之前），0.42 = 实测下来"有体积但不脏"。
+ */
+export function shadeFaces<T extends THREE.BufferGeometry>(geo: T, contrast = 0.42): T {
+  if (!geo.getAttribute('normal')) geo.computeVertexNormals()
+  const n = geo.getAttribute('normal')
+  const count = n.count
+  const arr = new Float32Array(count * 3)
+  for (let i = 0; i < count; i++) {
+    // n·L：朝光的面接近 1、背光的面接近 −1
+    const d = n.getX(i) * HARBOR_LIGHT.x + n.getY(i) * HARBOR_LIGHT.y + n.getZ(i) * HARBOR_LIGHT.z
+    const k = Math.max(0.3, Math.min(1.16, 0.74 + contrast * d))
+    arr[i * 3] = k
+    arr[i * 3 + 1] = k
+    arr[i * 3 + 2] = k
+  }
+  geo.setAttribute('color', new THREE.BufferAttribute(arr, 3))
+  return geo
+}
 const MAX_FOLK = 14
 const MAX_LAMP = 10
 const MAX_LINE = 4
@@ -102,8 +148,13 @@ export function createDeckHarbor(): DeckHarbor {
   const glowTex = makeGlow()
 
   /* ---- 材质：全部 MeshBasicMaterial（远程背景，用不着光照；夜里靠 night 插值） ---- */
+  /*
+   * 所有实体材质都开 `vertexColors`：几何上烘的那层明暗靠它乘进 `color`。
+   * 【顺序】three 的 Basic 材质最终色 = material.color × vertexColor × map，
+   * 所以夜里按 night 改 `material.color` 的插值仍然有效（两者相乘，不会打架）。
+   */
   const mk = (color: number, extra: Partial<THREE.MeshBasicMaterialParameters> = {}) =>
-    new THREE.MeshBasicMaterial({ color, ...extra })
+    new THREE.MeshBasicMaterial({ color, vertexColors: true, ...extra })
   const deckMat = mk(0x6b5b45)
   const wallMat = mk(0xd8cdb6)
   const roofMat = mk(0x9c4a33)
@@ -119,6 +170,8 @@ export function createDeckHarbor(): DeckHarbor {
    * "四条船只剩八根线"的真正原因（第一版以为是太小，把干舷从 2 米加到 5 米也没用）。
    * 双面渲染对这么小的背景物体没有代价，也顺手修掉"从侧面看是一条线"。
    */
+  /* 墙基：房子脚下的石砌勒脚（比墙暗一档，给"房子站在地上"一个接触） */
+  const plinthMat = mk(0x9a9081)
   /* 窗洞：比墙暗两档的凹口（白天唯一的立面细节） */
   const paneMat = mk(0x2b2a26)
   /* 烟囱：比屋顶暗一点的砖色 —— 用墙色会与白墙糊在一起 */
@@ -128,16 +181,35 @@ export function createDeckHarbor(): DeckHarbor {
   const palmMat = mk(0x2f4026)
   const flagMat = mk(0xb03a2e, { side: THREE.DoubleSide })
   const spireMat = mk(0x8e8578)
+  /*
+   * 尖顶单独一个色（石板灰）。
+   * 【为什么】塔身与锥同色同亮度时，两者在屏幕上连成一个**又高又细的白锥**
+   * —— 实测那张全景里钟楼读作"一片帆"而不是塔。真实钟楼是石砌塔身 +
+   * 深色石板尖顶，两者一深一浅就分开了。
+   */
+  const spireCapMat = mk(0x596069)
   /** 每个材质在 setSighting 里记下"白天的本色"，update 按 night 插值 */
   const bases = new Map<THREE.Material, THREE.Color>()
-  for (const m of [deckMat, wallMat, roofMat, stoneMat, pierMat, mastMat, sailMat, palmMat, flagMat, spireMat, hullMat, railMat, paneMat, chimneyMat]) {
+  for (const m of [deckMat, wallMat, roofMat, stoneMat, pierMat, mastMat, sailMat, palmMat, flagMat, spireMat, spireCapMat, hullMat, railMat, paneMat, chimneyMat, plinthMat]) {
     bases.set(m, (m as THREE.MeshBasicMaterial).color.clone())
   }
 
   /* ---- 码头面：一块横板，贴在水线上 ---- */
-  const deck = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), deckMat)
+  const deck = new THREE.Mesh(shadeFaces(new THREE.BoxGeometry(1, 1, 1)), deckMat)
   deck.name = 'deck-harbor-quay'
   group.add(deck)
+
+  /*
+   * 岸壁：码头朝向水的那一面，**竖直**的石砌立面（从水面 −0.14 到码头面）。
+   *
+   * 【为什么这条必须有】相机在船尾、只比水面高 2 米多，看 18 单位外的码头是
+   * **掠射角**：水平面在屏幕上是压扁的几条像素，于是"房子底部直接接水面"。
+   * 一道竖直的岸壁能把"岸"这个厚度立在屏幕上（0.3 单位 ≈ 8~10 像素）。
+   * 真实码头本来就是一堵石墙，不是一道缓坡。
+   */
+  const quayFace = new THREE.Mesh(shadeFaces(new THREE.BoxGeometry(1, 1, 1)), stoneMat)
+  quayFace.name = 'deck-harbor-quayface'
+  group.add(quayFace)
 
   /*
    * 码头外沿的压条：一条比码头面亮一档的窄带。
@@ -145,12 +217,23 @@ export function createDeckHarbor(): DeckHarbor {
    * —— 实测广州与哈瓦那的截图上，房子像直接站在泥滩上，看不出"这是一道人工的岸"。
    * 一条几十厘米高的亮边就够把两者缝开，而且它正是石砌码头的压顶石。
    */
-  const quayEdge = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), railMat)
+  const quayEdge = new THREE.Mesh(shadeFaces(new THREE.BoxGeometry(1, 1, 1)), railMat)
   quayEdge.name = 'deck-harbor-quay-edge'
   group.add(quayEdge)
 
+  /*
+   * 码头前沿的系缆矮墙：一道横贯全宽的低石墙，高约 0.2 单位（≈3.6 米偏高，
+   * 按 1 单位≈18 米算是 3.5 米 —— 与真实码头边的护墙同量级）。
+   * 【为什么要它】房子之间必然有缝（宽度随机），缝里直接露出背后的草地与松树，
+   * 一排房子就读作"一排独立盒子摆在草地上"。一道连续的低墙把缝的下半截封住，
+   * 视线才落在"岸 → 墙 → 房"这三层上，而不是穿到城后面去。
+   */
+  const quayWall = new THREE.Mesh(shadeFaces(new THREE.BoxGeometry(1, 1, 1)), stoneMat)
+  quayWall.name = 'deck-harbor-quaywall'
+  group.add(quayWall)
+
   /* ---- 房屋墙（实例化） ---- */
-  const wallGeo = new THREE.BoxGeometry(1, 1, 1)
+  const wallGeo = shadeFaces(new THREE.BoxGeometry(1, 1, 1))
   wallGeo.translate(0, 0.5, 0) // 原点放到地面，缩放时房子是从地面往上长
   const walls = new THREE.InstancedMesh(wallGeo, wallMat, MAX_HOUSE)
   walls.name = 'deck-harbor-walls'
@@ -180,7 +263,8 @@ export function createDeckHarbor(): DeckHarbor {
     ]
     g.setAttribute('position', new THREE.Float32BufferAttribute(v, 3))
     g.computeVertexNormals()
-    return g
+    // 前坡亮、后坡暗、两端山墙居中 —— 两坡顶的体积感全在这一层色差里
+    return shadeFaces(g)
   })()
   const roofs = new THREE.InstancedMesh(roofGeo, roofMat, MAX_HOUSE)
   roofs.name = 'deck-harbor-roofs'
@@ -208,12 +292,16 @@ export function createDeckHarbor(): DeckHarbor {
   group.add(windows)
 
   /* ---- 栈桥（板 + 桩） ---- */
-  const pierGeo = new THREE.BoxGeometry(1, 1, 1)
+  const pierGeo = shadeFaces(new THREE.BoxGeometry(1, 1, 1))
   const piers = new THREE.InstancedMesh(pierGeo, pierMat, MAX_PIER)
   piers.name = 'deck-harbor-piers'
   piers.frustumCulled = false
   group.add(piers)
-  const pileGeo = new THREE.CylinderGeometry(0.05, 0.05, 1, 5)
+  const pileGeo = /*
+   * 木桩半径 0.08（≈1.4 米直径）：真实栈桥桩只有 30~40 厘米，但 18 单位外
+   * 那不到一个像素 —— 屏幕上栈桥变成"一排悬空的木板"。与人物、缆绳同一个取舍。
+   */
+  shadeFaces(new THREE.CylinderGeometry(0.08, 0.08, 1, 5))
   pileGeo.translate(0, -0.5, 0)
   const piles = new THREE.InstancedMesh(pileGeo, pierMat, MAX_PIER * 6)
   piles.name = 'deck-harbor-piles'
@@ -225,10 +313,10 @@ export function createDeckHarbor(): DeckHarbor {
    * 四棱台（下宽上窄）= 抛石堤的坡面。用 Box 做出来的是一个**竖着的方块**，
    * 从甲板上看就是一块水泥板（第一版实测）；收个 30% 的坡，剪影立刻变成"堤"。
    */
-  const bwGeo = new THREE.CylinderGeometry(0.34, 0.5, 1, 4)
+  const bwGeo = shadeFaces(new THREE.CylinderGeometry(0.34, 0.5, 1, 4))
   bwGeo.rotateY(Math.PI / 4)
   bwGeo.translate(0, 0.5, 0)
-  const bws = new THREE.InstancedMesh(bwGeo, stoneMat, 2)
+  const bws = new THREE.InstancedMesh(bwGeo, stoneMat, MAX_BW)
   bws.name = 'deck-harbor-breakwater'
   bws.frustumCulled = false
   group.add(bws)
@@ -289,7 +377,8 @@ export function createDeckHarbor(): DeckHarbor {
     const g = new THREE.BufferGeometry()
     g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
     g.computeVertexNormals()
-    return g
+    /* 船体同样要明暗：舷侧朝光的一边亮、背光的一边暗，船才有"圆"的感觉 */
+    return shadeFaces(g, 0.34)
   })()
   const hulls = new THREE.InstancedMesh(hullGeo, hullMat, MAX_MOOR)
   hulls.name = 'deck-harbor-hulls'
@@ -311,7 +400,7 @@ export function createDeckHarbor(): DeckHarbor {
    * 光有尖头尖尾的船体（2~3 米干舷）在 300 米外只有 10 像素，
    * 抬起来的艉楼能把"这是船"再往前推一步，也顺便解释了船尾楼为什么比甲板高。
    */
-  const sternGeo = new THREE.BoxGeometry(1, 1, 1)
+  const sternGeo = shadeFaces(new THREE.BoxGeometry(1, 1, 1))
   sternGeo.translate(0, 0.5, 0)
   const sterns = new THREE.InstancedMesh(sternGeo, hullMat, MAX_MOOR)
   sterns.name = 'deck-harbor-sterns'
@@ -323,7 +412,7 @@ export function createDeckHarbor(): DeckHarbor {
    * 屏幕上就是一排**看不见的线**，四条船只剩"水面上几个点"（实测截图）。
    * 与灯塔同样处理：远处的识别特征允许夸张，比例尺由 HUD 的数字负责。
    */
-  const mastGeoShip = new THREE.CylinderGeometry(0.045, 0.055, 1, 6)
+  const mastGeoShip = shadeFaces(new THREE.CylinderGeometry(0.07, 0.085, 1, 6))
   mastGeoShip.translate(0, 0.5, 0)
   const masts = new THREE.InstancedMesh(mastGeoShip, mastMat, MAX_MOOR * 2)
   masts.name = 'deck-harbor-masts'
@@ -334,20 +423,20 @@ export function createDeckHarbor(): DeckHarbor {
    * 停泊的船张着满帆是错的（真实是收帆系在桁上），而且一排满帆会把港口
    * 糊成一面白墙。横条的剪影也正好是"一排桅杆"的识别特征。
    */
-  const sailGeo = new THREE.BoxGeometry(1, 1, 0.02)
+  const sailGeo = shadeFaces(new THREE.BoxGeometry(1, 1, 0.02))
   const sails = new THREE.InstancedMesh(sailGeo, sailMat, MAX_MOOR * 2)
   sails.name = 'deck-harbor-sails'
   sails.frustumCulled = false
   group.add(sails)
 
   /* ---- 棕榈 / 尖顶 / 吊臂 / 旗 ---- */
-  const palmGeo = new THREE.CylinderGeometry(0.045, 0.07, 1, 5)
+  const palmGeo = shadeFaces(new THREE.CylinderGeometry(0.045, 0.07, 1, 5))
   palmGeo.translate(0, 0.5, 0)
   const palms = new THREE.InstancedMesh(palmGeo, palmMat, MAX_PALM)
   palms.name = 'deck-harbor-palms'
   palms.frustumCulled = false
   group.add(palms)
-  const frondGeo = new THREE.ConeGeometry(0.16, 0.62, 4)
+  const frondGeo = shadeFaces(new THREE.ConeGeometry(0.16, 0.62, 4))
   const fronds = new THREE.InstancedMesh(frondGeo, palmMat, MAX_PALM * 5)
   fronds.name = 'deck-harbor-fronds'
   fronds.frustumCulled = false
@@ -364,12 +453,30 @@ export function createDeckHarbor(): DeckHarbor {
    * 每栋房的宽高都不同，贴图上的窗会跟着拉伸；而且贴图在夜里还要与窗光对齐。
    * 独立的小盒最省事：位置由 `harborPlan` 给（纯函数，可单测），几何只有两块。
    */
-  const paneGeo = new THREE.BoxGeometry(1, 1, 1)
+  const paneGeo = shadeFaces(new THREE.BoxGeometry(1, 1, 1))
+  /*
+   * 檐下阴影带：贴在墙顶、比墙宽一点、比墙暗一档的一条薄板。
+   *
+   * 【为什么这条比"再加细节"有效】屋顶挑出 14% 之后，檐口在墙顶投下一条暗带 ——
+   * 这是真实建筑在日光下最稳定的一条明暗分界。少了它，屋顶与墙是"两块色板
+   * 上下贴着"，房子仍然像贴图；有了它，两者之间才有"屋顶压在墙上"的关系。
+   */
+  const eaves = new THREE.InstancedMesh(shadeFaces(new THREE.BoxGeometry(1, 1, 1)), plinthMat, MAX_HOUSE)
+  eaves.name = 'deck-harbor-eaves'
+  eaves.frustumCulled = false
+  group.add(eaves)
+
+  /* 墙基（勒脚）：每栋一条，比墙略宽一点 */
+  const plinths = new THREE.InstancedMesh(shadeFaces(new THREE.BoxGeometry(1, 1, 1)), plinthMat, MAX_HOUSE)
+  plinths.name = 'deck-harbor-plinths'
+  plinths.frustumCulled = false
+  group.add(plinths)
+
   const panes = new THREE.InstancedMesh(paneGeo, paneMat, MAX_HOUSE * 6)
   panes.name = 'deck-harbor-panes'
   panes.frustumCulled = false
   group.add(panes)
-  const chimneyGeo = new THREE.BoxGeometry(1, 1, 1)
+  const chimneyGeo = shadeFaces(new THREE.BoxGeometry(1, 1, 1))
   chimneyGeo.translate(0, 0.5, 0)
   const chimneys = new THREE.InstancedMesh(chimneyGeo, chimneyMat, MAX_HOUSE)
   chimneys.name = 'deck-harbor-chimneys'
@@ -391,7 +498,7 @@ export function createDeckHarbor(): DeckHarbor {
   const folkHeadMat = mk(0x6b5744)
   for (const m of [...Object.values(folkBodyMat), folkHeadMat]) bases.set(m, m.color.clone())
 
-  const folkBodyGeo = new THREE.BoxGeometry(1, 1, 1)
+  const folkBodyGeo = shadeFaces(new THREE.BoxGeometry(1, 1, 1))
   folkBodyGeo.translate(0, 0.5, 0)
   const folkBody: Record<FolkKind, THREE.InstancedMesh> = {
     porter: new THREE.InstancedMesh(folkBodyGeo, folkBodyMat.porter, MAX_FOLK),
@@ -404,7 +511,7 @@ export function createDeckHarbor(): DeckHarbor {
     group.add(m)
   }
   /* 头：6×4 段的球，远处读作一个圆点（用 Box 会读成"方脑袋"） */
-  const folkHeadGeo = new THREE.SphereGeometry(0.5, 6, 4)
+  const folkHeadGeo = shadeFaces(new THREE.SphereGeometry(0.5, 6, 4))
   const folkHead = new THREE.InstancedMesh(folkHeadGeo, folkHeadMat, MAX_FOLK)
   folkHead.name = 'deck-harbor-folk-head'
   folkHead.frustumCulled = false
@@ -417,7 +524,7 @@ export function createDeckHarbor(): DeckHarbor {
    * 沿岸线高度一致；灯是**沿水边的一排**、高度更高、更亮。并进一批就没法
    * 分别控制（雾里的削弱、夜里的强度都要各算一份）。
    */
-  const lampPostGeo = new THREE.CylinderGeometry(0.016, 0.022, 1, 5)
+  const lampPostGeo = shadeFaces(new THREE.CylinderGeometry(0.016, 0.022, 1, 5))
   lampPostGeo.translate(0, 0.5, 0)
   const lampPosts = new THREE.InstancedMesh(lampPostGeo, mastMat, MAX_LAMP)
   lampPosts.name = 'deck-harbor-lampposts'
@@ -492,26 +599,49 @@ export function createDeckHarbor(): DeckHarbor {
     lineMeshes.push(ln)
   }
 
-  const spireTower = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), spireMat)
+  const spireTower = new THREE.Mesh(shadeFaces(new THREE.BoxGeometry(1, 1, 1)), spireMat)
   spireTower.name = 'deck-harbor-spire'
   spireTower.geometry.translate(0, 0.5, 0)
   group.add(spireTower)
-  const spire = new THREE.Mesh(new THREE.ConeGeometry(0.5, 1, 4), spireMat)
+  /*
+   * 檐口：塔身顶上一圈比塔身宽的薄板。**没有它，塔身与尖顶是一条直线上去的**，
+   * 中间没有转折，眼会把它读成一个锥体（实测）。一圈挑檐就是"这是塔"的那一刀。
+   */
+  const spireCornice = new THREE.Mesh(shadeFaces(new THREE.BoxGeometry(1, 1, 1)), spireMat)
+  spireCornice.name = 'deck-harbor-spire-cornice'
+  group.add(spireCornice)
+  /* 塔身正面的钟窗：一个竖向暗口（钟楼的脸） */
+  const spireWindow = new THREE.Mesh(shadeFaces(new THREE.BoxGeometry(1, 1, 1)), paneMat)
+  spireWindow.name = 'deck-harbor-spire-window'
+  group.add(spireWindow)
+  const spire = new THREE.Mesh(shadeFaces(new THREE.ConeGeometry(0.5, 1, 4)), spireCapMat)
   spire.rotation.y = Math.PI / 4
   spire.name = 'deck-harbor-spire-cap'
   spire.geometry.translate(0, 0.5, 0)
   group.add(spire)
 
-  const craneGeo = new THREE.BoxGeometry(1, 0.12, 0.12)
+  const craneGeo = shadeFaces(new THREE.BoxGeometry(1, 0.12, 0.12))
+  /*
+   * 吊臂的立柱。原来只有一根斜的 Box 悬在 y=deckY+0.62 处、长 1.5s（≈51 米）
+   * —— 屏幕上是一根从屋顶方向斜插下来的木棍（实测放大图）。真实的吊货臂是
+   * **一根立在地上的柱子 + 柱顶伸出的斜臂**，两者一竖一斜才读得出来。
+   */
+  const cranePostGeo = shadeFaces(new THREE.BoxGeometry(1, 1, 1))
+  cranePostGeo.translate(0, 0.5, 0)
+  const cranePosts = new THREE.InstancedMesh(cranePostGeo, pierMat, MAX_CRANE)
+  cranePosts.name = 'deck-harbor-craneposts'
+  cranePosts.frustumCulled = false
+  group.add(cranePosts)
+
   const cranes = new THREE.InstancedMesh(craneGeo, pierMat, MAX_CRANE)
   cranes.name = 'deck-harbor-cranes'
   cranes.frustumCulled = false
   group.add(cranes)
 
-  const flagPole = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 1, 5), mastMat)
+  const flagPole = new THREE.Mesh(shadeFaces(new THREE.CylinderGeometry(0.025, 0.025, 1, 5)), mastMat)
   flagPole.geometry.translate(0, 0.5, 0)
   group.add(flagPole)
-  const flagCloth = new THREE.Mesh(new THREE.PlaneGeometry(0.26, 0.15), flagMat)
+  const flagCloth = new THREE.Mesh(shadeFaces(new THREE.PlaneGeometry(0.26, 0.15)), flagMat)
   group.add(flagCloth)
 
   const dummy = new THREE.Object3D()
@@ -519,6 +649,8 @@ export function createDeckHarbor(): DeckHarbor {
   let plan: HarborPlan | null = null
   let style: HarborStyle = harborStyleFor('europe')
 
+  /** 逐实例色差用的临时色（避免每栋 new 一个 Color） */
+  const tone = new THREE.Color()
   let folkList: { f: HarborFolk; slot: number }[] = []
   let curDeckY = 0
 
@@ -566,25 +698,77 @@ export function createDeckHarbor(): DeckHarbor {
     quayEdge.scale.set(deckHalfW * 3, Math.max(0.04, deckY * 0.22), 0.16)
     quayEdge.position.set(0, deckY, deckZ0 + 0.06)
 
+    /* 岸壁：从水线 −0.14 立到码头面，贴在码头面的外沿 */
+    quayFace.scale.set(deckHalfW * 2.7, deckY + 0.14, 0.12)
+    quayFace.position.set(0, (deckY - 0.14) * 0.5, deckZ0 - 0.02)
+
+    /* 前沿矮墙：横贯全宽，落在房子之前（z=0.1）、压住缝的下半截 */
+    quayWall.scale.set(deckHalfW * 2.02, Math.min(0.26, deckY * 0.78), 0.12)
+    quayWall.position.set(0, deckY, 0.1)
+
     /* ---- 房屋 ---- */
     const nH = Math.min(MAX_HOUSE, pl.houses.length)
     for (let i = 0; i < MAX_HOUSE; i++) {
       const h = i < nH ? pl.houses[i] : null
-      if (!h) { walls.setMatrixAt(i, zero); roofs.setMatrixAt(i, zero); continue }
+      if (!h) {
+        walls.setMatrixAt(i, zero)
+        roofs.setMatrixAt(i, zero)
+        plinths.setMatrixAt(i, zero)
+        eaves.setMatrixAt(i, zero)
+        continue
+      }
       dummy.position.set(h.x, deckY, h.z)
       dummy.rotation.set(0, h.yaw, 0)
       dummy.scale.set(h.w, h.h, h.d)
       dummy.updateMatrix()
       walls.setMatrixAt(i, dummy.matrix)
+      /*
+       * 逐栋色差（instanceColor）。
+       *
+       * 【为什么这是"粗糙"的第二个来源】八栋房子共用一个材质、一个色值，
+       * 屏幕上就是**一条等亮度的白带**：明暗只区分"正面/侧面"，分不出
+       * "这一栋"与"那一栋"。真实码头边的墙有新有旧、有的刷过有的没刷，
+       * ±8% 的亮度差 + 一点色相偏移就够让眼把它们数成八栋。
+       *
+       * 【为什么不改材质】每栋一个材质 = 每栋一个 draw call；instanceColor
+       * 是逐实例的一个 vec3，零额外绘制。
+       */
+      tone.setRGB(
+        (0.94 + 0.12 * hash01(i * 4.7 + 23)) * (1.0 + 0.03 * hash01(i * 8.3 + 5)),
+        (0.94 + 0.12 * hash01(i * 4.7 + 23)) * (1.0 + 0.01 * hash01(i * 8.3 + 5)),
+        (0.94 + 0.12 * hash01(i * 4.7 + 23)) * (0.97 + 0.02 * hash01(i * 8.3 + 5)),
+      )
+      walls.setColorAt(i, tone)
+      /* 屋顶同样抖：瓦有新有旧，全同一个红也是一条色带 */
+      tone.setScalar(0.88 + 0.2 * hash01(i * 6.1 + 29))
+      roofs.setColorAt(i, tone)
 
+      // 勒脚：比墙略宽、略深，给"房子站在地上"一个接触
+      dummy.position.set(h.x, deckY - 0.01, h.z)
+      dummy.scale.set(h.w * 1.05, Math.min(0.15, h.h * 0.16), h.d * 1.05)
+      dummy.updateMatrix()
+      plinths.setMatrixAt(i, dummy.matrix)
+
+      /* 檐影：墙顶一条暗带（比墙宽 12%） */
+      dummy.position.set(h.x, deckY + h.h - 0.02, h.z)
+      dummy.rotation.set(0, h.yaw, 0)
+      dummy.scale.set(h.w * 1.14, Math.max(0.03, h.h * 0.07), h.d * 1.14)
+      dummy.updateMatrix()
+      eaves.setMatrixAt(i, dummy.matrix)
+
+      /* 屋顶：挑出 14%（≈2.6 米），与檐影一起给出"屋顶压在墙上"的关系 */
       dummy.position.set(h.x, deckY + h.h, h.z)
       dummy.rotation.set(0, h.yaw, 0)
-      dummy.scale.set(h.w * 1.06, Math.max(0.05, h.roofH), h.d * 1.06)
+      dummy.scale.set(h.w * 1.14, Math.max(0.05, h.roofH), h.d * 1.14)
       dummy.updateMatrix()
       roofs.setMatrixAt(i, dummy.matrix)
     }
     walls.instanceMatrix.needsUpdate = true
     roofs.instanceMatrix.needsUpdate = true
+    if (walls.instanceColor) walls.instanceColor.needsUpdate = true
+    if (roofs.instanceColor) roofs.instanceColor.needsUpdate = true
+    plinths.instanceMatrix.needsUpdate = true
+    eaves.instanceMatrix.needsUpdate = true
 
     /* ---- 窗洞：白天的立面细节（夜里再叠一层光点） ---- */
     let qi = 0
@@ -703,7 +887,7 @@ export function createDeckHarbor(): DeckHarbor {
       const len = Math.abs(p.z1 - p.z0)
       dummy.position.set(p.x, deckY + 0.02, (p.z0 + p.z1) * 0.5)
       dummy.rotation.set(0, 0, 0)
-      dummy.scale.set(p.w, 0.07, len)
+      dummy.scale.set(p.w, 0.12, len)
       dummy.updateMatrix()
       piers.setMatrixAt(i, dummy.matrix)
       // 每 1.2 单位一对桩
@@ -723,24 +907,44 @@ export function createDeckHarbor(): DeckHarbor {
     for (let i = pi; i < MAX_PIER * 6; i++) piles.setMatrixAt(i, zero)
     piles.instanceMatrix.needsUpdate = true
 
-    /* ---- 防波堤：从内端向外端拉一根"臂" ---- */
-    for (let i = 0; i < 2; i++) {
-      const b = pl.breakwaters[i]
-      if (!b) { bws.setMatrixAt(i, zero); continue }
+    /* ---- 防波堤：每臂一堆石头（不是一整块板） ---- */
+    /*
+     * 【为什么必须拆成石块】原来每臂是一个 4~10 单位长、宽 0.9、高 0.57 的
+     * 四棱台 —— 从甲板上看，它的**顶面**是一块平躺的浅灰梯形，面积比一栋房子
+     * 还大，横在水面上（实测截图里右侧那块"水泥板"，用户直接指出来）。
+     * 抛石堤的真实剪影是**一串高低错落的石头**：顶面不平，边缘是齿状。
+     * 拆成 6 块之后，顶面被切成锯齿，颜色也随明暗散开。
+     */
+    let bi = 0
+    for (let arm = 0; arm < 2; arm++) {
+      const b = pl.breakwaters[arm]
+      if (!b) continue
       const dx = b.x1 - b.x0
       const dz = b.z1 - b.z0
-      const len = Math.hypot(dx, dz)
-      dummy.position.set((b.x0 + b.x1) * 0.5, 0, (b.z0 + b.z1) * 0.5)
-      /*
-       * 旋转：BoxGeometry 的长边是 z（因为 scale.z = len），要让它的 +z 指向
-       * (dx, dz)。绕 Y 的角 = atan2(dx, dz) —— **不是 atan2(dz, dx)**，
-       * 那个是相对 +x 量的，会把臂转 90°（第一版就是横着浮在水面上）。
-       */
-      dummy.rotation.set(0, Math.atan2(dx, dz), 0)
-      dummy.scale.set(b.h * 0.9, b.h, len)
-      dummy.updateMatrix()
-      bws.setMatrixAt(i, dummy.matrix)
+      /* 石块必须**沿臂的长边**摆：rotation.y = atan2(dx, dz) 让本地的 +z 指向臂 */
+      const armYaw = Math.atan2(dx, dz)
+      for (let k = 0; k < BW_PER_ARM; k++) {
+        const t = (k + 0.5) / BW_PER_ARM
+        // 外端（堤头）略高、中间略低：真实抛石堤的轮廓本来就有起伏
+        const hh = b.h * (0.6 + 0.45 * hash01(arm * 13 + k * 5 + 9)) * (0.92 + 0.2 * t)
+        dummy.position.set(
+          b.x0 + dx * t + (hash01(arm * 31 + k * 7 + 3) - 0.5) * 0.1,
+          -0.14,
+          b.z0 + dz * t + (hash01(arm * 17 + k * 11 + 5) - 0.5) * 0.1,
+        )
+        dummy.rotation.set(0, armYaw + (hash01(arm * 7 + k * 3) - 0.5) * 0.36, 0)
+        /*
+         * 沿臂方向 ×1.1、横向 ×2.0：石头**横向更宽**，相邻两块才会交叠成一条
+         * 连续的脊。第一版 10 块 ×1.2/×1.05（近似正方）时，屏幕上是**一排
+         * 独立的石凳**、彼此露着水（实测）—— 抛石堤的识别特征恰恰是"连成一片
+         * 但顶面凹凸"，不是"一串墩子"。
+         */
+        dummy.scale.set(hh * 2.0, hh, hh * 1.15)
+        dummy.updateMatrix()
+        bws.setMatrixAt(bi++, dummy.matrix)
+      }
     }
+    for (let i = bi; i < MAX_BW; i++) bws.setMatrixAt(i, zero)
     bws.instanceMatrix.needsUpdate = true
 
     /* ---- 停泊商船 ---- */
@@ -852,30 +1056,55 @@ export function createDeckHarbor(): DeckHarbor {
     /* ---- 尖顶 / 吊臂 / 旗 ---- */
     // 艉楼的基准跟着船体一起抬
     if (pl.spire) {
-      // 塔身占 2/3，锥占 1/3；塔身宽 = 高的 40%（钟楼的正常比例）
+      /*
+       * 塔身 : 檐口 : 尖顶 = 0.62 : 0.07 : 0.31（真实钟楼的比例）。
+       * 塔身宽 = 塔身高 × 0.30 —— 原来 0.42 时塔身是个方柱，加上同色的锥，
+       * 整个读作一个又高又细的白锥（实测全景里像"一片帆"）。
+       */
       const H = pl.spire.h
-      const bodyH = H * 0.66
-      const bodyW = bodyH * 0.42
+      const bodyH = H * 0.62
+      const bodyW = bodyH * 0.3
       spireTower.visible = true
       spireTower.position.set(pl.spire.x, deckY, pl.spire.z)
       spireTower.scale.set(bodyW, bodyH, bodyW)
+      spireCornice.visible = true
+      spireCornice.position.set(pl.spire.x, deckY + bodyH * 0.96, pl.spire.z)
+      spireCornice.scale.set(bodyW * 1.34, bodyH * 0.07, bodyW * 1.34)
+      spireWindow.visible = true
+      spireWindow.position.set(pl.spire.x, deckY + bodyH * 0.74, pl.spire.z - bodyW * 0.52)
+      spireWindow.scale.set(bodyW * 0.34, bodyH * 0.24, 0.03)
       spire.visible = true
-      spire.position.set(pl.spire.x, deckY + bodyH, pl.spire.z)
-      spire.scale.set(bodyW * 1.24, H * 0.34, bodyW * 1.24)
+      spire.position.set(pl.spire.x, deckY + bodyH + bodyH * 0.06, pl.spire.z)
+      spire.scale.set(bodyW * 1.22, H * 0.31, bodyW * 1.22)
     } else {
       spire.visible = false
       spireTower.visible = false
+      spireCornice.visible = false
+      spireWindow.visible = false
     }
 
     for (let i = 0; i < MAX_CRANE; i++) {
       const c = pl.cranes[i]
-      if (!c) { cranes.setMatrixAt(i, zero); continue }
-      dummy.position.set(c.x, deckY + 0.62, c.z)
+      if (!c) {
+        cranes.setMatrixAt(i, zero)
+        cranePosts.setMatrixAt(i, zero)
+        continue
+      }
+      // 柱高 = 臂长的 0.78，柱顶就是斜臂的支点
+      const postH = c.arm * 0.78
+      dummy.position.set(c.x, deckY, c.z)
+      dummy.rotation.set(0, i === 0 ? 0.5 : -0.6, 0)
+      dummy.scale.set(0.1, postH, 0.1)
+      dummy.updateMatrix()
+      cranePosts.setMatrixAt(i, dummy.matrix)
+
+      dummy.position.set(c.x, deckY + postH, c.z)
       dummy.rotation.set(0, i === 0 ? 0.5 : -0.6, i === 0 ? -0.34 : -0.42)
       dummy.scale.set(c.arm, 1, 1)
       dummy.updateMatrix()
       cranes.setMatrixAt(i, dummy.matrix)
     }
+    cranePosts.instanceMatrix.needsUpdate = true
     cranes.instanceMatrix.needsUpdate = true
 
     flagPole.position.set(pl.flag.x, deckY, pl.flag.z)
@@ -895,6 +1124,17 @@ export function createDeckHarbor(): DeckHarbor {
     ;(deckMat).color.setHex(st.quay)
     ;(flagMat).color.setHex(st.banner)
     ;(spireMat).color.setHex(st.wall)
+    /*
+     * 【bases 必须跟着一起改】`update` 每帧（在 night/fog 变化时）用
+     * `m.color.copy(base).multiplyScalar(litK)` 重算颜色 —— base 是"这一个港
+     * 白天的本色"。原来只有墙/屋顶/石堤同步了，栈桥、码头面、旗、塔身四个忘在
+     * 外面：**推进黄昏那一次重算，它们就跳回欧洲的默认色**（广州港的栈桥变成
+     * 里斯本的木头色）。四个都补上。
+     */
+    bases.set(pierMat, new THREE.Color(st.timber))
+    bases.set(deckMat, new THREE.Color(st.quay))
+    bases.set(flagMat, new THREE.Color(st.banner))
+    bases.set(spireMat, new THREE.Color(st.wall))
     bases.set(wallMat, new THREE.Color(st.wall))
     bases.set(roofMat, new THREE.Color(st.roof))
     bases.set(stoneMat, new THREE.Color(st.stone))
@@ -999,7 +1239,12 @@ export function createDeckHarbor(): DeckHarbor {
        * 水边的灯：夜里亮，被雾削，随距离淡（用 size 表达"远灯更小"）。
        * 与窗光分开控制：灯比窗光更亮一档，且不随 `night` 线性（黄昏就该点上）。
        */
-      lampMat.opacity = Math.min(1, (0.25 + 0.75 * night)) * (1 - Math.min(1, fogK) * 0.85)
+      /*
+       * 白天 0.06（几乎看不见）、黄昏 0.35、深夜 1。
+       * 原来底值 0.25：正午的码头上挂着几个黄点（实测放大图里墙面上那几个
+       * 光斑其实是前沿的灯）—— 大白天点灯是最露怯的一处。
+       */
+      lampMat.opacity = Math.min(1, (0.06 + 0.94 * night)) * (1 - Math.min(1, fogK) * 0.85)
       lampMat.size = (0.42 + 0.16 * night) * (1 + curPresence * 0.5)
       /* 倒影比灯本身淡一档，雾里削得更狠（水面上的像最先被雾吃掉） */
       reflectMat.opacity = Math.min(1, 0.2 + 0.8 * night) * (1 - Math.min(1, fogK) * 0.95)

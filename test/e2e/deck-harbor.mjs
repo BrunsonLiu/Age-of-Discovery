@@ -163,6 +163,10 @@ check(seen.every((s) => s.got.groupPos?.[1] > 10),
  * 中间一模一样（同一套全局波浪），那座堤就只是几块石头。停泊压到 0.34，
  * 而且**船与水面读同一个倍率**（否则水面平了船还在摇）。
  */
+/* 白天不许点灯：正午的码头上挂几个黄点是最露怯的一处（必须在推进夜里之前测） */
+const lampDay = await page.evaluate(() => window.__deckScene?.getObjectByName('deck-harbor-lamps')?.material?.opacity ?? -1)
+check(lampDay >= 0 && lampDay <= 0.15, `白天水边的灯几乎不亮（opacity ${lampDay.toFixed(2)}）`)
+
 const waveDock = await readWave()
 check(waveDock !== null && Math.abs(waveDock - 0.34) < 0.03,
   `停泊塞维利亚：浪高系数 ${waveDock}（期望 0.34——堤内几乎无浪）`)
@@ -341,6 +345,45 @@ const lineMeshes = await page.evaluate(() => {
 check(lineMeshes.filter(Boolean).every((m) => m.visible) && lineMeshes.filter(Boolean).length >= 2,
   `缆绳网格都在（${lineMeshes.filter(Boolean).map((m) => m.verts).join('/')} 个顶点）`)
 
+// ---- ⑨ 明暗烘在几何上、逐栋色差、新结构件 ----
+/*
+ * 【为什么要验 vertexColors 与几何的 color 属性**成对**】这一层的材质全部改成
+ * `vertexColors: true`，明暗靠几何上的顶点色。两者只要有一个缺失，屏幕上就是
+ * **整块纯黑**（attribute 默认 0）—— 而"黑"在像素 A/B 判据里是"有变化"，抓不到。
+ */
+const shade = await page.evaluate(() => {
+  const scene = window.__deckScene
+  const probe = ['deck-harbor-walls', 'deck-harbor-roofs', 'deck-harbor-quay', 'deck-harbor-quayface',
+    'deck-harbor-eaves', 'deck-harbor-plinths', 'deck-harbor-craneposts', 'deck-harbor-breakwater']
+  const out = {}
+  for (const n of probe) {
+    const m = scene?.getObjectByName(n)
+    if (!m) { out[n] = null; continue }
+    const hasColor = !!m.geometry?.getAttribute?.('color')
+    out[n] = {
+      vertexColors: m.material?.vertexColors ?? false,
+      hasColor,
+      // 顶点色的最小值（纯黑 = 0）—— 按真实顶点数遍历，不要写死索引
+      min: hasColor ? (() => {
+        const c = m.geometry.getAttribute('color')
+        let v = Infinity
+        for (let i = 0; i < c.count; i++) v = Math.min(v, c.getX(i))
+        return Number.isFinite(v) ? v : null
+      })() : null,
+      instColor: !!m.instanceColor,
+    }
+  }
+  const lamp = scene?.getObjectByName('deck-harbor-lamps')
+  return { out, lampOp: lamp?.material?.opacity ?? -1 }
+})
+for (const [n, v] of Object.entries(shade.out)) {
+  check(!!v, `网格存在：${n}`)
+  if (!v) continue
+  check(v.vertexColors && v.hasColor, `${n}：材质开顶点色且几何真的带 color（缺一个就是纯黑）`)
+  check(v.min !== null && v.min > 0.25, `${n}：顶点色最小值 ${v.min?.toFixed(2)}（不是 0/纯黑）`)
+}
+check(shade.out['deck-harbor-walls']?.instColor, '墙有 instanceColor（逐栋色差）')
+check(shade.out['deck-harbor-roofs']?.instColor, '屋顶有 instanceColor')
 console.log(`\n报错：${errors.length ? errors.join(' | ') : '无'}`)
 check(errors.length === 0, '无页面错误')
 await ctx.close()
