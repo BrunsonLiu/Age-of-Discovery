@@ -261,6 +261,7 @@ import { shadeFaces as shadeHarbor } from '../src/components/deck/harborModel'
 import { harborMood, starFieldCss, QUAY_LAMPS, QUAY_POSTS as testQuayPosts } from '../src/utils/harborMood'
 import { NATIONS, legendDistanceNm, legendPending } from '../src/data/nations'
 import { logbookArt } from '../src/data/logbookArt'
+import { cloudDriftRadPerSec } from '../src/components/deck/cloudBillboards'
 import { quayGulls, quayWalkers } from '../src/components/harbor/quayLife'
 import {
   QUAY_BOTTOM_Y, QUAY_EDGE_SCREEN_Y, QUAY_EDGE_Y,
@@ -12499,6 +12500,35 @@ console.log('== 朝贡：每一次「交勘合」都要在册子里留一页 =='
   const lv = readFileSync(join(process.cwd(), 'src', 'components', 'panels', 'LogbookViews.tsx'), 'utf8')
   assert(/entry\.kind === 'tribute' \? 'tribute-entry'/.test(lv), '见闻页给朝贡页一个稳定锚点')
   assert(/<ScrollText size=\{13\}/.test(lv), '朝贡页用卷轴图标（它是递进市舶司的文书）')
+}
+
+console.log('== 甲板的云要随风漂，而且慢到不刺眼 ==')
+{
+  /*
+   * 云是 18 片贴图 billboard，建层时算一次位置就再也不动 ——
+   * 甲板上空占屏幕三成，一分钟不动就等于一张贴纸。玩家在船上待得最久。
+   */
+  const base = cloudDriftRadPerSec(0)
+  assert(base > 0, `无风时也在极慢地漂（${base} rad/s）`)
+  assert(cloudDriftRadPerSec(10) > base && cloudDriftRadPerSec(25) > cloudDriftRadPerSec(10),
+    '风速越大漂得越快（单调）')
+  /* 上限：整层绕一圈少于 6 分钟就成"天在转"（2π/0.016 ≈ 393 秒） */
+  const period = 2 * Math.PI / cloudDriftRadPerSec(60)
+  assert(cloudDriftRadPerSec(60) <= 0.017 && period >= 360,
+    `60 节也只到 ${cloudDriftRadPerSec(60).toFixed(4)} rad/s（一圈 ${Math.round(period)} 秒 ≥ 6 分钟）`)
+  assert(cloudDriftRadPerSec(60) === cloudDriftRadPerSec(30), '23 节以上不再加速（封顶）')
+  assert(cloudDriftRadPerSec(-5) === base && cloudDriftRadPerSec(Number.NaN) === base,
+    '负风速/NaN 都退回无风档（不让云倒着转或跳帧）')
+  /* 10 节 ≈ 0.5°/s：肉眼能看出在动，但盯着看不会觉得天在转 */
+  const degPerSec = cloudDriftRadPerSec(10) * 180 / Math.PI
+  assert(degPerSec > 0.2 && degPerSec < 1.0, `10 节时 ${degPerSec.toFixed(2)}°/s`)
+
+  /* 源码守卫：整层绕 Y（不是逐片改矩阵），且甲板帧循环里真的调了 */
+  const cb = readFileSync(join(process.cwd(), 'src', 'components', 'deck', 'cloudBillboards.ts'), 'utf8')
+  assert(/group\.rotation\.y = \(group\.rotation\.y \+ rate/.test(cb), '云层整层绕 Y（18 片不用逐片重算矩阵）')
+  const dv = readFileSync(join(process.cwd(), 'src', 'components', 'deck', 'DeckView.tsx'), 'utf8')
+  assert(/clouds\.update\(dt, cloudDriftRadPerSec\(st\.weather\?\.windSpeed/.test(dv),
+    '帧循环里按当前风速驱动云（不自己另算一套）')
 }
 
 console.log(`\n最终结果：${passed} 通过 / ${failed} 失败`)

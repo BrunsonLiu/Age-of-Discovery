@@ -976,6 +976,27 @@ check(braceCheck.every((b) => b && b.gap < 0.02),
 check(braceCheck.every((b) => b && Math.abs(b.yaw) <= 0.2601),
   `转桁角都没超过 15°（${braceCheck.map((b) => b?.yaw).join(' / ')} rad）`)
 
+// ---- ⑤b 云要在动（甲板上空占三成屏幕，一分钟不动就是一张贴纸）----
+{
+  const cloudInfo = await page.evaluate(() => {
+    const g = window.__deckScene?.getObjectByName('deck-clouds')
+    return g ? { rot: +g.rotation.y.toFixed(5), quads: g.children.reduce((n, m) => n + (m.isInstancedMesh ? m.count : 0), 0) } : null
+  })
+  check(!!cloudInfo && cloudInfo.quads >= 12, `云层在场景里（${cloudInfo?.quads ?? 0} 片 billboard）`)
+  /*
+   * 判"在动"**只看 rotation.y 是否推进**，不看像素差：
+   * 海面在动、太阳碎光在动，两帧差里分不出是谁在动（实测天空带 mean 5.45，
+   * 但那里面大半是浪与霞光）。云是整层绕 Y 转，一个数就够。
+   */
+  await sleep(2500)
+  const after = await page.evaluate(() => +window.__deckScene.getObjectByName('deck-clouds').rotation.y.toFixed(5))
+  check(after > (cloudInfo?.rot ?? Infinity),
+    `云在缓慢漂移（rotation.y ${cloudInfo?.rot} → ${after}）`)
+  /* 漂得不能太快：整层绕一圈 < 5 分钟的会读成"天在转" */
+  const radPerSec = (after - (cloudInfo?.rot ?? after)) / 2.5
+  check(radPerSec > 0 && radPerSec < 0.05, `角速度 ${radPerSec.toFixed(4)} rad/s 在合理区间（0~0.05）`)
+}
+
 // ---- ⑥ 回海图：场景要真的被拆掉（不能留一个跑着的 rAF）----
 await page.evaluate(() => document.querySelector('[data-testid=deck-view-close]')?.click())
 await sleep(1200)

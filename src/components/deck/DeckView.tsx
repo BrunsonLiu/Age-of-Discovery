@@ -3,7 +3,7 @@ import * as THREE from 'three'
 import { Anchor, Footprints, X } from 'lucide-react'
 import { useGameStore } from '@/store/useGameStore'
 import { useMapStore } from '@/store/useMapStore'
-import { createCloudLayer } from './cloudBillboards'
+import { cloudDriftRadPerSec, createCloudLayer } from './cloudBillboards'
 import { skyAt } from '@/utils/skyClock'
 import { getPreset, onQualityChange } from '@/utils/quality'
 import { createDeckShip, type DeckShip } from './shipModel'
@@ -1757,6 +1757,8 @@ export default function DeckView() {
       seaUniforms.uFogColor.value.copy(skyMat.uniforms.uFogColor.value)
       // 云也要吃雾：浓雾天一片片轮廓清楚的积云立刻露馅
       clouds.setFog(look.fog, skyMat.uniforms.uFogColor.value)
+      // 云跟着风漂：只取风速定快慢（相机可自由转，方向映射没有意义）
+      clouds.update(dt, cloudDriftRadPerSec(st.weather?.windSpeed ?? 0))
         skyMat.uniforms.uDark.value = dark
         skyMat.uniforms.uFogK.value = look.fog * 0.9
       // 雾与厚云都会遮月亮：暴雨夜里那轮月亮应该只剩一个模糊的亮斑

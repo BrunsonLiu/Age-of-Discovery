@@ -189,10 +189,29 @@ interface CloudSpot {
  * 而且 Sprite 的 4 个顶点用父级矩阵变换，父级一有非均匀缩放就被拉成面条
  * （船上的灯塔光晕踩过这个坑）。这里用 InstancedMesh + 手动朝向球心。
  */
+/**
+ * 云的漂移角速度（弧度/秒）。
+ *
+ * 【为什么要动】云是 18 片贴图 billboard，位置建层时算一次就再也不变 ——
+ * 甲板上空占屏幕三成，**一分钟不动**就等于一张贴纸。而玩家在船上待得最久。
+ *
+ * 【为什么不按风向严格映射】甲板相机可以自由绕船转，屏幕里的"左右"
+ * 与罗盘方向没有固定关系；硬按 `windDir` 转，玩家转个视角会发现云往反方向跑。
+ * 所以只取**风速**定快慢：0 节 0.002、10 节 0.008、**上限 0.016 rad/s**
+ * （≈ 0.9°/s，整层绕一圈 6.5 分钟；23 节以上不再加速 —— 再快就是"天在转"），
+ * 方向固定，慢到看不出方向，只看出"在动"。
+ */
+export function cloudDriftRadPerSec(windSpeed: number): number {
+  const kn = Math.max(0, Math.min(60, Number.isFinite(windSpeed) ? windSpeed : 0))
+  return Math.min(0.016, 0.002 + kn * 0.0006)
+}
+
 export function createCloudLayer(): {
   group: THREE.Group
   setNight(night: number): void
   setFog(k: number, color: THREE.Color): void
+  /** 随风缓慢漂移（整层绕 Y 转；18 片 billboard 不用逐片改矩阵） */
+  update(dt: number, rate: number): void
   dispose(): void
 } {
   const group = new THREE.Group()
@@ -379,6 +398,10 @@ export function createCloudLayer(): {
       fogK = Math.min(1, Math.max(0, k))
       fogColor.copy(color)
       apply()
+    },
+    update(dt: number, rate: number) {
+      // 整层绕 Y 转：位置与朝向都还在同一个球面上，不会漂出天空
+      group.rotation.y = (group.rotation.y + rate * Math.min(0.1, Math.max(0, dt))) % (Math.PI * 2)
     },
     dispose() {
       geo.dispose()
