@@ -1242,13 +1242,21 @@ console.log('== 29. 环境资产：海面/港口/天气层/结局背景 ==')
   assert(portImage(21).endsWith('port_guangzhou.webp'), '广州（大明母港）用专属图')
   assert(portImage(21) !== portImage(12) && portImage(21) !== portImage(19),
     '广州不再与马六甲/巴达维亚共用那张泰式港口的图')
+  /*
+   * 马六甲/巴达维亚也不能再落回泰式通用图：它们共用一张**马来河港**
+   * （高脚屋 + 直脊茅顶），比金顶佛寺接近得多。
+   */
+  assert(portImage(12).endsWith('port_malay_river.webp'), '马六甲用马来河港图')
+  assert(portImage(19) === portImage(12), '巴达维亚与马六甲共用（同一片海的可视化，且都不再是泰式）')
+  assert(portImage(12) !== portImage(11), '马六甲不再落到果阿那张区域图')
   assert(portImage(13).endsWith('port_cartagena.webp'), '卡塔赫纳用专属图')
   assert(portImage(14).endsWith('port_veracruz.webp'), '韦拉克鲁斯用专属图')
   assert(portImage(18).endsWith('port_macau.webp'), '澳门用专属图')
   // 没做专属图的港口仍退回区域图（不能让它们变成空图）
   assert(portImage(4).endsWith('port_caribbean.webp'), '托尔图加仍用加勒比区域图')
   assert(portImage(9).endsWith('port_west_africa.webp'), '埃尔米纳用西非图')
-  assert(portImage(12).endsWith('port_southeast_asia.webp'), '马六甲用东南亚图')
+  /* 马六甲改成马来河港专属图（原来落回东南亚通用图，而那张画的是泰式寺庙） */
+  assert(portImage(12).endsWith('port_malay_river.webp'), '马六甲用马来河港图')
   /*
    * 【专属图不得互相撞车】这是这一批素材的意义所在：
    * 之前 7 个港口共用一张画，跑一圈只看过 5 张图。
