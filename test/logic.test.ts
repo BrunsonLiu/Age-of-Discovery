@@ -20,6 +20,7 @@ import {
 } from '../src/data/seaPhenomena'
 import {
   adjustedOutcomes, crewLossChance, expectedDeltas, outcomeHarm, riskGrade, summarizeChoice,
+  outcomeChanges, RESOURCE_LABEL,
   CHIP_MIN_EV, type AdjustedOutcome, type ChoiceSummary,
 } from '../src/utils/eventSummary'
 import { adjustOutcome, clampOutcomeToFleet } from '../src/utils/outcomeAdjust'
@@ -12643,4 +12644,49 @@ console.log('== 岸上的"活"：走动的影子与海鸥的布局 ==')
   assert(/@keyframes quayWalk[\s\S]{0,120}translateX\(var\(--span/.test(css2), '走的动画读 --span 变量（每人距离不同）')
   assert(/\.quay-gull-wing[\s\S]{0,200}animation: gullFlap/.test(css2), '海鸥扇翅用 scaleY（10px 宽的鸟只需要看出在动）')
   assert(!/\.quay-boat\s*\{/.test(css2), '小艇的样式已撤掉（元素看不见就不留死代码）')
+}
+
+console.log('== 事件结算屏：数字是这一屏唯一要读的东西 ==')
+{
+  /*
+   * 结算屏原来每一行都是 12px 的等宽数字 —— 全场最重要的数字用了全屏最小的字号。
+   * 这里钉两件事：**顺序**（按变化量从大到小）与**份量只在平手时用**。
+   */
+  const o = {
+    description: '风暴', goldChange: 0, foodChange: -20, waterChange: -12,
+    moraleChange: -10, durabilityChange: -20, crewChange: -3, fameChange: 0,
+  } as unknown as Parameters<typeof outcomeChanges>[0]
+  const rows = outcomeChanges(o)
+  assert(rows.length === 5, `0 值的资源不占行（${rows.length} = 5）`)
+  assert(rows.every(r => r.value !== 0), '列出来的每一行都不是 0')
+  const abs = rows.map(r => Math.abs(r.value))
+  assert(abs.every((v, i) => i === 0 || abs[i - 1] >= v), `按变化量从大到小（${abs.join('/')}）`)
+  /* 平手（都是 -20）时按份量：耐久 0.5 > 食物 0.15 */
+  assert(rows[0].key === 'durability' && rows[1].key === 'food',
+    `同样是 -20，耐久排在食物前面（份量 ${rows[0].weight} > ${rows[1].weight}）`)
+  /* -3 的船员排在最后：**这份顺序是给玩家看的**，不是按"人命最贵"排 */
+  assert(rows[rows.length - 1].key === 'crew', '最小的那一笔排在最后（不是按"人命最贵"往前塞）')
+  assert(rows.filter(r => r.key === 'gold').length === 0, '金币 0 不出行')
+
+  const gain = outcomeChanges({ goldChange: 40, fameChange: 12 } as unknown as Parameters<typeof outcomeChanges>[0])
+  assert(gain.length === 2 && gain[0].key === 'gold', '赚的那一笔也按大小排（+40 在 +12 前）')
+
+  assert(outcomeChanges({} as unknown as Parameters<typeof outcomeChanges>[0]).length === 0,
+    '什么都没变 → 空数组（界面显示"无资源变化"）')
+
+  /*
+   * 源码守卫：
+   * ① 中文名只有一个来源（原来 EventResult 里手写「金币/食物/淡水」，与预览芯片各说一套）；
+   * ② 数值字号 ≥16（项目规矩：重要数字 15~16）；
+   * ③ 每行有机器可读的锚点与 data-value（e2e 才能验顺序）。
+   */
+  const er = readFileSync(join(process.cwd(), 'src', 'components', 'events', 'EventResult.tsx'), 'utf8')
+  assert(/RESOURCE_LABEL\[c\.key\]/.test(er), '中文名取自 RESOURCE_LABEL（不在这里另写一遍）')
+  assert(!/label="金币"|label="食物"|label="淡水"/.test(er), '组件里不再手写资源中文名')
+  assert(/text-\[17px\].*tabular-nums|tabular-nums.*text-\[17px\]/.test(er), '数值 17px + 等宽数字')
+  assert(/data-testid="event-delta"/.test(er) && /data-value=\{c\.value\}/.test(er), '每行有 event-delta 与 data-value')
+  const es = readFileSync(join(process.cwd(), 'src', 'utils', 'eventSummary.ts'), 'utf8')
+  assert(/export function outcomeChanges/.test(es), '排序规则在数据层（可单测），不在组件里')
+  assert(!/RESOURCE_LABEL[^\n]*金币/.test(er), '组件里没有第二份金币文案')
+  assert(RESOURCE_LABEL.gold === '金币' && RESOURCE_LABEL.durability === '耐久', 'RESOURCE_LABEL 仍是权威')
 }

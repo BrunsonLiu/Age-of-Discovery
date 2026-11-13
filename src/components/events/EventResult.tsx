@@ -8,6 +8,7 @@ import {
   describePerformance,
   miniGameGrade,
 } from '@/utils/miniGame'
+import { RESOURCE_LABEL, outcomeChanges, type ResourceKey } from '@/utils/eventSummary'
 import type { EventOutcome } from '@/types'
 
 interface EventResultProps {
@@ -31,20 +32,24 @@ const NOTORIETY_LABELS: Record<string, string> = {
   secret: '守秘',
 }
 
-function ChangeIndicator({ value, icon, label }: { value: number; icon: React.ReactNode; label: string }) {
-  if (value === 0) return null
-  const isPositive = value > 0
-  return (
-    <div className={`flex items-center gap-1 text-xs font-serif ${isPositive ? 'ink-good' : 'ink-bad'}`}>
-      {icon}
-      <span>{label}</span>
-      <span className="font-mono">{isPositive ? '+' : ''}{value}</span>
-    </div>
-  )
+/**
+ * 资源图标。中文名不在这里写 —— 一律取 `RESOURCE_LABEL`（`utils/eventSummary`），
+ * 与选项预览芯片用的是同一份。两处各写一遍「金币/食物/淡水」，
+ * 改一个词就会在"选之前"和"选之后"出现两种叫法。
+ */
+const RESOURCE_ICON: Record<ResourceKey, React.ReactNode> = {
+  gold: <Coins size={13} />,
+  food: <Utensils size={13} />,
+  water: <Droplets size={13} />,
+  morale: <Heart size={13} />,
+  durability: <Shield size={13} />,
+  crew: <Users size={13} />,
+  fame: <Star size={13} />,
 }
 
 export default function EventResult({ outcome, performance, traitNote, onContinue }: EventResultProps) {
   const grade = performance != null ? miniGameGrade(performance) : null
+  const changes = outcomeChanges(outcome)
 
   return (
     <div className="space-y-4">
@@ -68,17 +73,34 @@ export default function EventResult({ outcome, performance, traitNote, onContinu
         </div>
       )}
 
-      <div className="inlay rounded-lg p-3 space-y-1.5">
+      <div className="inlay rounded-lg p-3 space-y-2">
         <h4 className="text-gold-400 font-serif text-xs mb-1">资源变化</h4>
-        <ChangeIndicator value={outcome.goldChange} icon={<Coins size={12} />} label="金币" />
-        <ChangeIndicator value={outcome.foodChange} icon={<Utensils size={12} />} label="食物" />
-        <ChangeIndicator value={outcome.waterChange} icon={<Droplets size={12} />} label="淡水" />
-        <ChangeIndicator value={outcome.moraleChange} icon={<Heart size={12} />} label="士气" />
-        <ChangeIndicator value={outcome.durabilityChange} icon={<Shield size={12} />} label="耐久" />
-        <ChangeIndicator value={outcome.crewChange} icon={<Users size={12} />} label="船员" />
-        <ChangeIndicator value={outcome.fameChange ?? 0} icon={<Star size={12} />} label="声望" />
-        {outcome.goldChange === 0 && outcome.foodChange === 0 && outcome.waterChange === 0 &&
-         outcome.moraleChange === 0 && outcome.durabilityChange === 0 && outcome.crewChange === 0 && (outcome.fameChange ?? 0) === 0 && (
+        {/*
+          【数字是这一屏唯一要读的东西】原来一行是 `text-xs`（12px）的等宽数字，
+          标着"金币 +20"—— 全场最重要的数字用了全屏最小的字号，读起来像一张收据。
+          现在数值 17px、等宽、正负分色，标签留在 12px：先看清"掉了多少"，再看是哪一项。
+          【顺序按变化量从大到小】见 utils/eventSummary 的 outcomeChanges。
+          试过按"份量"排（船员比金币重），结果 -1 排在 -12 上面 —— 规则玩家看不见，
+          屏幕上就像排序坏了。掉人这件事由上面那句文字负责，数字这边只管大小。
+        */}
+        {changes.map(c => (
+          <div
+            key={c.key}
+            data-testid="event-delta"
+            data-key={c.key}
+            data-value={c.value}
+            className="flex items-baseline justify-between gap-2"
+          >
+            <span className="flex items-center gap-1.5 text-gold-400 font-serif text-[12px]">
+              {RESOURCE_ICON[c.key]}
+              {RESOURCE_LABEL[c.key]}
+            </span>
+            <span className={`font-mono text-[17px] leading-none tabular-nums ${c.value > 0 ? 'ink-good' : 'ink-bad'}`}>
+              {c.value > 0 ? '+' : ''}{c.value}
+            </span>
+          </div>
+        ))}
+        {changes.length === 0 && (
           <p className="text-gold-400 text-xs font-serif">无资源变化</p>
         )}
         {/*

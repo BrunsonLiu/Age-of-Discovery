@@ -107,6 +107,40 @@ export function expectedDeltas(outs: AdjustedOutcome[]): Record<ResourceKey, num
   return acc
 }
 
+/**
+ * 结算屏要列的那几行：**按变化量从大到小**排。
+ *
+ * 【为什么不是按"份量"排】第一版按 |Δ| × `RESOURCE_WEIGHT` 排（船员 3 / 耐久 0.5 /
+ * 金币 0.03），于是 `船员 -1` 排在 `食物 -12` 上面。规则本身没错，但玩家看不见这条规则，
+ * 屏幕上出现的是 -15 / -1 / -12 / -5 —— 读起来像**排序坏了**。
+ * 一份"更正确"的次序如果没法被看懂，就不如一个一眼能验的次序。
+ * 掉人在文字里已经说了（"一名瞭望手受伤"），数字这边只管老实按大小排。
+ *
+ * 【平手怎么办】`Math.abs` 相同时先看份量（同样 -3，船员比金币重），
+ * 再看 `RESOURCE_KEYS` 的声明顺序 —— 显式兜底，不指望 sort 的稳定性。
+ *
+ * 0 值的资源不占一行：结算屏不是报表，一行 ±0 只是噪声。
+ */
+export interface OutcomeChange {
+  key: ResourceKey
+  value: number
+  /** 该资源的份量（平手时用；也方便以后做"影响"视图） */
+  weight: number
+}
+
+export function outcomeChanges(outcome: EventOutcome): OutcomeChange[] {
+  return RESOURCE_KEYS
+    .map((key) => {
+      const value = (outcome[`${key}Change` as keyof EventOutcome] as number | undefined) ?? 0
+      return { key, value, weight: RESOURCE_WEIGHT[key] }
+    })
+    .filter(c => c.value !== 0)
+    .sort((a, b) =>
+      Math.abs(b.value) - Math.abs(a.value) ||
+      b.weight * Math.abs(b.value) - a.weight * Math.abs(a.value) ||
+      RESOURCE_KEYS.indexOf(a.key) - RESOURCE_KEYS.indexOf(b.key))
+}
+
 /** 单结局的「伤害」：只计负向变化，按资源份量加权 */
 export function outcomeHarm(outcome: EventOutcome): number {
   let harm = 0
