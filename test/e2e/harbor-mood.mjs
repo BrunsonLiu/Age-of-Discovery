@@ -89,12 +89,12 @@ const mood = async () => {
       stars: op('[data-testid="harbor-stars"]'),
       glint: op('[data-testid="harbor-glint"]'),
       lamps: (() => {
-        const g = document.querySelector('[data-testid="harbor-view"] svg g[style*="opacity"]')
+        const g = document.querySelector('[data-testid="harbor-lamps"]')
         return g ? +getComputedStyle(g).opacity : null
       })(),
       rain: !!document.querySelector('[data-testid="harbor-rain"]'),
       fog: !!document.querySelector('[data-testid="harbor-fog"]'),
-      hasForeground: !!document.querySelector('[data-testid="harbor-view"] svg[viewBox="0 0 1440 164"]'),
+      hasForeground: !!document.querySelector('[data-testid="harbor-quay"]'),
     }
   })
 }
@@ -125,8 +125,21 @@ const zones = async (name) => {
       满码人群: pick(0.13, 0.50, 0.40, 0.66),
       水面: pick(0.55, 0.50, 0.88, 0.66),
       天空: pick(0.30, 0.02, 0.70, 0.08),
-      // 灯在 x≈107/1440、y≈643/900 那一小块（前景是 bottom-18% + 164px 的 SVG）
-      灯下: pick(0.055, 0.695, 0.095, 0.735),
+      /*
+       * 「灯下」不再写死比例：直接读**光池元素**的包围盒。
+       * 上一次改前景（纯黑横带 → 石砌码头）之后，写死的 0.695~0.735 已经
+       * 完全离开了灯的位置，那条断言还在"通过"（量到的是画里的水面，instead of 地面）。
+       * 取样跟着元素走，改版时才会自己跟上。
+       */
+      灯下: (() => {
+        const el = document.querySelector('[data-testid="harbor-lamp-pool"]')
+        if (!el) return { mean: 0, grain: 0, max: 0 }
+        const r = el.getBoundingClientRect()
+        return pick(
+          (r.x + r.width * 0.25) / innerWidth, (r.y + r.height * 0.45) / innerHeight,
+          (r.x + r.width * 0.75) / innerWidth, (r.y + r.height * 1.05) / innerHeight,
+        )
+      })(),
       城市带: pick(0.02, 0.30, 0.10, 0.55),
     }
   }, shot.toString('base64'))

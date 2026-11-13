@@ -258,10 +258,14 @@ import {
   harborStyleFor, harborVisible, lampReflectionLen,
 } from '../src/components/deck/deckHarbor'
 import { shadeFaces as shadeHarbor } from '../src/components/deck/harborModel'
-import { harborMood, starFieldCss, QUAY_LAMPS, QUAY_POSTS } from '../src/utils/harborMood'
+import { harborMood, starFieldCss, QUAY_LAMPS, QUAY_POSTS as testQuayPosts } from '../src/utils/harborMood'
 import { NATIONS, legendDistanceNm, legendPending } from '../src/data/nations'
 import { logbookArt } from '../src/data/logbookArt'
 import { quayGulls, quayWalkers } from '../src/components/harbor/quayLife'
+import {
+  QUAY_BOTTOM_Y, QUAY_EDGE_SCREEN_Y, QUAY_EDGE_Y,
+  quayPaving, quayProjectX, quayProps,
+} from '../src/components/harbor/quayDeck'
 import {
   appendLogbook, countEchoes, echoAt, echoDayFor, echoForPort, findClueFor,
   makeArrivalEntry, makeEchoEntry, makeLegendEntry, makeTitleEntry, markAllRead, pickRumor, LOGBOOK_MAX,
@@ -12321,6 +12325,94 @@ console.log('\n== 天数口径守卫 ==')
   assert(new Set(pts).size === NATIONS.length, '每个国别的传说坐标各不相同')
 }
 
+console.log('== 近景码头：石砌铺装而不是一块纯黑横带 ==')
+{
+  /*
+   * 【为什么做这一块】上一版前景是一整块 `#0b0704` 的矩形，从 y=122 平铺到 164，
+   * 上面摞四个系缆桩两道缆绳。实测：那一带整行亮度 **7.6、标准差 0.00** ——
+   * 屏幕上是一条横贯全宽的纯色带，而且它压在**画的中间**（画的下沿还露在它下面）。
+   * 判据只能落在几何上：石面是逐块生成的，块与块之间必须有缝、有明暗差。
+   */
+  const slabs = quayPaving()
+  assert(slabs.length >= 60, `石面块数够密（${slabs.length} ≥ 60）`)
+  assert(slabs.every(s => s.y >= QUAY_EDGE_Y && s.y + s.h <= QUAY_BOTTOM_Y),
+    '每块石头都在码头面范围内（不越到画里去、也不越过下沿）')
+  assert(slabs.every(s => s.w >= 58 && s.w <= 134), '块宽在 58~134（等宽就是地砖贴图）')
+
+  /* 同一排里不许互相压住：按 y 分组，逐组检查 x 递增且留缝 */
+  const rows = new Map<number, typeof slabs>()
+  for (const s of slabs) rows.set(s.y, [...(rows.get(s.y) ?? []), s])
+  assert(rows.size === 5, `五排石面（${rows.size}）`)
+  let overlap = ''
+  let gapOk = true
+  for (const [, row] of rows) {
+    const sorted = [...row].sort((a, b) => a.x - b.x)
+    for (let i = 1; i < sorted.length; i++) {
+      const prev = sorted[i - 1]
+      const gap = sorted[i].x - (prev.x + prev.w)
+      if (gap < 1) overlap = `y=${prev.y} 处 gap=${gap}`
+      if (gap > 4) gapOk = false
+    }
+  }
+  assert(overlap === '', `同排石块不重叠（${overlap || '无'}）`)
+  assert(gapOk, '同排石块之间留 2 的缝（缝太宽读成"分开的木板"）')
+
+  /* 行高逐排递加：等行高 = 砖墙（透视不是滤镜，是尺寸） */
+  const heights = [...new Set(slabs.map(s => s.h))].sort((a, b) => a - b)
+  assert(heights.length === 5 && heights.every((h, i) => i === 0 || h > heights[i - 1]),
+    `行高由远及近递加（${heights.join(' / ')}）`)
+
+  /* 上面必须铺满：投影之后边缘不能露底 */
+  for (const [y, row] of rows) {
+    const sorted = [...row].sort((a, b) => a.x - b.x)
+    const left = quayProjectX(sorted[0].x, y)
+    const right = quayProjectX(sorted[sorted.length - 1].x + sorted[sorted.length - 1].w, y)
+    assert(left <= 0 && right >= 1440, `第 ${y} 排投影后仍铺满整宽（${left.toFixed(0)} ~ ${right.toFixed(0)}）`)
+  }
+
+  /* 透视：竖缝朝消失点收（远处收窄、近处放大、正中不动） */
+  assert(Math.abs(quayProjectX(720, 240) - 720) < 1e-9, '画面正中的竖缝是垂直的（消失点在 x=720）')
+  assert(quayProjectX(0, QUAY_EDGE_Y) > 0, '最左边在远处被收进来（>0，说明真的朝中间收了）')
+  assert(quayProjectX(0, QUAY_BOTTOM_Y) < 0, '最左边在近处被放大出去（<0，地面朝我们张开）')
+  assert(quayProjectX(1440, QUAY_EDGE_Y) < 1440 && quayProjectX(1440, QUAY_BOTTOM_Y) > 1440,
+    '右边同理（收进来 / 张开去）')
+
+  /* 摆件：必须落在**看得见**的那一带，否则就是画给状态栏看的 */
+  const props = quayProps()
+  assert(props.length >= 6, `货至少六件（${props.length}）`)
+  assert(props.every(p2 => p2.y + p2.h <= 196),
+    `每件货都在底栏之上（y+h ≤ 196；底栏从视口 94.3% 起）`)
+  assert(props.every(p2 => p2.y >= 130), '每件货都在近处（y ≥ 130，不是飘在水上）')
+  assert(props.every(p2 => p2.x >= 0 && p2.x + p2.w <= 1440), '货都在画面内')
+  /* 不压系缆桩：桩是描边的，桶压上去会读成"桩穿桶而过" */
+  const posts = testQuayPosts
+  assert(props.every(p2 => posts.every(x => Math.abs(p2.x + p2.w / 2 - (x + 11)) > 34)),
+    `货不压系缆桩（桩在 ${posts.join('/')}）`)
+  /* 两件之间留 ≥24：挤在一起读成"一堆杂物" */
+  const sortedX = [...props].sort((a, b) => a.x - b.x)
+  const minGap = Math.min(...sortedX.slice(1).map((p2, i) => p2.x - (sortedX[i].x + sortedX[i].w)))
+  assert(minGap >= 24, `货之间至少隔 24px（最窄 ${minGap}）`)
+  assert(props.some(p2 => p2.kind === 'crate') && props.some(p2 => p2.kind === 'barrel') && props.some(p2 => p2.kind === 'coil'),
+    '三种货都有（木箱 / 木桶 / 缆绳）')
+
+  /* 固定种子 → 同一批石头与货（第二趟来要认得出来） */
+  assert(JSON.stringify(quayPaving()) === JSON.stringify(slabs), '同一种子 → 同一批石头')
+  assert(JSON.stringify(quayProps()) === JSON.stringify(props), '同一种子 → 同一批货')
+  assert(JSON.stringify(quayPaving(7)) !== JSON.stringify(slabs), '换种子换一批石头')
+
+  /* 水线位置：改动高度时这条会红，提醒去改取样 */
+  assert(Math.abs(QUAY_EDGE_SCREEN_Y - 0.82) < 1e-9, `水线固定在视口 82%（${QUAY_EDGE_SCREEN_Y}）`)
+
+  /* 源码守卫 */
+  const hv = readFileSync(join(process.cwd(), 'src', 'components', 'harbor', 'HarborView.tsx'), 'utf8')
+  assert(/data-testid="harbor-quay"/.test(hv), '前景有稳定锚点 harbor-quay')
+  assert(/data-testid=\{i === 0 \? 'harbor-lamp-pool'/.test(hv), '第一盏灯的光池有锚点（e2e 按它取样"灯下"）')
+  assert(!/M0 122 H1440 V164 H0 Z/.test(hv), '那块纯黑矩形的路径已经删掉')
+  assert(/bottom-0 left-0 w-full h-\[30%\]/.test(hv), '前景贴在屏幕最底（不再 bottom-[18%] 横在画中间）')
+  assert(/quayProjectX\(b\.x, b\.y\)/.test(hv), '石块走透视投影（画成梯形，不是矩形）')
+  assert(/手臂/.test(hv), '人形有手臂（没有手臂的剪影读成保龄球瓶）')
+}
+
 console.log(`\n最终结果：${passed} 通过 / ${failed} 失败`)
 if (failed > 0) process.exit(1)
 
@@ -12474,7 +12566,7 @@ console.log('== 岸上天光：同一座港，白天和夜里是两张画 ==')
    * 灯与系缆桩是**同一份数据**：灯挂在柱头上。分两个坐标系各写一遍位置，
    * 屏幕一缩放就会错开（"两处各算一次、靠系数互相抵消才碰巧对上"这条坑踩过）。
    */
-  assert(QUAY_LAMPS.length === QUAY_POSTS.length && QUAY_LAMPS.length === 4, '四盏灯对四根系缆桩')
+  assert(QUAY_LAMPS.length === testQuayPosts.length && QUAY_LAMPS.length === 4, '四盏灯对四根系缆桩')
   assert(QUAY_LAMPS.every((l, i) => Math.abs(l.x - (QUAY_POSTS[i] + 11)) < 1e-9),
     '每盏灯正对柱心（柱宽 22，灯在 x+11）')
   assert(QUAY_LAMPS.every(l => l.y < 82 && l.y > 40), '灯在柱顶之上、又不高到脱离画框')
@@ -12615,10 +12707,10 @@ console.log('== 岸上的"活"：走动的影子与海鸥的布局 ==')
   assert(ws.length === 5, '码头上有五个影子')
   assert(ws.every(w => w.x >= 130 && w.x <= 1290),
     '影子都在可站的那段码头上（x 130~1290：左边 130 内是灯脚下的取景区，右边 1320 外是桅杆）')
-  assert(ws.every(w => w.y >= 122 && w.y <= 127),
-    '脚都踩在甲板上沿附近（122~127，带一点纵深抖动；同一线会读成"站队"）')
-  assert(ws.every(w => w.h >= 38 && w.h <= 50),
-    '身高 38~50（<34 时读成"针尖"，比画里的人还小就是透视反了）')
+  assert(ws.every(w => w.y >= 126 && w.y <= 134),
+    '脚都踩在石面中段（126~134，带一点纵深抖动；同一线会读成"站队"）')
+  assert(ws.every(w => w.h >= 46 && w.h <= 58),
+    '身高 46~58（近景的人必须比画里的远人大；<34 时读成"针尖"）')
   assert(ws.every(w => Math.abs(w.span) >= 70 && Math.abs(w.span) <= 160), '每人走 70~160px 来回')
   assert(ws.every(w => w.sec >= 24 && w.sec <= 40), '一趟 24~40 秒（快走会变成赶集）')
   assert(ws.every(w => w.delay < 0), '延迟是负的：进场时已经在半路上，不会五个人同时起步')
@@ -12733,3 +12825,4 @@ console.log('== 3D 海图的风箭头不许飘在陆地上 ==')
   assert(/landDataReady[\s\S]{0,120}windClipApplied/.test(m3),
     '掩码到位后重算一次（建层时掩码往往还没下载完）')
 }
+

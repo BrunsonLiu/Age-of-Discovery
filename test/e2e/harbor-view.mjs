@@ -67,7 +67,7 @@ const layers = await page.evaluate(() => {
     natural: img ? [img.naturalWidth, img.naturalHeight] : null,
     plate: R('[data-testid="harbor-arrival-plate"]'),
     services: R('[data-testid="harbor-services"]'),
-    svg: !!document.querySelector('[data-testid="harbor-view"] svg[viewBox="0 0 1440 164"]'),
+    svg: !!document.querySelector('[data-testid="harbor-quay"]'),
     mapEvents: getComputedStyle(document.querySelector('[data-testid="chart-layer"]')).pointerEvents,
     serviceButtons: [...document.querySelectorAll('[data-testid^="harbor-service-"]')].length,
   }
@@ -170,7 +170,28 @@ check(bk?.density >= 0.8, `1440 屏下基本不放大（有效密度 ${bk?.densi
     `近景仍有可辨的纹理（grain 最大 ${Math.max(...grains)}）`)
 }
 check(layers.plate && layers.services, '中景两块内容板都在')
-check(layers.svg, '前景码头剪影已渲染（桌面）')
+/*
+ * 前景是**我们脚下的码头**（石砌铺装 + 系缆桩 + 货物 + 灯），不是一块纯黑矩形。
+ * 判据不是"那个 svg 在不在"（它一直在），而是**石面上真的有多块色阶**：
+ * 上一版是一条 std 0.00 的纯色横带 —— 屏幕上量得出来，代码里看不出来。
+ */
+{
+  const band = await page.evaluate(() => {
+    const q = document.querySelector('[data-testid="harbor-quay"]')
+    const r = q.getBoundingClientRect()
+    /* 水线 = 石面底板那条 rect 的上沿（svg 盒子的上沿在 0.70，那是给人和灯留的空） */
+    const deck = q.querySelector('rect[fill="#100b06"]')
+    const d = deck.getBoundingClientRect()
+    return {
+      slabs: q.querySelectorAll('path[fill^="#2"], path[fill^="#3"]').length,
+      top: +(d.y / innerHeight).toFixed(3),
+      bottom: +((r.bottom / innerHeight)).toFixed(3),
+    }
+  })
+  check(layers.svg && band.slabs >= 60, `前景码头是石砌铺装（${band.slabs} 块石面，不是一块纯色）`)
+  check(band.top >= 0.78 && band.top <= 0.86 && band.bottom >= 0.99,
+    `水线在 0.78~0.86、石面铺到屏幕最底（${band.top.toFixed(2)} ~ ${band.bottom.toFixed(2)}）`)
+}
 check(layers.mapEvents === 'none', '岸上时地图层关掉命中测试，点岸上不会穿透设航点')
 check(layers.serviceButtons === 5, '本港 5 个服务入口齐全')
 await page.screenshot({ path: `${SHOTS}/harbor-e2e-desktop.png` })
@@ -359,7 +380,7 @@ const mobile = await page.evaluate(() => {
   })
   return {
     btns,
-    foreground: !!document.querySelector('[data-testid="harbor-view"] svg[viewBox="0 0 1440 164"]'),
+    foreground: !!document.querySelector('[data-testid="harbor-quay"]'),
     vh: innerHeight,
   }
 })
@@ -369,7 +390,7 @@ check(mobile.btns.every(b => b.hit),
 check(mobile.btns.every(b => b.y >= 0 && b.y + b.h <= mobile.vh),
   `滚到底之后 5 个按钮都在屏幕内（最低到 y=${Math.max(...mobile.btns.map(b => b.y + b.h))}，视口 ${mobile.vh}）`)
 check(backVisible, '移动端「回海图」按钮在视口内')
-check(!mobile.foreground, '移动端不渲染前景剪影（会被多行底栏吃掉）')
+check(!mobile.foreground, '移动端不渲染前景码头（会被多行底栏吃掉）')
 await page.click('[data-testid="harbor-service-logbook"]')
 check(await until(() => window.__gameStore.getState().activePanel === 'event'), '移动端真实鼠标点「航海日志」→ 面板打开')
 check(await mode() === 'harbor', '移动端打开面板后仍在岸上')

@@ -28,6 +28,7 @@ export function useHarborAmbience() {
   const rainRef = useRef<HTMLDivElement | null>(null)
   const fogRef = useRef<HTMLDivElement | null>(null)
   const lampsRef = useRef<SVGGElement | null>(null)
+  const deckRef = useRef<SVGRectElement | null>(null)
 
   useEffect(() => {
     let raf = 0
@@ -66,10 +67,18 @@ export function useHarborAmbience() {
       put('rain', rainRef.current, m.rain)
       put('fog', fogRef.current, m.fog)
       put('lamps', lampsRef.current, m.lamps)
+      /*
+       * 石面吃**同一份夜幕**。
+       * 夜幕层（harbor-night-veil）只盖在画上，盖不到前景那块自己画的 SVG ——
+       * 实测夜里的后果：整座城压成蓝黑，脚底下的码头还是白天的亮度，
+       * 读起来像"码头漂在夜色上面"。这里给石面单独一层同色暗罩，
+       * 亮度跟着 `veil` 走（灯的光池画在它上面，所以灯仍然照得亮脚下）。
+       */
+      put('deck', deckRef.current, m.veil)
     }
     raf = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(raf)
   }, [])
 
-  return { veilRef, warmRef, warmGlowRef, starsRef, glintRef, rainRef, fogRef, lampsRef }
+  return { veilRef, warmRef, warmGlowRef, starsRef, glintRef, rainRef, fogRef, lampsRef, deckRef }
 }

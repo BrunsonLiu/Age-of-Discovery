@@ -13,6 +13,7 @@ import { DURATION, EASE_STANDARD, prefersReducedMotion } from '@/utils/motion'
 import { useIsMobile } from '@/hooks/useIsMobile'
 import { useHarborAmbience } from './useHarborAmbience'
 import { quayGulls, quayWalkers } from './quayLife'
+import { QUAY_BOTTOM_Y, QUAY_EDGE_Y, quayPaving, quayProjectX, quayProps, type QuayProp } from './quayDeck'
 import type { PanelType } from '@/types'
 
 /**
@@ -72,23 +73,104 @@ const PLATE_STYLE: React.CSSProperties = {
 }
 
 /**
- * 前景：码头剪影。纯几何，不接点击，也不随内容滚动。
- *
- * 【颜色别和背景同色】第一版整块用 #160e07，而背景渐变末尾压到 0.96 的近黑，
- * 剪影和背景几乎同一个值 → 截图里完全读不出来（项目里已经犯过四次
- * "同色画实心块"的坑）。现在剪影压到近黑，但**边缘给一道赭石高光线**，
- * 并把背景渐变末尾收到 0.78，让轮廓靠明度差显形。
+ * 石面色阶（由暗到亮）。上限压在 #372a1a：再亮就"贴"在画前面，
+ * 但第一版用的 #140f09~#241a10 又太黑 —— 实测那一带 mean 18~23、相邻梯度 0.27，
+ * 屏幕上是一块暗板。现在是 mean 30 上下、石缝与块间色差都读得出来。
  */
-function HarborForeground({ lampRef, reduced }: { lampRef: React.RefObject<SVGGElement | null>; reduced: boolean }) {
-  /* bottom 18%：剪影要压在**还亮着的**城市上才有对比。
-     第一版贴 bottom-0，落在已经压到近黑的下缘，桩和背景差值太小，
-     截图里等于没有——"前景"不是"贴屏幕底"，是"挡在画面前面"。 */
+const SLAB_TONE = ['#241a10', '#2b2013', '#312516', '#372a1a', '#2e2214', '#281d11']
+
+/**
+ * 摆件主体颜色：**必须比石面暗**。
+ * 第一版与石面同色（#1c1209~#2c1f12 vs 石面 #241a10~#372a1a），
+ * 结果箱体整个消失、屏幕上只剩两个斜撑 —— 读成"地面上画了两个 X"。
+ * 光从城那边（我们背后偏上）来，朝我们的这一面本来就在暗部。
+ */
+const PROP_TONE = ['#0f0b06', '#120d07', '#151009', '#18120a']
+
+function QuayPropShape({ kind, x, y, w, h, tone }: QuayProp) {
+  const fill = PROP_TONE[Math.min(PROP_TONE.length - 1, Math.floor(tone * PROP_TONE.length))]
+  // 横向走与石面同一份透视：桶底必须落在它那排砖的缝上
+  const px = (dx: number) => quayProjectX(x + dx, y + h)
+  const ptop = (dx: number) => quayProjectX(x + dx, y)
+  const gx = Math.min(px(0), ptop(0))
+  const gw = Math.max(px(w), ptop(w)) - gx
+  if (kind === 'coil') {
+    // 盘好的缆绳：三圈同心椭圆。俯视看是环，侧看是几条弧 —— 画成环最省
+    const cx = (gx + gw / 2)
+    return (
+      <g stroke="#3a2c1a" fill="none" strokeWidth={2.6} strokeLinecap="round">
+        {/*
+          压得很扁（ry = h*0.34）才像"盘在地上的一堆绳"：
+          正圆的三层同心椭圆读成**井盖**（截图里就是这样）。
+          再补一个散开的绳头，它才是"绳"而不是"环"。
+        */}
+        <ellipse cx={cx} cy={y + h * 0.6} rx={gw / 2} ry={h * 0.34} />
+        <ellipse cx={cx} cy={y + h * 0.56} rx={gw * 0.34} ry={h * 0.22} />
+        <ellipse cx={cx} cy={y + h * 0.52} rx={gw * 0.16} ry={h * 0.1} />
+        <path d={`M${cx + gw * 0.46} ${y + h * 0.62} q ${gw * 0.2} ${h * 0.2} ${gw * 0.3} ${-h * 0.05}`} />
+      </g>
+    )
+  }
+  if (kind === 'barrel') {
+    return (
+      <g>
+        {/* 接地影：没有它，桶像贴纸浮在石面上 */}
+        <ellipse cx={gx + gw / 2} cy={y + h - 1} rx={gw * 0.58} ry={4} fill="#0a0603" opacity={0.55} />
+        <rect x={gx} y={y} width={gw} height={h} rx={gw * 0.26} fill={fill} />
+        {/* 两道铁箍：桶的辨识度全在箍上，圆角矩形本身读成"罐子" */}
+        <path d={`M${gx + 1} ${y + h * 0.3} H${gx + gw - 1}`} stroke="#3a2c1a" strokeWidth={2} />
+        <path d={`M${gx + 1} ${y + h * 0.68} H${gx + gw - 1}`} stroke="#3a2c1a" strokeWidth={2} />
+        {/* 顶盖：一个扁椭圆，桶才是立着的圆柱 */}
+        <ellipse cx={gx + gw / 2} cy={y + 1} rx={gw / 2} ry={gw * 0.16} fill="#33281b" />
+      </g>
+    )
+  }
+  // 木箱：正面 + 顶面（受光）+ 两道斜撑
+  const topY = y + h * 0.2
+  return (
+    <g>
+      <ellipse cx={gx + gw / 2} cy={y + h - 1} rx={gw * 0.62} ry={4.5} fill="#0a0603" opacity={0.55} />
+      <rect x={gx} y={topY} width={gw} height={h - h * 0.2} fill={fill} />
+      <path d={`M${gx} ${topY} L${gx + gw * 0.16} ${y} H${gx + gw} L${gx + gw * 0.84} ${topY} Z`} fill="#33281b" />
+      <path d={`M${gx + 3} ${topY + 2} L${gx + gw - 3} ${y + h - 2}`} stroke="#1d1509" strokeWidth={2.2} />
+      <path d={`M${gx + gw - 3} ${topY + 2} L${gx + 3} ${y + h - 2}`} stroke="#1d1509" strokeWidth={2.2} />
+      <path d={`M${gx} ${y + h * 0.58} H${gx + gw}`} stroke="#1d1509" strokeWidth={2.4} />
+    </g>
+  )
+}
+
+/**
+ * 前景：**我们脚下的码头**。石砌铺装 + 系缆桩 + 缆绳 + 货物 + 四盏灯。
+ *
+ * 【它替换掉的是什么】上一版前景是一块**纯黑的矩形**（`#0b0704`，y=122 平铺到 164），
+ * 上面摞四个系缆桩和两道缆绳。实测证据：那一带整行亮度 **7.6、标准差 0.00** ——
+ * 屏幕上是一条 42px 高、横贯全宽的纯色带，而且它**压在画的中间**
+ * （画的下沿 18% 还露在它下面）。读起来不是"我们站在码头上"，
+ * 是"画被一条黑胶带从中间勒断"。
+ *
+ * 【为什么改到贴底】"近景"必须挡在**一切**前面，包括画的下沿。现在它
+ * `bottom-0`、高 30%，水线固定在视口 82% 处（见 `QUAY_EDGE_SCREEN_Y`）：
+ * 画从 0 到 82% 完整可见，82% 以下是我们的石面（底栏再压掉最下面 6%）。
+ *
+ * 【为什么 `preserveAspectRatio="none"`】石面是横铺的，横向拉伸看不出来；
+ * 而 16:9 屏幕上 x 与 y 的缩放比几乎相同（1440×900 是 1.0 / 1.125，
+ * 1920×1080 是 1.33 / 1.35），人不会被拉变形。
+ * 用 `slice` 反而会把两侧的灯裁掉（1440 宽的画面在更高的盒子里必须放大）。
+ */
+function HarborForeground({ lampRef, deckRef, reduced }: {
+  lampRef: React.RefObject<SVGGElement | null>
+  deckRef: React.RefObject<SVGRectElement | null>
+  reduced: boolean
+}) {
+  const slabs = quayPaving()
+  const props = quayProps()
   return (
     <svg
-      className="absolute bottom-[18%] left-0 w-full h-[164px] pointer-events-none select-none"
-      viewBox="0 0 1440 164"
-      preserveAspectRatio="xMidYMax slice"
+      className="absolute bottom-0 left-0 w-full h-[30%] pointer-events-none select-none"
+      viewBox={`0 0 1440 ${QUAY_BOTTOM_Y}`}
+      preserveAspectRatio="none"
       aria-hidden="true"
+      data-testid="harbor-quay"
     >
       <defs>
         {/* 灯的光晕：中心近白、外圈暖橙到透明。用梯度而不是 blur，
@@ -98,24 +180,65 @@ function HarborForeground({ lampRef, reduced }: { lampRef: React.RefObject<SVGGE
           <stop offset="38%" stopColor="#ffbe6c" stopOpacity="0.36" />
           <stop offset="100%" stopColor="#ff9d3c" stopOpacity="0" />
         </radialGradient>
+        {/* 湿石面靠水那一带的冷光（水在反光，石面是湿的） */}
+        <linearGradient id="harbor-deck-wet" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#93a8ad" stopOpacity="0.15" />
+          <stop offset="34%" stopColor="#6b7a7e" stopOpacity="0.045" />
+          <stop offset="100%" stopColor="#5a6a6e" stopOpacity="0" />
+        </linearGradient>
+        {/* 水线正下方的一道暗影：画的下沿是**硬切口**，不压一道阴影就看得见一条直线 */}
+        <linearGradient id="harbor-deck-edge" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#050302" stopOpacity="0.88" />
+          <stop offset="42%" stopColor="#050302" stopOpacity="0.42" />
+          <stop offset="100%" stopColor="#050302" stopOpacity="0" />
+        </linearGradient>
+        {/* 越靠近我们越暗：光在城那边，脚底下是背光的 */}
+        <linearGradient id="harbor-deck-shade" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#050302" stopOpacity="0" />
+          <stop offset="52%" stopColor="#050302" stopOpacity="0.26" />
+          <stop offset="100%" stopColor="#050302" stopOpacity="0.70" />
+        </linearGradient>
       </defs>
-      <g fill="#0b0704">
-        <path d="M0 122 H1440 V164 H0 Z" />
-        {QUAY_POSTS.map(x => (
-          <g key={x}>
-            <rect x={x} y={82} width={22} height={48} rx={3} stroke="#a8864c" strokeOpacity="0.38" strokeWidth="1.5" />
-            <rect x={x - 6} y={77} width={34} height={10} rx={4} stroke="#a8864c" strokeOpacity="0.38" strokeWidth="1.5" />
+
+      {/* ── 码头面：石砌铺装（逐块）+ 湿光 + 近处压暗 ─────────────── */}
+      <rect x="0" y={QUAY_EDGE_Y} width="1440" height={QUAY_BOTTOM_Y - QUAY_EDGE_Y} fill="#100b06" />
+      {slabs.map((b, i) => {
+        // 梯形而不是矩形：竖缝朝消失点收，石面才是"地面"而不是"砖墙"
+        const x0 = quayProjectX(b.x, b.y)
+        const x1 = quayProjectX(b.x + b.w, b.y)
+        const x2 = quayProjectX(b.x + b.w, b.y + b.h)
+        const x3 = quayProjectX(b.x, b.y + b.h)
+        return (
+          <g key={i}>
+            <path
+              d={`M${x0.toFixed(1)} ${b.y} L${x1.toFixed(1)} ${b.y} L${x2.toFixed(1)} ${b.y + b.h} L${x3.toFixed(1)} ${b.y + b.h} Z`}
+              fill={SLAB_TONE[Math.min(SLAB_TONE.length - 1, Math.floor(b.tone * SLAB_TONE.length))]}
+            />
+            {/* 竖缝：只有横缝时整片读成"木板/台阶"，加上竖缝才是砌石 */}
+            <path
+              d={`M${x3.toFixed(1)} ${b.y + b.h} L${x0.toFixed(1)} ${b.y}`}
+              stroke="#080502" strokeWidth={1.4} opacity={0.5}
+            />
+            {/* 上棱受光：光从城那边来，每块石头靠水的一侧亮一点。
+                没有这道边，五排石头会读成"五条横线"（砌筑感丢失） */}
+            <path
+              d={`M${x0.toFixed(1)} ${b.y} L${x1.toFixed(1)} ${b.y} L${(x1 - 1).toFixed(1)} ${b.y + 1.6} L${(x0 + 1).toFixed(1)} ${b.y + 1.6} Z`}
+              fill="#5a462c" opacity={0.28}
+            />
           </g>
-        ))}
-        <path d="M1316 164 L1368 32 L1380 32 L1334 164 Z" />
-        <path d="M1368 34 L1248 122 L1255 122 L1374 40 Z" />
-      </g>
-      <path d="M0 122 H1440" stroke="#a8864c" strokeOpacity="0.5" strokeWidth="2.5" fill="none" />
-      <path d="M107 86 Q 208 136 318 86" stroke="#0b0704" strokeWidth="7" fill="none" strokeLinecap="round" />
-      <path d="M107 86 Q 208 136 318 86" stroke="#a8864c" strokeOpacity="0.28" strokeWidth="1" fill="none" />
-      <path d="M1139 86 Q 1240 138 1342 86" stroke="#0b0704" strokeWidth="7" fill="none" strokeLinecap="round" />
-      <path d="M1139 86 Q 1240 138 1342 86" stroke="#a8864c" strokeOpacity="0.28" strokeWidth="1" fill="none" />
-      <path d="M1368 34 L1280 118" stroke="#0b0704" strokeWidth="4" fill="none" strokeLinecap="round" />
+        )
+      })}
+      <rect x="0" y={QUAY_EDGE_Y} width="1440" height="34" fill="url(#harbor-deck-edge)" />
+      {/* 整体压一档：石面比画的近景亮一点就会"浮"在画前面（伦敦那张画的下沿是暗水） */}
+      <rect x="0" y={QUAY_EDGE_Y} width="1440" height={QUAY_BOTTOM_Y - QUAY_EDGE_Y} fill="#050302" opacity="0.16" />
+      <rect x="0" y={QUAY_EDGE_Y} width="1440" height={QUAY_BOTTOM_Y - QUAY_EDGE_Y} fill="url(#harbor-deck-wet)" />
+      <rect x="0" y={QUAY_EDGE_Y} width="1440" height={QUAY_BOTTOM_Y - QUAY_EDGE_Y} fill="url(#harbor-deck-shade)" />
+
+      {/* 水线：湿石的亮边 + 一道暗缝（没有它，石面直接切进画里的水） */}
+      <rect x="0" y={QUAY_EDGE_Y - 2} width="1440" height="2" fill="#6f5a36" opacity="0.22" />
+      <rect x="0" y={QUAY_EDGE_Y + 1} width="1440" height="1.6" fill="#050302" opacity="0.7" />
+      {/* 水浸过的那一带更深（潮线） */}
+      <rect x="0" y={QUAY_EDGE_Y + 3} width="1440" height="9" fill="#070503" opacity="0.32" />
 
       {/*
         码头上走动的影子。
@@ -123,7 +246,7 @@ function HarborForeground({ lampRef, reduced }: { lampRef: React.RefObject<SVGGE
         前景这块是本项目自己画的 SVG，坐标是我们自己的 —— "人在码头上"才是真的。
         两层嵌套：外层走 X（来回），内层颠一下 Y（走路的重心起伏）。
         一个元素挂两条 transform 动画会只剩后一条，所以必须分开两层。
-        夜里这五个人几乎看不见（纯黑压纯黑），那是对的：灯下才照得出轮廓。
+        脚下是水线（96）：身体整段衬在画的水与城上，比衬在石面上立得住。
       */}
       <g className="quay-walkers" aria-hidden="true">
         {quayWalkers().map((w, i) => (
@@ -143,24 +266,27 @@ function HarborForeground({ lampRef, reduced }: { lampRef: React.RefObject<SVGGE
                   读出来是**钉子/黑刺**，不是人。人的辨识度全在"腿分开、肩比胯宽、
                   脖子细"这三处比例上。
                 */}
-                <g fill="#100a06">
-                  {/* 腿：两条，微微分开；走路时一前一后由外层动画带出节奏 */}
+                <g fill="#0c0805">
                   <rect x={-w.h * 0.085} y={-w.h * 0.46} width={w.h * 0.062} height={w.h * 0.46} rx={w.h * 0.02} />
                   <rect x={w.h * 0.023} y={-w.h * 0.46} width={w.h * 0.062} height={w.h * 0.46} rx={w.h * 0.02} />
-                  {/* 躯干：肩 0.34h 宽、腰 0.24h 宽 */}
                   <path
                     d={`M${-w.h * 0.12} ${-w.h * 0.44} L${-w.h * 0.17} ${-w.h * 0.74}
                         L${w.h * 0.17} ${-w.h * 0.74} L${w.h * 0.12} ${-w.h * 0.44} Z`}
                   />
-                  {/* 脖子：没有它，头会像浮在肩上的一颗球 */}
                   <rect x={-w.h * 0.035} y={-w.h * 0.82} width={w.h * 0.07} height={w.h * 0.1} />
-                  {/* 头 */}
-                  <circle cx={0} cy={-w.h * 0.86} r={w.h * 0.075} />
+                  <circle cx={0} cy={-w.h * 0.86} r={w.h * 0.078} />
+                  {/*
+                    手臂：两条细的、略离开躯干。
+                    没有手臂的人形在 50px 上读成**保龄球瓶**（腿一合并就是一根柱子）——
+                    人的轮廓里最先认出来的是"肩两侧垂下来的两条"。
+                  */}
+                  <rect x={-w.h * 0.215} y={-w.h * 0.72} width={w.h * 0.055} height={w.h * 0.3} rx={w.h * 0.027} />
+                  <rect x={w.h * 0.16} y={-w.h * 0.72} width={w.h * 0.055} height={w.h * 0.3} rx={w.h * 0.027} />
                 </g>
                 {/* 灯在左边：左侧留一道暖边（只在躯干上）。没有它，夜里就是一坨纯黑 */}
                 <path
                   d={`M${-w.h * 0.12} ${-w.h * 0.44} L${-w.h * 0.17} ${-w.h * 0.74}`}
-                  stroke="#c9a96e" strokeOpacity={0.45} strokeWidth={1.3} fill="none"
+                  stroke="#c9a96e" strokeOpacity={0.40} strokeWidth={1.3} fill="none"
                 />
               </g>
             </g>
@@ -168,20 +294,61 @@ function HarborForeground({ lampRef, reduced }: { lampRef: React.RefObject<SVGGE
         ))}
       </g>
 
+      {/* ── 货：木箱 / 木桶 / 盘好的缆绳（都在近处，给影子一个参照） ── */}
+      {props.map((p2, i) => <QuayPropShape key={i} {...p2} />)}
+
+      {/* ── 系缆桩（描边 + 实底）：压住水线，是"码头"最直接的符号 ──── */}
+      <g>
+        {QUAY_POSTS.map(x => (
+          <g key={x}>
+            <rect x={x} y={112} width={22} height={36} rx={3} fill="#0d0805" stroke="#a8864c" strokeOpacity="0.42" strokeWidth="1.5" />
+            <rect x={x - 6} y={106} width={34} height={9} rx={4} fill="#0d0805" stroke="#a8864c" strokeOpacity="0.42" strokeWidth="1.5" />
+          </g>
+        ))}
+        {/* 右侧那根斜桅（原来就有）：从石面斜出画外，给右边一个"挡" */}
+        <path d="M1310 240 L1368 44 L1380 44 L1332 240 Z" fill="#0b0704" />
+        <path d="M1368 46 L1256 150 L1263 150 L1374 52 Z" fill="#0b0704" />
+      </g>
+      {/* 缆绳：桩头垂到石面上（垂度 46 —— 太浅读成"直线"） */}
+      <path d="M107 112 Q 213 160 329 112" stroke="#0b0704" strokeWidth="7" fill="none" strokeLinecap="round" />
+      <path d="M107 112 Q 213 160 329 112" stroke="#a8864c" strokeOpacity="0.24" strokeWidth="1" fill="none" />
+      <path d="M1139 112 Q 1240 162 1353 112" stroke="#0b0704" strokeWidth="7" fill="none" strokeLinecap="round" />
+      <path d="M1139 112 Q 1240 162 1353 112" stroke="#a8864c" strokeOpacity="0.24" strokeWidth="1" fill="none" />
+
+      {/*
+        夜色暗罩：与 `harbor-night-veil` 同一份 veil（见 useHarborAmbience）。
+        放在**所有近景物件之后、灯之前**：人/货/桩/缆跟整座城一起天黑，
+        只有灯画在它上面（否则"灯照亮脚下"会被这层盖掉）。
+      */}
+      <rect
+        ref={deckRef}
+        x="0" y={QUAY_EDGE_Y} width="1440" height={QUAY_BOTTOM_Y - QUAY_EDGE_Y}
+        /*
+         * 用 multiply 而不是"盖一层深蓝"：盖色会把石缝与块间色差一起抹平
+         * （实测深夜下整片变成一条纯蓝带，石头完全消失）。
+         * multiply 按比例压暗，明暗关系保住 —— 与黄昏那层「染色 vs 叠加」
+         * 是同一个道理（见 data 里 warm 两层）。
+         */
+        fill="#7e88a8"
+        style={{ opacity: 0, mixBlendMode: 'multiply' }}
+      />
+
       {/*
         四盏码头灯 —— 夜里岸上唯一的暖光，也是"这里有人"的唯一证据。
-        位置直接取 `QUAY_LAMPS`（与上面那四根系缆桩同一份数据），不在这里另写一遍坐标：
-        两处各写一次、靠系数碰巧对上，这条坑在船首斜桅那里踩过。
-        整组的 opacity 由 `useHarborAmbience` 按日相写（白天真值 0，e2e 断言它），
+        位置直接取 `QUAY_LAMPS`（与上面那四根系缆桩同一份数据），不在这里另写一遍坐标。
+        整组的 opacity 由 `useHarborAmbience` 按日相写（白天真值 0，e2e 断言它）。
         灯芯自带 `scene-flicker`，四盏相位错开 0.53 秒 —— 同步闪会读成"呼吸灯"。
       */}
-      <g ref={lampRef} style={{ opacity: 0 }}>
+      <g ref={lampRef} data-testid="harbor-lamps" style={{ opacity: 0 }}>
         {QUAY_LAMPS.map((l, i) => (
           <g key={l.x}>
-            {/* 光池：落在码头面上，压扁的椭圆 */}
-            <ellipse cx={l.x} cy={118} rx={40} ry={9} fill="url(#harbor-lamp-halo)" opacity={0.45} />
-            {/* 灯杆到灯座的一小段，让灯"挂"在桩上而不是浮着 */}
-            <path d={`M${l.x} 77 L${l.x} 71.5`} stroke="#20150c" strokeWidth={2} />
+            {/* 光池：落在石面上，压扁的椭圆（e2e 取它的包围盒量"灯下亮度"） */}
+            <ellipse data-testid={i === 0 ? 'harbor-lamp-pool' : undefined} cx={l.x} cy={122} rx={46} ry={11} fill="url(#harbor-lamp-halo)" opacity={0.56} />
+            {/* 湿石面上的反光：灯正下方那一道竖向的暖影 */}
+            <ellipse cx={l.x} cy={130} rx={14} ry={18} fill="url(#harbor-lamp-halo)" opacity={0.30} />
+            {/* 灯杆：从桩头伸上去，让灯"挂"在桩上而不是浮着 */}
+            <path d={`M${l.x} 112 L${l.x} 80`} stroke="#1a1108" strokeWidth={2} />
+            <path d={`M${l.x - 5} 80 H${l.x + 5}`} stroke="#1a1108" strokeWidth={2} />
             <circle cx={l.x} cy={l.y} r={30} fill="url(#harbor-lamp-halo)" />
             <circle
               cx={l.x} cy={l.y} r={2.6} fill="#ffe8bc"
@@ -689,7 +856,7 @@ export default function HarborView() {
       </div>
 
       {/* ── 前景：码头剪影，压住画面下缘，不接任何点击 ─────────────── */}
-      {!isMobile && <HarborForeground lampRef={amb.lampsRef} reduced={reduced} />}
+      {!isMobile && <HarborForeground lampRef={amb.lampsRef} deckRef={amb.deckRef} reduced={reduced} />}
     </div>
   )
 }

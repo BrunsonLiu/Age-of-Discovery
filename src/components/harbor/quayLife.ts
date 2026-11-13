@@ -14,10 +14,12 @@
  * 却没有任何事发生。固定下来，玩家第二次来能认出"还是那几个人"。
  */
 
+import { mulberry32 } from '@/utils/rng'
+
 export interface QuayWalker {
   /** 出发点（SVG viewBox 坐标，1440×164） */
   x: number
-  /** 脚踩的那条线（码头面 y=122） */
+  /** 脚踩的那条线（水线 96 之下，石面第一排上） */
   y: number
   /**
    * 身高（viewBox 单位）。**实测：26~34 读成"针尖"** —— 脚埋进纯黑的近景甲板，
@@ -33,17 +35,6 @@ export interface QuayWalker {
   delay: number
 }
 
-/** mulberry32：与项目其它程序化内容同一套（固定种子可复现） */
-function mulberry32(seed: number): () => number {
-  let a = seed >>> 0
-  return () => {
-    a = (a + 0x6d2b79f5) >>> 0
-    let t = a
-    t = Math.imul(t ^ (t >>> 15), t | 1)
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61)
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
-  }
-}
 
 /**
  * 码头上的五个影子。
@@ -73,12 +64,14 @@ export function quayWalkers(seed = 20261113): QuayWalker[] {
       // 脚踩在甲板上沿（y=122）：身体整段衬在**水面与城**上（那里比甲板亮得多），
       // 轮廓才立得住；沉进甲板里就变成黑压黑的几根柱子。
       /*
-       * 脚在甲板上沿附近（122~127，带一点纵深抖动）：五个人脚踩同一条线会读成
+       * 脚踩在石面中段（126~134，带纵深抖动）：五个人脚踩同一条线会读成
        * "一排站队"。身高 38~50 比画里那些人（约 35px）略大 —— 他们在**近景**，
        * 比画里的远人还小就是透视错了。
+       * 身体整段衬在**画的水与城**上（水线以上），轮廓才立得住；
+       * 沉到石面上就是黑压黑（石面色阶 #140f09~#241a10，与剪影 #0c0805 太近）。
        */
-      y: 122 + Math.round(rnd() * 5),
-      h: Math.round(38 + rnd() * 12),
+      y: 126 + Math.round(rnd() * 8),
+      h: Math.round(46 + rnd() * 12),
       span: Math.round(span),
       sec: Math.round(24 + rnd() * 16),
       delay: -Math.round(rnd() * 20),
