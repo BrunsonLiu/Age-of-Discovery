@@ -1,39 +1,57 @@
-perf(start): 慢速 4G 下冷启动 7.3 → 6.2 秒 —— 别为一个按钮下载三个视角；预取等地图画完
+perf(start): 慢速 4G 冷启动 6202 → 约 4.6 秒（−26%）—— 先量归因，再砍字节
 
-上一轮修完 CPU（撒点 2048ms → <9ms）之后，冷启动的瓶颈换了：**网络**。
-但先要能把网络量对，这一步花了点功夫：
+这轮开头没有先动手，而是先做了一个**归因工具**，因为它推翻了我原本的判断。
 
-① 本地量网络必须配「带 gzip 的静态服务 + 限速」，否则全是假数
-   · `vite preview` **不压缩**：实测 data/land.geojson 传输 1244KB / 解压 1244KB（1:1），
-     而线上 GitHub Pages 是 `Content-Encoding: gzip` + 382KB。差点据此去改 geojson 精度。
-   · 新增 `test/e2e/serve-gzip.mjs`（按扩展名 gzip、不缓存，与 Pages 一致）；
-     probe-cold-start 加 `--net=fast4g|slow4g`（CDP 网络模拟）。
-   · 真数：**slow4g（400KB/s + 300ms RTT）冷启动 7343ms，传输 2472KB**。
+【新工具：probe-block.mjs —— 「如果这个资源不存在，地图会早多少」】
+逐项 abort 一个 URL，量「陆地画出来」的提前量。slow4g（400KB/s + 300ms RTT）基线 5726ms：
 
-② 为一个按钮下载三个视角（主要改动）
-   `DeckView` 自带「船上」入口按钮，所以它一直无条件挂在 MainMap 树上 ——
-   代价是 DeckView chunk（63KB gz）+ **three（187KB gz）** + post（13KB）每次冷启动都下载，
-   哪怕玩家从不上船。慢网时序显示这批请求在 @1934ms 发出，把真正挡在地图前面的
-   land.geojson（368KB @3000ms）挤到后面。
-   改法：入口按钮搬到 MainMap（testid 不变，e2e 照旧），`<DeckView/>` 只在
-   `deckView === true` 时挂载；V 键的"开"也搬到 MainMap（DeckView 关闭时不存在，
-   自己处理"开"会按了没反应），DeckView 只负责"关"。
-   → 冷启动 7303 → 6400ms，传输 2472 → **2209KB**。
+    noto 中文字体    −1131ms      bg_title      −551ms
+    sea-mask.bin     −349ms       ui_compass    −331ms
+    caravel 精灵     −222ms       elev-map      −139ms
+    sea-tile         −127ms       borders       −100ms
+    land.geojson / MapView chunk → 超时（没它们就没有地图）
 
-③ 预取别和地图抢管子
-   原来的"首帧之后 rIC 就预取 13 个块（约 150KB）"其实在首帧后立刻触发 ——
-   此时地图数据还没下完。改成**等陆地多边形真的画出来**再预取（8 秒兜底）。
-   → 冷启动 6400 → **6202ms**。
-   顺带删掉一段被复制粘贴两次的地图块预取（其中一份没有 PROD 判断，dev 里也会拉）。
+结论一：**387KB 的 elev-map 只值 139ms，161KB 的标题图值 551ms**。
+按体积排行猜"谁最贵"是错的 —— 只有和地图抢同一条管子、且在地图之前被请求的
+字节才付得起钱。这也是为什么先做工具再做改动。
 
-合计（slow4g）：**7343 → 6202ms（−1.1s，−15%）**，传输 2472 → 2209KB。
-环回下：地图可看 1231ms，地形符号 +292ms 补上（4356 像素，与改动前一致）。
+① 舰船精灵 512² PNG → 320² WebP（190KB → 20KB/张，整套 1918KB → 207KB）
+   显示尺寸实测：地图 84px、NPC 46px、卡面 40px、面板最大 96px（h-24）——
+   3 倍屏也就 288px。新脚本 scripts/shrink_images.mjs（本机没有 PIL/sharp/cwebp，
+   用 Chromium 自带 canvas.toDataURL('image/webp') 当编码器）。
+   目检：46/84/96 三档并排看不出差别。原 PNG 删除（切图脚本会重建，且已加说明）。
+   单测从"必须是 RGBA PNG"改成"合法 WebP + 带 alpha + **单文件 < 40KB**"（防腐化）。
 
-验证：单测 11432/0（新增 7 条守卫：DeckView 条件挂载 / 入口 testid 只在 MainMap 一份 /
-V 键归属 / 预取起点与兜底 / 地图块只许一处预取且带 PROD）、
-deck-view 123/0/1、map3d-check 91/0、clickable-audit「全部可点」、
-map-legibility 8/0、tsc/eslint 干净、build 19.5MB/157。
+② 罗盘玫瑰 512² → 256²（67KB → 21KB），最大显示 112px。同上目检。
 
-环境备注：Windows 上 `npm run build:clean` 会因 dist 被别的进程占住而 EPERM
-（rename 失败），改用 `npx vite build --outDir dist-live2` + `serve-gzip --root=` 量数。
-dist-live*/ 已进 .gitignore。
+③ 中文字体按 unicode-range 拆两片（369KB → boot 108KB + rest 273KB）
+   归因说字体值 1131ms，但它不是"挡渲染"——是**在地图数据下载的中途抢走整条管子**
+   （land.geojson 1768ms 开始，字体 1916ms 插进来，字体是 High 优先级）。
+   而首屏真正要画的中文只有 **61 个字**。
+   scripts/split_font_subset.py 从现有子集按码位切（A∪B 逐字等于原集合，不重切源字体）：
+     boot = 首屏用字 + ASCII/标点；rest = 其余 1579 码位
+   A 集合的判据是**实测**：抓首屏 DOM 文本存成 assets/fonts/boot-chars.txt。
+   第一次只按"源码文件白名单"取字，漏了 6 个字（制哥春晴朗节 —— 天气标签、季节名、
+   年表第一天的哥伦布、"绘制航海图…"），rest 于是在 2062ms 就被要走了，收益几乎为零；
+   改成实测字表后 rest 推到 5264ms（地图出来之后）。
+   unicode-range 允许"吸收两片都没有的码位"来连段，否则 CSS 从 55KB 涨到 95KB。
+   验证：font-coverage e2e 5/0 —— 2016 个字全部由 webfont 绘制，零回退。
+
+④ 地图数据和地图分块**并行**取（5407 → 4581ms，最大的一笔）
+   原来是串行链：主包(199KB) → MapView 分块(69KB) → land.geojson(368KB)。
+   时间轴显示 land 到 **@1768ms** 才发出，前面 1.7 秒全在等两块 JS。
+   在 MainMap 模块求值处（和分块预取同一个 PROD 块）提前发起
+   fetchLandGeojsonForRender() + loadLandData()（两者都缓存 Promise，不会重复请求；
+   landCheck 本来就在主包里，提前取一分字节没多）。
+
+结果（同一台机器、同一档限速，跑两遍）：**4536 / 4878ms**，传输 2209 → 2010KB。
+冷启动从本轮的 6202ms 降到约 4.6 秒；产物 19.5MB → **17.8MB**。
+地形符号仍在地图后约 280ms 补上（4356 像素，与改动前一致）。
+
+验证：单测 11488/0（新增 30 余条：两片 sha1 与 range 一致性、两片不许认领同一个字、
+首屏片必须 < 其余片 60%、boot-chars 非空且含晴朗/节、land 预取在 PROD 块里且
+landCheck 两个函数幂等）、font-coverage 5/0、map-legibility 8/0、clickable-audit 全部可点、
+tsc/eslint 干净、build 17.8MB/158。
+
+新增/改动的工具：test/e2e/probe-block.mjs（逐项拦截归因）、scripts/shrink_images.mjs
+（浏览器当图片编码器）、scripts/split_font_subset.py（按 unicode-range 拆字体）。

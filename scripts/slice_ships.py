@@ -8,6 +8,12 @@
 
 输出：public/assets/ships/*.png（RGBA，去背景 + 裁边 + 限高 520px）
 
+【切完必须再跑一遍】node scripts/shrink_images.mjs --only=ships
+  上面那一步输出的是 512² PNG（139~239KB/张），而屏幕上最大只用到 96px。
+  shrink 会把它们重编码成 320² 带 alpha 的 WebP（约 20KB/张），
+  然后 src/data/shipSprites.ts 引用的就是 .webp。直接把 PNG 上线会让冷启动
+  在慢网上多等约 0.5 秒（caravel 190KB 是首屏第 4 大资源）。
+
 去背景原理：
   棋盘格灰格实测在 205-240 之间波动（早期 ±18 容差参照法会漏掉 234-240 的亮格，
   导致帆面残留棋盘格碎片）。改用「中性度 + 连通性」双条件：

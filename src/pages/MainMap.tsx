@@ -26,6 +26,7 @@ import WindParticles from '@/components/map/WindParticles'
 import { useKeyboardControls } from '@/hooks/useKeyboardControls'
 import { useIsMobile } from '@/hooks/useIsMobile'
 import { prevailingWindBearing } from '@/utils/navigation'
+import { fetchLandGeojsonForRender, loadLandData } from '@/utils/landCheck'
 import type { PanelType } from '@/types'
 import { currentTitle } from '@/data/titles'
 import { FACTIONS } from '@/data/factions'
@@ -77,7 +78,31 @@ const EventCard = lazy(() => import('@/components/events/EventCard'))
  * （点「启航」→ 地图）。放在首帧后再取的话，急性子玩家要等约 280ms（实测）；
  * 而 62KB gz 提前下载对第一屏的影响可以忽略（同一批请求里还有 199KB 的主包）。
  */
-if (import.meta.env.PROD) void import('@/components/map/MapView')
+if (import.meta.env.PROD) {
+  void import('@/components/map/MapView')
+  /*
+   * 地图数据也在模块求值时就开始取。
+   *
+   * 【为什么不是"等 MapView 挂上再取"】那样是一条**串行链**：
+   *   主包(199KB) → MapView 分块(69KB) → land.geojson(368KB)
+   * slow4g 实测（probe-cold-start --net=slow4g）时间轴：
+   *   land.geojson 一直到 **@1768ms** 才发出 —— 而它才是"能不能看见地图"的那一份，
+   *   前面 1.7 秒全在等两块 JS 下完。总传输一样，但整条链串起来了。
+   *
+   * 这里发起之后，land 和 MapView 分块**并行**下载，player 点开地图时数据已在手里。
+   * 两个函数都是幂等的（`fetchLandGeojsonForRender` 与 `loadLandData` 都缓存 Promise，
+   * 见 utils/landCheck），MapView 挂上时不会重复请求。
+   *
+   * 【代价】玩家如果在开场就退出，这 368KB 白下。判断：开场日志卡的按钮就是
+   * 「翻开日志」→ 下一步就是地图，没有别的去处；而 MapView 分块本来就是同样处理。
+   *
+   * 【为什么 `loadLandData` 也要提前】地图内容挂载的条件是
+   * `landDataReady || landDataFailed`（几何必须有结论，否则航线是横穿陆地的直线）。
+   * 它要的是 sea-mask.bin（39KB）+ 港口航道，不提前就绪的话地图会白等。
+   */
+  void fetchLandGeojsonForRender().catch(() => { /* 失败由 MapView 自己报错重试 */ })
+  void loadLandData().catch(() => { /* 掩码缺失时 MapView 会退回"不可用" */ })
+}
 
 function prefetchSurface(): void {
   /*

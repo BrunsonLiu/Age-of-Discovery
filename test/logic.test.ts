@@ -947,14 +947,72 @@ console.log('== 24. 航行节拍器：操舵与航段绑定（store 集成）=='
   assert(!barSrc.includes('setHelmOpen'), '底栏不再有手动操舵按钮')
 }
 
-console.log('== 23. 舰船精灵资产 ==')
+console.log('== 23. 舰船精灵资产（WebP 320²，带 Alpha，且不许再胖回去） ==')
 {
-  // shipSprites.ts 里引用的每个 PNG 都必须真实存在、是 RGBA、尺寸合理
+  /*
+   * 【为什么这条从 PNG 改成了 WebP + 体积上限】
+   *
+   * 这 10 张图原来是 512×512 的 RGBA PNG，单个 139~239KB。可它们屏幕上的
+   * **最大**用途只有 96px（HelmModal 的 `h-24`）—— 地图上 84px、NPC 46px、
+   * 卡面 40px。1 倍屏 96px、3 倍屏 288px，512² 纯属浪费。
+   *
+   * 冷启动实测（slow4g，400KB/s）：`caravel.png` 190KB 是首屏第 4 大资源，
+   * 只排在主包、land.geojson、elev-map 后面 —— 0.5 秒的下载只为一张 46px 的图。
+   *
+   * 重编码（scripts/shrink_ship_sprites.mjs，用浏览器 canvas 编码 320² lossy
+   * WebP + alpha）后 190KB → 20KB，整套 1918KB → 207KB。
+   *
+   * 所以这条测试现在守三件事：
+   *   ① 每个引用都真实存在、是合法 WebP、**带 alpha**（没 alpha 就会露出方底）；
+   *   ② 尺寸够用但不浪费（≥150，≤512）；
+   *   ③ **单文件 < 40KB** —— 这条是防腐化的：谁再把 200KB 的原图放回来，
+   *      测试当场红，而不是等玩家在慢网上等半秒。
+   */
   const allSprites: Record<string, string> = { ...SHIP_SPRITES, ...SPECIAL_SPRITES }
   const spriteNames = Object.keys(allSprites)
   assert(spriteNames.length === 10, `精灵清单共 10 项（实际 ${spriteNames.length}）`)
+
+  /** 解析 WebP 头，返回 { ok, width, height, alpha }。三种容器都要认。 */
+  const readWebp = (buf: Buffer) => {
+    const ok =
+      buf.length > 30 &&
+      buf.toString('ascii', 0, 4) === 'RIFF' &&
+      buf.toString('ascii', 8, 12) === 'WEBP'
+    if (!ok) return { ok: false, width: 0, height: 0, alpha: false }
+    const fourCC = buf.toString('ascii', 12, 16)
+    let alpha = false
+    /* 逐块扫一遍：ALPH 块存在就说明带透明通道（VP8L 单独处理） */
+    for (let off = 12; off + 8 <= buf.length; ) {
+      const cc = buf.toString('ascii', off, off + 4)
+      const size = buf.readUInt32LE(off + 4)
+      if (cc === 'ALPH') alpha = true
+      off += 8 + size + (size % 2)
+    }
+    if (fourCC === 'VP8X') {
+      // VP8X flags: 0x10 = Alpha（与 ICC 的 0x20 不同位）
+      if (buf[20] & 0x10) alpha = true
+      return { ok: true, width: buf.readUIntLE(24, 3) + 1, height: buf.readUIntLE(27, 3) + 1, alpha }
+    }
+    if (fourCC === 'VP8 ') {
+      // 有损：3 字节帧标记 + 起始码 9d 01 2a，之后是 14 位宽高
+      return { ok: true, width: buf.readUInt16LE(26) & 0x3fff, height: buf.readUInt16LE(28) & 0x3fff, alpha }
+    }
+    if (fourCC === 'VP8L') {
+      // 无损：签名 0x2f，然后 14 位宽-1 / 14 位高-1 / 1 位 alpha
+      const bits = buf.readUInt32LE(21)
+      return {
+        ok: true,
+        width: (bits & 0x3fff) + 1,
+        height: ((bits >> 14) & 0x3fff) + 1,
+        alpha: alpha || ((bits >> 28) & 1) === 1,
+      }
+    }
+    return { ok: false, width: 0, height: 0, alpha }
+  }
+
+  let totalKB = 0
   for (const [key, url] of Object.entries(allSprites)) {
-    // URL 形如 /Age-of-Discovery/assets/ships/xxx.png → 取文件名回 public/ 找
+    // URL 形如 /Age-of-Discovery/assets/ships/xxx.webp → 取文件名回 public/ 找
     // （测试约定从项目根目录运行，esbuild bundle 后 cwd 不变）
     const fileName = url.split('/').pop()!
     const filePath = join(process.cwd(), 'public', 'assets', 'ships', fileName)
@@ -963,20 +1021,23 @@ console.log('== 23. 舰船精灵资产 ==')
       continue
     }
     const buf = readFileSync(filePath)
-    const isPng = buf.length > 33 && buf.readUInt32BE(0) === 0x89504e47
-    const colorType = isPng ? buf[25] : -1 // IHDR: 6 = RGBA
-    const width = isPng ? buf.readUInt32BE(16) : 0
-    const height = isPng ? buf.readUInt32BE(20) : 0
-    assert(
-      isPng && colorType === 6 && width >= 150 && height >= 150 && buf.length > 20000,
-      `${key}: ${fileName} 为 RGBA PNG ${width}x${height} ${Math.round(buf.length / 1024)}KB`,
-    )
+    const kb = buf.length / 1024
+    totalKB += kb
+    const { ok, width, height, alpha } = readWebp(buf)
+    assert(ok, `${key}: ${fileName} 不是合法 WebP`)
+    assert(alpha, `${key}: ${fileName} 没有 alpha 通道（会露出方底）`)
+    assert(width >= 150 && height >= 150, `${key}: ${fileName} 太小 ${width}x${height}（高倍屏会糊）`)
+    assert(width <= 512 && height <= 512, `${key}: ${fileName} 太大 ${width}x${height}`)
+    assert(kb < 40, `${key}: ${fileName} ${kb.toFixed(0)}KB 超过 40KB（320² WebP 应约 15~30KB）`)
   }
-  assert(shipSprite('caravel').endsWith('caravel.png'), 'caravel -> caravel.png')
-  assert(shipSprite('galleon').endsWith('galleon.png'), 'galleon -> galleon.png')
-  assert(shipSprite('sloop').endsWith('sloop.png'), 'sloop -> sloop.png')
-  assert(shipSprite('frigate').endsWith('frigate.png'), 'frigate -> frigate.png')
-  assert(shipSprite('unknown_type').endsWith('galleon.png'), '未知船型回退 galleon.png')
+  console.log(`  · 10 张精灵合计 ${totalKB.toFixed(0)}KB（原 512² PNG 为 1918KB）`)
+  assert(totalKB < 400, `整套精灵应 < 400KB（实际 ${totalKB.toFixed(0)}KB）`)
+
+  assert(shipSprite('caravel').endsWith('caravel.webp'), 'caravel -> caravel.webp')
+  assert(shipSprite('galleon').endsWith('galleon.webp'), 'galleon -> galleon.webp')
+  assert(shipSprite('sloop').endsWith('sloop.webp'), 'sloop -> sloop.webp')
+  assert(shipSprite('frigate').endsWith('frigate.webp'), 'frigate -> frigate.webp')
+  assert(shipSprite('unknown_type').endsWith('galleon.webp'), '未知船型回退 galleon.webp')
 }
 
 console.log('== 24. 天候系统：确定性生成 ==')
@@ -1353,7 +1414,13 @@ console.log('== 28. UI 装饰资产（F1-F6）==')
   const UI_FILES: Array<[string, number, number, boolean]> = [
     ['ui_parchment.webp', 1024, 1024, false],
     ['ui_frame_gold.webp', 512, 512, true],
-    ['ui_compass_rose.webp', 512, 512, true],
+    /*
+     * 罗盘玫瑰 256×256：屏幕上最大只到 112px（开场 w-28），地图 Compass 默认 96px，
+     * 3 倍屏也就 288 物理像素 —— 512² 是白带的 46KB（67KB → 21KB）。
+     * 【为什么原先写死 512】那时它确实按"一张大图"在用；这个断言的本意是
+     * "别把图缩小到糊"，所以现在守 256 下限 + Alpha，尺寸精确值不再有意义。
+     */
+    ['ui_compass_rose.webp', 256, 256, true],
     ['ui_banner.webp', 488, 152, true],
     ['ui_pennants.webp', 431, 128, true],
     ['ui_medal.webp', 210, 417, true],
@@ -6308,7 +6375,12 @@ console.log('\n== 天数口径守卫 ==')
         `${name} 没有残留静态 import`)
     }
     // ② 地图块在模块求值时预取（不是只在空闲时）
-    assert(/if \(import\.meta\.env\.PROD\) void import\('@\/components\/map\/MapView'\)/.test(mainSrc),
+    /*
+     * 现在是 `if (import.meta.env.PROD) { ... }` 块里的第一句（同一块里还有
+     * 地图数据的提前 fetch，见下面"地图数据并行"那组判据）。
+     * 判据只要求"PROD 块里出现、且在模块作用域（不是函数体里）"。
+     */
+    assert(/if \(import\.meta\.env\.PROD\)\s*\{[\s\S]{0,400}?void import\('@\/components\/map\/MapView'\)/.test(mainSrc),
       '地图块在模块求值时预取（否则急性子玩家点「启航」要干等约 280ms）')
     assert(/function prefetchSurface/.test(mainSrc), '其余块有空闲预取函数')
     assert(/requestIdleCallback/.test(mainSrc), '空闲预取用 requestIdleCallback（别和开局大图抢带宽）')
@@ -6366,16 +6438,58 @@ console.log('\n== 天数口径守卫 ==')
    *   只改字体不改清单 → sha1 对不上；只加文案不重切 → 用字不在清单里。
    */
   {
-    const fontPath = join(process.cwd(), 'src', 'assets', 'fonts', 'noto-serif-sc-subset.woff2')
-    const manifestPath = join(process.cwd(), 'src', 'assets', 'fonts', 'noto-serif-sc-coverage.json')
-    assert(existsSync(fontPath), '中文子集字体存在')
-    assert(existsSync(manifestPath), '中文字体覆盖清单存在（跑 .workbuddy/make_font_subset.py 生成）')
+    const fontDir = join(process.cwd(), 'src', 'assets', 'fonts')
+    const bootPath = join(fontDir, 'noto-serif-sc-boot.woff2')
+    const restPath = join(fontDir, 'noto-serif-sc-rest.woff2')
+    const manifestPath = join(fontDir, 'noto-serif-sc-coverage.json')
+    const rangesPath = join(fontDir, 'split-ranges.json')
+    assert(existsSync(bootPath), '首屏片字体存在（noto-serif-sc-boot.woff2）')
+    assert(existsSync(restPath), '其余片字体存在（noto-serif-sc-rest.woff2）')
+    assert(existsSync(manifestPath), '中文字体覆盖清单存在（跑 scripts/split_font_subset.py 生成）')
+    assert(existsSync(rangesPath), 'unicode-range 清单存在（同一脚本生成）')
     const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as
-      { fontSha1: string; chars: string; fontKB: number }
-    const sha1 = createHash('sha1').update(readFileSync(fontPath)).digest('hex')
-    assert(sha1 === manifest.fontSha1,
-      `字体与覆盖清单是同一份（清单 ${manifest.fontSha1.slice(0, 8)}… / 实际 ${sha1.slice(0, 8)}…）`
-      + ' —— 改了字体要重跑 .workbuddy/make_font_subset.py')
+      { fontSha1: { boot: string; rest: string }; chars: string; fontKB: number }
+    /* 两片各自的指纹：改了任一片都要重跑脚本，否则 css 里的 range 会与实际字形脱节 */
+    for (const [key, p] of [['boot', bootPath], ['rest', restPath]] as const) {
+      const sha1 = createHash('sha1').update(readFileSync(p)).digest('hex')
+      assert(sha1 === manifest.fontSha1[key],
+        `${key} 片与覆盖清单是同一份（清单 ${manifest.fontSha1[key].slice(0, 8)}… / 实际 ${sha1.slice(0, 8)}…）`
+        + ' —— 改了字体要重跑 scripts/split_font_subset.py')
+    }
+    /*
+     * 【两片的 unicode-range 必须与 sql 里的完全一致】这是拆分的命门：
+     * range 与字体对不上时，浏览器会以为"这个字我能画"却拿不到字形，
+     * 于是**整段文字静默回退到系统衬线**（和缺字一模一样，截图也看不出）。
+     * 所以判据是把 index.css 里两段 unicode-range 抠出来，逐字符比对 json。
+     */
+    {
+      const css = readFileSync(join(process.cwd(), 'src', 'index.css'), 'utf8')
+      const ranges = JSON.parse(readFileSync(rangesPath, 'utf8')) as { boot: string; rest: string }
+      const grab = (file: string) => {
+        const m = css.match(new RegExp(`noto-serif-sc-${file}\\.woff2'\\)\\s*format\\('woff2'\\);\\s*unicode-range: ([^;]+);`))
+        return m ? m[1].trim() : ''
+      }
+      assert(grab('boot') === ranges.boot, 'index.css 的 boot 段 unicode-range 与 split-ranges.json 一致')
+      assert(grab('rest') === ranges.rest, 'index.css 的 rest 段 unicode-range 与 split-ranges.json 一致')
+      /* 两段不许重叠：同一个码位被两片同时认领时，用哪一片由声明顺序决定，等于靠运气 */
+      const parse = (r: string) => r.split(',').map((x) => {
+        const t = x.trim().replace(/^U\+/i, '')
+        const [a, b] = t.split('-')
+        return [parseInt(a, 16), parseInt(b ?? a, 16)]
+      })
+      const bootR = parse(ranges.boot)
+      const restR = parse(ranges.rest)
+      const inR = (cps: number[][], cp: number) => cps.some(([a, b]) => cp >= a && cp <= b)
+      /*
+       * 允许重叠的唯一情形：两片**都没有**该字形的码位（区间为了连段把它们吸收进来了，
+       * 见 split_font_subset.py 里的 absorbable）。所以只对 chars 里的码位查重叠。
+       */
+      const overlap = [...manifest.chars]
+        .map((c) => c.codePointAt(0)!)
+        .filter((cp) => inR(bootR, cp) && inR(restR, cp))
+      assert(overlap.length === 0,
+        `两片 unicode-range 不许认领同一个已有的字（重叠 ${overlap.length} 个：${overlap.slice(0, 8).map((c) => String.fromCodePoint(c)).join('')}）`)
+    }
 
     const covered = new Set(manifest.chars)
     // 与 make_font_subset.py 同一套字符判据：去注释、只取字符串字面量与 JSX 文本
@@ -13201,8 +13315,70 @@ console.log('== 冷启动：不该为「一个按钮」下载三个视角 ==')
   /* 地图块只许有一处预取，且必须带 PROD 判断（dev 里拉它会连带编译一堆模块） */
   const mapImports = main.match(/void import\('@\/components\/map\/MapView'\)/g) ?? []
   assert(mapImports.length === 1, `地图块预取只允许一处（实际 ${mapImports.length} 处）`)
-  assert(/if \(import\.meta\.env\.PROD\) void import\('@\/components\/map\/MapView'\)/.test(main),
+  assert(/if \(import\.meta\.env\.PROD\)\s*\{[\s\S]{0,400}?void import\('@\/components\/map\/MapView'\)/.test(main),
     '地图块预取带 PROD 判断')
+}
+
+console.log('== 冷启动：地图数据必须和地图分块**并行**取，不能串行 ==')
+{
+  /*
+   * 【这条锁的是什么】原来的链路是串行的：
+   *   主包(199KB) → MapView 分块(69KB) → land.geojson(368KB)
+   * slow4g 实测时间轴：land.geojson 一直到 **@1768ms** 才发出 —— 前面 1.7 秒
+   * 全在等两块 JS，而 land 才是"能不能看见地图"的那一份。
+   *
+   * 在 MainMap 的模块求值处（和 MapView 分块预取同一个 PROD 块）提前发起之后：
+   *   冷启动 5407 → **4581ms**（同一台机器、同一档限速）
+   * 两个函数都是幂等的（fetchLandGeojsonForRender / loadLandData 都缓存 Promise），
+   * MapView 挂上时不会重复请求 —— 单测另有一条盯"只有一处请求"。
+   */
+  const main = readFileSync(join(process.cwd(), 'src', 'pages', 'MainMap.tsx'), 'utf8')
+  /*
+   * 用**位置**判据而不是字符窗口：两段代码之间夹着整段说明注释，
+   * 窗口写法（`[\s\S]{0,600}`）会随注释变长而失效 —— 这类"判据自己会腐烂"
+   * 的坑在甲板编译顺序那条上已经踩过一次。
+   */
+  {
+    const atProd = main.indexOf("if (import.meta.env.PROD) {")
+    const atLand = main.indexOf('fetchLandGeojsonForRender()')
+    assert(atProd > 0 && atLand > atProd && atLand < atProd + 4000,
+      'land.geojson 在模块求值时就发起（否则要等 MapView 分块下完才开始，实测 1.7 秒）')
+  }
+  assert(/loadLandData\(\)/.test(main),
+    'sea-mask / 港口航道也提前取（地图挂载条件是 landDataReady||landDataFailed）')
+
+  /* 幂等性：这两个函数必须自己缓存 Promise，否则提前取会变成"多请求一次 368KB" */
+  const lc = readFileSync(join(process.cwd(), 'src', 'utils', 'landCheck.ts'), 'utf8')
+  assert(/if \(landGeojsonPromise\) return landGeojsonPromise/.test(lc),
+    'fetchLandGeojsonForRender 缓存 Promise（提前取才不会重复请求）')
+  assert(/if \(loadingPromise\) return loadingPromise/.test(lc),
+    'loadLandData 缓存 Promise')
+}
+
+console.log('== 中文字体：首屏片必须明显小于其余片（否则拆分白做） ==')
+{
+  /*
+   * 拆分的目的只有一个：**首屏不用等全部 369KB**。
+   * 如果首屏片被越加越大（比如把帮助面板的字也加进来），这个收益会悄悄消失 ——
+   * 而画面、测试、e2e 全都看不出来（文字照样正确显示）。
+   * 所以守两条比例判据，比守绝对 KB 更能反映意图。
+   */
+  const m = JSON.parse(
+    readFileSync(join(process.cwd(), 'src', 'assets', 'fonts', 'noto-serif-sc-coverage.json'), 'utf8'),
+  ) as { bootKB: number; restKB: number; fontKB: number }
+  assert(m.bootKB > 20, `首屏片不能小到漏字（实际 ${m.bootKB}KB）`)
+  assert(m.bootKB < m.restKB * 0.6,
+    `首屏片应不到其余片的 60%（实际 ${m.bootKB}KB vs ${m.restKB}KB）—— 加字前先想"它真在首屏吗"`)
+  assert(m.bootKB + m.restKB <= m.fontKB + 20,
+    `两片之和 ≈ 总量（${m.bootKB}+${m.restKB} vs ${m.fontKB}）`)
+
+  /* 首屏字表本身要有内容：它被读进 A 片，空了就等于白名单退化成"只有白名单" */
+  const bootChars = readFileSync(
+    join(process.cwd(), 'src', 'assets', 'fonts', 'boot-chars.txt'), 'utf8',
+  ).split('\n').filter((l) => l && !l.startsWith('#')).join('')
+  assert(bootChars.length >= 40, `boot-chars.txt 至少 40 字（实际 ${bootChars.length}）`)
+  assert(bootChars.includes('朗') && bootChars.includes('节'),
+    'boot-chars.txt 含首屏天气与风速标签的字（晴朗 / 12节）')
 }
 
 console.log('== 分带索引与朴素射线法逐点一致（否则山会挪位置） ==')
