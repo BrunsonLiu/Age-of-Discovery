@@ -12,6 +12,7 @@ import { QUAY_LAMPS, QUAY_POSTS, starFieldCss } from '@/utils/harborMood'
 import { DURATION, EASE_STANDARD, prefersReducedMotion } from '@/utils/motion'
 import { useIsMobile } from '@/hooks/useIsMobile'
 import { useHarborAmbience } from './useHarborAmbience'
+import { quayGulls, quayWalkers } from './quayLife'
 import type { PanelType } from '@/types'
 
 /**
@@ -78,7 +79,7 @@ const PLATE_STYLE: React.CSSProperties = {
  * "同色画实心块"的坑）。现在剪影压到近黑，但**边缘给一道赭石高光线**，
  * 并把背景渐变末尾收到 0.78，让轮廓靠明度差显形。
  */
-function HarborForeground({ lampRef }: { lampRef: React.RefObject<SVGGElement | null> }) {
+function HarborForeground({ lampRef, reduced }: { lampRef: React.RefObject<SVGGElement | null>; reduced: boolean }) {
   /* bottom 18%：剪影要压在**还亮着的**城市上才有对比。
      第一版贴 bottom-0，落在已经压到近黑的下缘，桩和背景差值太小，
      截图里等于没有——"前景"不是"贴屏幕底"，是"挡在画面前面"。 */
@@ -117,6 +118,57 @@ function HarborForeground({ lampRef }: { lampRef: React.RefObject<SVGGElement | 
       <path d="M1368 34 L1280 118" stroke="#0b0704" strokeWidth="4" fill="none" strokeLinecap="round" />
 
       {/*
+        码头上走动的影子。
+        【为什么是剪影】画里的人影我们不知道在哪儿，贴上去会踩在水里或浮在半空；
+        前景这块是本项目自己画的 SVG，坐标是我们自己的 —— "人在码头上"才是真的。
+        两层嵌套：外层走 X（来回），内层颠一下 Y（走路的重心起伏）。
+        一个元素挂两条 transform 动画会只剩后一条，所以必须分开两层。
+        夜里这五个人几乎看不见（纯黑压纯黑），那是对的：灯下才照得出轮廓。
+      */}
+      <g className="quay-walkers" aria-hidden="true">
+        {quayWalkers().map((w, i) => (
+          <g key={i} transform={`translate(${w.x} ${w.y})`}>
+            <g
+              className={reduced ? undefined : 'quay-walk'}
+              style={reduced ? undefined : {
+                ['--span' as string]: `${w.span}px`,
+                animationDuration: `${w.sec}s`,
+                animationDelay: `${w.delay}s`,
+              }}
+            >
+              <g className={reduced ? undefined : 'quay-bob'} style={reduced ? undefined : { animationDelay: `${(i * 0.37).toFixed(2)}s` }}>
+                {/*
+                  人形必须**分段**画：腿（两条竖条）+ 躯干（上宽下窄）+ 头（圆）。
+                  第一版是一个"下宽上窄"的斗篷楔形 + 一颗头 —— 那个形状在 30px 上
+                  读出来是**钉子/黑刺**，不是人。人的辨识度全在"腿分开、肩比胯宽、
+                  脖子细"这三处比例上。
+                */}
+                <g fill="#100a06">
+                  {/* 腿：两条，微微分开；走路时一前一后由外层动画带出节奏 */}
+                  <rect x={-w.h * 0.085} y={-w.h * 0.46} width={w.h * 0.062} height={w.h * 0.46} rx={w.h * 0.02} />
+                  <rect x={w.h * 0.023} y={-w.h * 0.46} width={w.h * 0.062} height={w.h * 0.46} rx={w.h * 0.02} />
+                  {/* 躯干：肩 0.34h 宽、腰 0.24h 宽 */}
+                  <path
+                    d={`M${-w.h * 0.12} ${-w.h * 0.44} L${-w.h * 0.17} ${-w.h * 0.74}
+                        L${w.h * 0.17} ${-w.h * 0.74} L${w.h * 0.12} ${-w.h * 0.44} Z`}
+                  />
+                  {/* 脖子：没有它，头会像浮在肩上的一颗球 */}
+                  <rect x={-w.h * 0.035} y={-w.h * 0.82} width={w.h * 0.07} height={w.h * 0.1} />
+                  {/* 头 */}
+                  <circle cx={0} cy={-w.h * 0.86} r={w.h * 0.075} />
+                </g>
+                {/* 灯在左边：左侧留一道暖边（只在躯干上）。没有它，夜里就是一坨纯黑 */}
+                <path
+                  d={`M${-w.h * 0.12} ${-w.h * 0.44} L${-w.h * 0.17} ${-w.h * 0.74}`}
+                  stroke="#c9a96e" strokeOpacity={0.45} strokeWidth={1.3} fill="none"
+                />
+              </g>
+            </g>
+          </g>
+        ))}
+      </g>
+
+      {/*
         四盏码头灯 —— 夜里岸上唯一的暖光，也是"这里有人"的唯一证据。
         位置直接取 `QUAY_LAMPS`（与上面那四根系缆桩同一份数据），不在这里另写一遍坐标：
         两处各写一次、靠系数碰巧对上，这条坑在船首斜桅那里踩过。
@@ -139,6 +191,47 @@ function HarborForeground({ lampRef }: { lampRef: React.RefObject<SVGGElement | 
         ))}
       </g>
     </svg>
+  )
+}
+
+/**
+ * 白天的海鸥：三只，在水面那一条上慢慢飘。
+ *
+ * 【为什么放在水面而不是天空】画里的云是静态的贴图，鸟飞在静止的云里更假；
+ * 水面本来就有碎光在动，鸟从上面掠过是自洽的。
+ * 翅膀用 scaleY 压扁来"扇"——10px 宽的鸟读不出关节，只需要看出在动。
+ * 天黑之后它们自然消失：深色的鸟压在深色的海上，本来就看不见（不必额外藏）。
+ */
+function QuayGulls({ reduced }: { reduced: boolean }) {
+  return (
+    <div className="absolute inset-0 pointer-events-none" data-testid="harbor-gulls" aria-hidden="true">
+      {quayGulls().map((g, i) => (
+        <svg
+          key={i}
+          className={reduced ? 'absolute' : 'absolute quay-gull'}
+          style={{
+            left: `${((g.x / 1440) * 100).toFixed(2)}%`,
+            top: `${(g.y * 100).toFixed(2)}%`,
+            width: 22 * g.s,
+            height: 12 * g.s,
+            ...(reduced ? {} : { animationDuration: `${g.sec}s`, animationDelay: `${g.delay}s` }),
+          }}
+          viewBox="-11 -6 22 12"
+        >
+          <path
+            className={reduced ? undefined : 'quay-gull-wing'}
+            d="M-9 1 Q -4.5 -4 0 0.5 Q 4.5 -4 9 1"
+            /* 深褐 + 0.8：压在蓝灰海面上要 0.8 才读得出是鸟（0.5 时是水面上的一点脏）。
+               天黑后它自己就没了 —— 深色的鸟压深色的海，不必额外去藏。 */
+            stroke="#1c1308"
+            strokeOpacity="0.8"
+            strokeWidth="1.9"
+            fill="none"
+            strokeLinecap="round"
+          />
+        </svg>
+      ))}
+    </div>
   )
 }
 
@@ -373,6 +466,7 @@ export default function HarborView() {
           }}
         />
       </div>
+      <QuayGulls reduced={reduced} />
       {wet && (
         <div
           ref={amb.rainRef}
@@ -595,7 +689,7 @@ export default function HarborView() {
       </div>
 
       {/* ── 前景：码头剪影，压住画面下缘，不接任何点击 ─────────────── */}
-      {!isMobile && <HarborForeground lampRef={amb.lampsRef} />}
+      {!isMobile && <HarborForeground lampRef={amb.lampsRef} reduced={reduced} />}
     </div>
   )
 }

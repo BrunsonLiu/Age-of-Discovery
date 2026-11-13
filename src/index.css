@@ -1445,3 +1445,60 @@ body {
   opacity: 0;
   animation: sceneMeteor 9.5s linear infinite;
 }
+
+/* ========== 岸上：码头上走动的影子（HarborView / QuayLife） ==========
+ * 远景是画，画里的人永远停在同一个姿势；上一轮接上天光之后画面会随"时间"变，
+ * 但一秒之内它是死的。这几条动画把"活着"落到秒级。
+ *
+ * 【为什么走 X 与颠 Y 挂在两层】一个元素只能有一条 transform 动画
+ * （后写的会覆盖前一条），所以外层 <g> 负责 translateX 来回走，
+ * 内层 <g> 负责 translateY 的重心起伏。合在一个元素上会只剩其中一个。
+ *
+ * 幅度都按**像素**卡得很小（起伏 0.8px、艇身 1.6px）：岸上这屏是"停下来看的地方"，
+ * 动作一大就变成闪烁的横幅。
+ */
+@keyframes quayWalk {
+  from { transform: translateX(0); }
+  to { transform: translateX(var(--span, 0px)); }
+}
+.quay-walk {
+  animation-name: quayWalk;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+  animation-direction: alternate;
+}
+@keyframes quayBob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-0.8px); }
+}
+.quay-bob {
+  animation: quayBob 1.6s ease-in-out infinite;
+}
+
+/*
+ * 【这里删掉过一条 quayBoatBob（泊着的小艇轻轻起伏）】
+ * 元素也一起删了：小艇只能画在我们自己那块**纯黑的近景甲板**上，
+ * 黑船压黑底 —— 试了 y=132 与 y=119 两版，A/B 截图里都看不见。
+ * "看不见的元素"比"没有这个元素"更糟，所以连 CSS 一起撤掉，不留死代码。
+ */
+
+/* 海鸥：横向慢慢飘（alternate 来回），翅膀上下扇 */
+@keyframes gullDrift {
+  from { transform: translateX(0); }
+  to { transform: translateX(-90px); }
+}
+.quay-gull {
+  animation-name: gullDrift;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+  animation-direction: alternate;
+}
+@keyframes gullFlap {
+  0%, 100% { transform: scaleY(1); }
+  50% { transform: scaleY(0.25); }
+}
+.quay-gull-wing {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: gullFlap 0.9s ease-in-out infinite;
+}

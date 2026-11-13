@@ -259,6 +259,7 @@ import { shadeFaces as shadeHarbor } from '../src/components/deck/harborModel'
 import { harborMood, starFieldCss, QUAY_LAMPS, QUAY_POSTS } from '../src/utils/harborMood'
 import { NATIONS, legendDistanceNm, legendPending } from '../src/data/nations'
 import { logbookArt } from '../src/data/logbookArt'
+import { quayGulls, quayWalkers } from '../src/components/harbor/quayLife'
 import {
   appendLogbook, countEchoes, echoAt, echoDayFor, echoForPort, findClueFor,
   makeArrivalEntry, makeEchoEntry, makeLegendEntry, makeTitleEntry, markAllRead, pickRumor, LOGBOOK_MAX,
@@ -12599,4 +12600,47 @@ console.log('== 传说兑现要写进「见闻」一页 ==')
   const lvv = readFileSync(join(process.cwd(), 'src', 'components', 'panels', 'LogbookViews.tsx'), 'utf8')
   assert(/entry\.kind === 'legend' \? 'legend-entry'/.test(lvv), '见闻页给传说页一个稳定锚点（e2e 才查得到）')
   assert(/<Compass size=\{13\} className="text-gold-300 shrink-0"/.test(lvv), '传说页用罗盘图标（不是"到港"的锚）')
+}
+
+console.log('== 岸上的"活"：走动的影子与海鸥的布局 ==')
+{
+  /*
+   * 远景是画，画里的人永远停在同一个姿势。天光接上之后画面会随"时间"变，
+   * 但一秒之内它是死的 —— 而岸上是玩家停下来看最久的一屏。
+   * 这一层的判据全在**布局的几何约束**上（e2e 另外量两帧像素差）。
+   */
+  const ws = quayWalkers()
+  assert(ws.length === 5, '码头上有五个影子')
+  assert(ws.every(w => w.x >= 130 && w.x <= 1290),
+    '影子都在可站的那段码头上（x 130~1290：左边 130 内是灯脚下的取景区，右边 1320 外是桅杆）')
+  assert(ws.every(w => w.y >= 122 && w.y <= 127),
+    '脚都踩在甲板上沿附近（122~127，带一点纵深抖动；同一线会读成"站队"）')
+  assert(ws.every(w => w.h >= 38 && w.h <= 50),
+    '身高 38~50（<34 时读成"针尖"，比画里的人还小就是透视反了）')
+  assert(ws.every(w => Math.abs(w.span) >= 70 && Math.abs(w.span) <= 160), '每人走 70~160px 来回')
+  assert(ws.every(w => w.sec >= 24 && w.sec <= 40), '一趟 24~40 秒（快走会变成赶集）')
+  assert(ws.every(w => w.delay < 0), '延迟是负的：进场时已经在半路上，不会五个人同时起步')
+  assert(ws.some(w => w.span > 0) && ws.some(w => w.span < 0), '有人往左走、有人往右走')
+  /* 相邻两个人的出发点要拉开：叠在一起是"一条腿、两个头" */
+  const xs = ws.map(w => w.x).sort((a, b) => a - b)
+  const gap = Math.min(...xs.slice(1).map((x, i) => x - xs[i]))
+  assert(gap >= 40, `相邻两人至少隔 40px（最窄 ${gap}）`)
+  /* 同一个种子必须给同一批人：第二次来岸上要认得出来 */
+  assert(JSON.stringify(quayWalkers()) === JSON.stringify(ws), '固定种子 → 同一批人（不随刷新换人）')
+  assert(JSON.stringify(quayWalkers(1)) !== JSON.stringify(ws), '换种子换一批（不是写死五个人）')
+
+  const gs = quayGulls()
+  assert(gs.length === 3, '三只海鸥')
+  assert(gs.every(g => g.y >= 0.5 && g.y <= 0.58), '都在水面那一条上（0.50~0.58：不飞进静止的云里）')
+  assert(gs.every(g => g.s >= 1.1 && g.s <= 1.6), '尺寸 1.1~1.6 倍（再小就是水面上的脏点）')
+
+  /* 源码守卫：动画必须分两层（一个元素只能有一条 transform 动画） */
+  const hv = readFileSync(join(process.cwd(), 'src', 'components', 'harbor', 'HarborView.tsx'), 'utf8')
+  assert(/className=\{reduced \? undefined : 'quay-walk'\}/.test(hv), '走的动画挂在类上，且受 reduced 控制')
+  assert(/className=\{reduced \? undefined : 'quay-bob'\}/.test(hv), '颠的动画在**内层**独立一层（合在同一个元素上会只剩一条）')
+  assert(/quay-walkers/.test(hv) && /data-testid="harbor-gulls"/.test(hv), '影子与海鸥都有稳定锚点')
+  const css2 = readFileSync(join(process.cwd(), 'src', 'index.css'), 'utf8')
+  assert(/@keyframes quayWalk[\s\S]{0,120}translateX\(var\(--span/.test(css2), '走的动画读 --span 变量（每人距离不同）')
+  assert(/\.quay-gull-wing[\s\S]{0,200}animation: gullFlap/.test(css2), '海鸥扇翅用 scaleY（10px 宽的鸟只需要看出在动）')
+  assert(!/\.quay-boat\s*\{/.test(css2), '小艇的样式已撤掉（元素看不见就不留死代码）')
 }
