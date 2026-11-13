@@ -24,7 +24,7 @@ import {
   CHIP_MIN_EV, type AdjustedOutcome, type ChoiceSummary,
 } from '../src/utils/eventSummary'
 import { adjustOutcome, clampOutcomeToFleet } from '../src/utils/outcomeAdjust'
-import { buildTerrainSymbolsChunked, buildTerrainSymbols, filterPeaksByElevation } from '../src/utils/terrainDecor'
+import { buildTerrainSymbolsChunked, buildTerrainSymbols, filterPeaksByElevation, pointInRingNaive, pointInRingBanded, ringIndexForTest } from '../src/utils/terrainDecor'
 import { latToWorldZ, lonToWorldX, mercNorm, MAP_WORLD_SIZE, MERCATOR_LAT_LIMIT } from '../src/utils/mapProjection'
 import {
   coastSegments, graticuleSegments,
@@ -13128,18 +13128,141 @@ console.log('== 地形撒点分片跑，但符号必须一个不差 ==')
   })
   assert(same, '分片与同步的每一个符号（位置/种类/缩放/rank）都必须逐项相同')
 
-  /* 源码守卫：3D 层用的是分片版，而且按**时间预算**切（不是固定行数） */
-  const m3 = readFileSync(join(process.cwd(), 'src', 'components', 'map3d', 'Map3DView.tsx'), 'utf8')
-  assert(/buildTerrainSymbolsChunked\(/.test(m3), '3D 层用分片版撒点')
-  assert(/performance\.now\(\) - t0 < 8/.test(m3), '每片按 8ms 时间预算切（大块一行就十几毫秒）')
-  assert(/if \(!slice\.done\) \{[\s\S]{0,60}requestAnimationFrame\(runSlice\)/.test(m3),
-    '没跑完就交回下一帧（而不是同步抽干）')
   /*
-   * `finishPeaks` 必须在 `runSlice` 之前定义：第一片就可能跑完（小数据/快机器），
-   * 那时它在 TDZ 里 → ReferenceError，整块地形都不出来。
+   * 源码守卫：两个调用点都必须走**空闲调度 + 分片生成器**。
+   *
+   * 【为什么不是 rAF 分片】rAF 是"每帧固定塞 8ms"。实测冷启动时间轴：
+   * 撒点从 1.2 秒一直占到 4.4 秒、每 200ms 占 170ms —— 地图出来了，但玩家
+   * 第一下拖地图排在装饰工作后面。`runInIdleChunks` 只在真空闲时推进，
+   * 一有操作就让路（详见 utils/idleChunks 的注释）。
    */
-  assert(m3.indexOf('const finishPeaks =') < m3.indexOf('const runSlice ='),
-    'finishPeaks 定义在 runSlice 之前（否则第一片跑完时 TDZ 报错）')
+  const m3 = readFileSync(join(process.cwd(), 'src', 'components', 'map3d', 'Map3DView.tsx'), 'utf8')
+  const td = readFileSync(join(process.cwd(), 'src', 'components', 'map', 'TerrainDecor.tsx'), 'utf8')
+  assert(/buildTerrainSymbolsChunked\(/.test(m3), '3D 层用分片版撒点')
+  assert(/buildTerrainSymbolsChunked\(/.test(td), '2D 海图也用分片版撒点')
+  assert(/runInIdleChunks\(/.test(m3), '3D 层走空闲调度（不与玩家的第一下拖拽抢主线程）')
+  assert(/runInIdleChunks\(/.test(td), '2D 海图走空闲调度')
+  /* 2D 那边不许退回同步入口：那是冷启动 2 秒的源头 */
+  assert(!/=\s*useMemo\([\s\S]{0,80}buildTerrainSymbols\(/.test(td),
+    '2D 不许再用 useMemo 同步跑 buildTerrainSymbols（冷启动会冻 2 秒）')
+  /*
+   * `finishPeaks` 必须在它被当作回调传进去之前定义 —— 第一片就可能跑完
+   * （小数据/快机器），那时它在 TDZ 里 → ReferenceError，整块地形都不出来。
+   */
+  assert(m3.indexOf('const finishPeaks =') < m3.indexOf('runInIdleChunks(chunked'),
+    'finishPeaks 定义在传给 runInIdleChunks 之前（否则 TDZ）')
+
+  /* 空闲调度器本身：上限、下限、兜底、可取消，四件事都要在 */
+  const ic = readFileSync(join(process.cwd(), 'src', 'utils', 'idleChunks.ts'), 'utf8')
+  assert(/requestIdleCallback\?\./.test(ic) || /typeof w\.requestIdleCallback === 'function'/.test(ic),
+    '优先用 requestIdleCallback')
+  assert(/timeout: 1200/.test(ic), '给 1.2 秒 timeout —— 主线程一直忙也不许被饿死')
+  assert(/sliceMs \?\? 8/.test(ic) && /minSliceMs \?\? 4/.test(ic),
+    '每片上限 8ms、下限 4ms（空闲很多时也不能一口吃几十毫秒）')
+  assert(/didTimeout/.test(ic) && /minSliceMs/.test(ic),
+    'didTimeout 时必须强行推进（否则超时回调也被跳过 = 永远不完成）')
+  assert(/setTimeout\(\(\) => cb\(/.test(ic), '没有 requestIdleCallback 时退回 setTimeout')
+}
+
+console.log('== 分带索引与朴素射线法逐点一致（否则山会挪位置） ==')
+{
+  /*
+   * 【这条锁的是什么】撒点原来对每个候选点都用朴素射线法扫**整圈**顶点。
+   * 欧亚那块上千个顶点、每个候选格 5 次查询，实测占冷启动主线程 39%（2048ms）。
+   *
+   * 现在按**纬度分带**：每次查询只测"纬度区间盖住这个点"的那些边 ——
+   * 两端都在同一侧的边在射线法里恒不计数，跳过它们不改变任何结果。
+   *
+   * 但这正是最危险的那类优化：差一条边，"这一点在不在陆地内"就翻了，
+   * 地图上的山会成片挪位置（历史上踩过两次）。所以判据是**逐点完全相等**，
+   * 而且要覆盖退化情形：顶点上、水平边、竖直边（经度相同，分母为 0）、
+   * 包围盒外、以及凹多边形的缺口里。
+   */
+  /* 一个"梯子"形凹多边形：上下各一条边、左右各三级台阶（含水平边与竖直边） */
+  const poly: [number, number][] = [
+    [0, 0], [10, 0], [10, 4], [6, 4], [6, 8], [10, 8], [10, 12],
+    [0, 12], [0, 8], [4, 8], [4, 4], [0, 4],
+  ]
+
+  /* ① 网格逐点：步长 0.25° —— 覆盖边界、顶点、内部、外部 */
+  let checked = 0
+  const bad: string[] = []
+  for (let lat = -2; lat <= 14; lat += 0.25) {
+    for (let lng = -2; lng <= 12; lng += 0.25) {
+      const a = pointInRingNaive(lat, lng, poly)
+      const b = pointInRingBanded(lat, lng, poly)
+      if (a !== b) bad.push(`(${lat},${lng}) 朴素 ${a} / 分带 ${b}`)
+      checked++
+    }
+  }
+  /* 逐点 assert 会把总计数冲成上万条、把"通过数"变成噪音，所以聚合成一条 */
+  assert(bad.length === 0, `网格 ${checked} 点必须全部一致，不一致 ${bad.length} 个：${bad.slice(0, 3).join('；')}`)
+  console.log(`  · 网格逐点对比 ${checked} 个点，全部一致`)
+
+  /* ② 顶点与边中点：这些地方最容易差一条边就翻 */
+  const badVertex = poly.filter(([lng, lat]) =>
+    pointInRingNaive(lat, lng, poly) !== pointInRingBanded(lat, lng, poly)
+    || pointInRingNaive(lat + 1e-9, lng, poly) !== pointInRingBanded(lat + 1e-9, lng, poly))
+  assert(badVertex.length === 0, `顶点/顶点上偏必须一致，不一致 ${badVertex.length} 个`)
+  /*
+   * ③ 形状语义（用参照实现确认过的三个点，不是凭几何直觉写的）：
+   *    底梁 (lat 2, lng 5) 在内；中梁 (lat 6, lng 5) 也在内；
+   *    缺口 (lat 6, lng 8) 与左缺口 (lat 6, lng 2) 在外。
+   * 【为什么强调"确认过"】我第一版凭直觉写反了，断言把**正确**的实现判红。
+   */
+  assert(pointInRingBanded(2, 5, poly) === true, '底梁内')
+  assert(pointInRingBanded(6, 5, poly) === true, '中梁内')
+  assert(pointInRingBanded(6, 8, poly) === false, '缺口内判为外')
+  assert(pointInRingBanded(6, 2, poly) === false, '左缺口内判为外')
+
+  /* ④ 索引真的建起来了，而且桶数随纬度跨度走 */
+  const idx = ringIndexForTest(poly)
+  assert(idx.bucketEdges.length >= poly.length, `每条边至少进一个桶（${idx.bucketEdges.length} ≥ ${poly.length}）`)
+  assert(idx.bandCount >= 4 && idx.bandCount <= 128, `桶数在 4~128（实际 ${idx.bandCount}）`)
+
+  /*
+   * ⑤ 真实数据：拿 land.geojson 里**最大的那块**当参照。
+   * 合成多边形只能证明"逻辑没错"，证明不了"在真的海岸线上也一致"。
+   */
+  const gj = JSON.parse(readFileSync(join(process.cwd(), 'public', 'data', 'land.geojson'), 'utf8'))
+  const ringsOf = (f: { geometry?: { type?: string; coordinates?: unknown } }): [number, number][][] => {
+    const g = f.geometry
+    if (!g) return []
+    if (g.type === 'Polygon') return (g.coordinates as [number, number][][])
+    if (g.type === 'MultiPolygon') return (g.coordinates as [number, number][][][]).flat()
+    return []
+  }
+  let best: [number, number][] | null = null
+  let bestN = 0
+  for (const f of gj.features ?? []) {
+    for (const ring of ringsOf(f)) {
+      if (ring.length > bestN) { bestN = ring.length; best = ring }
+    }
+  }
+  assert(best && bestN > 200, `找到一条足够长的真实海岸线（${bestN} 个顶点）`)
+  /* 用它的包围盒撒 400 个点逐点对比 */
+  let minLng = Infinity, maxLng = -Infinity, minLat = Infinity, maxLat = -Infinity
+  for (const [lng, lat] of best!) {
+    if (lng < minLng) minLng = lng
+    if (lng > maxLng) maxLng = lng
+    if (lat < minLat) minLat = lat
+    if (lat > maxLat) maxLat = lat
+  }
+  let real = 0
+  let insideCount = 0
+  const badReal: string[] = []
+  for (let i = 0; i < 400; i++) {
+    const lat = minLat + (maxLat - minLat) * ((i * 37) % 401) / 400
+    const lng = minLng + (maxLng - minLng) * ((i * 89) % 401) / 400
+    const a = pointInRingNaive(lat, lng, best!)
+    const b = pointInRingBanded(lat, lng, best!)
+    if (a !== b) badReal.push(`(${lat.toFixed(4)},${lng.toFixed(4)}) ${a}/${b}`)
+    if (a) insideCount++
+    real++
+  }
+  assert(insideCount > 40, `样本里要有足够多"在内"的点才检验得出差异（实际 ${insideCount}/${real}）`)
+  assert(badReal.length === 0, `真实海岸线 ${real} 点必须全部一致，不一致 ${badReal.length} 个：${badReal.slice(0, 3).join('；')}`)
+  console.log(`  · 真实海岸线 ${bestN} 顶点、${real} 个点逐点一致（其中 ${insideCount} 个在陆地内）`)
 }
 
 console.log('== 首次进甲板：先盖上提示再编译，编译完才起帧循环 ==')

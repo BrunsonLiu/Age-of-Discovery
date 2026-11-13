@@ -50,6 +50,7 @@ import { surfaceDimMul, seaOverlayMul } from '@/utils/mapSurfaceDim'
 import { loadReliefNormalMap } from '@/utils/reliefNormalMap'
 import { seasonAt } from '@/utils/season'
 import { buildTerrainSymbols, buildTerrainSymbolsChunked, filterPeaksByElevation } from '@/utils/terrainDecor'
+import { runInIdleChunks } from '@/utils/idleChunks'
 import { loadElevationSampler } from '@/utils/elevation'
 import { buildMap3DGraticule, GRATICULE_OPACITY_NEAR } from './mapGraticule3d'
 import { fetchBordersGeojson } from '@/utils/mapGeoJson'
@@ -1163,18 +1164,14 @@ export default function Map3DView() {  const mountRef = useRef<HTMLDivElement>(n
           peaks.coldGroups.south.visible = !coldNorth
         }
 
-        let slice = chunked.next()
-        const runSlice = () => {
+        /*
+         * 【为什么是空闲调度】同上：进 3D 之后玩家会立刻拖视角，
+         * 撒点不该和那几下抢主线程。空闲时推进、有操作让路、1.2 秒兜底不被饿死。
+         */
+        runInIdleChunks(chunked, (symbols) => {
           if (disposed) return
-          const t0 = performance.now()
-          while (!slice.done && performance.now() - t0 < 8) slice = chunked.next()
-          if (!slice.done) {
-            requestAnimationFrame(runSlice)
-            return
-          }
-          finishPeaks(slice.value, elev)
-        }
-        runSlice()
+          finishPeaks(symbols, elev)
+        })
       })
 
       /*

@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useMap } from 'react-leaflet'
 import L from 'leaflet'
-import { buildTerrainSymbols, hasSnow, rankMaxForZoom, type TerrainSymbol } from '@/utils/terrainDecor'
+import { buildTerrainSymbolsChunked, hasSnow, rankMaxForZoom, type TerrainSymbol } from '@/utils/terrainDecor'
 import { loadElevationSampler, type ElevationSampler } from '@/utils/elevation'
+import { runInIdleChunks } from '@/utils/idleChunks'
 
 /**
  * 地形装饰层：把 terrainDecor 生成的山丘 / 树丛画到地图上。
@@ -197,10 +198,31 @@ export default function TerrainDecor({ geojson }: { geojson: GeoJSON.GeoJsonObje
     return () => { alive = false }
   }, [])
 
-  const symbols = useMemo(
-    () => (elev.ready ? buildTerrainSymbols(geojson, { elevationAt: elev.fn ?? undefined }) : []),
-    [geojson, elev],
-  )
+  /*
+   * 【为什么不再是 useMemo】实测冷启动（生产构建）到"陆地画出来"2.8 秒里，
+   * `pointInRing` 一个人占 **2008ms** —— 和 3D 板的地形撒点是同一个函数，
+   * 而 2D 这边走的是同步入口，整段卡在首屏上：地图还没出，主线程已经在算山该在哪。
+   *
+   * 改成渐进：先让地图（陆地、海岸、港口）立刻出来，山与树在接下来不到一秒里补上。
+   * 符号是**装饰** —— 晚半秒到不影响"船在哪、岸在哪"这些要立刻读的信息。
+   * 分片跑的是 3D 那边同一个生成器，所以两条路径的符号位置逐项相同（有单测守）。
+   *
+   * 【为什么跑完再一次性 setSymbols，而不是每片都 set】
+   * 这个图层是一张整屏 canvas，每次 `symbols` 变化都会整层重画。
+   * 逐片 set 会让它重画十几次，反而更卡；跑完一次性换上去只有一次重画。
+   */
+  const [symbols, setSymbols] = useState<TerrainSymbol[]>([])
+  useEffect(() => {
+    if (!elev.ready) { setSymbols([]); return }
+    /*
+     * 【为什么用空闲调度而不是 rAF】rAF 是"每帧固定塞 8ms"，实测时间轴显示
+     * 撒点会从 1.2 秒一直占到 4.4 秒（每 200ms 占 170ms）—— 地图出来了，
+     * 但玩家第一下拖地图排在装饰工作后面。
+     * `runInIdleChunks` 只在浏览器真空闲时推进：玩家一操作就让路。
+     * 详见 `utils/idleChunks` 里的取舍说明。
+     */
+    return runInIdleChunks(buildTerrainSymbolsChunked(geojson, { elevationAt: elev.fn ?? undefined }), setSymbols)
+  }, [geojson, elev])
   const rafRef = useRef<number | null>(null)
 
   useEffect(() => {
