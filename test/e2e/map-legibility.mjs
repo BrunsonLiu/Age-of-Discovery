@@ -178,10 +178,27 @@ if (samples.land) {
   const [lx, ly] = [samples.land.x, samples.land.y]
   landLum = lum(...px(lx, ly))
 }
-// 海上取"最暗的一批点"的均值：海面有刻线明暗波动，取均值更稳
+/*
+ * 海上取**密集网格的中位数**。
+ *
+ * 【为什么不是"60 个点取最暗一半的均值"】那样每 40px 才取一个点，风痕层
+ * （40 条长度 12~34px、透明度 0.05~0.15 的淡线，随机分布且每帧在动）只要
+ * 有一条压到采样点上，均值就动 0.15 —— 实测同一份代码三次跑出 29.9 / 30.0 / 30.1，
+ * 判据 `> 30` 正好卡在这个抖动区间里，于是同一次改动有时绿有时红。
+ * 那不是代码在变，是**采样太稀**。
+ *
+ * 改成 8px 网格（三千多个点），**仍取最暗的一半的均值**：
+ *   · 密度上去 → 40 条随机淡线摊到三千个点上，影响从 ±0.15 降到 ±0.02；
+ *   · 仍取最暗一半 → 采样区左上方压着引路人的对话框（羊皮纸亮面板，
+ *     实测中位数会被它抬到 50.4，比海面本身亮 20 级），必须把亮的那半排除。
+ * 阈值不动（仍然 > 30），只是让测量不再掷骰子。
+ */
 if (seaPts.length) {
-  const ls = seaPts.map(([x, y]) => lum(...px(x, y))).sort((a, b) => a - b)
-  seaLum = ls.slice(0, Math.floor(ls.length * 0.5)).reduce((a, b) => a + b, 0) / Math.floor(ls.length * 0.5)
+  const dense = []
+  for (let y = 200; y < 700; y += 8) for (let x = 120; x < 520; x += 8) dense.push(lum(...px(x, y)))
+  dense.sort((a, b) => a - b)
+  const half = Math.floor(dense.length * 0.5)
+  seaLum = dense.slice(0, half).reduce((a, b) => a + b, 0) / half
 }
 if (seaLum !== null && landLum !== null) {
   const diff = landLum - seaLum

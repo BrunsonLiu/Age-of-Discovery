@@ -22,6 +22,8 @@
  * 但玩家感受到的是"大部分时候卡不卡"。
  */
 
+import type { QualityLevel } from './quality'
+
 /**
  * 每档的步长。
  *
@@ -66,4 +68,42 @@ export function decidePixelRatio(
   // 一次只降一档：降太多会直接糊成一片，而慢的原因可能是暂时的
   const next = Math.max(minRatio, Math.round((current - PIXEL_RATIO_STEP) * 100) / 100)
   return next < current ? next : null
+}
+
+/**
+ * 分辨率已经降到底、帧间隔还是慢 —— 该不该再降一档**画质预设**？
+ *
+ * 【为什么要有第二道防线】`decidePixelRatio` 只能把内部分辨率压到
+ * `preset.minScale`（0.62~0.78）。压到底之后，剩下的成本与像素无关：
+ * bloom、FXAA、颗粒、装饰层（压顶石/货堆/屋脊）、阴影 pass —— 这些在
+ * 1280×800 的核显上照样能吃掉 10ms 以上。此时唯一还能动的杠杆是预设本身。
+ *
+ * 【为什么要求"到下限"才判】分辨率还没降到底就先降画质，等于把观感
+ * （多余细节消失）换成了本来还能通过"糊一点"避免的流畅度 —— 顺序反了。
+ *
+ * 【为什么用 p75 而不是中位数】中位数在"一半帧好一半帧烂"时是好的，
+ * 但玩家对这种交替特别敏感（一卡一顺比稳定 40fps 更难受）。取 75 分位
+ * 会让"每四帧卡一次"也触发降档。
+ *
+ * @param current     当前画质档位
+ * @param frameMs     最近若干帧的帧间隔（毫秒）
+ * @param atMinScale  内部渲染分辨率是否已经降到该档下限
+ * @returns 建议降到的档位；`null` 表示维持不变（已在最低档 / 样本不足 / 并不慢）
+ */
+export function decideQualityDowngrade(
+  current: QualityLevel,
+  frameMs: readonly number[],
+  atMinScale: boolean,
+): QualityLevel | null {
+  if (!atMinScale) return null
+  if (current === 'low') return null
+  if (frameMs.length < MIN_SAMPLES) return null
+
+  const sorted = [...frameMs].sort((a, b) => a - b)
+  const p75 = sorted[Math.floor(sorted.length * 0.75)]
+  // 比 decidePixelRatio 的 24ms 更宽：分辨率已经糊了还卡，说明是真跑不动，
+  // 但也要留一点余量，别因为一次 GC 就把玩家的画质降掉。
+  if (!(p75 > SLOW_FRAME_MS + 8)) return null
+
+  return current === 'high' ? 'mid' : 'low'
 }

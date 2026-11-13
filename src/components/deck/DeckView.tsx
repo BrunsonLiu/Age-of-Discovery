@@ -5,7 +5,8 @@ import { useGameStore } from '@/store/useGameStore'
 import { useMapStore } from '@/store/useMapStore'
 import { cloudDriftRadPerSec, createCloudLayer } from './cloudBillboards'
 import { skyAt } from '@/utils/skyClock'
-import { getPreset, onQualityChange } from '@/utils/quality'
+import { getPreset, getQuality, onQualityChange, setQuality } from '@/utils/quality'
+import { decideQualityDowngrade } from '@/utils/adaptiveResolution'
 import { createDeckShip, type DeckShip } from './shipModel'
 import { DECK_WAVES, deckShipPose, deckWaveHeight } from './deckWaves'
 import { findCoast, coastLayout, bearingWord, compassWord, wrapDeg, type CoastSighting } from './deckCoast'
@@ -1612,9 +1613,19 @@ export default function DeckView() {
     let accT = 0
     let accN = 0
     let lastAdjust = 0
+    /*
+     * 第二道防线：分辨率已经压到下限定仍然慢 → 降一档**画质预设**。
+     * 分辨率只能救"像素太多"，救不了 bloom/抗锯齿/颗粒/装饰层这些与像素
+     * 无关的固定开销；压到 0.62 倍还卡，就只剩预设可动了。
+     * 冷却是 6 秒：一次误判（后台切回来／首帧编译）不该连降两档。
+     */
+    const frameMsBuf: number[] = []
+    let lastDowngrade = 0
     const adaptResolution = (dt: number, now: number) => {
       accT += dt
       accN++
+      frameMsBuf.push(dt * 1000)
+      if (frameMsBuf.length > 40) frameMsBuf.shift()
       // 12 帧就够判断（60fps 下 0.2 秒；低端机 3 秒内也能降下第一档）
       if (accN < 12) return
       const avg = accT / accN
@@ -1625,6 +1636,13 @@ export default function DeckView() {
         prScale = Math.max(preset.minScale, prScale - 0.12)
         renderer.setPixelRatio(basePR * prScale)
         lastAdjust = now
+      } else if (avg > 0.023 && now - lastDowngrade > 6) {
+        const next = decideQualityDowngrade(getQuality(), frameMsBuf, true)
+        if (next) {
+          lastDowngrade = now
+          frameMsBuf.length = 0
+          setQuality(next)
+        }
       } else if (avg < 0.0175 && prScale < 0.999) {
         prScale = Math.min(1, prScale + 0.08)
         renderer.setPixelRatio(basePR * prScale)

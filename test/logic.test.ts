@@ -245,7 +245,7 @@ import { OCEAN_CURRENTS, currentFlowPoints, windArrowSites } from '../src/data/m
 import { ports } from '../src/data/ports'
 import { RELIC_PICKUP_NM, relicDistanceNm, relicInReach } from '../src/data/relics'
 import { advanceAlongRoute } from '../src/utils/sailStep'
-import { decidePixelRatio, PIXEL_RATIO_STEP, SLOW_FRAME_MS, MIN_SAMPLES } from '../src/utils/adaptiveResolution'
+import { decidePixelRatio, decideQualityDowngrade, PIXEL_RATIO_STEP, SLOW_FRAME_MS, MIN_SAMPLES } from '../src/utils/adaptiveResolution'
 import { isTapGesture, TAP_SLOP_MOUSE, TAP_SLOP_TOUCH } from '../src/utils/tapGesture'
 import { landPaperPatternMarkup, PAPER_TILE } from '../src/utils/paperTexture'
 import { buildRhumbNetwork, RHUMB_CENTERS } from '../src/utils/rhumbLines'
@@ -12565,8 +12565,6 @@ console.log('== 卡顿治理：三处"白花钱"的地方不许回来 ==')
   assert(/VITE_PROBE === '1'/.test(gs2), 'store 的调试钩子支持 VITE_PROBE（本地按生产方式剖析）')
 }
 
-console.log(`\n最终结果：${passed} 通过 / ${failed} 失败`)
-if (failed > 0) process.exit(1)
 
 /*
  * ---- 屋面的瓦垄、窗框、屋顶比例、海面的纵深 ----
@@ -12719,7 +12717,7 @@ console.log('== 岸上天光：同一座港，白天和夜里是两张画 ==')
    * 屏幕一缩放就会错开（"两处各算一次、靠系数互相抵消才碰巧对上"这条坑踩过）。
    */
   assert(QUAY_LAMPS.length === testQuayPosts.length && QUAY_LAMPS.length === 4, '四盏灯对四根系缆桩')
-  assert(QUAY_LAMPS.every((l, i) => Math.abs(l.x - (QUAY_POSTS[i] + 11)) < 1e-9),
+  assert(QUAY_LAMPS.every((l, i) => Math.abs(l.x - (testQuayPosts[i] + 11)) < 1e-9),
     '每盏灯正对柱心（柱宽 22，灯在 x+11）')
   assert(QUAY_LAMPS.every(l => l.y < 82 && l.y > 40), '灯在柱顶之上、又不高到脱离画框')
 
@@ -12978,3 +12976,145 @@ console.log('== 3D 海图的风箭头不许飘在陆地上 ==')
     '掩码到位后重算一次（建层时掩码往往还没下载完）')
 }
 
+console.log('== 合并只许动"无名"的零件，而且要能进无名组 ==')
+{
+  /*
+   * 【这条锁的是什么】甲板单帧原本 308 次提交，`deck-ship` 独占 207 次 ——
+   * 但它的**直接**子级只有 10 个无名网格，另外 95 个可绘制对象全在 8 个
+   * **没有名字的 Group** 里（建船时临时建的中转层）。原来的合并只遍历直接子级，
+   * 那 95 个一个都碰不到，于是"合并过了"却只省了 28 次。
+   *
+   * 递归进去合必须同时守住三件事，否则会静默错位或丢引用：
+   *   ① 组本身要留着（整组可能在摆/在晃——灯、舵轮、兽栏的羊）；
+   *   ② 有名字的网格不许合（运行时会按名字改它：湿痕带改 opacity、
+   *      斜桅要取 BOWSPRIT_TIP、e2e 一整套结构判据）；
+   *   ③ 不可见的命中体不许合（点击与 e2e 按名字找那个盒子）。
+   */
+  const { mergeStaticChildren } = await import('../src/components/deck/mergeStatic')
+  const matWood = new THREE.MeshLambertMaterial({ color: 0x8a6a48 })
+  const matIron = new THREE.MeshLambertMaterial({ color: 0x2a2a2c })
+  const mk = (m: THREE.Material, name = '') => {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), m)
+    if (name) mesh.name = name
+    return mesh
+  }
+
+  const root = new THREE.Group()
+  root.name = 'deck-ship'
+  // 直接子级：3 个同材质 + 1 个具名 + 1 个命中体
+  root.add(mk(matWood), mk(matWood), mk(matWood), mk(matWood, 'ship-hull'))
+  const hit = mk(new THREE.MeshBasicMaterial({ visible: false }), 'ship-hit-wheel')
+  root.add(hit)
+  // 无名组：4 个零件（2 木 2 铁）+ 里面的无名小组（再 2 个木）
+  const grp = new THREE.Group()
+  grp.position.set(2, 0, 0)
+  grp.add(mk(matWood), mk(matWood), mk(matIron), mk(matIron))
+  const sub = new THREE.Group()
+  sub.position.set(0, 1, 0)
+  sub.add(mk(matWood), mk(matWood))
+  grp.add(sub)
+  root.add(grp)
+
+  const count = (o: THREE.Object3D) => {
+    let n = 0
+    o.traverseVisible((x) => { if ((x as THREE.Mesh).isMesh) n++ })
+    return n
+  }
+  /*
+   * 注意 `traverseVisible` 看的是 `object.visible`，不是 `material.visible` ——
+   * 命中体（材质不可见）**仍然被数进去**：它是靠"画了但透明"来当点击体的。
+   * 直接子级 5（3 木 + 1 具名 + 1 命中体）+ 无名组 4 + 小组 2 = 11。
+   */
+  const before = count(root)
+  assert(before === 11, `造景应有 11 个可见网格（实际 ${before}）`)
+
+  // 不递归：只省直接子级那 4 个木 → 1 个（3 合并 + 具名 1 保留，不可见 1 保留）
+  const noRec = mergeStaticChildren(root, { onlyUnnamed: true })
+  console.log(`  · 不递归 ${noRec.before} → ${noRec.after}`)
+  assert(noRec.after === before - 2,
+    `不递归只该合并直接子级的 3 个木（11 → 9，实际 ${noRec.after}）`)
+
+  // 递归：组里的也合，但组与小组都还在
+  const rec = mergeStaticChildren(root, { onlyUnnamed: true, recurse: true })
+  console.log(`  · 递归 ${rec.before} → ${rec.after}`)
+  assert(rec.after < noRec.after, `递归必须比不递归更省（${rec.after} < ${noRec.after}）`)
+  assert(!!root.getObjectByName('ship-hull'), '有名字的网格必须留着（运行时会按名字改它）')
+  assert(root.children.some((c) => c.userData && (c as THREE.Mesh).material
+    && ((c as THREE.Mesh).material as THREE.Material).visible === false),
+    '不可见的命中体必须留着（点击与 e2e 按名字找它）')
+  const groups = root.children.filter((c) => (c as THREE.Group).isGroup)
+  assert(groups.length === 1 && groups[0].children.some((c) => (c as THREE.Group).isGroup),
+    '无名组与它的小组都还在（组级动画照旧生效）')
+  // 合并后的几何必须烘在**父级局部**坐标里，不是世界坐标：子件在组内挪过 2 米
+  const merged = groups[0].children.find((c) => (c as THREE.Mesh).isMesh) as THREE.Mesh | undefined
+  if (merged) {
+    merged.geometry.computeBoundingBox()
+    const cx = (merged.geometry.boundingBox!.min.x + merged.geometry.boundingBox!.max.x) / 2
+    assert(Math.abs(cx) < 1e-6, `合并几何要按组内局部坐标烘（中心 x 应≈0，实际 ${cx.toFixed(3)}）`)
+  }
+  matWood.dispose(); matIron.dispose()
+}
+
+console.log('== 帧率撑不住时，画质预设是最后一道闸 ==')
+{
+  /*
+   * 【这条锁的是什么】分辨率只能压到该档下限（0.62~0.78 倍）。压到底之后，
+   * bloom / 抗锯齿 / 颗粒 / 装饰层这些成本与像素无关，在核显上照样吃掉十几毫秒。
+   * 此前的实现到这里就没有下一步了 —— 玩家看到的是"设了流畅还是卡"。
+   *
+   * 判据要保守：① 必须真的已经到下限（不然该先降分辨率，不该先丢细节）；
+   * ② 用 p75 而不是中位数（"每四帧卡一次"比稳定 40fps 更难受）；
+   * ③ 已经是 low 就不再往下（不能降到不存在的档）；
+   * ④ 单帧尖峰不许触发。
+   */
+  const fill = (n: number, ms: number) => Array.from({ length: n }, () => ms)
+
+  // —— 1) 没到分辨率下限：不降画质（顺序不能反）——
+  assert(decideQualityDowngrade('high', fill(40, 60), false) === null,
+    '分辨率还没压到底时不许先降画质')
+
+  // —— 2) 流畅：不降 ——
+  assert(decideQualityDowngrade('high', fill(40, 16.7), true) === null,
+    '16.7ms/帧（60fps）不该降档')
+
+  // —— 3) 刚好在阈值内：不降（36ms 以上才算撑不住）——
+  assert(decideQualityDowngrade('high', fill(40, SLOW_FRAME_MS + 8), true) === null,
+    `p75 正好 ${SLOW_FRAME_MS + 8}ms 时不该降（要用 > 才算慢）`)
+
+  // —— 4) 真的撑不住：high → mid → low，且 low 是终点 ——
+  const mid = decideQualityDowngrade('high', fill(40, 45), true)
+  assert(mid === 'mid', `high 应降到 mid（实际 ${mid}）`)
+  const low = decideQualityDowngrade('mid', fill(40, 45), true)
+  assert(low === 'low', `mid 应降到 low（实际 ${low}）`)
+  assert(decideQualityDowngrade('low', fill(40, 80), true) === null,
+    '已经是 low 就不再降（不能不存在的档）')
+
+  // —— 5) 样本不足不决策 ——
+  assert(decideQualityDowngrade('high', fill(MIN_SAMPLES - 1, 60), true) === null,
+    `样本不足 ${MIN_SAMPLES} 帧时不降档`)
+
+  // —— 6) 关键：少量尖峰不能触发（GC / 切标签页回来 / 贴图上传）——
+  // 40 帧里 36 帧 16ms、4 帧 400ms（10%）：p75 仍落在 16ms 上，不降。
+  // 【为什么不是"1 帧 400ms"】1 帧的样本太少，撑不够 p75 的语义；
+  // 这里要锁的是"偶发尖峰不改变结论"，10% 已经够偶发了。
+  const spike = [...fill(36, 16), ...fill(4, 400)]
+  assert(decideQualityDowngrade('high', spike, true) === null,
+    'p75 落在流畅区间时，少量超长帧不该把玩家画质降掉')
+
+  // —— 7) p75 的语义要真的生效：25% 的帧烂，就该降 ——
+  // 30 帧好 + 10 帧烂 = 75% 分位正好踩到烂帧那一段
+  const quarter = [...fill(29, 16), ...fill(11, 60)]
+  assert(decideQualityDowngrade('high', quarter, true) === 'mid',
+    '四分之一帧卡顿时要降档（这正是玩家最难受的"一卡一顺"）')
+
+  /* 源码守卫：两个 3D 视图用的是同一个判据、同一个冷却时长，不许各写一套 */
+  const deck = readFileSync(join(process.cwd(), 'src', 'components', 'deck', 'DeckView.tsx'), 'utf8')
+  const map3d = readFileSync(join(process.cwd(), 'src', 'components', 'map3d', 'Map3DView.tsx'), 'utf8')
+  assert(/decideQualityDowngrade\(getQuality\(\)/.test(deck), '甲板用 decideQualityDowngrade 判定')
+  assert(/decideQualityDowngrade\(getQuality\(\)/.test(map3d), '3D 板用同一个判定')
+  assert(/lastDowngrade > 6/.test(deck) && /lastQualityDropAt > 6000/.test(map3d),
+    '两处冷却都是 6 秒（一次误判不许连降两档）')
+}
+
+console.log(`\n最终结果：${passed} 通过 / ${failed} 失败`)
+if (failed > 0) process.exit(1)

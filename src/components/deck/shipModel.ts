@@ -2613,7 +2613,7 @@ export function createDeckShip(): DeckShip {
    * 帆、绳、水手、锚、舱口都是 **Group** 子节点，`mergeStaticChildren` 只处理
    * 直接子级的 Mesh，所以它们一处都不会被碰到。
    */
-  mergedStats['deck-ship(direct)'] = mergeStaticChildren(group, { onlyUnnamed: true })
+  mergedStats['deck-ship(direct)'] = mergeStaticChildren(group, { onlyUnnamed: true, recurse: true })
   /*
    * 船舱**内部**的 52 个网格也合掉（占整帧 draw call 的 16%）。
    * 甲板视角下它们被尾楼外箱包住，一个像素看不到却每帧各提交一次。
@@ -2624,6 +2624,7 @@ export function createDeckShip(): DeckShip {
     if (cabin) {
       mergedStats['ship-cabin'] = mergeStaticChildren(cabin, {
         keep: (m) => /chart|door|inner/.test(m.name),
+        recurse: true,
       })
     }
   }
@@ -2633,12 +2634,12 @@ export function createDeckShip(): DeckShip {
   ]) {
     const g = group.getObjectByName(nm)
     if (!g) continue
-    mergedStats[nm] = mergeStaticChildren(g)
+    mergedStats[nm] = mergeStaticChildren(g, { recurse: true })
     // 兽栏里每只羊也是一个 Group（21 个网格），再往里合一层
     if (nm === 'ship-pen') {
       for (const child of g.children) {
         if (child instanceof THREE.Group && child.name.startsWith('ship-pen-sheep')) {
-          mergeStaticChildren(child)
+          mergeStaticChildren(child, { recurse: true })
         }
       }
     }

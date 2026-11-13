@@ -9,6 +9,15 @@ interface WindParticlesProps {
 
 const COUNT = 40
 
+/**
+ * 风痕的目标帧率。
+ *
+ * 【为什么要限帧】这些线以 16~46 px/s 漂移，60fps 下每帧只走 0.3~0.8px ——
+ * 30fps 与 60fps 在观感上**没有区别**（一条 20px 长、透明度 0.05~0.15 的
+ * 淡线，位移 0.5px 看不出来），但 CPU 时间差一倍。限到 30 是纯赚。
+ */
+const FPS = 30
+
 interface Particle {
   x: number
   y: number
@@ -19,20 +28,48 @@ interface Particle {
 
 /**
  * 风向氛围层：一屏幕细长的"风痕"粒子，沿当前风带方向缓慢漂移。
- * 纯 SVG line + rAF，直接改 attribute，不触发 React 重渲染；
- * pointer-events-none，绝不拦截地图操作。
+ *
+ * 【为什么是 canvas 不是 SVG line】原来是 40 个 `<line>`，每帧逐个
+ * `setAttribute('x1'|'y1'|'x2'|'y2')` —— 实测 **每帧 160 次属性写入**，
+ * 4 秒 38400 次。每一次都会让浏览器把那个 SVG 子树重算样式、重排、重绘；
+ * 在 4 倍 CPU 节流下（≈低压 i5）主线程 **83.8% 花在原生绘制上**，JS 自时间
+ * 不到 5%。也就是说卡顿完全来自这 40 条线，与游戏逻辑无关。
+ *
+ * canvas 上一次 `stroke()` 40 段路径的成本是几十微秒，且**不进布局树**。
+ * 视觉上完全等价（同样的颜色、线宽、圆头、透明度、screen 混合）。
+ *
+ * 【仍然不碰 React】全部走 rAF + ref，透明度/坐标都在 canvas 里算，
+ * 不 setState、不改 DOM 属性。pointer-events-none，绝不拦截地图操作。
  */
 export default function WindParticles({ windBearing, windSpeed = 12 }: WindParticlesProps) {
-  const svgRef = useRef<SVGSVGElement>(null)
+  const canvasRef = useRef<HTMLCanvasElement>(null)
 
   useEffect(() => {
-    const svg = svgRef.current
-    if (!svg) return
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const ctx = canvas.getContext('2d', { alpha: true })
+    if (!ctx) return
 
     let w = window.innerWidth
     let h = window.innerHeight
-    const onResize = () => { w = window.innerWidth; h = window.innerHeight }
-    window.addEventListener('resize', onResize)
+    /*
+     * 幅度上不跟 devicePixelRatio 走：这些线只有 1px 宽、透明度 ≤0.2，
+     * 按 DPR 放大只会让像素多 4 倍而看不出差别。封顶 1.5 是给"线别糊"。
+     */
+    let dpr = Math.min(1.5, window.devicePixelRatio || 1)
+
+    const resize = () => {
+      w = window.innerWidth
+      h = window.innerHeight
+      dpr = Math.min(1.5, window.devicePixelRatio || 1)
+      canvas.width = Math.max(1, Math.round(w * dpr))
+      canvas.height = Math.max(1, Math.round(h * dpr))
+      canvas.style.width = `${w}px`
+      canvas.style.height = `${h}px`
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+    }
+    resize()
+    window.addEventListener('resize', resize)
 
     // 风向向量（屏幕坐标：东=+x，北=-y）
     const rad = (windBearing * Math.PI) / 180
@@ -51,21 +88,29 @@ export default function WindParticles({ windBearing, windSpeed = 12 }: WindParti
       op: (0.05 + Math.random() * 0.1) * Math.min(1.6, speedScale),
     }))
 
-    const lines = particles.map((p) => {
-      const line = document.createElementNS('http://www.w3.org/2000/svg', 'line')
-      line.setAttribute('stroke', '#bfdbfe')
-      line.setAttribute('stroke-width', '1')
-      line.setAttribute('stroke-linecap', 'round')
-      line.setAttribute('opacity', p.op.toFixed(3))
-      svg.appendChild(line)
-      return line
-    })
-
     let last = performance.now()
+    let acc = 0
     let raf = 0
+    const step = 1000 / FPS
+
     const loop = (ts: number) => {
-      const dt = Math.min(0.05, Math.max(0, (ts - last) / 1000))
+      raf = requestAnimationFrame(loop)
+      const raw = ts - last
       last = ts
+      // 切后台回来时 raw 可能是几秒，钳住避免粒子瞬移
+      acc += Math.min(100, Math.max(0, raw))
+      if (acc < step) return
+      const dt = Math.min(0.05, acc / 1000)
+      acc = 0
+
+      ctx.clearRect(0, 0, w, h)
+      ctx.lineWidth = 1
+      ctx.lineCap = 'round'
+      ctx.strokeStyle = '#bfdbfe'
+      /*
+       * 逐条改 globalAlpha 再 stroke：每条一次的 state 切换在 canvas 上很便宜
+       * （与 SVG 的属性写入不是一个量级），而透明度是逐粒子的，不能合并。
+       */
       for (let i = 0; i < particles.length; i++) {
         const p = particles[i]
         p.x += vx * p.speed * dt
@@ -75,28 +120,28 @@ export default function WindParticles({ windBearing, windSpeed = 12 }: WindParti
         if (p.x < -MARGIN) p.x = w + MARGIN
         if (p.y > h + MARGIN) p.y = -MARGIN
         if (p.y < -MARGIN) p.y = h + MARGIN
-        const line = lines[i]
-        line.setAttribute('x1', (p.x - vx * p.len).toFixed(1))
-        line.setAttribute('y1', (p.y - vy * p.len).toFixed(1))
-        line.setAttribute('x2', p.x.toFixed(1))
-        line.setAttribute('y2', p.y.toFixed(1))
+        ctx.globalAlpha = p.op
+        ctx.beginPath()
+        ctx.moveTo(p.x - vx * p.len, p.y - vy * p.len)
+        ctx.lineTo(p.x, p.y)
+        ctx.stroke()
       }
-      raf = requestAnimationFrame(loop)
+      ctx.globalAlpha = 1
     }
     raf = requestAnimationFrame(loop)
 
     return () => {
       cancelAnimationFrame(raf)
-      window.removeEventListener('resize', onResize)
-      for (const line of lines) line.remove()
+      window.removeEventListener('resize', resize)
     }
   }, [windBearing, windSpeed])
 
   return (
-    <svg
-      ref={svgRef}
-      className="absolute inset-0 w-full h-full"
+    <canvas
+      ref={canvasRef}
+      className="absolute inset-0"
       aria-hidden="true"
+      data-testid="wind-particles"
       style={{ mixBlendMode: 'screen' }}
     />
   )

@@ -6,7 +6,7 @@ import { LineGeometry } from 'three/examples/jsm/lines/LineGeometry.js'
 import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js'
 import { useGameStore } from '@/store/useGameStore'
 import { useMapStore } from '@/store/useMapStore'
-import { getPreset } from '@/utils/quality'
+import { getPreset, getQuality, setQuality } from '@/utils/quality'
 import { useFxStore as useFx } from '@/store/useFxStore'
 import { ports } from '@/data/ports'
 import { legendPending, nextChapter } from '@/data/nations'
@@ -53,7 +53,7 @@ import { buildTerrainSymbols, filterPeaksByElevation } from '@/utils/terrainDeco
 import { loadElevationSampler } from '@/utils/elevation'
 import { buildMap3DGraticule, GRATICULE_OPACITY_NEAR } from './mapGraticule3d'
 import { fetchBordersGeojson } from '@/utils/mapGeoJson'
-import { decidePixelRatio } from '@/utils/adaptiveResolution'
+import { decidePixelRatio, decideQualityDowngrade } from '@/utils/adaptiveResolution'
 import { isTapGesture } from '@/utils/tapGesture'
 import { WEATHER_INFO } from '@/utils/weather'
 import { useIsMobile } from '@/hooks/useIsMobile'
@@ -2016,6 +2016,7 @@ export default function Map3DView() {  const mountRef = useRef<HTMLDivElement>(n
        */
       const frameMsBuf: number[] = []
       let lastRatioChangeAt = 0
+      let lastQualityDropAt = 0
 
       const tick = () => {
         raf = requestAnimationFrame(tick)
@@ -2049,10 +2050,21 @@ export default function Map3DView() {  const mountRef = useRef<HTMLDivElement>(n
         if (rawMs > 0 && rawMs < 100) frameMsBuf.push(rawMs)
         if (frameMsBuf.length >= 40) {
           if (tNow - lastRatioChangeAt > 3000) {
-            const next = decidePixelRatio(renderer!.getPixelRatio(), frameMsBuf, Math.min(window.devicePixelRatio, getPreset().pixelCap) * getPreset().minScale)
+            const minRatio = Math.min(window.devicePixelRatio, getPreset().pixelCap) * getPreset().minScale
+            const next = decidePixelRatio(renderer!.getPixelRatio(), frameMsBuf, minRatio)
             if (next !== null) {
               renderer!.setPixelRatio(next)
               lastRatioChangeAt = tNow
+            } else if (renderer!.getPixelRatio() <= minRatio + 1e-6 && tNow - lastQualityDropAt > 6000) {
+              /*
+               * 分辨率已到底还慢 → 降一档画质预设（与 DeckView 同一判据、
+               * 同一个冷却时间，避免两个视图给出不同结论）。
+               */
+              const lower = decideQualityDowngrade(getQuality(), frameMsBuf, true)
+              if (lower) {
+                lastQualityDropAt = tNow
+                setQuality(lower)
+              }
             }
           }
           frameMsBuf.length = 0
