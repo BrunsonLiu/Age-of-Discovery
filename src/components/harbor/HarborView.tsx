@@ -526,7 +526,14 @@ export default function HarborView() {
         data-testid="harbor-seam"
         style={{
           bottom: '18%', height: '12%',
-          background: 'linear-gradient(180deg, rgba(8,5,3,0) 0%, rgba(8,5,3,0.42) 58%, rgba(8,5,3,0.86) 100%)',
+          /*
+           * 用 multiply 压，不是盖一层近黑。
+           * 盖黑的版本实测把 0.76~0.81 那一条压成 std 2~3 的**平条**
+           * （广州 12.6 / 蒙巴萨 20.1）—— 又变回"横在画上的一条带子"，
+           * 只是没上一版那么黑。multiply 按比例压暗，水纹与岸线还在。
+           */
+          background: 'linear-gradient(180deg, rgba(120,100,74,0) 0%, rgba(120,100,74,0.50) 55%, rgba(104,86,62,0.92) 100%)',
+          mixBlendMode: 'multiply',
         }}
       />
       {/* 远/中景之间的一层天光：把地平线附近提亮一点，城市才不会和

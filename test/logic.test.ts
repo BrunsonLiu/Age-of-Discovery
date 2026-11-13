@@ -12433,6 +12433,14 @@ console.log('== 近景码头：石砌铺装而不是一块纯黑横带 ==')
   assert(/bottom-0 left-0 w-full h-\[30%\]/.test(hv), '前景贴在屏幕最底（不再 bottom-[18%] 横在画中间）')
   assert(/quayProjectX\(b\.x, b\.y\)/.test(hv), '石块走透视投影（画成梯形，不是矩形）')
   assert(/手臂/.test(hv), '人形有手臂（没有手臂的剪影读成保龄球瓶）')
+  /*
+   * 接缝带必须是 **multiply**，不能是"盖一层近黑"：
+   * 盖黑的版本实测把画的下沿压成 std 2~3 的平条（广州 12.6 / 蒙巴萨 20.1），
+   * 又变回"横在画上的一条带子"，只是没上一版那么黑。
+   */
+  assert(/data-testid="harbor-seam"/.test(hv), '接缝暗带有稳定锚点')
+  assert(/harbor-seam[\s\S]{0,600}mixBlendMode: 'multiply'/.test(hv),
+    '接缝用 multiply 压暗（盖黑会把水纹与岸线一起抹平）')
 }
 
 console.log('== 朝贡：每一次「交勘合」都要在册子里留一页 ==')
