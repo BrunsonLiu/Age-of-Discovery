@@ -237,6 +237,7 @@ import { seasonAt, SEASON_DAYS, ALL_SEASONS, inMonsoonZone } from '../src/utils/
 import { prevailingWindBearingAt, prevailingWindBearing, computeWindFavor } from '../src/utils/navigation'
 import { snowPhaseOf } from '../src/components/map3d/mapPeaks3d'
 import { ports as PORTS_FOR_MARKS } from '../src/data/ports'
+import { windArrowSites, windArrowSitesOnSea } from '../src/data/mapLayers'
 import { buildMap3DLayers } from '../src/components/map3d/mapLayers3d'
 import { routeCurrentFactor, currentAt } from '../src/utils/seaCurrents'
 import * as THREE from 'three'
@@ -12689,4 +12690,46 @@ console.log('== 事件结算屏：数字是这一屏唯一要读的东西 ==')
   assert(/export function outcomeChanges/.test(es), '排序规则在数据层（可单测），不在组件里')
   assert(!/RESOURCE_LABEL[^\n]*金币/.test(er), '组件里没有第二份金币文案')
   assert(RESOURCE_LABEL.gold === '金币' && RESOURCE_LABEL.durability === '耐久', 'RESOURCE_LABEL 仍是权威')
+}
+
+console.log('== 3D 海图的风箭头不许飘在陆地上 ==')
+{
+  /*
+   * 3D 里风箭头是平铺在 lat -60~60 × lng -100~120 的固定网格上的，陆地也在网格里。
+   * 2D 那边早有规矩（`utils/seaClip`：海上装饰不许压陆地），3D 这条路径一直漏着 ——
+   * 撒哈拉上空会飘着"吹向东方的信风"。
+   */
+  // ① 纯逻辑：判据从外面传，数据层不依赖掩码模块
+  const islandNorth = (lat: number, lng: number) => lat > 20
+  const filtered = windArrowSitesOnSea(0, islandNorth)
+  assert(filtered.length > 0 && filtered.length < windArrowSites(0).length,
+    `过滤真的生效（${windArrowSites(0).length} → ${filtered.length}）`)
+  assert(filtered.every(s => s.lat <= 20), '被判定为陆地的站点一个都不剩')
+  assert(windArrowSitesOnSea(0, () => false).length === windArrowSites(0).length,
+    '没有陆地（掩码未就绪）时一颗不少 —— 不当场消失，等掩码到位再收')
+
+  // ② 真掩码：站点里不能再有陆地
+  await loadSeaMask('')
+  assert(isSeaMaskLoaded(), '真掩码装上了（否则下面这条是在空掩码上跑，恒真）')
+  const onSea = windArrowSitesOnSea(0, isLandAt)
+  const total = windArrowSites(0).length
+  const onLandLeft = onSea.filter(s => isLandAt(s.lat, s.lng))
+  assert(onLandLeft.length === 0,
+    `真掩码下没有一个箭头落在陆地上（${onSea.length}/${total} 个留在海面）`)
+  console.log(`  · 风箭头网格 ${total} 个，滤掉陆地 ${total - onSea.length} 个，留在海面 ${onSea.length} 个`)
+  assert(onSea.length < total,
+    `确实滤掉了一批（${total - onSea.length} 个在陆地上：撒哈拉、安第斯、欧洲内陆）`)
+  /* 大西洋中部与太平洋中部必须还在：滤太狠等于把风场删了 */
+  const near = (la: number, ln: number) => onSea.some(s => Math.abs(s.lat - la) < 12 && Math.abs(s.lng - ln) < 12)
+  assert(near(25, -40), '大西洋中部仍有箭头')
+  assert(near(-20, -95), '太平洋中部仍有箭头（网格 lng 只到 -100，取近处）')
+
+  /* ③ 源码守卫：3D 层用的是"同一份判据 + 零缩放隐藏"，不是各写一套 */
+  const ml = readFileSync(join(process.cwd(), 'src', 'components', 'map3d', 'mapLayers3d.ts'), 'utf8')
+  assert(/windArrowSitesOnSea\(d, isLandAt\)/.test(ml), '3D 层用 isLandAt 过滤（与 2D 同一个判据）')
+  assert(/dummy\.scale\.setScalar\(hidden\.has\(i\) \? 0 : 1\)/.test(ml),
+    '陆地站点用零缩放藏起来（实例数固定，不重建 InstancedMesh）')
+  const m3 = readFileSync(join(process.cwd(), 'src', 'components', 'map3d', 'Map3DView.tsx'), 'utf8')
+  assert(/landDataReady[\s\S]{0,120}windClipApplied/.test(m3),
+    '掩码到位后重算一次（建层时掩码往往还没下载完）')
 }

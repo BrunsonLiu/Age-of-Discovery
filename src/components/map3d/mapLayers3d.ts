@@ -5,11 +5,12 @@ import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js'
 import { lonToWorldX, latToWorldZ } from '@/utils/mapProjection'
 import {
   OCEAN_CURRENTS, currentFlowPoints, PIRATE_ZONES, WIND_BAND_LATS,
-  pirateZonePolygon, windArrowSites,
+  pirateZonePolygon, windArrowSites, windArrowSitesOnSea,
 } from '@/data/mapLayers'
 import { SEA_PHENOMENA, phenomenonRing, type SeaPhenomenon } from '@/data/seaPhenomena'
 import type { OceanCurrent } from '@/data/mapLayers'
 import { ALL_SEASONS, seasonAt } from '@/utils/season'
+import { isLandAt } from '@/utils/seaRoute'
 
 /**
  * 2.5D 海图的叠加图层：洋流 / 海盗区 / 风带。
@@ -287,6 +288,14 @@ function buildWinds(
     side: THREE.DoubleSide,
   })
 
+  /*
+   * 实例缓冲按**整张网格**建（数量固定），落在陆地上的那些用零缩放藏起来。
+   *
+   * 【为什么不直接 filter 掉】`InstancedMesh` 的 count 在构造时定死；
+   * 掩码是异步加载的 —— 建层时掩码往往还没到，过滤后只剩全部，
+   * 掩码到了再想减就得整块重建 InstancedMesh（还要处理材质/program 缓存）。
+   * 零缩放是同一个缓冲里"不画"，掩码到齐后重跑一次 applyDay 就生效。
+   */
   const sites = windArrowSites(day)
   const arrows = new THREE.InstancedMesh(arrowGeo, windMat, sites.length)
   arrows.renderOrder = 5
@@ -303,15 +312,26 @@ function buildWinds(
    */
   const dummy = new THREE.Object3D()
   const applyDay = (d: number) => {
-    const list = windArrowSites(d)
-    list.forEach((s, i) => {
+    /* 掩码没到位时 `isLandAt` 一律返回 false —— 那时先画满，掩码到齐后由
+       Map3DView 再调一次 setDay 把陆地上那批藏起来（见那边的 landDataReady 处理） */
+    const list = windArrowSitesOnSea(d, isLandAt)
+    const hidden = new Set<number>()
+    const all = windArrowSites(d)
+    all.forEach((s, i) => {
+      if (!list.some(x => x.lat === s.lat && x.lng === s.lng)) hidden.add(i)
+    })
+    all.forEach((s, i) => {
       // 罗盘方位角：0=北（-Z），90=东（+X）
       const rotY = Math.PI / 2 - (s.bearing * Math.PI) / 180
       dummy.position.set(lonToWorldX(s.lng), LAYER_Y_WIND, latToWorldZ(s.lat))
       dummy.rotation.set(0, rotY, 0)
+      // 在陆地上：缩到 0（同一个缓冲里"不画"），不是移开 —— 移开会在别处冒出来
+      dummy.scale.setScalar(hidden.has(i) ? 0 : 1)
       dummy.updateMatrix()
       arrows.setMatrixAt(i, dummy.matrix)
     })
+    arrows.userData.hidden = hidden.size
+    arrows.userData.total = all.length
     arrows.instanceMatrix.needsUpdate = true
   }
   applyDay(day ?? 1)

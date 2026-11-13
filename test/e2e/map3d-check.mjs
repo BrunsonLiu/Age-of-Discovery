@@ -126,7 +126,13 @@ check(hintChk.found && hintChk.barTop !== null && hintChk.bottom < hintChk.barTo
 
 const probe = await page.evaluate(() => {
   const canvases = [...document.querySelectorAll('canvas')]
+  /*
+   * 只数**港口**标签：传说与航路标记复用 `.map3d-port-label` 这个基类
+   * （`mapLabels3d` 再叠一个 `map3d-legend-label` / `map3d-story-label`）。
+   * 不排除的话，"1 个已发现的港 + 1 条传说"会被读成"可见标签 2 ≠ 已发现 1"。
+   */
   const labels = [...document.querySelectorAll('.map3d-port-label')]
+  const portLabels = labels.filter(l => !/map3d-(legend|story)-label/.test(l.className))
   const store = window.__gameStore?.getState?.()
   // 【为什么要取 rect 而不是只数个数】
   // 光断言「DOM 里有 20 个 .map3d-port-label」区分力不够：
@@ -134,7 +140,7 @@ const probe = await page.evaluate(() => {
   // 如果投影逻辑坏了（left/top 没更新、相机矩阵错），元素照样存在 20 个，
   // 但全部堆在 (0,0) 或跑到视口外 —— 那种情况下旧断言照样通过。
   // 所以必须量**可见标签**的实际矩形：尺寸非 0、位置在视口内、互不重叠。
-  const rects = labels
+  const rects = portLabels
     .filter(l => l.style.display !== 'none')
     .map(l => {
       const r = l.getBoundingClientRect()
@@ -152,7 +158,8 @@ const probe = await page.evaluate(() => {
   return {
     canvasCount: canvases.length,
     canvasSize: canvases.map(c => `${c.width}x${c.height}`),
-    labelCount: labels.length,
+    labelCount: portLabels.length,
+    legendLabels: labels.length - portLabels.length,
     labelTexts: labels.slice(0, 6).map(l => l.textContent),
     labelVisible: rects.length,
     labelRects: rects.map(r => `${r.text} ${Math.round(r.w)}x${Math.round(r.h)} @(${Math.round(r.x)},${Math.round(r.y)})`),
@@ -169,7 +176,18 @@ const probe = await page.evaluate(() => {
 console.log('探针:', JSON.stringify(probe))
 check(probe.canvasCount >= 1, '3D canvas 已渲染', probe.canvasCount)
 check(probe.dimmedOverlay, '羊皮纸装饰层已弱化（3D 模式）')
-check(probe.labelCount === 20, `港口标签 20 个（实得 ${probe.labelCount}）`)
+/* 港口数从数据层算（20 港时代写死的 20，加大明广州之后就成了假红） */
+const portStats = await page.evaluate(async () => {
+  const imp = (p) => import(`/Age-of-Discovery/src/${p}`).catch(() => import(`/src/${p}`))
+  const [m, sc] = await Promise.all([imp('data/ports.ts'), imp('utils/portScale.ts')])
+  return {
+    total: m.ports.length,
+    major: m.ports.filter(p => sc.portScaleOf(p) === 'major').length,
+    shipyards: m.ports.filter(p => p.services.includes('shipyard')).length,
+  }
+})
+check(probe.labelCount === portStats.total,
+  `港口标签 ${portStats.total} 个（实得 ${probe.labelCount}；传说标签另算 ${probe.legendLabels} 个）`)
 // 已发现的港口必须有可见标签（数量对得上）
 const discoveredCount = Array.isArray(probe.discovered) ? probe.discovered.length : 0
 check(probe.labelVisible === discoveredCount,
@@ -556,11 +574,14 @@ const portProbe = await page.evaluate(() => {
   }
 })
 console.log('港口模型探针:', JSON.stringify(portProbe))
-check(portProbe.total === 20, `3D 场景里有 20 个港口模型（实得 ${portProbe.total}）`)
-check(portProbe.byScale?.major === 8, `大港 8 个（实得 ${portProbe.byScale?.major}）`)
+check(portProbe.total === portStats.total,
+  `3D 场景里有 ${portStats.total} 个港口模型（实得 ${portProbe.total}）`)
+check(portProbe.byScale?.major === portStats.major,
+  `大港 ${portStats.major} 个（实得 ${portProbe.byScale?.major}）`)
 check(portProbe.byScale?.medium === 9, `中港 9 个（实得 ${portProbe.byScale?.medium}）`)
 check(portProbe.byScale?.minor === 3, `小港 3 个（实得 ${portProbe.byScale?.minor}）`)
-check(portProbe.drydocks === 9, `干船坞 9 座（= 有 shipyard 的港口数，实得 ${portProbe.drydocks}）`)
+check(portProbe.drydocks === portStats.shipyards,
+  `干船坞 ${portStats.shipyards} 座（= 有 shipyard 的港口数，实得 ${portProbe.drydocks}）`)
 // 几何尺度必须真的不同——否则"分了三档"只是数据结构上的分档，画面上没区别
 const vMajor = portProbe.avgVol?.major ?? 0
 const vMinor = portProbe.avgVol?.minor ?? 0
@@ -704,7 +725,9 @@ const curProbe = await page.evaluate(async () => {
   }
   // 标签高亮
   const curLabels = [...document.querySelectorAll('.map3d-port-label--current')].map(l => l.textContent)
+  // 同上面：传说/故事标签复用同一个类，这里只数港口名
   const allLabels = [...document.querySelectorAll('.map3d-port-label')]
+    .filter(l => !/map3d-(legend|story)-label/.test(l.className))
   // 出港后光环应隐藏
   const st = window.__gameStore.getState()
   window.__gameStore.setState({ fleet: { ...st.fleet, currentPortId: null } })
@@ -731,7 +754,8 @@ check(curProbe.docked?.opacity > 0.2 && curProbe.docked?.opacity < 0.75,
   `光环透明度在脉冲区间内（${curProbe.docked?.opacity}）`)
 check(curProbe.curLabels?.length === 1, `只有一个港口名被高亮（实得 ${curProbe.curLabels?.length}：${curProbe.curLabels}）`)
 check(curProbe.curLabels?.[0] === '塞维利亚', `高亮的是船所在的塞维利亚（实得 ${curProbe.curLabels?.[0]}）`)
-check(curProbe.labelTotal === 20, `其它港口名仍有 20 个（实得 ${curProbe.labelTotal}）`)
+check(curProbe.labelTotal === portStats.total,
+  `其它港口名仍有 ${portStats.total} 个（实得 ${curProbe.labelTotal}）`)
 check(curProbe.afterUndock?.visible === false, '出港后光环隐藏')
 
 // ===================================================================

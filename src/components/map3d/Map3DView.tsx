@@ -1963,6 +1963,8 @@ export default function Map3DView() {  const mountRef = useRef<HTMLDivElement>(n
       let weatherDim = 1
       /** 上一次已应用的航季序号（-1 = 还没应用过） */
       let lastSeasonIndex = -1
+      /* 风箭头是否已经按海陆掩码收过陆地（掩码只到位一次，收一次就够） */
+      let windClipApplied = false
       /** 上一次写进材质的地势法线强度（避免每帧改属性） */
       let lastReliefK = -1
       /** 同上：海岸墨线的线宽倍率 */
@@ -2087,6 +2089,22 @@ export default function Map3DView() {  const mountRef = useRef<HTMLDivElement>(n
              * 每帧做会白烧 CPU；而它一年只变四次。
              */
             repaintIce?.(fleet.day)
+          }
+        }
+        /*
+         * 海陆掩码到齐的那一下，要重算一次风箭头 ——
+         * 建层时掩码往往还没下载完（`isLandAt` 一律 false），箭头会先铺满整张图，
+         * 包括撒哈拉与安第斯。掩码到位之后重跑一次 applyDay，
+         * 落在陆地上的那些就地缩成 0（同一个实例缓冲里"不画"）。
+         *
+         * 【为什么用 once 标记而不是每次 setDay】setDay 会重算季风与洋流点序，
+         * 掩码只到位一次，没必要跟着每季白跑一遍。
+         */
+        {
+          const ready = useMapStore.getState().landDataReady
+          if (ready && !windClipApplied) {
+            windClipApplied = true
+            layers.setDay(fleet.day)
           }
         }
 

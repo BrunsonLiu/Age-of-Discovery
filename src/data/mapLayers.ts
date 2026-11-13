@@ -133,6 +133,25 @@ export function windArrowSites(day?: number): WindArrowSite[] {
   return list
 }
 
+/**
+ * 风箭头站点，**只留海面**。
+ *
+ * 【为什么必须滤掉陆地】3D 海图里箭头是平铺在整张图上的（lat -60~60 × lng -100~120
+ * 的固定网格），陆地也在网格里 —— 不收的话撒哈拉上空、安第斯山脊上都会飘着
+ * "吹向东方的信风"。2D 那边早就有这条规矩（`utils/seaClip`：海上装饰不许压陆地），
+ * 3D 这条路径一直漏着。
+ *
+ * 【判据从外面传进来】数据层不直接依赖 `seaRoute` 的掩码模块：
+ * 单测要能塞一个假判据（"北纬 20 度以北算陆地"）验过滤逻辑本身，
+ * 而不是先等一个二进制掩码加载完。生产侧传 `isLandAt`。
+ */
+export function windArrowSitesOnSea(
+  day: number,
+  onLand: (lat: number, lng: number) => boolean,
+): WindArrowSite[] {
+  return windArrowSites(day).filter(s => !onLand(s.lat, s.lng))
+}
+
 /** 海洋名（斜体，浮在海面上） */
 export interface OceanLabel {
   name: string
