@@ -12551,8 +12551,18 @@ console.log('== 卡顿治理：三处"白花钱"的地方不许回来 ==')
   const dv = readFileSync(join(process.cwd(), 'src', 'components', 'deck', 'DeckView.tsx'), 'utf8')
   assert(/renderer\.debug\.checkShaderErrors = import\.meta\.env\.DEV/.test(dv),
     '甲板：生产构建不查编译日志')
-  assert(/extensions\.has\('KHR_parallel_shader_compile'\)[\s\S]{0,120}compileAsync/.test(dv),
-    '甲板预编译先判断扩展（没有扩展时 three 会退回同步 compile，一次冻住 101 个 program）')
+  /*
+   * 这里改成"先后顺序"判据（不再是 120 字符窗口）：两段代码之间现在夹了整段
+   * 说明注释，窗口写法会把正确的代码判红。要守的语义只有一条 ——
+   * **先判断扩展、再编译**（没有扩展时 three 会退回同步 compile，一次冻住 101 个程序）。
+   */
+  {
+    const atExt = dv.indexOf("extensions.has('KHR_parallel_shader_compile')")
+    /* 用**真实调用**而不是单词：说明注释里也写着 "compileAsync"，按单词会抓到注释 */
+    const atCompile = dv.indexOf('.compileAsync(scene, camera)')
+    assert(atExt > 0 && atCompile > atExt,
+      '甲板预编译先判断扩展（没有扩展时 three 会退回同步 compile，一次冻住 101 个 program）')
+  }
   assert(/extensions\.has\('KHR_parallel_shader_compile'\)[\s\S]{0,120}compileAsync/.test(m3),
     '3D 板同样先判断扩展')
 
@@ -13053,6 +13063,54 @@ console.log('== 合并只许动"无名"的零件，而且要能进无名组 ==')
     assert(Math.abs(cx) < 1e-6, `合并几何要按组内局部坐标烘（中心 x 应≈0，实际 ${cx.toFixed(3)}）`)
   }
   matWood.dispose(); matIron.dispose()
+}
+
+console.log('== 首次进甲板：先盖上提示再编译，编译完才起帧循环 ==')
+{
+  /*
+   * 【这条锁的是什么】甲板有 98 个着色器程序。首次进入时 ANGLE 在**调用线程**上
+   * 把 GLSL 翻成 HLSL，实测（Intel UHD 630 / D3D11，真实核显）主线程连续占用
+   * **1512ms**；退出再进只要 53ms（驱动有缓存）——所以这就是"首次上甲板会卡死"。
+   *
+   * 原来的写法是"发起 compileAsync，立刻 rAF 起循环"：首帧 `post.render` 会为
+   * 还没就绪的程序**同步**编译，compileAsync 等于白发起。正确顺序是
+   * ①先让覆盖层渲染出去（它必须在 useEffect 之前已经 setState，也就是点下去那一帧）；
+   * ②等 compileAsync 真 resolve；③才起循环。
+   *
+   * 这条守卫盯的就是这个顺序 —— 它一旦被改回去，指标（长任务）会回退到 1.5 秒，
+   * 而画面看起来"只是慢了"，很难靠肉眼发现。
+   */
+  const deck = readFileSync(join(process.cwd(), 'src', 'components', 'deck', 'DeckView.tsx'), 'utf8')
+  assert(/deck-booting/.test(deck), '甲板有「正在上甲板」覆盖层')
+  assert(/const \[booting, setBooting\] = useState\(false\)/.test(deck), '覆盖层由 booting 状态控制')
+  assert(/setBooting\(true\)[\s\S]{0,400}compileAsync/.test(deck),
+    '先 setBooting(true) 再 compileAsync（覆盖层要在编译阻塞之前画出来）')
+  assert(/compileAsync\(scene, camera\)[\s\S]{0,200}\.then\(/.test(deck),
+    '编译完成后走 .then（而不是发起后立刻起循环）')
+  /*
+   * 帧循环的启动点必须唯一：`raf = requestAnimationFrame(tick)` 只允许出现在
+   * startLoop 里。散在别处就说明"编译前已经开始画了"。
+   */
+  /*
+   * `raf = requestAnimationFrame(tick)` 本来就有**两处**：tick 自己续帧的那一处，
+   * 和启动的那一处。所以不能数"必须只有 1 个"（第一次写这条就是这么错的）。
+   * 真正要守的是：启动点出现在 startLoop 里，且 tick 内部那处是续帧。
+   */
+  const starts = deck.match(/raf = requestAnimationFrame\(tick\)/g) ?? []
+  assert(starts.length === 2, `续帧 + 启动各一处，共 2 处（实际 ${starts.length} 处）`)
+  assert(/const startLoop = \(\) => \{[\s\S]{0,80}raf = requestAnimationFrame\(tick\)/.test(deck),
+    '启动点之一在 startLoop 里')
+  assert(/post\.render\(scene, camera\)[\s\S]{0,60}raf = requestAnimationFrame\(tick\)/.test(deck),
+    '另一处是 tick 末尾的续帧')
+  assert(/const startLoop = \(\) => \{[\s\S]{0,80}raf = requestAnimationFrame\(tick\)/.test(deck),
+    '唯一的启动点就是 startLoop')
+  assert(/setTimeout\(go, 6000\)/.test(deck), '有 6 秒兜底（编译 promise 不 resolve 也不许困住玩家）')
+
+  /* 覆盖层里那条细线必须是 CSS 动画：编译期间 JS 驱动的动画会一起停住 */
+  const css = readFileSync(join(process.cwd(), 'src', 'index.css'), 'utf8')
+  assert(/@keyframes deckBootBar/.test(css) && /\.deck-boot-bar/.test(css),
+    '进度条走 CSS 动画（主线程被占时仍能滑动，是"系统还活着"的信号）')
+  assert(/will-change: transform/.test(css), '进度条只动 transform（合成器线程）')
 }
 
 console.log('== 帧率撑不住时，画质预设是最后一道闸 ==')

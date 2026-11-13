@@ -108,8 +108,33 @@ check(gate?.self === true, `「船上」入口的中心真的命中自己（不�
 check((gate?.bottom ?? 9999) < 849, `入口不在底栏（y ${gate?.top}..${gate?.bottom}，底栏 849 起）`)
 check(Number(gate?.z ?? 0) >= 800, `入口层级 ${gate?.z}（要压在底栏之上）`)
 if (gate) await page.mouse.click(gate.x, gate.y)
+/*
+ * 「正在上甲板」覆盖层：首次进这个视角时 98 个着色器程序要在这一下编译完，
+ * 实测（Intel UHD 630 / D3D11）主线程连续占用 1512ms。覆盖层的作用是把这段
+ * 冻屏变成有标注的等待，**而且它必须自己消失** —— 挂住就是更严重的 bug
+ * （玩家被永久困在一张提示卡上）。
+ *
+ * 【为什么只查"出现就必消失"，不相"一定出现"】第二次进甲板时驱动有缓存，
+ * 实测只要 53ms，覆盖层可能一帧都没画出来。要求它必然出现会让这条用例
+ * 在快机器上随机红 —— 那不是产品的问题。
+ */
+let sawBoot = false
+for (let i = 0; i < 60 && !sawBoot; i++) {
+  sawBoot = await page.evaluate(() => !!document.querySelector('[data-testid=deck-booting]'))
+  if (!sawBoot) await sleep(20)
+}
 await sleep(300)
 check(await page.evaluate(() => window.__mapStore.getState().deckView === true), '真鼠标点「船上」→ 真的进了甲板视角')
+if (sawBoot) {
+  let gone = false
+  for (let i = 0; i < 30 && !gone; i++) {
+    await sleep(300)
+    gone = await page.evaluate(() => !document.querySelector('[data-testid=deck-booting]'))
+  }
+  check(gone, '「正在上甲板」覆盖层出现过，并且自己消失了（没有把玩家困住）')
+} else {
+  console.log('  - 「正在上甲板」覆盖层这次没出现（着色器已被驱动缓存，属正常）')
+}
 // three 场景是懒加载的：轮询"场景真的建好了"，而不是固定等
 let sceneReady = false
 for (let i = 0; i < 40 && !sceneReady; i++) {

@@ -294,6 +294,13 @@ export default function DeckView() {
    */
   const [spot, setSpot] = useState<null | 'hatch' | 'wheel' | 'crow'>(null)
   /*
+   * 「正在上甲板」——第一次进这个视角时，98 个着色器程序要在这一下编译完。
+   * 实测（Intel UHD 630 / D3D11，真实核显）**主线程连续占用 1512ms**，
+   * 期间画面完全冻住，退出再进只要 53ms（驱动有缓存）。
+   * 这一屏不是装饰：它让那 1.5 秒变成"有标注的等待"而不是"画面卡死了"。
+   */
+  const [booting, setBooting] = useState(false)
+  /*
    * 瞭望台面板要的"最近陆地"是在帧循环里每 8 帧算一次（与 HUD 同一次计算）。
    * 用 ref 存：面板打开的那一刻读到的就是**最新一次真实计算的结果**，
    * 不需要为了一个弹窗再跑一遍 haversine，也不会出现"HUD 与面板各算一遍"。
@@ -2224,10 +2231,38 @@ export default function DeckView() {
      * 实测 p99 从 1883ms 变成 1483ms，但那是"一次长冻"换"多次小顿"。
      * 有扩展才做预编译；没有就保持按需编译（老行为），不做这种交换。
      */
-    if (renderer.extensions.has('KHR_parallel_shader_compile')) {
-      void renderer.compileAsync(scene, camera).catch(() => { /* 链接失败由首帧报错，这里不吞别的 */ })
+    /*
+     * 【为什么必须先等编译完，再起帧循环】
+     * 原写法是"发起 compileAsync，然后立刻 rAF 起循环"。但首帧的 `post.render`
+     * 会为每个还没就绪的程序**同步**编译 —— 实测 1512ms 的连续主线程占用，
+     * compileAsync 等于白发起。退出再进只要 53ms，证明这 1.5 秒就是首次编译。
+     *
+     * 现在：先盖上「正在上甲板」，等编译真完成（扩展不可用就退回一次同步 compile，
+     * 同样在覆盖层后面），再起循环。总时长没变，但玩家看到的是有字的一屏，
+     * 而不是冻住的画面；期间页面仍然可响应（能点「回海图」）。
+     *
+     * 兜底 6 秒：编译promise万一不 resolve（驱动异常），不能让玩家永远卡在覆盖层。
+     */
+    const startLoop = () => {
+      raf = requestAnimationFrame(tick)
     }
-    raf = requestAnimationFrame(tick)
+    if (renderer.extensions.has('KHR_parallel_shader_compile')) {
+      setBooting(true)
+      let settled = false
+      const go = () => {
+        if (settled) return
+        settled = true
+        setBooting(false)
+        startLoop()
+      }
+      const guard = window.setTimeout(go, 6000)
+      void renderer
+        .compileAsync(scene, camera)
+        .catch(() => { /* 链接失败由首帧报错，这里不吞别的 */ })
+        .then(() => { window.clearTimeout(guard); go() })
+    } else {
+      startLoop()
+    }
 
     return () => {
       cancelAnimationFrame(raf)
@@ -2304,6 +2339,27 @@ export default function DeckView() {
         aria-hidden
         className="pointer-events-none absolute inset-0 bg-[#dfe9ff] opacity-0"
       />
+      {/*
+        「正在上甲板」：只在首次进入、着色器还在编译时出现。
+        pointer-events-none —— 期间「回海图」必须还能点（玩家反悔不该被挡住）。
+        配色沿用羊皮纸/金，别在这个位置引入新的色系。
+      */}
+      {booting && (
+        <div
+          data-testid="deck-booting"
+          className="pointer-events-none absolute inset-0 flex items-center justify-center"
+        >
+          <div className="rounded-md border border-gold-600/40 bg-black/60 px-6 py-4 text-center backdrop-blur-sm">
+            <div className="text-sm tracking-[0.3em] text-gold-400">上甲板</div>
+            <div className="mt-1 text-xs tracking-widest text-parchment-100/85">
+              正在挂帆、理索……
+            </div>
+            <div className="mx-auto mt-3 h-px w-32 overflow-hidden bg-gold-600/20">
+              <div className="h-px w-1/3 bg-gold-400/80 deck-boot-bar" />
+            </div>
+          </div>
+        </div>
+      )}
       {/* HUD：只留必要信息，别把海面盖住 */}
       <div className="pointer-events-none absolute left-4 top-4 rounded-md border border-gold-600/30 bg-black/35 px-3 py-2 text-parchment-100 backdrop-blur-sm">
         <div className="text-xs tracking-[0.3em] text-gold-400">DECK VIEW</div>
