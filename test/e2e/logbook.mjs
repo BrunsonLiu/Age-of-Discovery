@@ -359,6 +359,52 @@ check(await until((t) => [...document.querySelectorAll('p')].some((p) => (p.text
  */
 check(await until((n) => document.body.innerText.includes(`/ ${n} 格`), 6000, atlasTotal),
   '传说不并进全局格数（与航路一致，各自带进度）')
+// ---- 7. 传说兑现那一刻：册子里必须多一页（走真路径，不直接改状态） ----
+/*
+ * 上面那几条是把 `collectedLegends` 直接写成已兑现（验的是"同一格的两态"）。
+ * 这里走**真实路径**：把船开到那片海、结算一天，看册子会不会自己多一页。
+ * 之前只有一条通知 + 一条三秒就走的横幅 —— 玩家回头看"这趟带回了什么"，
+ * 里面没有它。而传说恰恰是最该被记下来的事。
+ */
+await page.evaluate(() => {
+  window.__gameStore.setState({ collectedLegends: [], logbook: [], activePanel: null })
+  const s = window.__gameStore.getState()
+  window.__gameStore.setState({ fleet: { ...s.fleet, isSailing: true } })
+  // 归墟在 (29.5, 128.5)，开进 90 海里圈内
+  window.__gameStore.getState().setShipPosition([29.6, 128.4])
+})
+await page.evaluate(() => window.__gameStore.getState().advanceDay())
+check(await until(() => window.__gameStore.getState().collectedLegends.includes('guixu'), 6000),
+  '开进传说海域、结算一天 → 传说兑现')
+{
+  const pages = await page.evaluate(() => window.__gameStore.getState().logbook
+    .filter(e => e.kind === 'legend')
+    .map(e => ({ id: e.id, title: e.title, portId: e.portId })))
+  check(pages.length === 1, `册子里多了一页（${pages.length} 页 legend）`)
+  check(pages[0]?.id === 'legend-guixu' && /传说 · 归墟/.test(pages[0]?.title ?? ''),
+    '页题是「传说 · 归墟」')
+  /* 传说不属于哪座港：塞一个"最近的港"会让页面写着别处的图 —— 所以 portId 必须是 null，
+     这一页没有配图（判据在下面按 DOM 再验一次）。 */
+  check(pages[0]?.portId === null, '这一页不挂港口（portId = null，不冒充某座港的见闻）')
+}
+await page.evaluate(() => window.__gameStore.getState().setActivePanel('event'))
+check(await until(() => !!document.querySelector('[data-testid="legend-entry"]'), 8000), '「见闻」页里能看到这一页')
+{
+  const card = await page.evaluate(() => {
+    const el = document.querySelector('[data-testid="legend-entry"]')
+    return {
+      text: (el?.innerText || '').replace(/\n+/g, ' | '),
+      art: el ? el.querySelectorAll('[data-testid="logbook-art"]').length : -1,
+    }
+  })
+  check(/传说 · 归墟/.test(card.text) && /罗盘针慢下来/.test(card.text), '页上有那句原文（不是一句通用说明）')
+  check(card.art === 0, '这一页不配图（没有港口就没有画，不拿别处的油画顶上去）')
+}
+/* 再结算一天：同一片海不会写第二页（id 稳定 + legendPending 兑完返回 null） */
+await page.evaluate(() => window.__gameStore.getState().advanceDay())
+check(await until(() => window.__gameStore.getState().logbook.filter(e => e.kind === 'legend').length === 1, 6000),
+  '再结算一天也不重复写页（同一片海只兑现一次）')
+
 check(errors.length === 0, `全程 0 运行时错误${errors.length ? '（' + errors.slice(0, 2).join(' | ') + '）' : ''}`)
 
 console.log(`\n航海日志 e2e：${pass} 通过 / ${fail} 失败`)

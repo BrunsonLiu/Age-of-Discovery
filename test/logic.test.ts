@@ -258,9 +258,10 @@ import {
 import { shadeFaces as shadeHarbor } from '../src/components/deck/harborModel'
 import { harborMood, starFieldCss, QUAY_LAMPS, QUAY_POSTS } from '../src/utils/harborMood'
 import { NATIONS, legendDistanceNm, legendPending } from '../src/data/nations'
+import { logbookArt } from '../src/data/logbookArt'
 import {
   appendLogbook, countEchoes, echoAt, echoDayFor, echoForPort, findClueFor,
-  makeArrivalEntry, makeEchoEntry, makeTitleEntry, markAllRead, pickRumor, LOGBOOK_MAX,
+  makeArrivalEntry, makeEchoEntry, makeLegendEntry, makeTitleEntry, markAllRead, pickRumor, LOGBOOK_MAX,
 } from '../src/data/logbook'
 import { parseSaveText, SAVE_FIELDS, SAVE_KEY, SAVE_VERSION } from '../src/utils/saveFile'
 
@@ -12557,4 +12558,45 @@ console.log('== 图鉴的「传说」一轨 + 上岸按钮不再是半透明 =='
   assert(spaceRule.length > 50, 'index.css 里有 .side-plate--space 规则')
   assert(/linear-gradient\(180deg, #33484f/.test(spaceRule), '冷色铜牌用的是实色渐变（不是半透明底）')
   assert(/radial-gradient\(circle at 5px 50%/.test(spaceRule), '沿用 .side-plate 的铆钉（材质一致，只换颜色）')
+}
+
+console.log('== 传说兑现要写进「见闻」一页 ==')
+{
+  /*
+   * 传说兑现原来只有通知 + 三秒横幅：回头看"这趟带回了什么"，册子里没有它。
+   * 这一页是"海图上原本没有的地方，你去过了"的唯一留存。
+   */
+  const china = NATIONS.find(n => n.id === 'china')!
+  const page = makeLegendEntry(china.legend, 12)
+  assert(page.kind === 'legend' && page.id === 'legend-guixu', '类型与 id 稳定（legend-guixu）')
+  assert(page.day === 12 && page.portId === null, '第 12 天、不挂港口（兑现发生在海上）')
+  assert(page.title === '传说 · 归墟' && page.text === china.legend.line, '页题与正文都取自数据层（不另拼句子）')
+  assert(page.aside.length > 8 && page.hint === null, '有页边小注、没有"下一趟线索"（传说不派任务）')
+  assert(page.read === false, '写进来是未读（侧栏要亮小圆点）')
+
+  /* portId 为 null → 不配图：拿别处的油画顶上去就是撒谎 */
+  assert(logbookArt(page.portId) === undefined, '这一页不配图（没有港口就没有画）')
+  assert(logbookArt(1) !== undefined, '有港口的页照样有图（对照）')
+
+  /*
+   * 上限裁剪：130 页普通见闻 + 1 页传说，裁剪之后传说必须还在。
+   * 纪念页往往是最早写下的，长局里必然被挤到最旧 —— 那正是最不该丢的东西。
+   */
+  let list: ReturnType<typeof makeLegendEntry>[] = [page]
+  for (let i = 0; i < LOGBOOK_MAX + 10; i++) {
+    const e = makeArrivalEntry(1, i, [1])!
+    list = appendLogbook(list, { ...e, id: `arrival-${i}-1` })
+  }
+  assert(list.length <= LOGBOOK_MAX, `册子被裁到上限内（${list.length} ≤ ${LOGBOOK_MAX}）`)
+  assert(list.some(e => e.kind === 'legend'), '传说页在裁剪中保留（不是 arrival 就永远不丢）')
+
+  /* 源码守卫：三种"必须这么接" */
+  const lb = readFileSync(join(process.cwd(), 'src', 'data', 'logbook.ts'), 'utf8')
+  assert(/export function makeLegendEntry/.test(lb), '数据层有 makeLegendEntry')
+  const gs = readFileSync(join(process.cwd(), 'src', 'store', 'useGameStore.ts'), 'utf8')
+  assert(/appendLogbook\(newLogbook, makeLegendEntry\(pendingLegend/.test(gs),
+    '兑现那一刻真的写进 newLogbook（不是只弹通知）')
+  const lvv = readFileSync(join(process.cwd(), 'src', 'components', 'panels', 'LogbookViews.tsx'), 'utf8')
+  assert(/entry\.kind === 'legend' \? 'legend-entry'/.test(lvv), '见闻页给传说页一个稳定锚点（e2e 才查得到）')
+  assert(/<Compass size=\{13\} className="text-gold-300 shrink-0"/.test(lvv), '传说页用罗盘图标（不是"到港"的锚）')
 }

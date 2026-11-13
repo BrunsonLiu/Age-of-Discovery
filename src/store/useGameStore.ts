@@ -41,7 +41,7 @@ import { findRelic, relicDistanceNm, relicInSeason, RELIC_PICKUP_NM } from '@/da
 import { nationById, legendPending, nextChapter, tributeState, DEFAULT_NATION } from '@/data/nations'
 import { phenomenonAt, phenomenonEventBias, SEA_PHENOMENA } from '@/data/seaPhenomena'
 import { newlyReached } from '@/data/voyageMilestones'
-import { appendLogbook, findClueFor, makeArrivalEntry, makeEchoEntry, makeTitleEntry, markAllRead } from '@/data/logbook'
+import { appendLogbook, findClueFor, makeArrivalEntry, makeEchoEntry, makeLegendEntry, makeTitleEntry, markAllRead } from '@/data/logbook'
 import { SAVE_KEY, SAVE_VERSION } from '@/utils/saveFile'
 
 const createStartingShip = (name = '圣玛利亚号'): Ship => ({
@@ -1756,6 +1756,9 @@ export const useGameStore = create<GameStore>()(
             fame: newFleet.fame + pendingLegend.gain.fame,
             morale: Math.max(0, Math.min(100, newFleet.morale + pendingLegend.gain.morale)),
           }
+          /* 兑现的那一刻写进册子：通知会消失、横幅三秒就走，
+             而"这一趟带回了什么"里必须有它（见 makeLegendEntry 的理由） */
+          newLogbook = appendLogbook(newLogbook, makeLegendEntry(pendingLegend, state.fleet.day))
           newNotifications = [...newNotifications, {
             id: `legend-${pendingLegend.id}`,
             type: 'discovery' as const,

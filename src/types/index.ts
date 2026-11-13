@@ -360,7 +360,11 @@ export type OfficerId = 'pilot' | 'quartermaster' | 'surgeon'
 /** 航海日志的一页（见数据层 data/logbook.ts） */
 export interface LogbookEntry {
   id: string
-  kind: 'arrival' | 'title' | 'echo'
+  /**
+   * 页的类型。'legend' 是"开进传说海域"那一页：
+   * 它不属于哪座港（`portId` 为 null），所以没有配图，也不参与"到港/应验"的任何统计。
+   */
+  kind: 'arrival' | 'title' | 'echo' | 'legend'
   day: number
   portId: number | null
   title: string

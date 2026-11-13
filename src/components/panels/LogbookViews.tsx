@@ -93,9 +93,13 @@ export function SightingsView() {
               return (
                 <article
                   key={entry.id}
-                  data-testid={entry.kind === 'echo' ? 'echo-entry' : undefined}
+                  data-testid={
+                    entry.kind === 'echo' ? 'echo-entry'
+                      : entry.kind === 'legend' ? 'legend-entry'
+                        : undefined
+                  }
                   className={`rounded-md px-2.5 py-2 border ${
-                    entry.kind === 'title' || entry.kind === 'echo'
+                    entry.kind === 'title' || entry.kind === 'echo' || entry.kind === 'legend'
                       ? 'border-gold-400/60 bg-gold-700/15'
                       : isFresh
                         ? 'border-gold-400/45 bg-gold-700/10'
@@ -129,7 +133,10 @@ export function SightingsView() {
                       ? <Sparkles size={13} className="text-gold-300 shrink-0" aria-hidden="true" />
                       : entry.kind === 'echo'
                         ? <MapPin size={13} className="text-gold-300 shrink-0" aria-hidden="true" />
-                        : <Anchor size={13} className="text-gold-400 shrink-0" aria-hidden="true" />}
+                        : entry.kind === 'legend'
+                          /* 传说页用罗盘：它不是"到了某座港"，是"开进了那片海" */
+                          ? <Compass size={13} className="text-gold-300 shrink-0" aria-hidden="true" />
+                          : <Anchor size={13} className="text-gold-400 shrink-0" aria-hidden="true" />}
                     <h4 className="text-gold-200 text-[14px] font-serif tracking-wide">{entry.title}</h4>
                     {isFresh && (
                       <span className="text-xs text-gold-300 border border-gold-500/40 rounded px-1 leading-4">新</span>

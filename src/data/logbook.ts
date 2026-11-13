@@ -1,5 +1,6 @@
 import { ports } from './ports'
 import type { LogbookEntry, VictoryClaim } from '@/types'
+import type { NationLegend } from '@/data/nations'
 
 /**
  * 航海日志：一本会自己变厚的册子。
@@ -43,7 +44,7 @@ const REGION_ASIDE: Record<string, string> = {
  * 并且 `claimedVictories` 保证每条只领一次，不会每天重复弹。
  */
 /**
- * 追加一页，超出上限时只从**最旧**的普通见闻开始丢；称号页与应验页永远保留。
+ * 追加一页，超出上限时只从**最旧**的普通见闻开始丢；称号页、应验页、传说页永远保留。
  *
  * 为什么不能简单 slice(0, MAX)：纪念页往往是最早写下的那几页，长局里必然被挤掉，
  * 而它恰恰是玩家最不该丢的东西。
@@ -194,6 +195,38 @@ export function makeTitleEntry(claim: VictoryClaim, day: number): LogbookEntry {
     title: `称号 · ${claim.name}`,
     text: claim.desc,
     aside: '酒馆会给这一页配支曲子。海不会因此变小，明天照样可以出航。',
+    hint: null,
+    targetPortId: null,
+    read: false,
+  }
+}
+
+/**
+ * 传说页：开进那片海、兑现的那一刻写进册子。
+ *
+ * 【为什么要这一页】传说兑现时原来只有一条通知 + 一条横幅 ——
+ * 通知会自动消失，横幅三秒就走，玩家回头看册子，这一趟"带回了什么"里没有它。
+ * 而传说恰恰是最该被记下来的那种事：它不是买卖、不是称号，
+ * 是"海图上原本没有的地方，你去过了"。
+ *
+ * 【为什么 portId 是 null】兑现发生在海上，那一刻船不在任何码头。
+ * 硬塞一个"最近的港"会让页面写着"靠岸 · 某某"却是别处的图 —— 这是撒谎。
+ * 没有港口就不配图（`logbookArt` 对 null 返回 undefined），这一页只有字。
+ *
+ * 【去重靠 legendPending，不靠 appendLogbook】`appendLogbook` 只做前插 + 裁剪，
+ * **没有 id 去重**（别把"不会写两页"指望在它身上）。同一片海只会兑现一次：
+ * 兑现之后 `legendPending` 返回 null，第二天结算不会再进来。id 稳定是为了导出/导入
+ * 与排查时能认出来，不是去重手段。
+ */
+export function makeLegendEntry(legend: NationLegend, day: number): LogbookEntry {
+  return {
+    id: `legend-${legend.id}`,
+    kind: 'legend',
+    day,
+    portId: null,
+    title: `传说 · ${legend.name}`,
+    text: legend.line,
+    aside: '海图上原本没有它。现在有了——是你开过去，它才有的。',
     hint: null,
     targetPortId: null,
     read: false,
