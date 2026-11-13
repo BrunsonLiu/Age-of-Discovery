@@ -49,7 +49,7 @@ import { paintCoastShade } from '@/utils/coastShade'
 import { surfaceDimMul, seaOverlayMul } from '@/utils/mapSurfaceDim'
 import { loadReliefNormalMap } from '@/utils/reliefNormalMap'
 import { seasonAt } from '@/utils/season'
-import { buildTerrainSymbols, filterPeaksByElevation } from '@/utils/terrainDecor'
+import { buildTerrainSymbols, buildTerrainSymbolsChunked, filterPeaksByElevation } from '@/utils/terrainDecor'
 import { loadElevationSampler } from '@/utils/elevation'
 import { buildMap3DGraticule, GRATICULE_OPACITY_NEAR } from './mapGraticule3d'
 import { fetchBordersGeojson } from '@/utils/mapGeoJson'
@@ -307,6 +307,12 @@ export default function Map3DView() {  const mountRef = useRef<HTMLDivElement>(n
 
     let disposed = false
     let raf = 0
+    /**
+     * 首帧是否还没画出来。加载层要盖到它翻假为止 —— 见下方"先编译完、再撤加载层"。
+     * 【为什么不提前把 phase 置成 ready】原来就是提前置的：加载层消失的那一帧
+     * 正好是首帧同步编译 1.4 秒的那一帧，玩家看到的是"图没了、画面冻住"。
+     */
+    let firstFramePending = true
     let renderer: THREE.WebGLRenderer | null = null
     const disposables: (THREE.BufferGeometry | THREE.Material | THREE.Texture)[] = []
 
@@ -1095,45 +1101,80 @@ export default function Map3DView() {  const mountRef = useRef<HTMLDivElement>(n
       let peaks: ReturnType<typeof buildMap3DPeaks> | null = null
       loadElevationSampler(`${import.meta.env.BASE_URL}data/elev-map.png`).then((elev) => {
         if (disposed) return
-        const symbols = buildTerrainSymbols(geojson as unknown as GeoJSON.GeoJsonObject, {
-          elevationAt: elev ?? undefined,
-          topBlocks: TERRAIN_TOP_BLOCKS,
-          stepDeg: TERRAIN_STEP_DEG,
-        })
+        /*
+         * ---- 撒点要**分片**跑，别再一口气冻 0.87 秒 ----
+         *
+         * 实测（Intel UHD 630 / D3D11）：切到 3D 海图时 `pointInRings` 主线程
+         * 连续占用 868ms，整个转场最长一次阻塞 2269ms。原因写得很清楚：
+         * 每个候选格 5 次多边形内外判断 × 上千个海岸线顶点 × 14 块大陆。
+         *
+         * 这里按 `requestAnimationFrame` 切片，每片最多干 8ms，剩下的留给下一帧：
+         * 3D 海图先出来，山与树在接下来半秒里陆续补上。符号是装饰，
+         * 晚半秒到不影响"船在哪、岸在哪"这些要立刻读的信息。
+         *
+         * 用 8ms 而不是"每帧跑固定行数"：小块（日本、不列颠）一行很快，
+         * 大块（欧亚）一行就要十几毫秒 —— 按时间预算才能让**每片**都小。
+         */
         /*
          * 3D 用的是「比邻域均值高」的山脊判据，不是绝对高程 ——
          * 原因与实测数字写在 filterPeaksByElevation 的注释里：
          * 绝对阈值 0.25 会让伊比利亚只有 2%（那里真有山），
          * 改成相对高度后 39%，而法国平原/亚马逊/澳洲内陆/东欧平原都是 0%。
          */
-        const strong = filterPeaksByElevation(symbols, elev)
-        /*
-         * 雪态要**同时看纬度与海拔**：只按纬度时阿尔卑斯（46°N 却很高）没雪、
-         * 西伯利亚平原（60°N 是平地）有雪，两边都反了。
-         * 高程采样器在这里本来就有（elev），顺手传给雪态判定。
-         */
-        peaks = buildMap3DPeaks(strong, PEAK_Y, PEAK_FACING, {
-          elevAt: elev ? (la, ln) => elev(la, ln) : undefined,
+        const chunked = buildTerrainSymbolsChunked(geojson as unknown as GeoJSON.GeoJsonObject, {
+          elevationAt: elev ?? undefined,
+          topBlocks: TERRAIN_TOP_BLOCKS,
+          stepDeg: TERRAIN_STEP_DEG,
         })
-        for (const m of peaks.meshes) peakGroup.add(m)
-        // 寒季雪的两个组挂进同一个 peakGroup（add 会把它们从上面那轮里重新挂过来）
-        peakGroup.add(peaks.coldGroups.north, peaks.coldGroups.south)
-        for (const m of peaks.materials) m.color.copy(peakBase)
-        for (const mat of peaks.materials) peakMats.push(mat)
-        /*
-         * 建好就立刻按当前航季定一次雪态。
-         *
-         * 【为什么不能只靠帧循环里那次】山是**异步**建好的（要先解码高程图），
-         * 而帧循环只在"季相变化"时切换可见性；等到山建好时，
-         * 那次切换早就在 peaks 还是 null 的时候空转过去了 ——
-         * 实测三季的可见性全是 true，等于没做。
+        /**
+         * 撒点跑完之后才建山（它要拿到**全部**符号，缺一个就不是同一份地形）。
+         * 【为什么定义在 runSlice 之前】第一片就可能跑完（小数据 / 快机器），
+         * 那时 `const finishPeaks` 还没初始化 → TDZ ReferenceError。
          */
-        {
+        const finishPeaks = (
+          symbols: ReturnType<typeof buildTerrainSymbols>,
+          elev: Awaited<ReturnType<typeof loadElevationSampler>>,
+        ) => {
+          const strong = filterPeaksByElevation(symbols, elev)
+          /*
+           * 雪态要**同时看纬度与海拔**：只按纬度时阿尔卑斯（46°N 却很高）没雪、
+           * 西伯利亚平原（60°N 是平地）有雪，两边都反了。
+           * 高程采样器在这里本来就有（elev），顺手传给雪态判定。
+           */
+          peaks = buildMap3DPeaks(strong, PEAK_Y, PEAK_FACING, {
+            elevAt: elev ? (la, ln) => elev(la, ln) : undefined,
+          })
+          for (const m of peaks.meshes) peakGroup.add(m)
+          // 寒季雪的两个组挂进同一个 peakGroup（add 会把它们从上面那轮里重新挂过来）
+          peakGroup.add(peaks.coldGroups.north, peaks.coldGroups.south)
+          for (const m of peaks.materials) m.color.copy(peakBase)
+          for (const mat of peaks.materials) peakMats.push(mat)
+          /*
+           * 建好就立刻按当前航季定一次雪态。
+           *
+           * 【为什么不能只靠帧循环里那次】山是**异步**建好的（要先解码高程图），
+           * 而帧循环只在"季相变化"时切换可见性；等到山建好时，
+           * 那次切换早就在 peaks 还是 null 的时候空转过去了 ——
+           * 实测三季的可见性全是 true，等于没做。
+           */
           const si = seasonAt(useGameStore.getState().fleet.day).index
           const coldNorth = si >= 2
           peaks.coldGroups.north.visible = coldNorth
           peaks.coldGroups.south.visible = !coldNorth
         }
+
+        let slice = chunked.next()
+        const runSlice = () => {
+          if (disposed) return
+          const t0 = performance.now()
+          while (!slice.done && performance.now() - t0 < 8) slice = chunked.next()
+          if (!slice.done) {
+            requestAnimationFrame(runSlice)
+            return
+          }
+          finishPeaks(slice.value, elev)
+        }
+        runSlice()
       })
 
       /*
@@ -2813,17 +2854,41 @@ export default function Map3DView() {  const mountRef = useRef<HTMLDivElement>(n
         seaLayer.update(camera, width, height, tmpV)
 
         post.render(scene, camera)
+        /* 首帧真的画出来了：这时撤加载层，玩家看不到"黑着等" */
+        if (firstFramePending) {
+          firstFramePending = false
+          setPhase('ready')
+        }
       }
 
       /*
-       * 并行预编译（同甲板）：3D 板第一帧要建 24 个 program，
-       * 每个都在"刚打开 3D"那几帧里同步编译 —— 那正是玩家点开关的那一下。
+       * ---- 先编译完、再撤加载层（与甲板同一套做法）----
+       *
+       * 原来这里是"发起 compileAsync 就立刻起循环 + setPhase('ready')"：
+       * 首帧 `post.render` 会为还没就绪的程序**同步**编译，于是玩家看到的
+       * "装配立体海图…"刚消失、画面就冻住 —— 实测（Intel UHD 630 / D3D11）
+       * 切到 3D 海图最长一次阻塞 **2269ms**（其中约 870ms 是地形撒点，已改成
+       * 分片；剩下的就是这个首帧编译）。
+       *
+       * 现在：加载层一直盖到**首帧真的画出来**为止。`compileAsync` 有扩展就真等它，
+       * 没有扩展就同步编译一次（同样在加载层后面）。6 秒兜底，防止驱动异常时
+       * 玩家被一张"装配中"的图卡住。
        */
-      if (renderer.extensions.has('KHR_parallel_shader_compile')) {
-        void renderer.compileAsync(scene, camera).catch(() => { /* 同甲板 */ })
+      let started = false
+      const startLoop = () => {
+        if (started || disposed) return
+        started = true
+        raf = requestAnimationFrame(tick)
       }
-      raf = requestAnimationFrame(tick)
-      setPhase('ready')
+      if (renderer.extensions.has('KHR_parallel_shader_compile')) {
+        const guard = window.setTimeout(() => { setPhase('ready'); startLoop() }, 6000)
+        void renderer
+          .compileAsync(scene, camera)
+          .catch(() => { /* 链接失败由首帧报错，这里不吞别的 */ })
+          .then(() => { window.clearTimeout(guard); startLoop() })
+      } else {
+        startLoop()
+      }
 
       // ---- 清理 ----
       const cleanup = () => {

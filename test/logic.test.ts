@@ -24,7 +24,7 @@ import {
   CHIP_MIN_EV, type AdjustedOutcome, type ChoiceSummary,
 } from '../src/utils/eventSummary'
 import { adjustOutcome, clampOutcomeToFleet } from '../src/utils/outcomeAdjust'
-import { buildTerrainSymbols, filterPeaksByElevation } from '../src/utils/terrainDecor'
+import { buildTerrainSymbolsChunked, buildTerrainSymbols, filterPeaksByElevation } from '../src/utils/terrainDecor'
 import { latToWorldZ, lonToWorldX, mercNorm, MAP_WORLD_SIZE, MERCATOR_LAT_LIMIT } from '../src/utils/mapProjection'
 import {
   coastSegments, graticuleSegments,
@@ -12563,8 +12563,28 @@ console.log('== 卡顿治理：三处"白花钱"的地方不许回来 ==')
     assert(atExt > 0 && atCompile > atExt,
       '甲板预编译先判断扩展（没有扩展时 three 会退回同步 compile，一次冻住 101 个 program）')
   }
-  assert(/extensions\.has\('KHR_parallel_shader_compile'\)[\s\S]{0,120}compileAsync/.test(m3),
-    '3D 板同样先判断扩展')
+  /*
+   * 同甲板：改成"先后顺序"判据。120 字符窗口在两段代码之间插了说明注释后就会失效，
+   * 把**正确**的代码判红 —— 判据本身也是会腐烂的。
+   */
+  {
+    const atExt3 = m3.indexOf("extensions.has('KHR_parallel_shader_compile')")
+    const atCompile3 = m3.indexOf('.compileAsync(scene, camera)')
+    assert(atExt3 > 0 && atCompile3 > atExt3, '3D 板同样先判断扩展、再编译')
+    /*
+     * 加载层必须盖到**首帧画出来**为止。
+     * 原来 `setPhase('ready')` 紧跟 `requestAnimationFrame(tick)`，于是
+     * "装配立体海图…"消失的那一帧正好是首帧同步编译 1.3 秒的那一帧 ——
+     * 玩家看到"图没了、画面冻住"。这条守卫盯的就是这个顺序。
+     */
+    assert(/firstFramePending/.test(m3), '3D 板用 firstFramePending 记录首帧是否已画出')
+    assert(/post\.render\(scene, camera\)[\s\S]{0,200}setPhase\('ready'\)/.test(m3),
+      "setPhase('ready') 发生在 post.render 之后（首帧真画出来才撤加载层）")
+    assert(/\{phase === 'loading' && \(/.test(m3),
+      '加载层由 phase 控制 —— 撤它等于撤加载层，所以只能在首帧之后撤')
+    assert(/setTimeout\(\(\) => \{ setPhase\('ready'\); startLoop\(\) \}, 6000\)/.test(m3),
+      '6 秒兜底：编译 promise 不 resolve 也不许把玩家卡在"装配中"')
+  }
 
   const ship = readFileSync(join(process.cwd(), 'src', 'components', 'three', 'Ship3D.tsx'), 'utf8')
   assert(/renderer\.debug\.checkShaderErrors = import\.meta\.env\.DEV/.test(ship),
@@ -13063,6 +13083,63 @@ console.log('== 合并只许动"无名"的零件，而且要能进无名组 ==')
     assert(Math.abs(cx) < 1e-6, `合并几何要按组内局部坐标烘（中心 x 应≈0，实际 ${cx.toFixed(3)}）`)
   }
   matWood.dispose(); matIron.dispose()
+}
+
+console.log('== 地形撒点分片跑，但符号必须一个不差 ==')
+{
+  /*
+   * 【这条锁的是什么】切到 3D 海图时 `buildTerrainSymbols` 曾在主线程连续跑 868ms
+   * （`pointInRings` 自时间）。现在它变成生成器、由 3D 层按 8ms 的时间预算分片消费。
+   *
+   * 分片本身没有价值 —— 有价值的是"分片之后画面一模一样"。这个函数里有三处
+   * **顺序敏感**的东西，切错位置就会让山挪地方（历史上踩过两次）：
+   *   ① `rand()` 的消耗顺序（注释里写着"随机数消耗必须先于任何可能 continue 的判断"）；
+   *   ② 团簇按 (c, r) 格坐标哈希，跨块不能串；
+   *   ③ `maxSymbols` 的截断依赖累计数量。
+   * 所以判据是**逐项相等**，不是"数量差不多"。
+   */
+  const sq = (w: number, h: number) => ([
+    [0, 0], [w, 0], [w, h], [0, h], [0, 0],
+  ] as [number, number][])
+  const gj = {
+    type: 'FeatureCollection',
+    features: [
+      { type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [sq(24, 18)] } },
+      { type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [sq(6, 5).map(([x, y]) => [x + 40, y - 30] as [number, number])] } },
+    ],
+  } as unknown as GeoJSON.GeoJsonObject
+
+  const opts = { topBlocks: 2, stepDeg: 1.1, seed: 20261030 }
+  const sync = buildTerrainSymbols(gj, opts)
+  assert(sync.length > 40, `造景要撒出足够多的符号才检验得出差异（实际 ${sync.length}）`)
+
+  // 分片版：手动抽干，数 yield 次数
+  const it = buildTerrainSymbolsChunked(gj, opts)
+  let n = 0
+  let step = it.next()
+  while (!step.done) { n++; step = it.next() }
+  assert(n > 10, `分片版必须真的让出多次（实际 ${n} 次）—— 否则等于没切`)
+  assert(step.value.length === sync.length,
+    `分片与同步的符号数必须相同（${step.value.length} vs ${sync.length}）`)
+  const same = step.value.every((a, i) => {
+    const b = sync[i]
+    return a.lat === b.lat && a.lng === b.lng && a.kind === b.kind
+      && a.scale === b.scale && a.rank === b.rank
+  })
+  assert(same, '分片与同步的每一个符号（位置/种类/缩放/rank）都必须逐项相同')
+
+  /* 源码守卫：3D 层用的是分片版，而且按**时间预算**切（不是固定行数） */
+  const m3 = readFileSync(join(process.cwd(), 'src', 'components', 'map3d', 'Map3DView.tsx'), 'utf8')
+  assert(/buildTerrainSymbolsChunked\(/.test(m3), '3D 层用分片版撒点')
+  assert(/performance\.now\(\) - t0 < 8/.test(m3), '每片按 8ms 时间预算切（大块一行就十几毫秒）')
+  assert(/if \(!slice\.done\) \{[\s\S]{0,60}requestAnimationFrame\(runSlice\)/.test(m3),
+    '没跑完就交回下一帧（而不是同步抽干）')
+  /*
+   * `finishPeaks` 必须在 `runSlice` 之前定义：第一片就可能跑完（小数据/快机器），
+   * 那时它在 TDZ 里 → ReferenceError，整块地形都不出来。
+   */
+  assert(m3.indexOf('const finishPeaks =') < m3.indexOf('const runSlice ='),
+    'finishPeaks 定义在 runSlice 之前（否则第一片跑完时 TDZ 报错）')
 }
 
 console.log('== 首次进甲板：先盖上提示再编译，编译完才起帧循环 ==')

@@ -78,9 +78,19 @@ const mark = async (label, action, done) => {
 
 console.log(`\n冷启动到可交互 ${bootMs}ms`)
 await mark('新游戏 → 2D', () => { window.__gameStore.getState().initGame('ming') }, () => !!window.__gameStore.getState().fleet)
-await mark('2D → 3D 板', () => window.__mapStore.setState({ viewMode: '3d' }), () => !!window.__map3dScene)
+/*
+ * 切 3D 板的开关是 `renderMode`（`viewMode` 是"海图 / 岸上"那一维，别混）。
+ * 之前这里写成 `viewMode:'3d'`，Map3DView 压根没挂上，于是量出来"0 长任务、
+ * 超时未就绪" —— 假绿比红更危险，所以探针的谓词必须和目标一致。
+ */
+await mark('2D → 3D 板', () => window.__mapStore.getState().setRenderMode('3d'), () => !!window.__map3d)
 await mark('3D 板 → 甲板', () => document.querySelector('[data-testid=deck-view-toggle]')?.click(), () => !!window.__deckScene)
-await mark('甲板 → 3D 板', () => document.querySelector('[data-testid=deck-view-toggle]')?.click(), () => !window.__deckScene)
+/*
+ * 关甲板要用「回海图」按钮：甲板打开时入口按钮（deck-view-toggle）根本不在 DOM 里，
+ * 之前点它等于什么都没发生 —— 于是这一步量到的是"甲板自己继续跑 30 秒"，
+ * 得出一个 10985ms 的假长任务。探针点错按钮比不量更糟。
+ */
+await mark('关甲板 → 3D 板', () => document.querySelector('[data-testid=deck-view-close]')?.click(), () => !window.__deckScene)
 
 const all = await page.evaluate(() => window.__long.slice().sort((a, b) => b - a).slice(0, 10))
 console.log(`\n全程最长的 10 个长任务（ms）：${all.join(', ')}`)

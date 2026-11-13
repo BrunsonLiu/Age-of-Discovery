@@ -304,10 +304,25 @@ export function filterPeaksByElevation(
   })
 }
 
-export function buildTerrainSymbols(
+/**
+ * 分批版：撒点的计算量按**行**切开，调用方每片只跑一小会儿。
+ *
+ * 【为什么要切】实测切到 3D 海图时，这一个函数在主线程上**连续跑 868ms**
+ * （`pointInRings` 自时间，Intel UHD 630 那台机器）。它每个候选格要做 5 次
+ * 多边形内外判断，每次都要遍历一整圈海岸线（欧亚那块有上千个顶点）；
+ * 一次切 14 块大陆、步长 1.1°，总量就是千万级的循环。
+ *
+ * 冻 0.87 秒和"分 30 片、每片 30ms"在总耗时上一模一样，但后者玩家感觉不到：
+ * 3D 海图先出来，山与树在接下来半秒里陆续补上（符号是装饰，晚到不影响可读）。
+ *
+ * 【为什么用生成器而不是回调】同步入口 `buildTerrainSymbols` 直接把它抽干，
+ * 两条路径跑的是**同一份代码**——切分不会让 2D 与 3D 的符号位置跑偏。
+ * 每个 yield 都在"一行格子跑完"之后，`rand` 的消耗顺序完全不变。
+ */
+export function* buildTerrainSymbolsChunked(
   geojson: GeoJSON.GeoJsonObject,
   opts: BuildTerrainOptions = {},
-): TerrainSymbol[] {
+): Generator<void, TerrainSymbol[], void> {
   const topBlocks = opts.topBlocks ?? 14
   /*
    * 撒点步长。2.2° → 1.1°：**近景陆地不再空**。
@@ -476,10 +491,28 @@ export function buildTerrainSymbols(
 
         out.push({ lat, lng, kind, scale, rank })
       }
+      /* 一行跑完让出一次：欧亚那种大块一行约 5~15ms，正好是一片的上限 */
+      yield
     }
   }
 
   return out
+}
+
+/**
+ * 同步版：把分批版一次抽干。
+ *
+ * 2D 海图（`TerrainDecor` 的 useMemo）继续用它 —— 那份数据在首屏就要，
+ * 而且 2D 实测只花 116ms 量级，没必要改成异步。**输出与分批版逐项相同**。
+ */
+export function buildTerrainSymbols(
+  geojson: GeoJSON.GeoJsonObject,
+  opts: BuildTerrainOptions = {},
+): TerrainSymbol[] {
+  const it = buildTerrainSymbolsChunked(geojson, opts)
+  let step = it.next()
+  while (!step.done) step = it.next()
+  return step.value
 }
 
 /**
