@@ -363,6 +363,13 @@ export default function Map3DView() {  const mountRef = useRef<HTMLDivElement>(n
       // ---- 渲染器 ----
       renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'low-power' })
       /*
+       * 【生产构建不要查着色器编译日志】three 默认 `checkShaderErrors = true`：
+       * 每编译一个 program 都会同步调用 getShaderInfoLog/getProgramInfoLog。
+       * 甲板实测这两项占 **~400ms**（60 个 program），全都花在"进场景那一下"。
+       * 开发环境保留 true —— GLSL 写错时要靠它拿到行号。
+       */
+      renderer.debug.checkShaderErrors = import.meta.env.DEV
+      /*
        * 分辨率上限跟**画质档位**走（低 0.85 / 中 1.15 / 高 1.5）。
        * 这一层原来写死 1.5，在 2 倍屏上等于 2.25 倍像素 —— 核显直接掉帧，
        * 而下面的自适应要跑好几秒才降下来，玩家先看到的就是"一开 3D 就卡"。
@@ -1010,10 +1017,18 @@ export default function Map3DView() {  const mountRef = useRef<HTMLDivElement>(n
        */
       const lidMesh = new THREE.Mesh(land.lid, lidMat)
       lidMesh.name = 'map3d-land'
-      lidMesh.castShadow = true; lidMesh.receiveShadow = true
+      /*
+       * 【地形不投影，但接收阴影】实测（GL 层数 draw call，单帧）：
+       * 陆面 112,814 + 侧壁 118,494 = 231k 三角形，**每一次阴影深度 pass 都要再画一遍**，
+       * 一帧总提交因此从 234k 涨到 466k（-50%）。
+       * 而地形是平的：它自己的影子在地图上几乎看不见 —— A/B 实测画面差
+       * mean 1.02/255、只有 3.8% 的像素变了 >4 级。所以让它只 receive、不 cast，
+       * 港口建筑与船照旧投影（147 个投影体，单件都 <5000 三角形，代价可以忽略）。
+       */
+      lidMesh.castShadow = false; lidMesh.receiveShadow = true
       const wallMesh = new THREE.Mesh(land.wall, wallMat)
       wallMesh.name = 'map3d-land-wall'
-      wallMesh.castShadow = true; wallMesh.receiveShadow = true
+      wallMesh.castShadow = false; wallMesh.receiveShadow = true
       scene.add(lidMesh, wallMesh)
       disposables.push(land.lid, land.wall, lidMat, wallMat)
       if (iceTex) disposables.push(iceTex)
@@ -2788,6 +2803,13 @@ export default function Map3DView() {  const mountRef = useRef<HTMLDivElement>(n
         post.render(scene, camera)
       }
 
+      /*
+       * 并行预编译（同甲板）：3D 板第一帧要建 24 个 program，
+       * 每个都在"刚打开 3D"那几帧里同步编译 —— 那正是玩家点开关的那一下。
+       */
+      if (renderer.extensions.has('KHR_parallel_shader_compile')) {
+        void renderer.compileAsync(scene, camera).catch(() => { /* 同甲板 */ })
+      }
       raf = requestAnimationFrame(tick)
       setPhase('ready')
 
@@ -2828,7 +2850,7 @@ export default function Map3DView() {  const mountRef = useRef<HTMLDivElement>(n
 
       // 开发调试钩子：仅在 dev 构建下暴露 three 场景，便于自动化验证
       // （生产构建会被 tree-shake 掉，实测生产包 0 命中）。
-      if (import.meta.env?.DEV && typeof window !== 'undefined') {
+      if ((import.meta.env?.DEV || import.meta.env?.VITE_PROBE === '1') && typeof window !== 'undefined') {
         // post 也挂出来：取证脚本要能同帧 A/B（太阳在动，跨次截图没法比）
         ;(window as unknown as { __map3d?: unknown }).__map3d = { scene, camera, renderer, post, THREE }
       }

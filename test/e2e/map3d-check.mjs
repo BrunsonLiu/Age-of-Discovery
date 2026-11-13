@@ -1164,6 +1164,57 @@ check(back.leaflet, '切回 2D 后 Leaflet 恢复')
 check(!back.canvas3d, '切回 2D 后 3D 层已卸载')
 await page.screenshot({ path: `${SHOTS}/map3d-切回2D.png` })
 
+// ---- 性能预算：单帧 GL 提交量（不是 renderer.info，它会把两帧累加）----
+{
+  /*
+   * 【必须先切回 3D 并等一帧真画面】前面的用例把渲染模式来回切过：
+   * 第一次写这段时量到 **0 三角形 / 0 call**，而 `0 <= 300000` 依然"通过" ——
+   * 空数据恒真的假绿。所以这里先强制 3D，再要求实测值 > 10 万。
+   */
+  await page.evaluate(() => window.__mapStore.setState({ renderMode: '3d' }))
+  await new Promise(r => setTimeout(r, 2500))
+  const budget = await page.evaluate(async () => {
+    const r = window.__map3d?.renderer
+    if (!r) return null
+    const gl = r.getContext()
+    const s = { calls: 0, tris: 0 }
+    const oe = gl.drawElements.bind(gl)
+    const oa = gl.drawArrays.bind(gl)
+    gl.drawElements = (m, c, t, o) => { s.calls++; if (m === gl.TRIANGLES) s.tris += c / 3; return oe(m, c, t, o) }
+    gl.drawArrays = (m, f, c) => { s.calls++; if (m === gl.TRIANGLES) s.tris += c / 3; return oa(m, f, c) }
+    /* 只等一帧：等两帧所有数字翻倍（这条坑踩过两次，第一次就是这么误判出 931k 的） */
+    await new Promise(res => requestAnimationFrame(() => res()))
+    gl.drawElements = oe
+    gl.drawArrays = oa
+    let casters = 0
+    let terrainCasters = 0
+    window.__map3d.scene.traverse(o => {
+      if (o.isMesh && o.castShadow) casters++
+      if (o.isMesh && o.castShadow && /^map3d-(land|land-wall|lid)/.test(o.name)) terrainCasters++
+    })
+    return { calls: s.calls, tris: Math.round(s.tris), casters, terrainCasters }
+  })
+  check(!!budget, '3D 场景可读（能拿到 renderer）')
+  /*
+   * 【预算怎么定的】地形（陆面 + 侧壁 = 231k）每一次阴影深度 pass 都要重画一遍：
+   * 让它投影时单帧 465k，不投影 234k，而画面差只有 mean 1.02/255
+   * （3.8% 像素变化 >4 级）。所以预算卡在 300k —— 一旦有人把地形改回
+   * `castShadow = true`，这条会立刻红。
+   */
+  /* 先确认真的在画：否则下面的“≤ 预算”全是空数据恒真 */
+  check(budget.tris > 100000 && budget.calls > 50,
+    `3D 板确实在渲染（${(budget.tris / 1000).toFixed(0)}k 三角形 / ${budget.calls} call）`)
+  check(budget.terrainCasters === 0, `地形不投影（${budget.terrainCasters} 个地形投影体，应为 0）`)
+  check(budget.tris <= 300000, `单帧三角形 ≤ 300k（实测 ${(budget.tris / 1000).toFixed(0)}k；地形投影时是 465k）`)
+  /*
+   * draw call 的预算放得比三角形宽：这一刻所有图层都开着（风场/洋流/海盗区/
+   * 航程圈/传说标记），比单独跑 3D 的体检探针（152 call）多一倍是正常的。
+   * 这条只用来抓"翻了几倍"的量级回退，不锁细账。
+   */
+  check(budget.calls <= 340, `单帧 draw call ≤ 340（实测 ${budget.calls}；所有图层全开）`)
+  check(budget.casters > 20, `建筑与船仍在投影（${budget.casters} 个投影体）—— 削的是地形，不是阴影本身`)
+}
+
 console.log(`\n结果：${pass} 通过 / ${fail} 失败`)
 if (errors.length) {
   console.log('\n运行时错误:')

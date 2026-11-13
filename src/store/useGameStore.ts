@@ -3343,6 +3343,10 @@ export function selectReturnLeg(state: GameState): ReturnLeg | null {
 export { effectiveFleetSpeed }
 
 /** 开发调试钩子：仅在 dev 构建下暴露 store，便于自动化验证（生产构建会被 tree-shake 掉） */
-if (typeof import.meta !== 'undefined' && import.meta.env?.DEV && typeof window !== 'undefined') {
+if (
+  typeof import.meta !== 'undefined' && typeof window !== 'undefined' &&
+  /* VITE_PROBE=1 只用于本地"像生产一样"的性能剖析（DEV 里 checkShaderErrors 还开着，数字不准） */
+  (import.meta.env?.DEV || import.meta.env?.VITE_PROBE === '1')
+) {
   ;(window as unknown as { __gameStore: typeof useGameStore }).__gameStore = useGameStore
 }

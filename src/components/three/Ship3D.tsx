@@ -46,6 +46,7 @@ export default function Ship3D({ type, name }: Ship3DProps) {
     camera.lookAt(0, 0.35, 0)
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true })
+    renderer.debug.checkShaderErrors = import.meta.env.DEV
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
     renderer.setSize(width, height)
     renderer.shadowMap.enabled = false

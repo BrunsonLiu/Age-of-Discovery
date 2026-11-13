@@ -148,6 +148,9 @@ export const useMapStore = create<MapState>()(
  * 但这个钩子**从来没存在过**——可选链一直在静默返回 undefined，
  * 那条断言等于没查（典型的假测试）。
  */
-if (typeof import.meta !== 'undefined' && import.meta.env?.DEV && typeof window !== 'undefined') {
+if (
+  typeof import.meta !== 'undefined' && typeof window !== 'undefined' &&
+  (import.meta.env?.DEV || import.meta.env?.VITE_PROBE === '1')
+) {
   ;(window as unknown as { __mapStore: typeof useMapStore }).__mapStore = useMapStore
 }

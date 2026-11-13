@@ -356,6 +356,11 @@ export default function DeckView() {
 
     const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' })
     /*
+     * 同 Map3DView：生产构建不查编译日志。甲板有 60 个 program，
+     * 实测 getProgramInfoLog + getShaderInfoLog 合计约 400ms，全落在进场那一下。
+     */
+    renderer.debug.checkShaderErrors = import.meta.env.DEV
+    /*
      * 着色器编译失败时，three 默认只在 console 打印**出错行附近**的源码，看不到
      * 前面的声明是否真的进了编译单元。这里把完整的 shader 源码与 info log 存到
      * window 上 —— 排查"明明声明了却说 undeclared"这类问题只能靠它。
@@ -2186,6 +2191,23 @@ export default function DeckView() {
        */
       post.render(scene, camera)
       raf = requestAnimationFrame(tick)
+    }
+    /*
+     * 先并行编译、再起帧循环。
+     *
+     * 【为什么不是"边渲染边编译"】甲板有 60 个 program：第一次用到哪个就在那帧同步
+     * 编译+链接，玩家看到的是"进船上一顿一顿"（每顿 100~400ms）。
+     * `compileAsync` 走 KHR_parallel_shader_compile，把链接丢到驱动线程里，
+     * 主线程这几帧照常跑；扩展不可用时 three 会退回同步 compile（就一次，且在淡入里）。
+     * 不 await —— 等它会把"进场景"整体拖后。
+     *
+     * 【为什么先判断扩展】没有 `KHR_parallel_shader_compile` 时 three 会**退回同步 compile**：
+     * 101 个 program（含只在暴雨/雾天才用到的变体）会在同一帧里全编译完 ——
+     * 实测 p99 从 1883ms 变成 1483ms，但那是"一次长冻"换"多次小顿"。
+     * 有扩展才做预编译；没有就保持按需编译（老行为），不做这种交换。
+     */
+    if (renderer.extensions.has('KHR_parallel_shader_compile')) {
+      void renderer.compileAsync(scene, camera).catch(() => { /* 链接失败由首帧报错，这里不吞别的 */ })
     }
     raf = requestAnimationFrame(tick)
 

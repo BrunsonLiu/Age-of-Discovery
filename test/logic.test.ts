@@ -12531,6 +12531,40 @@ console.log('== 甲板的云要随风漂，而且慢到不刺眼 ==')
     '帧循环里按当前风速驱动云（不自己另算一套）')
 }
 
+console.log('== 卡顿治理：三处"白花钱"的地方不许回来 ==')
+{
+  /*
+   * 这一节全部来自实测（GL 层数 draw call，单帧）：
+   *   ① 3D 板地形 (231k 三角形) 每次阴影 pass 都要重画 → 一帧 465k，砍掉后 234k
+   *   ② three 默认 checkShaderErrors=true → 每编译一个 program 同步查日志，
+   *      甲板 60 个 program 实测 ~400ms，全落在"进场景那一下"
+   *   ③ 预编译只在有 KHR_parallel_shader_compile 时做（否则会退回同步编译，
+   *      把多次小顿换成一次长冻）
+   */
+  const m3 = readFileSync(join(process.cwd(), 'src', 'components', 'map3d', 'Map3DView.tsx'), 'utf8')
+  assert(/lidMesh\.castShadow = false/.test(m3) && /wallMesh\.castShadow = false/.test(m3),
+    '地形只接收阴影、不投影（它是平的，影子看不见，但每次深度 pass 都要重画 231k）')
+  assert(/lidMesh\.receiveShadow = true/.test(m3), '地形仍然接收阴影（港口与船投影照旧落在它身上）')
+  assert(/renderer\.debug\.checkShaderErrors = import\.meta\.env\.DEV/.test(m3),
+    '3D 板：生产构建不查编译日志（开发环境保留，GLSL 出错要行号）')
+
+  const dv = readFileSync(join(process.cwd(), 'src', 'components', 'deck', 'DeckView.tsx'), 'utf8')
+  assert(/renderer\.debug\.checkShaderErrors = import\.meta\.env\.DEV/.test(dv),
+    '甲板：生产构建不查编译日志')
+  assert(/extensions\.has\('KHR_parallel_shader_compile'\)[\s\S]{0,120}compileAsync/.test(dv),
+    '甲板预编译先判断扩展（没有扩展时 three 会退回同步 compile，一次冻住 101 个 program）')
+  assert(/extensions\.has\('KHR_parallel_shader_compile'\)[\s\S]{0,120}compileAsync/.test(m3),
+    '3D 板同样先判断扩展')
+
+  const ship = readFileSync(join(process.cwd(), 'src', 'components', 'three', 'Ship3D.tsx'), 'utf8')
+  assert(/renderer\.debug\.checkShaderErrors = import\.meta\.env\.DEV/.test(ship),
+    '小船预览：同样关掉编译日志查询')
+
+  /* 探测开关只认 VITE_PROBE：CI 不设它，线上产物里这两个钩子仍然不存在 */
+  const gs2 = readFileSync(join(process.cwd(), 'src', 'store', 'useGameStore.ts'), 'utf8')
+  assert(/VITE_PROBE === '1'/.test(gs2), 'store 的调试钩子支持 VITE_PROBE（本地按生产方式剖析）')
+}
+
 console.log(`\n最终结果：${passed} 通过 / ${failed} 失败`)
 if (failed > 0) process.exit(1)
 
