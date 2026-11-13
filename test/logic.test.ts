@@ -12404,7 +12404,22 @@ console.log('== 近景码头：石砌铺装而不是一块纯黑横带 ==')
   assert(props.length >= 6, `货至少六件（${props.length}）`)
   assert(props.every(p2 => p2.y + p2.h <= 196),
     `每件货都在底栏之上（y+h ≤ 196；底栏从视口 94.3% 起）`)
-  assert(props.every(p2 => p2.y >= 130), '每件货都在近处（y ≥ 130，不是飘在水上）')
+  assert(props.every(p2 => p2.y >= 100), '每件货都站在石面上（水线 96 以下，不是飘在水上）')
+  /* 远处的货必须更小（同一尺寸摆在水线附近读成"贴纸"），但**只跟同类比**：
+     缆绳盘本来就是扁的（h 15~18），拿它跟桶比没有意义。 */
+  {
+    const far = props.filter(p2 => p2.y < 130)
+    const near = props.filter(p2 => p2.y >= 130)
+    assert(far.length >= 3 && near.length >= 3, `近/远两档货都有（远 ${far.length} / 近 ${near.length}）`)
+    for (const kind of ['barrel', 'crate'] as const) {
+      const f = far.filter(p2 => p2.kind === kind)
+      const n = near.filter(p2 => p2.kind === kind)
+      if (f.length && n.length) {
+        assert(Math.max(...f.map(p2 => p2.h)) <= Math.min(...n.map(p2 => p2.h)),
+          `远处的${kind}比近处的小（${f.map(p2 => p2.h)} vs ${n.map(p2 => p2.h)}）`)
+      }
+    }
+  }
   assert(props.every(p2 => p2.x >= 0 && p2.x + p2.w <= 1440), '货都在画面内')
   /* 不压系缆桩：桩是描边的，桶压上去会读成"桩穿桶而过" */
   const posts = testQuayPosts
