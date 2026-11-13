@@ -1254,7 +1254,14 @@ console.log('== 29. 环境资产：海面/港口/天气层/结局背景 ==')
   assert(portImage(18).endsWith('port_macau.webp'), '澳门用专属图')
   // 没做专属图的港口仍退回区域图（不能让它们变成空图）
   assert(portImage(4).endsWith('port_caribbean.webp'), '托尔图加仍用加勒比区域图')
-  assert(portImage(9).endsWith('port_west_africa.webp'), '埃尔米纳用西非图')
+  assert(portImage(9).endsWith('port_west_africa.webp'), '埃尔米纳仍用西非城堡图（它本来就是那座城堡）')
+  /*
+   * 东非海岸不是西非：蒙巴萨/桑给巴尔是白石珊瑚城 + 宣礼塔 + 三角帆船，
+   * 而 `port_west_africa` 画的是带雉堞的沙漠堡垒。
+   */
+  assert(portImage(16).endsWith('port_swahili_coast.webp'), '蒙巴萨用斯瓦希里海岸图')
+  assert(portImage(17) === portImage(16), '桑给巴尔与蒙巴萨共用同一张（同一片海岸）')
+  assert(portImage(16) !== portImage(9), '东非不再与西非共用那张沙漠城堡')
   /* 马六甲改成马来河港专属图（原来落回东南亚通用图，而那张画的是泰式寺庙） */
   assert(portImage(12).endsWith('port_malay_river.webp'), '马六甲用马来河港图')
   /*
