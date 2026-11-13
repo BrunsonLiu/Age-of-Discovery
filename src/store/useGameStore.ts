@@ -41,7 +41,7 @@ import { findRelic, relicDistanceNm, relicInSeason, RELIC_PICKUP_NM } from '@/da
 import { nationById, legendPending, nextChapter, tributeState, DEFAULT_NATION } from '@/data/nations'
 import { phenomenonAt, phenomenonEventBias, SEA_PHENOMENA } from '@/data/seaPhenomena'
 import { newlyReached } from '@/data/voyageMilestones'
-import { appendLogbook, findClueFor, makeArrivalEntry, makeEchoEntry, makeLegendEntry, makeTitleEntry, markAllRead } from '@/data/logbook'
+import { appendLogbook, findClueFor, makeArrivalEntry, makeEchoEntry, makeLegendEntry, makeTitleEntry, makeTributeEntry, markAllRead } from '@/data/logbook'
 import { SAVE_KEY, SAVE_VERSION } from '@/utils/saveFile'
 
 const createStartingShip = (name = '圣玛利亚号'): Ship => ({
@@ -2477,12 +2477,18 @@ export const useGameStore = create<GameStore>()(
           factionRep,
           lastTributeDay: state.fleet.day,
           tributes,
-          ...(titleClaim
-            ? {
-                claimedVictories: [...state.claimedVictories, titleClaim.key],
-                logbook: appendLogbook(state.logbook, makeTitleEntry(titleClaim, state.fleet.day)),
-              }
-            : {}),
+          /*
+           * 每一次朝贡都写一页（不再只在给名号那次写）：
+           * 面板承诺"记下你的船名"，册子里就必须查得到。
+           */
+          ...(() => {
+            let lb = appendLogbook(state.logbook, makeTributeEntry(st.rule, state.fleet.day, tributes))
+            if (titleClaim) lb = appendLogbook(lb, makeTitleEntry(titleClaim, state.fleet.day))
+            return {
+              logbook: lb,
+              ...(titleClaim ? { claimedVictories: [...state.claimedVictories, titleClaim.key] } : {}),
+            }
+          })(),
           notifications: [
             ...state.notifications,
             {

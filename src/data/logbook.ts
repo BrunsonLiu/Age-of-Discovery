@@ -233,6 +233,35 @@ export function makeLegendEntry(legend: NationLegend, day: number): LogbookEntry
   }
 }
 
+/**
+ * 朝贡页：每一次"交勘合"都写一页。
+ *
+ * 【为什么不能只在拿到名号时写】面板上写着「市舶司收下香料，**记下你的船名**」，
+ * 而 store 原来只在第 3 次（该给名号那次）才写页 —— 前两次、以及所有没到
+ * 名号门槛的朝贡，屏幕上只有一条会消失的横幅和一条通知。文案承诺了"记下"，
+ * 册子里却查不到，这跟"数字对不上"是同一类错。
+ *
+ * 【id 用 天+次数】同一天不可能交两次（冷却 20 天），但导入存档/重复结算
+ * 可能在同一帧写两次，带上次数就不会互相覆盖。
+ *
+ * 【portId 给真港】朝贡确实发生在市舶司所在的那座港，所以这一页配得上那张画，
+ * 头行也写得出"靠岸 · 广州"——不是硬塞一个"最近的港"。
+ */
+export function makeTributeEntry(rule: { portId: number; label: string; gift: string; gain: { fame: number; morale: number } }, day: number, count: number): LogbookEntry {
+  return {
+    id: `tribute-${day}-${count}`,
+    kind: 'tribute',
+    day,
+    portId: rule.portId,
+    title: `${rule.label} · 第 ${count} 次`,
+    text: rule.gift,
+    aside: `名号 +${rule.gain.fame} · 士气 +${rule.gain.morale}。船名记在市舶司的簿子上。`,
+    hint: null,
+    targetPortId: null,
+    read: false,
+  }
+}
+
 /** 全部标已读（打开「见闻」页时调用） */
 export function markAllRead(list: readonly LogbookEntry[]): LogbookEntry[] {
   return list.some(e => !e.read) ? list.map(e => (e.read ? e : { ...e, read: true })) : [...list]

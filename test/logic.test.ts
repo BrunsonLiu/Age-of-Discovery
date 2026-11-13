@@ -268,7 +268,7 @@ import {
 } from '../src/components/harbor/quayDeck'
 import {
   appendLogbook, countEchoes, echoAt, echoDayFor, echoForPort, findClueFor,
-  makeArrivalEntry, makeEchoEntry, makeLegendEntry, makeTitleEntry, markAllRead, pickRumor, LOGBOOK_MAX,
+  makeArrivalEntry, makeEchoEntry, makeLegendEntry, makeTitleEntry, makeTributeEntry, markAllRead, pickRumor, LOGBOOK_MAX,
 } from '../src/data/logbook'
 import { parseSaveText, SAVE_FIELDS, SAVE_KEY, SAVE_VERSION } from '../src/utils/saveFile'
 
@@ -1235,6 +1235,13 @@ console.log('== 29. 环境资产：海面/港口/天气层/结局背景 ==')
   assert(portImage(3).endsWith('port_nassau.webp'), '拿骚用专属图')
   assert(portImage(10).endsWith('port_cape_town.webp'), '开普敦用专属图')
   assert(portImage(11).endsWith('port_goa.webp'), '果阿用专属图')
+  /*
+   * 广州必须是**自己的**图：它原来落到东南亚通用图，而那张画的是泰式佛塔 ——
+   * 大明母港被画成暹罗。这条断言钉的是"不能悄悄回落到区域图"。
+   */
+  assert(portImage(21).endsWith('port_guangzhou.webp'), '广州（大明母港）用专属图')
+  assert(portImage(21) !== portImage(12) && portImage(21) !== portImage(19),
+    '广州不再与马六甲/巴达维亚共用那张泰式港口的图')
   assert(portImage(13).endsWith('port_cartagena.webp'), '卡塔赫纳用专属图')
   assert(portImage(14).endsWith('port_veracruz.webp'), '韦拉克鲁斯用专属图')
   assert(portImage(18).endsWith('port_macau.webp'), '澳门用专属图')
@@ -12411,6 +12418,49 @@ console.log('== 近景码头：石砌铺装而不是一块纯黑横带 ==')
   assert(/bottom-0 left-0 w-full h-\[30%\]/.test(hv), '前景贴在屏幕最底（不再 bottom-[18%] 横在画中间）')
   assert(/quayProjectX\(b\.x, b\.y\)/.test(hv), '石块走透视投影（画成梯形，不是矩形）')
   assert(/手臂/.test(hv), '人形有手臂（没有手臂的剪影读成保龄球瓶）')
+}
+
+console.log('== 朝贡：每一次「交勘合」都要在册子里留一页 ==')
+{
+  /*
+   * 【缺的是什么】面板上写着「市舶司收下香料，**记下你的船名**」，
+   * 而 store 原来只在**该给名号那一次**（第 3 次）才写册子：
+   * 前两次、以及所有没到门槛的朝贡，屏幕上只有一条会消失的横幅。
+   * 文案承诺了"记下"，册子里查不到 —— 与"屏幕数字对不上"是同一类错。
+   */
+  const china = NATIONS.find(n => n.id === 'china')!
+  const rule = china.tribute!
+  const page = makeTributeEntry(rule, 12, 1)
+  assert(page.kind === 'tribute' && page.id === 'tribute-12-1', '类型与 id（天 + 次数）')
+  assert(page.day === 12 && page.portId === rule.portId, `第 12 天、挂市舶司所在港（${rule.portId}）`)
+  assert(page.title === `${rule.label} · 第 1 次`, `页题带次数（${page.title}）`)
+  assert(page.text === rule.gift, '正文取规则里的回赐原文（不另拼句子）')
+  assert(/名号 \+\d+ · 士气 \+\d+/.test(page.aside), `页边小注写清回赐（${page.aside}）`)
+  assert(page.hint === null && page.read === false, '不派任务、写进来是未读')
+  assert(page.id !== makeTributeEntry(rule, 12, 2).id, '同一天交两次也不会互相覆盖（id 带次数）')
+  /* 有港口 → 有配图（朝贡确实发生在港里，与"传说页不配图"是相反的正确行为） */
+  assert(logbookArt(page.portId) !== undefined, '这一页配得上港口那张画')
+
+  /* 上限裁剪：重复交到册子满，朝贡页必须还在（只有 arrival 会被丢） */
+  let list: ReturnType<typeof makeTributeEntry>[] = [page]
+  for (let i = 0; i < LOGBOOK_MAX + 5; i++) {
+    const e = makeArrivalEntry(1, i, [1])!
+    list = appendLogbook(list, { ...e, id: `arrival-x-${i}` })
+  }
+  assert(list.length <= LOGBOOK_MAX && list.some(e => e.kind === 'tribute'),
+    `册子被裁到上限内、朝贡页仍在（${list.length} 页）`)
+
+  /* 源码守卫：写页位置、按钮锚点、见闻页渲染 */
+  const gs = readFileSync(join(process.cwd(), 'src', 'store', 'useGameStore.ts'), 'utf8')
+  assert(/appendLogbook\(state\.logbook, makeTributeEntry\(st\.rule/.test(gs),
+    'store 在每次朝贡里都写页（不是只在给名号那次）')
+  assert(/makeTributeEntry/.test(readFileSync(join(process.cwd(), 'src', 'data', 'logbook.ts'), 'utf8')),
+    '数据层有 makeTributeEntry')
+  const pd = readFileSync(join(process.cwd(), 'src', 'components', 'panels', 'PortDetail.tsx'), 'utf8')
+  assert(/testId="tribute-submit"/.test(pd), '交勘合按钮有稳定锚点（面板里同款按钮多，按文字点很脆）')
+  const lv = readFileSync(join(process.cwd(), 'src', 'components', 'panels', 'LogbookViews.tsx'), 'utf8')
+  assert(/entry\.kind === 'tribute' \? 'tribute-entry'/.test(lv), '见闻页给朝贡页一个稳定锚点')
+  assert(/<ScrollText size=\{13\}/.test(lv), '朝贡页用卷轴图标（它是递进市舶司的文书）')
 }
 
 console.log(`\n最终结果：${passed} 通过 / ${failed} 失败`)

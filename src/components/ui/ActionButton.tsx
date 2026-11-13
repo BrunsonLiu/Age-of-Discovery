@@ -7,6 +7,8 @@ interface ActionButtonProps {
   variant?: 'primary' | 'danger' | 'secondary'
   disabled?: boolean
   className?: string
+  /** 给 e2e / 审计用的稳定锚点（面板里常有同款按钮，按文字点很脆） */
+  testId?: string
   icon?: ReactNode
 }
 
@@ -43,10 +45,12 @@ export default function ActionButton({
   variant = 'primary',
   disabled = false,
   className = '',
+  testId,
   icon,
 }: ActionButtonProps) {
   return (
     <button
+      data-testid={testId}
       onClick={onClick}
       disabled={disabled}
       className={clsx(

@@ -314,7 +314,13 @@ export default function PortDetail() {
                   <span className="text-gold-400 font-serif">
                     回赐：名号+{tribute.rule.gain.fame} · 士气+{tribute.rule.gain.morale}
                   </span>
-                  <ActionButton onClick={payTribute} disabled={!tribute.ready} variant="secondary">
+                  {/* data-testid：e2e 要点的是**这颗**按钮（面板里还有别的次级按钮） */}
+                  <ActionButton
+                    onClick={payTribute}
+                    disabled={!tribute.ready}
+                    variant="secondary"
+                    testId="tribute-submit"
+                  >
                     {tribute.cooldownLeft > 0 ? `${tribute.cooldownLeft} 天后再来` : tribute.rule.label}
                   </ActionButton>
                 </div>
