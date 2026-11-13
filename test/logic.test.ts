@@ -13164,6 +13164,47 @@ console.log('== 地形撒点分片跑，但符号必须一个不差 ==')
   assert(/setTimeout\(\(\) => cb\(/.test(ic), '没有 requestIdleCallback 时退回 setTimeout')
 }
 
+console.log('== 冷启动：不该为「一个按钮」下载三个视角 ==')
+{
+  /*
+   * 【这条锁的是什么】`DeckView` 自带「船上」入口按钮，所以它原来**无条件**挂在
+   * MainMap 的树上 —— 代价是它的 chunk（63KB gz）+ three（187KB gz）+ post（13KB）
+   * 在每次冷启动都要下载，哪怕玩家从不上船。
+   *
+   * 实测（test/e2e/probe-cold-start.mjs --net=slow4g，模拟 400KB/s + 300ms RTT）：
+   * 这批请求在 @1934ms 发出，把真正挡在地图前面的 land.geojson（368KB @3000ms）
+   * 挤到后面。改成"点下去才 import"后：
+   *   冷启动 7303ms → 6400ms，传输 2472KB → 2209KB（差的 263KB 就是这三样）。
+   */
+  const main = readFileSync(join(process.cwd(), 'src', 'pages', 'MainMap.tsx'), 'utf8')
+  const deck = readFileSync(join(process.cwd(), 'src', 'components', 'deck', 'DeckView.tsx'), 'utf8')
+
+  assert(/\{deckView && \([\s\S]{0,160}<DeckView \/>/.test(main),
+    'DeckView 只在 deckView 为真时挂载（否则 three 会跟着冷启动一起下载）')
+  assert(/data-testid="deck-view-toggle"/.test(main), '「船上」入口在 MainMap 里')
+  assert(!/data-testid="deck-view-toggle"/.test(deck),
+    'DeckView 里不许再有同一个 testid 的入口（重复会让 e2e/点击审计抓到两个）')
+  /* V 键：开在 MainMap（DeckView 关闭时不存在，自己处理"开"会按了没反应） */
+  assert(/if \(e\.key !== 'v' && e\.key !== 'V'\) return[\s\S]{0,200}setDeckView/.test(main),
+    'V 键开启在 MainMap 处理')
+  assert(/deckView\) \{\s*\n\s*useMapStore\.getState\(\)\.setDeckView\(false\)/.test(deck),
+    'DeckView 只负责"关"')
+
+  /*
+   * 预取要等**地图真的画出来**再开始。
+   * 原来 rIC 一有空就发 13 个块（约 150KB），正好和 land.geojson 抢同一条管子；
+   * 实测让玩家多等约 0.2~0.4 秒才看见地图。
+   */
+  assert(/leaflet-overlay-pane path/.test(main), '预取以"陆地多边形画出来"为起点')
+  assert(/setTimeout\(arm, 8000\)/.test(main), '预取有 8 秒兜底（地图异常时也不能永远不预取）')
+
+  /* 地图块只许有一处预取，且必须带 PROD 判断（dev 里拉它会连带编译一堆模块） */
+  const mapImports = main.match(/void import\('@\/components\/map\/MapView'\)/g) ?? []
+  assert(mapImports.length === 1, `地图块预取只允许一处（实际 ${mapImports.length} 处）`)
+  assert(/if \(import\.meta\.env\.PROD\) void import\('@\/components\/map\/MapView'\)/.test(main),
+    '地图块预取带 PROD 判断')
+}
+
 console.log('== 分带索引与朴素射线法逐点一致（否则山会挪位置） ==')
 {
   /*

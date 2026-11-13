@@ -25,6 +25,35 @@ const page = await ctx.newPage()
 await page.setViewport({ width: 1440, height: 900 })
 /* 关掉缓存，保证每次都是真冷启动 */
 await page.setCacheEnabled(false)
+
+/*
+ * 网络限速：本地跑在 0.1ms 的环回上，网络从来不是瓶颈 ——
+ * 但玩家不是。用 CDP 模拟两档：
+ *   fast4g：延迟 100ms、下行 1.5MB/s（≈12Mbps）
+ *   slow4g：延迟 300ms、下行 400KB/s（≈3.2Mbps，地铁/电梯里的常见水准）
+ * 【为什么必须配带 gzip 的静态服务】本地 preview 不压缩，会把数据成本高估 3 倍。
+ * 用 test/e2e/serve-gzip.mjs 起服务再跑这个探针。
+ */
+const NET = (process.argv.find((a) => a.startsWith('--net=')) ?? '--net=none').split('=')[1]
+const NET_PROFILES = {
+  none: null,
+  fast4g: { latency: 100, download: 1.5e6, upload: 7.5e5 },
+  slow4g: { latency: 300, download: 4e5, upload: 2e5 },
+}
+const netProfile = NET_PROFILES[NET]
+if (netProfile) {
+  const c0 = await page.createCDPSession()
+  await c0.send('Network.enable')
+  await c0.send('Network.emulateNetworkConditions', {
+    offline: false,
+    latency: netProfile.latency,
+    downloadThroughput: netProfile.download,
+    uploadThroughput: netProfile.upload,
+  })
+  console.log(`网络：${NET}（延迟 ${netProfile.latency}ms / 下行 ${(netProfile.download / 1024).toFixed(0)}KB/s）`)
+} else {
+  console.log('网络：不限速（环回）')
+}
 await page.goto(BASE, { waitUntil: 'networkidle2', timeout: 120000 })
 await page.evaluate(() => { localStorage.clear(); sessionStorage.clear() })
 await page.setCacheEnabled(false)
@@ -138,8 +167,9 @@ const data = await page.evaluate(() => {
       name: r.name.replace(/^https?:\/\/[^/]+\/Age-of-Discovery\//, ''),
       ms: Math.round(r.duration),
       start: Math.round(r.startTime),
-      // transferSize 是压缩后的字节数；decodedBodySize 是解压后
+      // transferSize = 线上真实传输字节（压缩后 + 头）；decodedBodySize = 解压后
       kb: Math.round((r.decodedBodySize || r.transferSize || 0) / 1024),
+      tkb: Math.round((r.transferSize || 0) / 1024),
       type: r.initiatorType,
     }))
     .sort((a, b) => b.ms - a.ms)
@@ -155,7 +185,11 @@ const data = await page.evaluate(() => {
       : null,
     paints,
     totalKB: res.reduce((s, r) => s + r.kb, 0),
+    totalTKB: res.reduce((s, r) => s + r.tkb, 0),
     top: res.slice(0, 16),
+    dataByStart: res.filter((r) => r.type === 'fetch' || r.type === 'img' || r.type === 'xmlhttprequest')
+      .sort((a, b) => a.start - b.start),
+    byStart: res.slice().sort((a, b) => a.start - b.start).slice(0, 26),
     slowestTypes: [...res.reduce((m, r) => m.set(r.type, (m.get(r.type) ?? 0) + r.kb), new Map()).entries()]
       .sort((a, b) => b[1] - a[1])
       .slice(0, 8),
@@ -168,10 +202,23 @@ if (data.nav) {
   console.log(`  HTML 传输 ${data.nav.transferKB}KB / 解压 ${data.nav.decodedKB}KB`)
 }
 console.log(`  FCP ${data.paints['first-contentful-paint'] ?? '?'}ms  FP ${data.paints['first-paint'] ?? '?'}ms`)
-console.log(`  资源总量 ${data.totalKB}KB（解压后）`)
+console.log(`  资源总量 传输 ${data.totalTKB}KB / 解压 ${data.totalKB}KB  → 压缩率 ${(data.totalTKB / data.totalKB * 100).toFixed(0)}%`)
 
-console.log('\n最慢的 16 个资源：')
-for (const r of data.top) console.log(`  ${String(r.ms).padStart(5)}ms @${String(r.start).padStart(5)}  ${String(r.kb).padStart(5)}KB  ${r.type.padEnd(10)} ${r.name}`)
+console.log('\n最慢的 16 个资源（传输 / 解压）：')
+for (const r of data.top) {
+  console.log(`  ${String(r.ms).padStart(5)}ms @${String(r.start).padStart(5)}  传${String(r.tkb).padStart(5)}KB 解${String(r.kb).padStart(5)}KB  ${r.type.padEnd(8)} ${r.name}`)
+}
+
+console.log('\n全部资源按**开始时刻**排（谁在抢带宽）：')
+for (const r of data.byStart) {
+  const mark = r.start > 0 ? '' : ''
+  console.log(`  ${mark}@${String(r.start).padStart(5)}ms  传${String(r.tkb).padStart(5)}KB  ${r.type.padEnd(8)} ${r.name}`)
+}
+
+console.log('\n数据与图（fetch/img），按**开始时刻**排 —— 谁挡在首屏前面：')
+for (const r of data.dataByStart) {
+  console.log(`  @${String(r.start).padStart(5)}ms  传${String(r.tkb).padStart(5)}KB 解${String(r.kb).padStart(5)}KB  ${r.type.padEnd(6)} ${r.name}`)
+}
 
 console.log('\n按类型（解压后 KB）：')
 for (const [k, v] of data.slowestTypes) console.log(`  ${String(v).padStart(6)}KB  ${k}`)

@@ -71,12 +71,6 @@ const EventCard = lazy(() => import('@/components/events/EventCard'))
  * （bg_title 161KB + 船精灵 190KB），这时候抢带宽/主线程会拖慢第一屏本身。
  * 带 timeout 兜底，避免一直空闲不下来（某些浏览器后台标签页 rIC 不触发）。
  */
-/*
- * 最强的那一块提前到**模块求值时**就去取：它是唯一"玩家随时可能立刻需要"的块
- * （点「启航」→ 地图）。放在首帧后再取的话，急性子玩家要等约 280ms（实测）；
- * 而 62KB gz 提前下载对第一屏的影响可以忽略（同一批请求里还有 199KB 的主包）。
- */
-void import('@/components/map/MapView')
 
 /*
  * 最强的那一块提前到**模块求值时**就去取：它是唯一"玩家随时可能立刻需要"的块
@@ -200,9 +194,39 @@ export default function MainMap() {
   // 剧情线触发点①：开局致辞。initGame 会清空 dialogueSeen，故每开新局必播一次；
   // 开局 4 屏期间把地图/面板的 chunk 取回来（见文件上方的 prefetchSurface）
   useEffect(() => {
-    // 首帧之后再触发，别和开场界面的首次绘制抢主线程
-    const raf = requestAnimationFrame(() => prefetchSurface())
-    return () => cancelAnimationFrame(raf)
+    /*
+     * 【为什么不是"首帧之后"就预取】实测（slow4g 限速）：首帧之后 rIC 立刻触发，
+     * 13 个块约 150KB 一起发出去，而此时真正挡在地图前面的是 `land.geojson`（368KB）——
+     * 预取在和地图数据抢同一条 400KB/s 的管子，等于让玩家多等 0.4 秒才看见地图。
+     *
+     * 现在等**陆地真的画出来**再预取：那时玩家已经能看、能点，才算真空闲。
+     * 8 秒兜底 —— 地图因为异常没画出来时，也不能永远不预取。
+     */
+    let raf = 0
+    let timer = 0
+    let done = false
+    const arm = () => {
+      if (done) return
+      done = true
+      cancelAnimationFrame(raf)
+      window.clearTimeout(timer)
+      const ric = (window as unknown as {
+        requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => number
+      }).requestIdleCallback
+      if (ric) ric(() => prefetchSurface(), { timeout: 2000 })
+      else window.setTimeout(prefetchSurface, 300)
+    }
+    const tick = () => {
+      // 陆地多边形画出来 = 地图可看（与 e2e 的"可看"判据同一口径）
+      if (document.querySelectorAll('.leaflet-overlay-pane path').length > 100) arm()
+      else raf = requestAnimationFrame(tick)
+    }
+    raf = requestAnimationFrame(tick)
+    timer = window.setTimeout(arm, 8000)
+    return () => {
+      cancelAnimationFrame(raf)
+      window.clearTimeout(timer)
+    }
   }, [])
 
   // 刷新页面时 dialogueSeen 已存档，不重播。后续触发点（rival 遭遇等）照此模式加。
@@ -300,6 +324,8 @@ export default function MainMap() {
 
   const viewMode = useMapStore(s => s.viewMode)
   const setViewMode = useMapStore(s => s.setViewMode)
+  const deckView = useMapStore(s => s.deckView)
+  const setDeckView = useMapStore(s => s.setDeckView)
 
   /*
    * 船一离港（或当前港被清空）就自动回海图。
@@ -312,6 +338,26 @@ export default function MainMap() {
       setViewMode('chart')
     }
   }, [viewMode, fleet.isSailing, fleet.currentPortId, setViewMode])
+
+  /*
+   * V 键开「船上」视角。
+   *
+   * 【为什么搬到这里】这个快捷键原来写在 DeckView 里 —— 那时 DeckView 常驻挂载，
+   * 副作用里挂监听没问题。现在 DeckView 只在打开时才 import，它的监听自然也不存在，
+   * 所以开场（还没上过船）按 V 会没反应。入口在哪、谁负责它的快捷键，应该在同一层。
+   * 关闭仍由 DeckView 自己处理（Esc / 再按 V），因为只有它在打开时才知道当前状态。
+   */
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
+      if (e.key !== 'v' && e.key !== 'V') return
+      const st = useMapStore.getState()
+      if (st.viewMode === 'harbor') return
+      st.setDeckView(!st.deckView)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
 
   /*
    * 第二空间的常驻开关。
@@ -419,9 +465,40 @@ export default function MainMap() {
         <SeaOmen />
       </div>
 
-      <Suspense fallback={null}>
-        <DeckView />
-      </Suspense>
+      {/*
+        【为什么不再无条件挂载】DeckView 自带「船上」入口按钮，所以原来一直挂在树上 ——
+        代价是它的 chunk（63KB gz）+ **three（187KB gz）** + post（13KB）在每次冷启动
+        都要下载，哪怕玩家从不上船。慢速 4G 实测（test/e2e/probe-cold-start.mjs --net=slow4g）：
+        这批请求在 @1934ms 发出，把地图数据（land.geojson 368KB @3000ms）挤到后面，
+        冷启动 7343ms 里有约 0.7 秒是白等这三个视角。
+        现在入口按钮搬到本文件，**点下去才 import**。
+      */}
+      {deckView && (
+        <Suspense fallback={null}>
+          <DeckView />
+        </Suspense>
+      )}
+
+      {!deckView && viewMode !== 'harbor' && (
+        /*
+         * 「船上」入口。原来这个按钮在 DeckView 内部（它未打开时返回按钮）——
+         * 那等于"为了一个按钮把三个视角的代码都下载下来"。搬到这里之后
+         * DeckView 只在点下去时才 import。testid 保持不变，e2e 照旧按它找。
+         */
+        <button
+          type="button"
+          onClick={() => setDeckView(true)}
+          data-testid="deck-view-toggle"
+          title="船上视角（V）：贴着海面看自己的船"
+          className="absolute right-[7.4rem] top-14 z-[900] flex items-center gap-1.5 rounded border
+                     border-[#8b6f3e]/70 bg-[#1b1408]/95 px-3 py-1.5 text-xs font-serif text-[#e8d4a8]
+                     shadow-[0_2px_8px_rgba(0,0,0,0.55)] transition-colors
+                     hover:bg-[#2a1f0c] active:scale-95"
+        >
+          <Anchor size={14} aria-hidden="true" />
+          船上
+        </button>
+      )}
 
       {viewMode === 'harbor' && (
         <div

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
-import { Anchor, Footprints, X } from 'lucide-react'
+import { Footprints, X } from 'lucide-react'
 import { useGameStore } from '@/store/useGameStore'
 import { useMapStore } from '@/store/useMapStore'
 import { cloudDriftRadPerSec, createCloudLayer } from './cloudBillboards'
@@ -335,7 +335,6 @@ export default function DeckView() {
   const next = useVoyageNext()
   nextRef.current = next
   const setDeckView = useMapStore((s) => s.setDeckView)
-  const viewMode = useMapStore((s) => s.viewMode)
   const mountRef = useRef<HTMLDivElement>(null)
 
   // 快捷键：V 开/关，Esc 关
@@ -2299,33 +2298,15 @@ export default function DeckView() {
     }
   }, [open])
 
-  if (!open) {
-    if (viewMode === 'harbor') return null
-    return (
-      /*
-       * 【入口为什么搬到这里】
-       * 原来它是 `fixed right-4 bottom-24 md:bottom-6 z-30`：桌面端 bottom-6
-       * 正好落在底栏（y 849..900）上、z-30 又低于底栏内部那层 div ——
-       * 实测 elementFromPoint 命中的是 `DIV.flex items-center gap-0.5 shrink-0 order-3`，
-       * 也就是**按钮整个被底栏盖住**，玩家点不到也看不见（用户反馈"没看到按钮"）。
-       * 同一个坑 3D 海图那个开关也踩过（它现在躲在 top-14 right-3）。
-       * 现在与它并排：都在顶栏下方的右上角，z-900 压在底栏/侧栏之上。
-       */
-      <button
-        type="button"
-        onClick={() => setDeckView(true)}
-        data-testid="deck-view-toggle"
-        title="船上视角（V）：贴着海面看自己的船"
-        className="absolute right-[7.4rem] top-14 z-[900] flex items-center gap-1.5 rounded border
-                   border-[#8b6f3e]/70 bg-[#1b1408]/95 px-3 py-1.5 text-xs font-serif text-[#e8d4a8]
-                   shadow-[0_2px_8px_rgba(0,0,0,0.55)] transition-colors
-                   hover:bg-[#2a1f0c] active:scale-95"
-      >
-        <Anchor size={14} aria-hidden="true" />
-        船上
-      </button>
-    )
-  }
+  /*
+   * 未打开时什么都不渲染。
+   *
+   * 【入口不在这里了】「船上」按钮已搬到 `pages/MainMap`：本组件会把 three
+   * 一起拖进来（187KB gz），挂在树上"只为了一个按钮"的代价是每次冷启动都下载它。
+   * 慢速 4G 实测：这批请求把地图数据挤到后面，冷启动 7343ms 里约 0.7 秒是白等。
+   * 现在只有 `deckView === true` 时才 import。
+   */
+  if (!open) return null
 
   return (
     <div className="absolute inset-0 bg-[#03080e]" style={{ zIndex: Z_DECK }} data-testid="deck-view">
