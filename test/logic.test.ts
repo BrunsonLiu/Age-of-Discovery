@@ -967,6 +967,51 @@ const voyageSrc = readFileSync(join(process.cwd(), 'src', 'utils', 'voyage.ts'),
 assert(/export const LOW_MORALE = 45/.test(voyageSrc), 'LOW_MORALE 定义在 utils/voyage')
 assert(/低于 45 有哗变风险/.test(helpSrc), '帮助里写的 45 与常量一致')
 
+console.log('== 17e. 肖像：每个角色都要有图，且图真的在 =')
+/*
+ * portraits.ts 里的 `Partial<Record<...>>` 允许漏人 —— 漏一个的表现是"这个人没头像"，
+ * 界面上悄悄退化成兜底图标，不报错。而映射里的路径写错的表现是破图。
+ * 这两件事都没有任何断言盯着（资源孤儿守卫只查"public 里的文件有没有人引用"，
+ * 反过来"引用指向的文件在不在"没查）。
+ */
+{
+  const { CREW_PORTRAITS, OFFICER_PORTRAITS, RIVAL_PORTRAITS } = await import('../src/data/portraits')
+  const { OFFICERS } = await import('../src/data/officers')
+
+  for (const c of CREW_CHARS) {
+    assert(!!CREW_PORTRAITS[c.id], `船员 ${c.id}（${c.name}）有肖像`)
+  }
+  for (const o of OFFICERS) {
+    assert(!!OFFICER_PORTRAITS[o.id], `军官 ${o.id}（${o.name}）有肖像`)
+  }
+  for (const r of RIVALS) {
+    assert(!!RIVAL_PORTRAITS[r.id], `对手 ${r.id}（${r.name}）有肖像`)
+  }
+  assert(CREW_CHARS.length === 15, `名船员共 ${CREW_CHARS.length} 位`)
+
+  const pubDir = join(process.cwd(), 'public')
+  const all = [
+    ...Object.values(CREW_PORTRAITS),
+    ...Object.values(OFFICER_PORTRAITS),
+    ...Object.values(RIVAL_PORTRAITS),
+  ] as string[]
+  assert(all.length >= 21, `肖像映射共 ${all.length} 条（15 船员 + 3 军官 + 3 对手）`)
+  for (const url of all) {
+    const rel = url.replace(/^\/?(Age-of-Discovery\/)?/, '')
+    const file = join(pubDir, rel)
+    assert(existsSync(file), `肖像文件存在：${rel}`)
+  }
+  /*
+   * 曾经这里挂着一段"E10 大副是船医造型占位"的警告，实际图早就换对了 ——
+   * 旧 README 的质量声明被抄进注释后一直没更新，差点让人去重画。
+   * 现在把"复核过"这件事写进数据文件，注释里不许再出现"占位"这种已失效的判断。
+   */
+  const portraitSrc = readFileSync(join(process.cwd(), 'src', 'data', 'portraits.ts'), 'utf8')
+  assert(/2026-11-14 逐张复核/.test(portraitSrc), '肖像质量声明已按实际图复核过（不是抄 README）')
+  // 查旧声明的标题，不查"占位"这个词 —— 新注释里引用原句是说明，不是判断
+  assert(!/⚠️ 质量声明（GPT README）/.test(portraitSrc), '旧的质量声明整段已作废，不许留着')
+}
+
 console.log('== 18. 新事件引擎条件 ==')
 const evElena = events.find(e => e.id === 238)!
 assert(!checkEventTrigger({ ...evElena, triggerCondition: { ...evElena.triggerCondition, probability: 1 } }, baseState), '伊莲事件：无学者在船不触发')
