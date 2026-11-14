@@ -7,7 +7,11 @@ try {
   puppeteer = (await import('file:///C:/Users/Brunson/.workbuddy/binaries/node/workspace/node_modules/puppeteer-core/lib/puppeteer/puppeteer.js')).default
 }
 const EDGE = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe'
-const URL = process.argv[2] || 'https://brunsonliu.github.io/Age-of-Discovery/'
+/* 第一个**非 --开头**的参数当 URL：回归跑器会顺手塞 --port=…，
+   直接取 argv[2] 会拿到 '--port=5174' 然后 navigate 到非法地址（实测报
+   Protocol error: Cannot navigate to invalid URL，看起来像产品失败）。 */
+const URL = process.argv.slice(2).find((a) => !a.startsWith('--'))
+  || 'https://brunsonliu.github.io/Age-of-Discovery/'
 const SHOTS = '.workbuddy/shots'
 fs.mkdirSync(SHOTS, { recursive: true })
 

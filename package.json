@@ -58,7 +58,9 @@
     "test:e2e:all": "npm run test:e2e && npm run test:e2e:scenes && npm run test:e2e:audio && npm run test:e2e:map && npm run test:e2e:map3d && npm run test:e2e:trade && npm run test:e2e:portsvc && npm run test:e2e:supply && npm run test:e2e:nexthint && npm run test:e2e:broker && npm run test:e2e:geometry && npm run test:e2e:receipt && npm run test:e2e:notify && npm run test:e2e:mobile && npm run test:e2e:clickable && npm run test:e2e:clickable:1024 && npm run test:e2e:clickable:3d && npm run test:e2e:layout && npm run test:e2e:logbook && npm run test:e2e:harbor && npm run test:e2e:harbormood && npm run test:e2e:harborlife && npm run test:e2e:smalltext && npm run test:e2e:copy && npm run test:e2e:firstrun && npm run test:e2e:visitor && npm run test:e2e:font && npm run test:e2e:relics && npm run test:e2e:deck && npm run test:e2e:seg6",
     "test:e2e:geometry": "node test/e2e/geometry-ready.mjs",
     "test:e2e:relics": "node test/e2e/relics.mjs",
-    "test:e2e:deck": "node test/e2e/deck-view.mjs"
+    "test:e2e:deck": "node test/e2e/deck-view.mjs",
+    "test:e2e:suite": "node test/e2e/run-suite.mjs",
+    "test:e2e:sweep": "node test/e2e/run-suite.mjs --all"
   },
   "dependencies": {
     "clsx": "^2.1.1",

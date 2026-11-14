@@ -73,15 +73,33 @@ for (const f of list) {
     const timer = setTimeout(() => { p.kill('SIGKILL'); buf += '\n[超时 300s，已强杀]' }, 300000)
     p.on('exit', (code) => { clearTimeout(timer); resolve({ code, buf }) })
   })
-  const m = out.buf.match(/结果：\s*(\d+)\s*通过\s*\/\s*(\d+)\s*失败(?:\s*\/\s*(\d+)\s*跳过)?/)
-  const pass = m ? Number(m[1]) : 0
-  const fail = m ? Number(m[2]) : (out.code === 0 ? 0 : 1)
+  /*
+   * 【为什么要数行、而不只看 exit code】
+   * 各套件的汇总文案前缀并不统一（「结果：」「结论：」「朝贡闭环 e2e：」
+   * 「岸上的"活" e2e：」…），只认「结果：」会让十几个套件退化成"只信退出码"。
+   * 而退出码能表达的信息更少（一个套件里 30 条断言，只有一个 0/1）。
+   * 所以判据：**取输出里最后一处「N 通过 / M 失败」**（那一定是汇总行），
+   * 实在没有才退到数行首的 ✓ / ✗。
+   *
+   * 更正一条我一度写错的结论：这些套件**都**有非零退出路径
+   * （`process.exit(fail === 0 ? 0 : 1)` 之类，此前只 grep 了字面量 `process.exit(1)`
+   * 所以误判成"从不退出"）。数行不是为了兜它们的底，是为了拿到**断言级**的数字。
+   */
+  const all = [...out.buf.matchAll(/(\d+)\s*通过\s*\/\s*(\d+)\s*失败(?:\s*\/\s*(\d+)\s*跳过)?/g)]
+  const m = all.length ? all[all.length - 1] : null
+  const lines = out.buf.split('\n')
+  const tickCount = lines.filter((l) => /^\s*✓/.test(l)).length
+  const crossCount = lines.filter((l) => /^\s*✗/.test(l)).length
+  const pass = m ? Number(m[1]) : tickCount
+  const fail = m ? Number(m[2]) : crossCount + (out.code !== 0 && crossCount === 0 ? 1 : 0)
   const skip = m ? Number(m[3] ?? 0) : 0
   const secs = ((Date.now() - started) / 1000).toFixed(0)
   results.push({ f, pass, fail, skip, secs: Number(secs), ok: fail === 0 && out.code === 0 })
   console.log(
-    `${fail === 0 && out.code === 0 ? '✓' : '✗'} ${f.padEnd(26)} ` +
-    `${m ? `${pass} 通过 / ${fail} 失败${skip ? ` / ${skip} 跳过` : ''}` : `无汇总行（exit ${out.code}）`}  ${secs}s`,
+    `${fail === 0 ? '✓' : '✗'} ${f.padEnd(26)} ` +
+    `${m
+      ? `${pass} 通过 / ${fail} 失败${skip ? ` / ${skip} 跳过` : ''}`
+      : `${pass} 通过 / ${fail} 失败（数行统计，无汇总行）`}  ${secs}s`,
   )
   if (fail > 0 || !m) {
     /* 只把失败行留档，别把整份 stdout 灌进屏幕 */
