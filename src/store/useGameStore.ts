@@ -15,7 +15,7 @@ import { getRouteGeometry } from '@/utils/routePath'
 import { routeFacts, voyageDays, windFavorForRoute } from '@/utils/voyage'
 import { getRandomEvents, consumeEventFlags } from '@/utils/eventEngine'
 import { STANCES, segmentCountFor, nextSegmentBoundary, hazardLabel, dailyFoodUse, dailyWaterUse, dailyWearRate, settleWear } from '@/utils/segment'
-import { repairCost, taskGold, supplyCost, supplyAmounts, INTERPRETER_FACTION_MUL } from '@/utils/crewPerks'
+import { repairCost, taskGold, supplyCost, supplyAmounts, intelCost, INTERPRETER_FACTION_MUL } from '@/utils/crewPerks'
 import { rollSeaOmen } from '@/utils/seaOmen'
 import { canAfford, hasCargoSpace } from '@/utils/trade'
 import { historicalTimeline } from '@/data/historicalTimeline'
@@ -1165,8 +1165,9 @@ export const useGameStore = create<GameStore>()(
          * 在 utils/eventEngine 里——两半都在，才叫"这条 perk 生效了"。
          */
         const hasScholar = state.crewRoster.some(m => m.id === 'scholar')
-        const intelCost = hasScholar ? Math.round(GAME_BALANCE.INTEL_COST / 2) : GAME_BALANCE.INTEL_COST
-        if (!pending || state.fleet.gold < intelCost) return state
+        // 显示与结算同源（utils/crewPerks.intelCost）——面板上的价钱就是这里扣的价钱
+        const price = intelCost(hasScholar, state.factionRep.scholars ?? 0)
+        if (!pending || state.fleet.gold < price) return state
         const { route } = pending
         const key = `${route.fromPortId}-${route.toPortId}`
         const existing = state.routeIntel[key]
@@ -1174,7 +1175,7 @@ export const useGameStore = create<GameStore>()(
         if (existing && state.fleet.day - existing.boughtDay < GAME_BALANCE.INTEL_VALID_DAYS) return state
         const intel = generateRouteIntel(route, state.fleet.day)
         return {
-          fleet: { ...state.fleet, gold: state.fleet.gold - intelCost },
+          fleet: { ...state.fleet, gold: state.fleet.gold - price },
           routeIntel: { ...state.routeIntel, [key]: intel },
           notifications: [...state.notifications, {
             id: `intel-${key}-${Date.now()}`,

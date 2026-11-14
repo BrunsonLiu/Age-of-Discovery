@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Anchor, CloudSun, Flag, Map as MapIcon } from 'lucide-react'
 import { useGameStore } from '@/store/useGameStore'
 import { UI_ASSETS } from '@/data/uiAssets'
-import { GAME_BALANCE } from '@/data/gameConfig'
+import { intelCost } from '@/utils/crewPerks'
 import { calculateDailyConsumption, prevailingWindBearing, dailyDistanceNm } from '@/utils/navigation'
 import { dailyRates, voyageDays } from '@/utils/voyage'
 import { ports } from '@/data/ports'
@@ -101,6 +101,14 @@ export default function VoyagePlanModal() {
   const weather = useGameStore(s => s.weather)
   const shipPos = useGameStore(s => s.shipPosition)
   const stance = useGameStore(s => s.stance)
+  /*
+   * 情报价必须问一次"学者在不在、学者公会声望到没到"。
+   * 原来这里直接印 GAME_BALANCE.INTEL_COST —— 学者在船时界面 80、实际扣 40，
+   * 金币 40~79 还会被 disabled 挡住。价格只有 intelCost 一个来源。
+   */
+  const crewRoster = useGameStore(s => s.crewRoster)
+  const factionRep = useGameStore(s => s.factionRep)
+  const intelPrice = intelCost(crewRoster.some(m => m.id === 'scholar'), factionRep.scholars ?? 0)
 
   // 键盘通道：Enter 升起旗帜，Esc 再想想（见 hooks/useKeyboardControls）
   // 注意：钩子必须在提前 return 之前注册，避免 pendingVoyage 变化时钩子顺序变化
@@ -349,10 +357,10 @@ export default function VoyagePlanModal() {
                   <span className="font-serif text-xs text-gold-700 flex-1 truncate">未掌握</span>
                   <button
                     onClick={buyRouteIntel}
-                    disabled={fleet.gold < GAME_BALANCE.INTEL_COST}
+                    disabled={fleet.gold < intelPrice}
                     className="shrink-0 text-xs font-serif text-gold-200 bg-gold-700/40 hover:bg-gold-600/50 disabled:opacity-40 px-2 py-0.5 rounded transition-colors"
                   >
-                    买通老船长 · {GAME_BALANCE.INTEL_COST} 金
+                    买通老船长 · {intelPrice} 金
                   </button>
                 </>
               )}

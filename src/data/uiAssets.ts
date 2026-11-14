@@ -22,7 +22,6 @@ const BASE = (import.meta.env?.BASE_URL as string | undefined) || '/'
 
 export const UI_ASSETS = {
   parchment: `${BASE}assets/ui/ui_parchment.webp`,
-  frameGold: `${BASE}assets/ui/ui_frame_gold.webp`,
   /** border-image 专用：九宫格源，中央透明，切片值 140 */
   frameGoldSlice: `${BASE}assets/ui/ui_frame_gold_slice.webp`,
   /** border-image 切片值（与 ui_frame_gold_slice.png 的角块边长一致） */

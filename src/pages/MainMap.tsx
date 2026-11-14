@@ -933,7 +933,9 @@ export default function MainMap() {
             </p>
             <div className="space-y-1 text-gold-500 font-serif text-sm">
               <p>积累财富: <span className="text-gold-300">{fleet.gold} 金币</span> · 声望: <span className="text-gold-300">{fleet.fame}</span></p>
-              <p>探索港口: <span className="text-gold-300">{discoveredPorts.length}/20</span> · 完成冒险: <span className="text-gold-300">{completedTasks.length}</span></p>
+              {/* 分母必须来自 ports.length：加了大明广州之后这里还写着 /20，
+                翻船屏会显示"探索港口 21/20"。 */}
+              <p>探索港口: <span className="text-gold-300">{discoveredPorts.length}/{ports.length}</span> · 完成冒险: <span className="text-gold-300">{completedTasks.length}</span></p>
               {claimedVictories.length > 0 && (
                 <p className="text-gold-300">册子里已写下 {claimedVictories.length} 页称号，都还在。</p>
               )}

@@ -120,7 +120,7 @@ import {
   dailyFoodUse, dailyWaterUse, dailyWearRate, settleWear, describeStanceTradeoff,
 } from '../src/utils/segment'
 import { generateRouteIntel, settleOfficerWages, advanceRivals, selectBuyPrice, selectSellPrice, selectPriceTone, OFFER_PRICE_RATIO, dynamicSellPrice, selectBestDeal, selectCargoSale, selectDealTalentBonus, selectReturnLeg, tickCrewLoyalty } from '../src/store/useGameStore'
-import { repairCost, taskGold, supplyCost, supplyAmounts, CARPENTER_COST_MUL, MERCHANT_REWARD_MUL, INTERPRETER_FACTION_MUL, PATHFINDER_DISCOVERY_MUL } from '../src/utils/crewPerks'
+import { repairCost, taskGold, supplyCost, supplyAmounts, intelCost, CARPENTER_COST_MUL, MERCHANT_REWARD_MUL, INTERPRETER_FACTION_MUL, PATHFINDER_DISCOVERY_MUL } from '../src/utils/crewPerks'
 import { FACTIONS, factionAttitude, portFaction } from '../src/data/factions'
 import { CREW_CHARS, CREW_CHAR_MAP } from '../src/data/crewChars'
 import { TITLES, currentTitle, dominantAxis } from '../src/data/titles'
@@ -752,6 +752,50 @@ assert(mWithAll >= 0.5, '价格系数有下限保护 0.5')
 // 商人血脉 + 声望仍叠加生效（旧行为不回退）
 assert(priceMultiplier({ fame: 100, trait: 'merchant' }) <= 0.85, '声望100+商界血脉仍叠加')
 
+console.log('== 17b. 航线情报价：显示与结算必须同一个来源 ==')
+assert(intelCost(false) === GAME_BALANCE.INTEL_COST, `无学者、无声望 = ${GAME_BALANCE.INTEL_COST} 金`)
+assert(intelCost(true) === Math.round(GAME_BALANCE.INTEL_COST / 2), '随船学者（伊莲）半价')
+assert(intelCost(false, 30) === Math.round(GAME_BALANCE.INTEL_COST / 2), '学者公会 30 → 半价')
+assert(intelCost(false, 29) === GAME_BALANCE.INTEL_COST, '声望 29 还没到档 = 原价')
+assert(intelCost(true, 90) === Math.round(GAME_BALANCE.INTEL_COST / 2),
+  '两个半价不叠加：都写着"半价"，叠成 25% 就成了白送')
+/*
+ * 源码守卫：界面不许直接印 INTEL_COST。
+ * 曾经 store 扣 40、按钮印 80，金币 40~79 时按钮还被 disabled ——
+ * 屏幕上的数字与实际发生的扣款分叉，是本作最不能接受的一类 bug。
+ */
+const vpmSrc = readFileSync(join(process.cwd(), 'src', 'components', 'map', 'VoyagePlanModal.tsx'), 'utf8')
+/* 只看代码，不看注释 —— 注释里点名这个常量是在解释"为什么不能这么写" */
+const stripComments = (src: string) =>
+  src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
+assert(!/GAME_BALANCE\.INTEL_COST/.test(stripComments(vpmSrc)),
+  '情报价不许在界面里直接引常量（必须走 intelCost）')
+assert(/intelCost\(/.test(vpmSrc), '界面用 intelCost 计算价格')
+
+/*
+ * 阵营特权：文案与系数必须对得上。
+ * 2026-11-14 逐条核对时发现 guild 30 档文案写"大宗≥50 件额外 2%"、
+ * 代码是 1% 且没有件数条件 —— 界面照原文写就是在承诺不会发生的事。
+ * 这里把三条已实现的档位钉死，改系数会让它红。
+ */
+const discount = (fid: string, rep: number) =>
+  1 - priceMultiplier({ fame: 0, trait: null }, { factionRep: { [fid]: rep } as never })
+assert(Math.abs(discount('guild', 30) - 0.01) < 1e-9, '商会 30 档 = 优惠 1%')
+assert(Math.abs(discount('guild', 60) - 0.03) < 1e-9, '商会 60 档 = 优惠 3%（else-if，不是 1%+3%）')
+assert(Math.abs(discount('crown', 90) - 0.03) < 1e-9, '王室 90 档 = 优惠 3%')
+const factionSrc = readFileSync(join(process.cwd(), 'src', 'data', 'factions.ts'), 'utf8')
+assert(/航线情报半价（与随船学者不叠加/.test(factionSrc), '学者 30 档文案写明"不叠加"')
+assert(!/大宗货物（≥50 件）/.test(factionSrc), '未实现的"大宗≥50 件"承诺不许留在 perks 里')
+
+/*
+ * 翻船屏的分母：加了大明广州（第 21 港）之后界面还写着 /20，
+ * 探索全部港口会显示"21/20"。分母必须来自 ports.length。
+ */
+const mainMapSrc = readFileSync(join(process.cwd(), 'src', 'pages', 'MainMap.tsx'), 'utf8')
+assert(!/discoveredPorts\.length}\/\d/.test(mainMapSrc), '探索港口的分母不许写死数字')
+assert(/discoveredPorts\.length}\//.test(mainMapSrc), '探索港口仍显示"已探索/总数"')
+assert(ports.length === 21, `港口表共 ${ports.length} 座（大明广州是第 21 座）`)
+
 console.log('== 18. 新事件引擎条件 ==')
 const evElena = events.find(e => e.id === 238)!
 assert(!checkEventTrigger({ ...evElena, triggerCondition: { ...evElena.triggerCondition, probability: 1 } }, baseState), '伊莲事件：无学者在船不触发')
@@ -1010,6 +1054,45 @@ console.log('== 23. 舰船精灵资产（WebP 320²，带 Alpha，且不许再�
       const referenced = bodies.some((b) => b.includes(`assets/ships/${f}`))
       assert(referenced, `${f} 在 public 里（会被发布）却没有一处代码引用 —— 要么接进游戏，要么挪出发布目录`)
     }
+  }
+
+  /*
+   * 同一类判据扩到全部发布资源。
+   *
+   * 船图那条是 2026-11-13 加的；2026-11-14 用 scripts/audit-dead-fields.mjs 一扫，
+   * `ui_frame_gold.webp`（64KB）同样从做出来到现在没有任何地方显示 ——
+   * 表里有字段、文件在发布目录、玩家一次也没见过。已经挪到 assets-src/ui-parked/。
+   * 与其每发现一个就加一条，不如把"public 里的每个文件都要有人引用"做成一条。
+   */
+  {
+    const walkPublic = (dir: string): string[] => readdirSync(dir).flatMap((f) => {
+      const p = join(dir, f)
+      return statSync(p).isDirectory() ? walkPublic(p) : [p]
+    })
+    const pubRoot = join(process.cwd(), 'public')
+    const files = walkPublic(join(pubRoot, 'assets'))
+      .filter((f) => /\.(webp|png|svg|jpg|jpeg)$/i.test(f))
+      .map((f) => f.slice(pubRoot.length + 1).split('\\').join('/'))
+    assert(files.length > 90, `public/assets 里应有全部发布资源（实际 ${files.length} 个）`)
+    const bodiesAll = walkPublic(join(process.cwd(), 'src'))
+      .filter((f) => /\.(ts|tsx|css)$/.test(f))
+      .map((f) => readFileSync(f, 'utf8'))
+    /*
+     * 按 **stem + 边界** 匹配，不按完整路径：
+     * 港口图是模板拼出来的（`${BASE}assets/ports/${specific}.webp` + `1: 'port_havana'`），
+     * 源码里永远不会出现 `assets/ports/port_havana.webp` 这一整串。
+     * 边界用「后面不跟字母/数字/下划线/连字符」挡住子串误判 ——
+     * 否则 `ui_frame_gold` 会被 `ui_frame_gold_slice.webp` 顶掉，而这个判据存在的
+     * 理由恰恰是抓那种"表里有、屏幕上没有"的孤儿。
+     */
+    const esc = (x: string) => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const orphans = files.filter((rel) => {
+      const stem = rel.split('/').pop()!.replace(/\.[a-z0-9]+$/i, '')
+      const re = new RegExp(`${esc(stem)}(?![A-Za-z0-9_-])`)
+      return !bodiesAll.some((b) => re.test(b))
+    })
+    assert(orphans.length === 0,
+      `这些资源在发布目录里却没有一处引用（要么接进游戏，要么挪出 public）：${orphans.join(', ')}`)
   }
 
   /** 解析 WebP 头，返回 { ok, width, height, alpha }。三种容器都要认。 */
@@ -1453,7 +1536,8 @@ console.log('== 28. UI 装饰资产（F1-F6）==')
   // 文件名 → 期望尺寸；羊皮纸为不透明，其余五张带 Alpha（叠在面板/地图上，丢了会出黑底）
   const UI_FILES: Array<[string, number, number, boolean]> = [
     ['ui_parchment.webp', 1024, 1024, false],
-    ['ui_frame_gold.webp', 512, 512, true],
+    // ui_frame_gold.webp 已挪到 assets-src/ui-parked/（从来没有任何界面用过它），
+    // 只剩九宫格切片那张在 border-image 里用
     /*
      * 罗盘玫瑰 256×256：屏幕上最大只到 112px（开场 w-28），地图 Compass 默认 96px，
      * 3 倍屏也就 288 物理像素 —— 512² 是白带的 46KB（67KB → 21KB）。
@@ -1488,7 +1572,8 @@ console.log('== 28. UI 装饰资产（F1-F6）==')
   }
   // 全部路径型键有值且指向 ui/ 目录（数字型常量如切片值不参与路径校验）
   const entries = Object.entries(UI_ASSETS).filter(([, v]) => typeof v === 'string') as [string, string][]
-  assert(entries.length === 9, `UI_ASSETS 共 9 个路径键（实际 ${entries.length} 个）`)
+  // 2026-11-14：ui_frame_gold 与它的文件一起挪走了（从来没有界面用它），9 → 8
+  assert(entries.length === 8, `UI_ASSETS 共 8 个路径键（实际 ${entries.length} 个）`)
   for (const [k, v] of entries) {
     assert(!!v && v.includes('/assets/ui/ui_'), `UI_ASSETS.${k} 指向 ui 资产目录`)
   }

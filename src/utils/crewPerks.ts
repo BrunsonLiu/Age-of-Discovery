@@ -67,6 +67,26 @@ export function supplyCost(baseCost: number, hasNavigator: boolean): number {
   return Math.round(baseCost * (hasNavigator ? NAVIGATOR_SUPPLY_COST_MUL : 1))
 }
 
+/**
+ * 航线情报的实际价格：**显示与结算的唯一来源**。
+ *
+ * 【为什么必须抽出来】store 里原本写着 `hasScholar ? INTEL_COST / 2 : INTEL_COST`，
+ * 而 VoyagePlanModal 的按钮直接印 `GAME_BALANCE.INTEL_COST`。
+ * 于是学者伊莲在船时：界面写"买通老船长 · 80 金"，点下去只扣 40；
+ * 金币在 40~79 之间时按钮还会被 `disabled` 挡掉 —— 明明买得起。
+ * 一个数字出现在两个地方，就一定会分叉。这是本项目最硬的一条规矩的反例。
+ *
+ * @param hasScholar 学者伊莲在船（半价）
+ * @param scholarsRep 学者公会声望。≥30 也是半价，与船员半价**不叠加**（只打一次折）——
+ *   两条都写成 50% 时叠成 25% 会变成白送，而阵营面板上两处都写着"半价"。
+ */
+export const INTEL_HALF_MUL = 0.5
+export const SCHOLAR_PERK_REP = 30
+export function intelCost(hasScholar: boolean, scholarsRep = 0): number {
+  const half = hasScholar || scholarsRep >= SCHOLAR_PERK_REP
+  return Math.round(GAME_BALANCE.INTEL_COST * (half ? INTEL_HALF_MUL : 1))
+}
+
 /** 厨子：靠港补给的食物多给一半（他认识贩子，也看得出哪一桶咸肉还没坏） */
 export const COOK_SUPPLY_FOOD_MUL = 1.5
 
