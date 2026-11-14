@@ -24,6 +24,9 @@ import { birdPose } from '@/utils/portLife'
 import { buildCloudShadowCanvas, cloudBlobs } from '@/utils/cloudShadow'
 import { NPC_LEGS, NPC_SPEED_NM, npcLegAt, npcPose } from '@/utils/npcShips'
 import { RELICS, relicInReach, relicInSeason } from '@/data/relics'
+import { oldChartMarks } from '@/utils/oldChart'
+import { oldChartMarkerHtml } from '@/utils/oldChartGlyph'
+import { haversineNm } from '@/utils/navigation'
 import { relicMarkerHtml } from '@/utils/relicGlyph'
 import { skyAt } from '@/utils/skyClock'
 import {
@@ -294,6 +297,46 @@ function getRelicItems(): SeaStaticItem[] {
   // 两道过滤：拾过的消失；不在此季的也**不在海面上**（与 2D 同一份判据）
   const allowed = new Set(RELICS.filter(r => relicInSeason(r, day)).map(r => r.id))
   return RELIC_ITEMS.filter(r => (!got || !got.includes(r.id)) && allowed.has(r.id))
+}
+
+/**
+ * 古海图（学者 90 档）在 3D 里的那两处：与 2D **同一份选点规则、同一段 HTML**。
+ *
+ * 【为什么它必须是 passive】3D 图层会把挤在一起的图标在屏幕上推开（松弛法），
+ * 那是为了让"能点的小物件"不互相盖住。而古海图标的是"某座港在哪" ——
+ * 被推开就等于指错了地方。所以它走纯标注通道：不生成 button、不吃指针、
+ * 不参与疏散，位置就是它自己的投影点。
+ *
+ * 【为什么不是每帧重算】`getStaticItems` 每秒被问 60 次，`oldChartMarks` 要做
+ * 21 座港的距离排序。只在"声望/已发现/天数"变了时才重算（与 2D 同一套触发条件）。
+ */
+let ocSig = ''
+let ocCache: SeaStaticItem[] = []
+
+function getOldChartItems(): SeaStaticItem[] {
+  const st = useGameStore.getState()
+  const scholarsRep = st.factionRep.scholars ?? 0
+  const sig = `${scholarsRep}|${st.fleet.day}|${st.discoveredPorts.join(',')}`
+  if (sig === ocSig) return ocCache
+  ocSig = sig
+  const ship = st.shipPosition
+  ocCache = oldChartMarks({ discovered: st.discoveredPorts, ship, scholarsRep }).map((m) => ({
+    id: `oldchart-${m.portId}`,
+    lat: m.lat,
+    lng: m.lng,
+    html: oldChartMarkerHtml(m.portId, m.nm),
+    // 3D 不重写 innerHTML，所以距离用 hover 提示更新（每帧只比字符串，很便宜）
+    title: `古海图 · ${ship ? Math.round(haversineNm(ship[0], ship[1], m.lat, m.lng) / 10) * 10 : m.nm} 海里`,
+    passive: true,
+    cls: 'old-chart-mark old-chart-mark3d',
+    dataAttr: 'data-old-chart-id',
+  }))
+  return ocCache
+}
+
+/** 3D 海面上所有"固定不动的物件"：遗物 + 古海图标注 */
+function getSeaItems(): SeaStaticItem[] {
+  return [...getRelicItems(), ...getOldChartItems()]
 }
 
 export default function Map3DView() {  const mountRef = useRef<HTMLDivElement>(null)
@@ -1438,7 +1481,7 @@ export default function Map3DView() {  const mountRef = useRef<HTMLDivElement>(n
       // 【为什么 3D 也要有】2D 海面上漂着可点的木桶，切到 2.5D 突然全没了，
       // 玩家不会想到"这是渲染层的差别"，只会觉得这边少了东西、或者自己点不到。
       // 投影方式复用标签层：世界坐标 → 屏幕像素 → 绝对定位 DOM。
-      const seaLayer = createSeaLayer3d(mount, getRelicItems)
+      const seaLayer = createSeaLayer3d(mount, getSeaItems)
 
       /*
        * ---- 传说 / 故事线的标记 ----

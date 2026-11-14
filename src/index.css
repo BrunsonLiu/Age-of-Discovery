@@ -1393,6 +1393,88 @@ body {
 }
 
 /*
+ * 古海图（学者公会 90 档）：画在海图上的一卷旧图。
+ *
+ * 【为什么是虚线墨圈 + 墨字，而不是又一个发光圆环】
+ * 海图上已经有两族"圈"：漂流物是脉冲光圈（会漂走）、遗物是静止铜环（实物）。
+ * 古海图两者都不是 —— 它是**某个制图师画在纸上的记号**，
+ * 所以用虚线（草稿、后人补画的那种笔触）+ 墨色，不做任何发光或动画：
+ * 一张纸不会呼吸。第三个"发光圈"只会让玩家分不清哪个能捡。
+ *
+ * 【为什么墨色 + 纸色描边而不是亮金】
+ * 记号大多落在海面与海岸线交界处：亮金在深蓝海上够亮，压到羊皮纸上就糊了。
+ * 反过来用"墨字 + 纸描边"——这是本项目给港口名定下的同一套办法（两种底色都成立），
+ * 这里直接沿用，免得同一张图上出现两套文字处理。
+ */
+.old-chart-mark {
+  background: transparent !important;
+  border: none !important;
+  /* 纸上的墨点不着：不给手型光标，也不吃海图的拖拽与点击 */
+  pointer-events: none;
+}
+.old-chart-ring {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 24px;
+  height: 24px;
+  margin: -12px 0 0 -12px;
+  border: 2px dashed currentColor;
+  border-radius: 50%;
+  color: #3a2a12;
+  opacity: 0.92;
+  /*
+   * 纸色描边，四向 1px —— 与港口名同一套（PortMarker 的 textShadow）。
+   *
+   * 【为什么不能用一层模糊光晕了事】第一版用的是 `drop-shadow(0 0 1.5px 纸色)`，
+   * 在羊皮纸上还行，压到深蓝海面上时"墨圈"整个消失（深褐对深蓝 ≈ 1.3:1），
+   * 截图上只剩一个看不见的点。海图的底是**两种**颜色，只有硬描边能同时立住。
+   * 链式 drop-shadow 会依次套在上一层结果上，四向各一次就是一个描边。
+   */
+  filter:
+    drop-shadow(1px 0 0 rgba(246, 236, 213, 0.95))
+    drop-shadow(-1px 0 0 rgba(246, 236, 213, 0.95))
+    drop-shadow(0 1px 0 rgba(246, 236, 213, 0.95))
+    drop-shadow(0 -1px 0 rgba(246, 236, 213, 0.95));
+}
+.old-chart-dot {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 5px;
+  height: 5px;
+  margin: -2.5px 0 0 -2.5px;
+  border-radius: 50%;
+  background: #3a2a12;
+  box-shadow: 0 0 0 1.5px rgba(246, 236, 213, 0.95);
+}
+.old-chart-label {
+  position: absolute;
+  left: 50%;
+  top: calc(50% + 15px);
+  transform: translateX(-50%);
+  /* 两行居中（"古海图" / "170 海里"）：一行 110px 宽，两处标记挨近就叠字 */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  white-space: nowrap;
+  font-family: 'Noto Serif SC', serif;
+  /* 与港口名同档 13px：它们在同一张图上并排出现，差一档就显得"这不是地名" */
+  font-size: 13px;
+  line-height: 1.2;
+  color: #2b1e0e;
+  letter-spacing: 0.04em;
+  /* 四向 1px + 一层模糊：照抄港口名（PortMarker）那套，两种底色都读得出来 */
+  text-shadow:
+    1px 0 0 #f5e9cb,
+    -1px 0 0 #f5e9cb,
+    0 1px 0 #f5e9cb,
+    0 -1px 0 #f5e9cb,
+    0 0 4px rgba(247, 236, 208, 0.8);
+}
+
+/*
  * 2.5D 视图里的漂流物。
  *
  * 与 2D 的 Leaflet divIcon 是同一段 HTML，区别只在**谁来定位**：
@@ -1440,6 +1522,24 @@ body {
 .relic3d-icon:focus-visible {
   outline: 2px solid #e0b76a;
   outline-offset: 2px;
+}
+
+/*
+ * 2.5D 视图里的古海图标注。
+ *
+ * 与 .relic3d-icon 同构（44px 定位盒、第一帧投影后才显示），但两点不同：
+ *   · z-index 1（遗物是 2）：它只是底图上的一笔，不该压在任何能拿的东西上面；
+ *   · pointer-events 由 .old-chart-mark 那一份统一给成 none ——
+ *     3D 侧生成的是 div 而不是 button，连"看起来能点"的语义都没有。
+ */
+.old-chart-mark3d {
+  position: absolute;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  z-index: 1;
+  display: none;              /* 第一帧投影后才显示（相机背后的点不显示） */
+  pointer-events: none;
 }
 
 /* ========== 岸上：雨幕（HarborView） ==========

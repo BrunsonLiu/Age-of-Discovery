@@ -1400,6 +1400,120 @@ console.log('== 17k. 兄弟会 30 档：黑市禁运品溢价 ==')
   assert(!/黑市开放：禁运品/.test(facSrc5), '旧的"黑市开放：禁运品…"设计稿不许留着')
 }
 
+console.log('== 17l. 古海图（学者 90 档）：近处一处 + 远处一处 ==')
+/*
+ * 「解锁古海图：地图上标注两处未标记的潜在地点」是势力特权里唯一一条
+ * **不落在数值上**的：它不给折扣，给一张更完整的图。
+ * 判据要落在"标的是哪两处"上 —— 只守"有几个 marker"会让随机乱标也通过。
+ */
+{
+  const { oldChartMarks, OLD_CHART_REP, OLD_CHART_MARKS, OLD_CHART_MIN_APART_NM } =
+    await import('../src/utils/oldChart')
+  assert(OLD_CHART_REP === 90, '门槛 90（与 factions 的档位一致）')
+  assert(OLD_CHART_MARKS === 2, '最多标 2 处')
+  assert(OLD_CHART_MIN_APART_NM === 300,
+    '两处之间至少 300 海里（否则会标出塞维利亚+加的斯这种相邻港，圈和字在图上叠成一团）')
+
+  // 船停在里斯本（学者港）—— 从那里算"最近的未至之地"
+  const lisbon = ports.find(p => p.id === 7)!
+  const ship: [number, number] = [lisbon.latitude, lisbon.longitude]
+
+  assert(oldChartMarks({ discovered: [lisbon.id], ship, scholarsRep: 89 }).length === 0,
+    '声望 89：图上没有古海图标记')
+  assert(oldChartMarks({ discovered: [], ship: null, scholarsRep: 100 }).length === 0,
+    '船位还没算出来时不标（不凭空编一个"最近的"）')
+
+  const marks = oldChartMarks({ discovered: [lisbon.id], ship, scholarsRep: 90 })
+  assert(marks.length === 2, `声望 90：标 2 处（实际 ${marks.length}）`)
+  /*
+   * 选择规格（独立重算一遍，不抄实现）：
+   *   ① 第一处 = 离船最近的未至之地；
+   *   ② 第二处 = 离第一处 ≥300 海里的最近一处（"另一条航路"），找不到就不标。
+   */
+  const cand = ports
+    .filter(p => p.id !== lisbon.id)
+    .map(p => ({ p, d: haversineNm(ship[0], ship[1], p.latitude, p.longitude) }))
+    .sort((a, b) => a.d - b.d || a.p.id - b.p.id)
+  const nearest = cand[0].p
+  assert(marks[0].portId === nearest.id,
+    `第一处 = 离船最近的未至之地（#${marks[0].portId}，最近是 #${nearest.id}）`)
+  const apart = haversineNm(
+    cand.find(c => c.p.id === marks[0].portId)!.p.latitude,
+    cand.find(c => c.p.id === marks[0].portId)!.p.longitude,
+    cand.find(c => c.p.id === marks[1].portId)!.p.latitude,
+    cand.find(c => c.p.id === marks[1].portId)!.p.longitude,
+  )
+  assert(apart >= OLD_CHART_MIN_APART_NM,
+    `两处相距 ${Math.round(apart)} 海里 ≥ ${OLD_CHART_MIN_APART_NM}（不会标成同一片海岸的相邻港）`)
+  const expectedFar = cand.find(c =>
+    haversineNm(nearest.latitude, nearest.longitude, c.p.latitude, c.p.longitude) >= OLD_CHART_MIN_APART_NM)!.p
+  assert(marks[1].portId === expectedFar.id,
+    `第二处 = 够远的那一处里最近的一个（#${marks[1].portId}，应为 #${expectedFar.id}）`)
+  assert(marks.every(m => m.nm > 0), '每处都带真实距离（不是 0 海里）')
+
+  // 已经记进海图的那处不再标
+  const withOne = oldChartMarks({ discovered: [lisbon.id, marks[0].portId], ship, scholarsRep: 90 })
+  assert(!withOne.some(m => m.portId === marks[0].portId), '已经发现的那处不再标出来')
+  assert(!withOne.some(m => m.portId === lisbon.id), '出发港（已发现）不标')
+
+  // 只剩一处未至之地：只标一处，不许凑数
+  const almostAll = ports.map(p => p.id).filter(id => id !== marks[1].portId)
+  const one = oldChartMarks({ discovered: almostAll, ship, scholarsRep: 90 })
+  assert(one.length === 1 && one[0].portId === marks[1].portId, '只剩一处时只标那一处')
+
+  /*
+   * 剩下的候选全都挤在同一片海岸：**只标一处**。
+   * 塞维利亚(#6) 与 加的斯(#20) 相距几十海里，两个圈会重叠、两行字会叠在一起。
+   * 宁可少标一处，也不在图上画一团墨。
+   */
+  {
+    const pair = ports.filter(p => p.id === 6 || p.id === 20)
+    assert(pair.length === 2, '数据里仍有 #6 与 #20（判据的前提）')
+    const apart = haversineNm(pair[0].latitude, pair[0].longitude, pair[1].latitude, pair[1].longitude)
+    assert(apart < OLD_CHART_MIN_APART_NM, `#6 与 #20 相距 ${Math.round(apart)} 海里 < 300（本来就是相邻港）`)
+    const onlyPair = oldChartMarks({
+      discovered: ports.map(p => p.id).filter(id => id !== 6 && id !== 20),
+      ship: [pair[0].latitude, pair[0].longitude],
+      scholarsRep: 90,
+    })
+    assert(onlyPair.length === 1, `剩下两座相邻港时只标一处（实际 ${onlyPair.length}）`)
+  }
+  assert(oldChartMarks({ discovered: ports.map(p => p.id), ship, scholarsRep: 100 }).length === 0,
+    '全都去过了：图上不再有标记')
+
+  // 接线：图层必须挂出来，而且必须**点不到**（纸上的墨不是能捡的东西）
+  const mvSrc = readFileSync(join(process.cwd(), 'src', 'components', 'map', 'MapView.tsx'), 'utf8')
+  assert(/<OldChartMarks \/>/.test(mvSrc), 'MapView 挂上了古海图图层')
+  const ocSrc = readFileSync(join(process.cwd(), 'src', 'components', 'map', 'OldChartMarks.tsx'), 'utf8')
+  assert(/interactive=\{false\}/.test(ocSrc), '古海图标记不可交互（点了不能有任何反应，所以干脆不给手型）')
+  const cssSrc = readFileSync(join(process.cwd(), 'src', 'index.css'), 'utf8')
+  assert(/\.old-chart-mark \{[\s\S]{0,240}pointer-events: none/.test(cssSrc),
+    '.old-chart-mark 不吃指针（不让它挡海图的拖拽与港口点击）')
+  assert(!/\.old-chart-ring \{[\s\S]{0,240}animation:/.test(cssSrc),
+    '墨圈不做动画（一张纸不会呼吸；海图上海已经有两族会动的圈了）')
+
+  /*
+   * 2.5D 立体海图里也要有，而且必须是**纯标注**：
+   * 3D 图层会把挤在一起的图标在屏幕上推开（松弛法），而古海图标的是"某座港在哪"——
+   * 被推开就等于指错了地方，所以它不能进疏散、也不能是 button。
+   */
+  const m3Src = readFileSync(join(process.cwd(), 'src', 'components', 'map3d', 'Map3DView.tsx'), 'utf8')
+  assert(/oldChartMarks\(/.test(m3Src), '3D 海图用同一个 oldChartMarks 选点（两个视图不说两套话）')
+  assert(/oldChartMarkerHtml\(/.test(m3Src), '3D 与 2D 共用同一段标记 HTML')
+  assert(/passive: true/.test(m3Src), '3D 侧声明为纯标注')
+  const slSrc = readFileSync(join(process.cwd(), 'src', 'components', 'map3d', 'seaLayer3d.ts'), 'utf8')
+  assert(/items\.filter\(i => i\.visible && !i\.passive\)/.test(slSrc),
+    '纯标注不进屏幕疏散（被推开就等于指错地方）')
+  assert(/createElement\(passive \? 'div' : 'button'\)/.test(slSrc),
+    '纯标注生成 div，不是带焦点语义的 button')
+
+  const facSrcO = readFileSync(join(process.cwd(), 'src', 'data', 'factions.ts'), 'utf8')
+  assert(/text: '古海图：标出近处与远处的未至之地'/.test(facSrcO),
+    '学者 90 档文案按真实行为写（近处一处 + 远处一处）')
+  assert(!/标注两处未标记的潜在地点/.test(stripComments(facSrcO)),
+    '旧设计稿那句"未标记的潜在地点"不许留在文案里')
+}
+
 console.log('== 18. 新事件引擎条件 ==')
 const evElena = events.find(e => e.id === 238)!
 assert(!checkEventTrigger({ ...evElena, triggerCondition: { ...evElena.triggerCondition, probability: 1 } }, baseState), '伊莲事件：无学者在船不触发')

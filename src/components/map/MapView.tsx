@@ -10,6 +10,7 @@ import { PortMarker } from './PortMarker'
 import TerrainDecor from './TerrainDecor'
 import SeaDebris from './SeaDebris'
 import SeaRelics from './SeaRelics'
+import OldChartMarks from './OldChartMarks'
 import { SeaPhenomena } from './SeaPhenomena'
 import MiniMap from './MiniMap'
 import { ScaleBar } from './ScaleBar'
@@ -640,6 +641,9 @@ export default function MapView() {
               <OceanLabels />
               <RouteLine />
               <PortMarker />
+              {/* 古海图（学者公会 90 档）：纸上的虚线墨圈，标出最近的未至之地。
+                  放在 PortMarker 之后：它只是"图上的墨"，不该压住任何能点的东西 */}
+              <OldChartMarks />
               {/* 海面漂流物：可点的木桶/货箱/零钱/瓶中信（见 data/debris） */}
               <SeaDebris />
               {/* 海上遗物：半埋在海里的历史/神话实物（见 data/relics） */}

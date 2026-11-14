@@ -79,12 +79,25 @@ export interface SeaStaticItem {
    * 所以「这边说够得着、那边说够不着」这种事不会发生。
    */
   near?: boolean
-  /** 点击动作 */
-  onClick: () => void
+  /** 点击动作（`passive` 的标注不需要） */
+  onClick?: () => void
+  /** 节点的类名（默认 `relic-icon relic3d-icon`） */
+  cls?: string
+  /** 稳定锚点属性（默认 `data-relic-id`） */
+  dataAttr?: string
+  /**
+   * 纯标注：生成 `div` 而不是 `button`，不吃指针，且**不参与屏幕疏散**。
+   *
+   * 【为什么单独一类】古海图（学者 90 档）和遗物共用这条投影管线，
+   * 但它标的是"某座港在哪"，被疏散推开就等于指错了地方 ——
+   * 而下面那套松弛是为了让"能点的小物件"不互相盖住才存在的。
+   * 标注就该原地不动：它是画在图上的一笔，不是水面上的一个东西。
+   */
+  passive?: boolean
 }
 
 interface Node {
-  el: HTMLButtonElement
+  el: HTMLElement
   /** 漂流物用 kind 判「漂走了没有」；固定物件用 staticId 判「还在不在」 */
   kind?: DebrisKind
   staticId?: string
@@ -101,6 +114,8 @@ interface Node {
 interface Item {
   id: string
   node: Node
+  /** 纯标注（不参与疏散，位置就是投影点） */
+  passive?: boolean
   /** 真实投影锚点（屏幕像素） */
   ax: number
   ay: number
@@ -125,24 +140,34 @@ export function createSeaLayer3d(
     id: string,
     html: string,
     title: string,
-    onClick: () => void,
+    onClick: (() => void) | undefined,
     className: string,
     dataAttr: string,
+    passive = false,
   ): Node => {
-    const el = document.createElement('button')
-    el.type = 'button'
+    /*
+     * 纯标注用 div：button 天生带"可点"的语义（焦点、手型、回车触发），
+     * 而古海图是纸上的墨 —— 给它一个 button 等于在 DOM 里挂一个假按钮。
+     */
+    const el: HTMLElement = document.createElement(passive ? 'div' : 'button')
     el.className = className
     el.innerHTML = html
-    el.title = title
-    el.setAttribute('aria-label', title)
     el.setAttribute(dataAttr, id)
-    const stop = (e: Event) => e.stopPropagation()
-    el.addEventListener('pointerdown', stop)
-    el.addEventListener('click', (e) => {
-      e.stopPropagation()
-      // 用 id 而不是"离船最近"：玩家点的是看见的那一个
-      onClick()
-    })
+    if (passive) {
+      // 读屏仍要能读到"这里有一处标注"，但不给任何交互语义
+      el.setAttribute('role', 'img')
+      el.setAttribute('aria-label', title)
+    } else {
+      el.title = title
+      el.setAttribute('aria-label', title)
+      const stop = (e: Event) => e.stopPropagation()
+      el.addEventListener('pointerdown', stop)
+      el.addEventListener('click', (e) => {
+        e.stopPropagation()
+        // 用 id 而不是"离船最近"：玩家点的是看见的那一个
+        onClick?.()
+      })
+    }
     mount.appendChild(el)
     return { el, left: NaN, top: NaN }
   }
@@ -194,7 +219,12 @@ export function createSeaLayer3d(
       for (const s of statics) {
         let node = nodes.get(s.id)
         if (!node) {
-          node = makeNode(s.id, s.html, s.title, s.onClick, 'relic-icon relic3d-icon', 'data-relic-id')
+          node = makeNode(
+            s.id, s.html, s.title, s.onClick,
+            s.cls ?? 'relic-icon relic3d-icon',
+            s.dataAttr ?? 'data-relic-id',
+            !!s.passive,
+          )
           node.staticId = s.id
           node.shownTitle = s.title
           nodes.set(s.id, node)
@@ -205,7 +235,7 @@ export function createSeaLayer3d(
           node.el.title = s.title
           node.el.setAttribute('aria-label', s.title)
         }
-        if (node.shownNear !== !!s.near) {
+        if (!s.passive && node.shownNear !== !!s.near) {
           node.shownNear = !!s.near
           node.el.classList.toggle('relic-near', node.shownNear)
         }
@@ -216,7 +246,7 @@ export function createSeaLayer3d(
         const ax = ((tmpV.x + 1) / 2) * width
         const ay = ((-tmpV.y + 1) / 2) * height
         const onScreen = ax > -HIT && ax < width + HIT && ay > -HIT && ay < height + HIT
-        items.push({ id: s.id, node, ax, ay, visible: !behind && onScreen })
+        items.push({ id: s.id, node, ax, ay, visible: !behind && onScreen, passive: !!s.passive })
       }
 
       /*
@@ -234,7 +264,8 @@ export function createSeaLayer3d(
        * 选中就跳一格；物件是点、相机每帧在动，离散跳位会抖。松弛法对每个
        * 微小输入变化给出微小输出变化，收敛后静止时一帧都不再改 DOM。
        */
-      const vis = items.filter(i => i.visible)
+      // 纯标注不进疏散：它标的是"某座港在哪"，被推开就等于指错地方
+      const vis = items.filter(i => i.visible && !i.passive)
       const pts = vis
         .sort((a, b) => a.id.localeCompare(b.id))
         // 锚点要一起带进松弛：疏散后的偏移上限与「落陆地就退回」都要用到它
@@ -334,7 +365,8 @@ export function createSeaLayer3d(
           node.shown = visible
         }
         if (!visible) continue
-        const p = placed.get(node)!
+        // 标注没有疏散结果，位置就是它自己的投影点
+        const p = placed.get(node) ?? { x: it.ax, y: it.ay }
         const left = p.x - HIT / 2
         const top = p.y - HIT / 2
         if (node.left !== left) { node.el.style.left = `${left}px`; node.left = left }
