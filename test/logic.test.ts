@@ -851,6 +851,17 @@ const factionSrc = readFileSync(join(process.cwd(), 'src', 'data', 'factions.ts'
 // 面板文案只留一行能读完的短句（320px 宽），"不叠加"这条语义由上面 intelCost 的断言钉住
 assert(/text: '航线情报半价'/.test(factionSrc), '学者 30 档文案 = 航线情报半价')
 assert(!/大宗货物（≥50 件）/.test(factionSrc), '未实现的"大宗≥50 件"承诺不许留在 perks 里')
+/*
+ * hostility 目前不显示在界面上，但数据也不能先撒谎 —— 将来一接界面就成空承诺。
+ * 允许出现的只有"折扣失效"（真实现），其余一律带"尚未实装"。
+ */
+{
+  const badHostility = factionSrc.split('\n')
+    // 只查带字符串的赋值行（interface 里的 `hostility: string` 不算）
+    .filter(l => /hostility:\s*'/.test(l) && !/折扣失效/.test(l) && !/尚未实装/.test(l))
+  assert(badHostility.length === 0,
+    `敌对代价里出现了没实现的承诺：${badHostility[0]?.trim().slice(0, 30) ?? ''}`)
+}
 
 /*
  * 翻船屏的分母：加了大明广州（第 21 港）之后界面还写着 /20，
