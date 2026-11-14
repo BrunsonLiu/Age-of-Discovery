@@ -498,17 +498,29 @@ export default function HarborView() {
             // 压暗要留住"这是什么地方"。原来 brightness .82 + saturate .72 再把
             // 边缘暗角叠到 0.73，实测右下水面亮度只剩 0.08（素材本身 0.49），
             // 等于花钱接了一张高清全景、屏幕上却是一块褐糊。
-            // 现在只做"远景退后"该有的那点压暗：文字都坐在不透明面板里，
-            // 背景亮一档并不影响读数（对比度审计实测过）。
-            filter: 'brightness(0.88) saturate(0.85) contrast(1.04)',
+            //
+            // 【2026-11-14 第二次收】上一次只改了这条 filter，没动下面三层渐变。
+            // 净屏实测（test/e2e/probe-harbor-net.mjs，藏掉面板与码头后逐区取样）：
+            //   天空只剩原图 46~51%、近水 34~37%；彩度掉得更狠，天空 0.12~0.22 → 0.05~0.09。
+            // 也就是"诊断对了、只修了一半"——filter 是小数，真正吃光的是叠层。
+            // 现在 filter 基本不再压暗，只留一点点退后感；
+            // 面板是不透明的深色块，背景亮一档不影响读数（对比度审计实测过）。
+            filter: 'brightness(0.97) saturate(1.02) contrast(1.05)',
           }}
           onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none' }}
         />
       )}
       <div
         className="absolute inset-0 pointer-events-none"
+        data-testid="harbor-vignette-band"
         style={{
-          background: 'linear-gradient(180deg, rgba(18,12,6,0.52) 0%, rgba(18,12,6,0.04) 30%, rgba(18,12,6,0.38) 66%, rgba(12,8,4,0.62) 100%)',
+          // 上下压暗：只压到"远景退后"的量。原来顶部 0.52、底部 0.62，
+          // 加上暗角与 filter 之后天空只剩原图一半亮度 —— 港口是蓝天、晚霞还是雾，
+          // 玩家根本看不出来，等于 21 张图白接。
+          // 顶部只留 0.12 且 14% 就收干净：最上面那条深色是顶栏自己（不透明），
+          // 0.30 的褐色渐变会顺带把天空染成茶色（哈瓦那天空彩度只剩 47%）。
+          // 染色也从暖褐 (18,12,6) 改成近中性 (14,12,9)。
+          background: 'linear-gradient(180deg, rgba(14,12,9,0.12) 0%, rgba(14,12,9,0.03) 14%, rgba(14,12,9,0.22) 66%, rgba(10,8,5,0.44) 100%)',
         }}
       />
 
@@ -546,10 +558,19 @@ export default function HarborView() {
       />
       <div
         className="absolute inset-0 pointer-events-none"
+        data-testid="harbor-vignette-edge"
         style={{
           // 暗角是"退后"的主要手段，但 0.92 的收口把四角压成纯黑，
           // 而两块面板已经盖住画面中间——玩家能看见的景恰好全在边缘。
-          background: 'radial-gradient(ellipse at 50% 38%, rgba(20,13,6,0.06) 0%, rgba(20,13,6,0.40) 72%, rgba(10,7,3,0.74) 100%)',
+          // 现在收到 0.56：边缘仍有退后的收口感，但天空与水面不再是黑的。
+          background: 'radial-gradient(ellipse at 50% 38%, rgba(20,13,6,0.04) 0%, rgba(20,13,6,0.26) 72%, rgba(10,7,3,0.56) 100%)',
+          // 顶部 22% 不受暗角影响。
+          // 【为什么】暗角的椭圆中心在 38%，上沿离中心近，于是天空两角被压得最狠：
+          // 净屏实测天空彩度只剩原图 43~52%（哈瓦那/澳门），而中景还有 83~90%。
+          // 天空的色相（蓝 / 晚霞 / 雾）正是"这是哪片海"的第一信息，
+          // 左右两侧的收口让给下面的水面就够了。
+          maskImage: 'linear-gradient(180deg, transparent 0%, #000 22%)',
+          WebkitMaskImage: 'linear-gradient(180deg, transparent 0%, #000 22%)',
         }}
       />
 

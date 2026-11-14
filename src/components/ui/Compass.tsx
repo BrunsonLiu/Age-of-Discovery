@@ -140,7 +140,12 @@ export default function Compass({ windBearing = null, size = 'w-24 h-24' }: Comp
             深盘上实测只有 2.4~3.0:1 —— 三个方位字母基本糊在盘面里。
             对比度审计把它抓出来了（这是它第一次抓到真问题而不是我自己的假阳性）。
             改成 gold-500 (#c9a96e)：约 6:1，同时仍比 N 暗一档，
-            保留"北向被强调"的层级。 */}
+            保留"北向被强调"的层级。
+
+            注：不要给它们加描边。2026-11-14 我一度加过，理由是"岸上天空一亮就
+            读不出"—— 但罗盘在岸上是被 harbor-view 整屏盖住的（elementFromPoint
+            命中的是那个容器），那条 1.09:1 是审计的**遮挡盲点**，不是真问题。
+            海图上它压在深蓝海面，本来就够。 */}
         <text x="100" y="24" textAnchor="middle" fill="#d4a838" fontSize="16" fontFamily="'Pirata One', cursive" fontWeight="bold">N</text>
         <text x="100" y="186" textAnchor="middle" fill="#c9a96e" fontSize="13" fontFamily="'Crimson Text', serif">S</text>
         <text x="16" y="105" textAnchor="middle" fill="#c9a96e" fontSize="13" fontFamily="'Crimson Text', serif">W</text>

@@ -127,7 +127,7 @@ const shotPath = `.workbuddy/shots/contrast-${HARBOR ? 'harbor' : (PANEL ?? 'map
 await page.screenshot({ path: shotPath })
 
 // ---- 收集所有可见文字节点 ----
-const items = await page.evaluate((VW, VH) => {
+const collected = await page.evaluate((VW, VH) => {
   const parse = (s) => {
     const m = s.match(/rgba?\(([^)]+)\)/)
     if (!m) return null
@@ -197,6 +197,7 @@ const items = await page.evaluate((VW, VH) => {
     return r
   }
   const out = []
+  const hitList = []
   for (const el of document.querySelectorAll('body *')) {
     let txt = ''
     for (const n of el.childNodes) if (n.nodeType === 3) txt += n.textContent
@@ -204,6 +205,43 @@ const items = await page.evaluate((VW, VH) => {
     if (!txt) continue
     const r = visible(el)
     if (!r) continue
+    /*
+     * 【遮挡判定】rect 与 opacity 都对，不代表字真的画在屏幕上。
+     * 岸上视角就是一个例子：罗盘挂在全局层、rect 一切正常，可整屏被
+     * `harbor-view`（不透明深褐底）盖住，玩家一个字也看不见 ——
+     * 审计却照旧报出两条 1.09:1，害我去给一个"看不见的字母"加描边。
+     * 所以问一句"这段字此刻是不是被别的层压着"：
+     *   取字形中心点，elementFromPoint；命中元素若不在该元素的祖先链上，
+     *   再看它的**计算背景**是否不透（有底色或背景图）——不透就是真遮挡。
+     * 只认"不透"，是因为很多装饰层（暗角、渐变、光晕）透明但确实压在字上，
+     * 那些情况本来就该由像素对比度来判，不该被这条规则放过。
+     */
+    {
+      const cx = Math.min(VW - 1, Math.max(0, r.left + r.width / 2))
+      const cy = Math.min(VH - 1, Math.max(0, r.top + r.height / 2))
+      const hit = document.elementFromPoint(cx, cy)
+      /*
+       * 只认"贴着脸的那一层"（命中元素自己 + 直接父级），不往上爬太远：
+       * 爬 6 层时，海图的罗盘 N 会因为上面盖着一块全屏 canvas（风粒子，
+       * mix-blend: screen）而被判遮挡 —— 而它是叠加层，画面上根本不挡字。
+       * 同样地，canvas 与任何非 normal 的混合层一律"交给像素对比度去判"，
+       * 它们的 background-color 不可信（内容画在位图里，CSS 底是透明的）。
+       */
+      const blend = hit ? getComputedStyle(hit).mixBlendMode : 'normal'
+      const softLayer = hit && (hit.tagName === 'CANVAS' || (blend && blend !== 'normal'))
+      if (hit && !softLayer && hit !== el && !hit.contains(el) && !el.contains(hit)) {
+        let n = hit
+        let occluded = false
+        for (let k = 0; n && k < 2; n = n.parentElement, k++) {
+          const c2 = getComputedStyle(n)
+          const bgc = c2.backgroundColor
+          const a = /rgba?\(([^)]+)\)/.exec(bgc)
+          const alpha = a ? (a[1].split(',').length > 3 ? +a[1].split(',')[3] : 1) : 0
+          if (alpha >= 0.5 || (c2.backgroundImage && c2.backgroundImage !== 'none')) { occluded = true; break }
+        }
+        if (occluded) { hitList.push({ txt: txt.slice(0, 18), hit: (hit.getAttribute('data-testid') || hit.tagName).toString().slice(0, 28) }); continue }
+      }
+    }
     const cs = getComputedStyle(el)
     /*
      * 【SVG <text> 用 fill 上色，不是 CSS color】
@@ -213,6 +251,13 @@ const items = await page.evaluate((VW, VH) => {
      */
     const isSvgText = el.namespaceURI === 'http://www.w3.org/2000/svg'
     const fg = parse(isSvgText ? (cs.fill || cs.color) : cs.color)
+    /*
+     * SVG 的描边在 `stroke` 上，不在 `text-shadow` 里。
+     * 不读它就会把"金字母 + 深褐描边"判成 1.09:1 假红（岸上视角的天空一亮就暴露）。
+     * 描边只是"立边界"的手段之一，与 text-shadow 等价，所以下面用同一套改判。
+     */
+    const svgStroke = isSvgText && cs.stroke && cs.stroke !== 'none' && parseFloat(cs.strokeWidth) > 0
+      ? parse(cs.stroke) : null
     if (!fg) continue
     const fs = parseFloat(cs.fontSize)
     const bold = Number(cs.fontWeight) >= 700
@@ -223,11 +268,12 @@ const items = await page.evaluate((VW, VH) => {
       parentCls: ((el.parentElement?.getAttribute?.('class')) || '').toString().slice(0, 40),
       color: cs.color,
       shadow: cs.textShadow,
+      svgStroke,
       fg, fs, bold,
       rect: { x: Math.max(0, r.left), y: Math.max(0, r.top), w: Math.min(r.width, VW - r.left), h: Math.min(r.height, VH - r.top) },
     })
   }
-  return out
+  return { items: out, occluded: hitList }
 }, VW, VH)
 
 // ---- 用截图像素估每段文字的背景色 ----
@@ -298,7 +344,7 @@ const measured = await page.evaluate(async (b64, items) => {
       dbg: { fg, lf: +lum(fg.r, fg.g, fg.b).toFixed(4), lb: +lum(bg.r, bg.g, bg.b).toFixed(4), raw: it.color },
     }
   })
-}, b64, items)
+}, b64, collected.items)
 
 // ---- 汇总 ----
 /*
@@ -336,11 +382,20 @@ const linN = (v) => { const s = v / 255; return s <= 0.04045 ? s / 12.92 : Math.
 const lumN = (r, g, b) => 0.2126 * linN(r) + 0.7152 * linN(g) + 0.0722 * linN(b)
 const ratioN = (a, b) => { const hi = Math.max(a, b), lo = Math.min(a, b); return (hi + 0.05) / (lo + 0.05) }
 
+if (collected.occluded.length) {
+  console.log(`  另有 ${collected.occluded.length} 段字被别的层压住、本帧看不见（不计入对比度）：`)
+  for (const o of collected.occluded.slice(0, 6)) console.log(`    · 「${o.txt}」压在 ${o.hit} 下面`)
+  if (collected.occluded.length > 6) console.log(`    · …余 ${collected.occluded.length - 6} 段`)
+}
+
 const graded = measured.filter(m => m.contrast != null).map((m) => {
   const n = need(m)
-  const halo = shadowColors(m.shadow)
-    .map((c) => ratioN(lumN(m.fg.r, m.fg.g, m.fg.b), lumN(c.r, c.g, c.b)))
-    .reduce((a, b) => Math.max(a, b), 0)
+  const halo = Math.max(
+    shadowColors(m.shadow)
+      .map((c) => ratioN(lumN(m.fg.r, m.fg.g, m.fg.b), lumN(c.r, c.g, c.b)))
+      .reduce((a, b) => Math.max(a, b), 0),
+    m.svgStroke ? ratioN(lumN(m.fg.r, m.fg.g, m.fg.b), lumN(m.svgStroke.r, m.svgStroke.g, m.svgStroke.b)) : 0,
+  )
   const outlined = halo >= 4.5
   return {
     ...m, need: n,

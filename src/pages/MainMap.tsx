@@ -545,25 +545,39 @@ export default function MainMap() {
         指针和方位字母全被盖住。所以移动端把罗盘缩到 64px，
         徽章再排到 114px —— 关系和桌面端一致（徽章永远在罗盘下方），只是整体更紧凑。
       */}
-      <div
-        /* 移动端原本是 top-11(44px)，而顶栏 h-12 是 48px —— 罗盘顶部被顶栏压住
-           4px，加上 drop-shadow 看起来像被切掉一角。桌面一直是 top-14(56px)，
-           移动端没跟着改。现在两端统一，留 8px 间隙。 */
-        className={isMobile ? 'absolute top-14 left-2' : 'absolute top-14 left-3'}
-        style={{ zIndex: Z.COMPASS }}
-      >
-        <Compass windBearing={windBearing} size={isMobile ? 'w-16 h-16' : 'w-24 h-24'} />
-      </div>
+      {/*
+        岸上不挂罗盘与天候徽章。
 
-      {/* 天候徽章：当前天气 + 风速 + 航速影响，点击展开三日预报 */}
-      <div
-        /* 徽章永远排在罗盘正下方：移动端罗盘 56+64=120，徽章 124；
-           桌面 56+96=152，徽章 156。两边都留 4px。 */
-        className={isMobile ? 'absolute top-[7.75rem] left-2' : 'absolute top-[9.75rem] left-3'}
-        style={{ zIndex: Z.COMPASS }}
-      >
-        <WeatherBadge />
-      </div>
+        【为什么】岸上是整屏不透明层（harbor-view），左上角被完全盖住 ——
+        elementFromPoint(60,65) 命中的是 harbor-view 本身，玩家一个字也看不到。
+        但它们仍在 DOM 里：Compass 有一个常驻 requestAnimationFrame 在转指针、
+        玫瑰图还占一张解码，天候徽章的定时预报也在跑。全屏看不见还白烧一帧一帧。
+        顺带，对比度审计此前正是在这里报出两条 1.09:1 的假红
+        （它只看 rect 与 opacity，不看遮挡）。
+      */}
+      {viewMode !== 'harbor' && (
+        <>
+          <div
+            /* 移动端原本是 top-11(44px)，而顶栏 h-12 是 48px —— 罗盘顶部被顶栏压住
+               4px，加上 drop-shadow 看起来像被切掉一角。桌面一直是 top-14(56px)，
+               移动端没跟着改。现在两端统一，留 8px 间隙。 */
+            className={isMobile ? 'absolute top-14 left-2' : 'absolute top-14 left-3'}
+            style={{ zIndex: Z.COMPASS }}
+          >
+            <Compass windBearing={windBearing} size={isMobile ? 'w-16 h-16' : 'w-24 h-24'} />
+          </div>
+
+          {/* 天候徽章：当前天气 + 风速 + 航速影响，点击展开三日预报 */}
+          <div
+            /* 徽章永远排在罗盘正下方：移动端罗盘 56+64=120，徽章 124；
+               桌面 56+96=152，徽章 156。两边都留 4px。 */
+            className={isMobile ? 'absolute top-[7.75rem] left-2' : 'absolute top-[9.75rem] left-3'}
+            style={{ zIndex: Z.COMPASS }}
+          >
+            <WeatherBadge />
+          </div>
+        </>
+      )}
 
       {/*
         常驻「下一站」。
