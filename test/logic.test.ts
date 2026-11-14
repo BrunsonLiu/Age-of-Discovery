@@ -1261,6 +1261,76 @@ console.log('== 17i. 兄弟会护航：海盗遭遇率 -20% / 不再拦船 ==')
   assert(!/被俘时可赎金免战/.test(stripComments(facSrc3)), '删掉"被俘可赎金免战"（游戏里没有被俘状态）')
 }
 
+console.log('== 17j. 商会 90 档：滞销货七折回收 ==')
+/*
+ * 「商会为您兜底：滞销货物可按底价七折回收」原来是设计稿。
+ * 实现是**同一处比例**按声望换一档：本港不经营的货，卖出价从底价 50% → 70%。
+ * 本港要的货不受影响（那走 dynamicSellPrice）—— 否则这条会变成"所有买卖都变"。
+ */
+{
+  const { selectSellPrice, OFFER_PRICE_RATIO, GUILD_BUYBACK_RATIO } = await import('../src/store/useGameStore')
+  assert(OFFER_PRICE_RATIO === 0.5, `基准出清价仍是底价五折（${OFFER_PRICE_RATIO}）`)
+  assert(GUILD_BUYBACK_RATIO === 0.7, `商会 90 档是底价七折（${GUILD_BUYBACK_RATIO}）—— 文案写"七折"`)
+
+  // 找一件"只在某个港经营"的货：在别的港卖就是滞销
+  const soldAt = new Map<number, number[]>()
+  for (const pg of portGoods) {
+    soldAt.set(pg.goodId, [...(soldAt.get(pg.goodId) ?? []), pg.portId])
+  }
+  const rareGood = [...soldAt.entries()].find(([, ps]) => ps.length === 1)
+  assert(!!rareGood, '数据里存在"只在一个港经营"的商品（判据前提）')
+  const [goodId, onlyPort] = rareGood!
+  const otherPort = ports.find(p => p.id !== onlyPort[0] && !portGoods.some(pg => pg.portId === p.id && pg.goodId === goodId))!
+  assert(!!otherPort, '找到一座不经营它的港（滞销场景）')
+  const base = goods.find(g => g.id === goodId)!.basePrice
+
+  const mk = (guildRep: number) => ({
+    ...baseState,
+    factionRep: { crown: 0, guild: guildRep, scholars: 0, brethren: 0 },
+    fleet: { ...baseState.fleet, currentPortId: otherPort.id, isSailing: false },
+  }) as never
+  const p0 = selectSellPrice(mk(0), otherPort.id, goodId)!
+  const p29 = selectSellPrice(mk(29), otherPort.id, goodId)!
+  const p60 = selectSellPrice(mk(60), otherPort.id, goodId)!
+  const p90 = selectSellPrice(mk(90), otherPort.id, goodId)!
+  assert(p0 === Math.round(base * 0.5), `滞销货默认按底价五折（${base} → ${p0}）`)
+  /*
+   * 29 分与 0 分同价（都没到档）；60 分起会贵一点，但那是**另一条特权**
+   * （商会 60 档买卖 3%：系数 <1 时卖价是"除以系数"，本来就收得更高）。
+   * 所以要验的是"90 档在 60 档的基础上再 ×1.4"（0.7/0.5），而不是跟 0 分直接比。
+   */
+  // 29 分：连 30 档的 1% 都没有，所以与 0 分同价
+  assert(p29 === p0, `商会 29 还没到任何档（${p29} = ${p0}）`)
+  assert(Math.abs(p90 - p60 * (0.7 / 0.5)) <= 1,
+    `商会 90 档在 60 档的价上再 ×1.4（${p60} → ${p90}）`)
+  assert(p90 > p60, '七折确实比五折收得多（否则这条特权等于没做）')
+
+  // 本港要的货不叠这个比例
+  const demanded = portGoods.find(pg => pg.portId === otherPort.id)!
+  const d0 = selectSellPrice(mk(0), otherPort.id, demanded.goodId)
+  const d90 = selectSellPrice(mk(90), otherPort.id, demanded.goodId)
+  assert(d0 === d90, `本港要的货不受这条影响（${d0} vs ${d90}）`)
+
+  // 结算侧：sellGood 真的按七折入账
+  const st9 = useGameStore.getState()
+  useGameStore.setState({
+    ...st9,
+    factionRep: { crown: 0, guild: 90, scholars: 0, brethren: 0 },
+    fleet: { ...st9.fleet, currentPortId: otherPort.id, isSailing: false, gold: 0, cargo: [{ goodId, quantity: 2 }] },
+  })
+  const price = selectSellPrice(useGameStore.getState(), otherPort.id, goodId)!
+  useGameStore.getState().sellGood(otherPort.id, goodId, 2)
+  const after9 = useGameStore.getState()
+  assert(after9.fleet.gold === price * 2,
+    `卖 2 件入账 ${after9.fleet.gold} = 面板价 ${price} × 2`)
+  assert(!after9.fleet.cargo.some(c => c.goodId === goodId), '货真的出手了（不是死货）')
+  // 还原
+  useGameStore.setState({ ...st9, factionRep: st9.factionRep, fleet: st9.fleet })
+
+  const facSrc4 = readFileSync(join(process.cwd(), 'src', 'data', 'factions.ts'), 'utf8')
+  assert(/text: '滞销货按底价七折回收'/.test(facSrc4), '商会 90 档文案 = 滞销货按底价七折回收')
+}
+
 console.log('== 18. 新事件引擎条件 ==')
 const evElena = events.find(e => e.id === 238)!
 assert(!checkEventTrigger({ ...evElena, triggerCondition: { ...evElena.triggerCondition, probability: 1 } }, baseState), '伊莲事件：无学者在船不触发')

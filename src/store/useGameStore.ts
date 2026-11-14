@@ -578,6 +578,22 @@ export function dynamicSellPrice(pg: { price: number; priceModifier: number }, c
 export const OFFER_PRICE_RATIO = 0.5
 
 /**
+ * 商会 90 档「滞销货按底价七折回收」。
+ *
+ * 原来不经营的货一律按底价五折出清（那是最初的"死货退路"）。
+ * 商会最高档把这个比例抬到七折 —— 这不是新机制，是**同一处比例**按声望换一档：
+ * 面板与结算都走 selectSellPrice，所以屏幕上写多少、入账就是多少。
+ *
+ * 只影响"本港不经营的货"（真正的滞销）。本港要的货走 dynamicSellPrice，
+ * 不叠这个比例 —— 否则商会 90 会让所有买卖都变一遍，那是另一条特权。
+ */
+export const GUILD_BUYBACK_REP = 90
+export const GUILD_BUYBACK_RATIO = 0.7
+function offerRatioFor(guildRep: number): number {
+  return guildRep >= GUILD_BUYBACK_REP ? GUILD_BUYBACK_RATIO : OFFER_PRICE_RATIO
+}
+
+/**
  * 买入报价 —— 面板显示价与实际结算价的**唯一来源**。
  *
  * 以前 TradePanel 自己抄了一份公式（漏乘 priceMultiplier、也漏掉 surge），
@@ -606,9 +622,13 @@ export function selectSellPrice(state: GameState, portId: number, goodId: number
   const pg = portGoods.find(p => p.portId === portId && p.goodId === goodId)
   const opts = priceOpts(state, portId)
   if (!pg) {
-    // 本港不收：按全局基准价折价出清。声望/特质系数同样生效
-    //（系数 <1 表示对玩家有利，除以它等于折价收得更高）。
-    return Math.round((good.basePrice * OFFER_PRICE_RATIO) / priceMultiplier(state.fleet, opts))
+    /*
+     * 本港不收：按全局基准价折价出清。声望/特质系数同样生效
+     * （系数 <1 表示对玩家有利，除以它等于折价收得更高）。
+     * 比例按商会声望取一档：≥90 是七折（商会替你兜底），否则五折。
+     */
+    const ratio = offerRatioFor(state.factionRep.guild ?? 0)
+    return Math.round((good.basePrice * ratio) / priceMultiplier(state.fleet, opts))
   }
   const stock = state.marketStock[`${portId}:${goodId}`] ?? pg.stock
   return dynamicSellPrice(pg, stock, pg.stock, state.fleet, opts)
