@@ -172,6 +172,15 @@ export function selectOutcome(outcomes: EventOutcome[], performance?: number): E
 const GLOBAL_EVENT_CHANCE = 0.25
 const MIN_DAYS_BETWEEN_EVENTS = 5
 
+/**
+ * 「最近这么多条之内不重复」的窗口大小。
+ *
+ * 全表 63 条，一局大约走 11~17 条 —— 25 的窗口等于"一局内不撞重复"，
+ * 又不会在长局里把内容抽干（窗口滑出后还能再遇到）。
+ * 别把窗口调到接近全表：那样到后期就抽不到事件了，航行会变得平淡。
+ */
+export const RECENT_EVENT_WINDOW = 25
+
 export function getRandomEvents(
   gameState: GameState,
   events: GameEvent[],
@@ -182,7 +191,16 @@ export function getRandomEvents(
   if (daysSinceLastEvent < MIN_DAYS_BETWEEN_EVENTS) return null
   if (Math.random() > GLOBAL_EVENT_CHANCE * chanceMultiplier) return null
 
-  const shuffled = [...events].sort(() => Math.random() - 0.5)
+  /*
+   * 先摘掉最近出现过的那些。
+   * 只有 5 条事件自带 requiresFlags/conflictsWithFlags 的一次性保护，
+   * 其余 58 条原来可以无限重复 —— 玩家第二次看到"独眼玛格的仇人"、
+   * 连结果描述都一字不差，那一刻这台机器就露馅了。
+   * 池子被摘空时退回全量：宁可重复，也不能不出事件。
+   */
+  const recent = gameState.recentEvents ?? []
+  const fresh = events.filter(e => !recent.includes(e.id))
+  const shuffled = [...(fresh.length ? fresh : events)].sort(() => Math.random() - 0.5)
   for (const event of shuffled) {
     /*
      * 【这一次掷值必须留住】为了判断"这场遭遇是不是天赋给的"，

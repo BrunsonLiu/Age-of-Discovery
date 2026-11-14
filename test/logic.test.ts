@@ -412,6 +412,50 @@ try { for (let i = 0; i < 200; i++) getRandomEvents(baseState, events, i % 6 ===
 assert(!threw, 'getRandomEvents 200 次抽样无异常')
 assert(getRandomEvents(baseState, events, 1) === null, '事件间隔 <5 天时不触发')
 
+console.log('== 9b. 事件不重复：滑动窗口 ==')
+/*
+ * 全表 63 条事件里只有 5 条自带 requiresFlags/conflictsWithFlags 的一次性保护，
+ * 其余 58 条原来可以无限重复 —— 第二次看到"独眼玛格的仇人"、结果描述一字不差，
+ * 玩家立刻看出这是台机器。getRandomEvents 现在会先摘掉 recentEvents 里的 id。
+ */
+const { RECENT_EVENT_WINDOW } = await import('../src/utils/eventEngine')
+assert(RECENT_EVENT_WINDOW === 25,
+  `窗口 ${RECENT_EVENT_WINDOW} 条：一局约 11~17 条事件，25 等于"一局不重复"且长局能循环`)
+/** 两条"必触发"的最小事件，绕开真实事件的地区/天数/士气条件 */
+const mkEvent = (id: number) => ({
+  id, type: 'discovery', title: 't', description: 'd',
+  triggerCondition: { probability: 1 },
+  choices: [{ text: 'ok', outcomes: [{ probability: 1, goldChange: 0 }] }],
+} as unknown as (typeof events)[number])
+const evA = mkEvent(9001)
+const evB = mkEvent(9002)
+/** 抽 n 次，返回落到过的事件 id（chanceMultiplier 拉到 100 让概率门槛必过） */
+const pick = (recent: number[], n = 150) => {
+  const st = { ...baseState, recentEvents: recent } as unknown as Parameters<typeof getRandomEvents>[0]
+  const got = new Set<number>()
+  for (let i = 0; i < n; i++) {
+    const e = getRandomEvents(st, [evA, evB], 99, 100)
+    if (e) got.add(e.id)
+  }
+  return got
+}
+const onlyB = pick([9001])
+assert(onlyB.size > 0 && !onlyB.has(9001),
+  `最近出现过的事件抽不到（150 次只落到 ${[...onlyB].join(',') || '无'}）`)
+const anyOf = pick([])
+assert(anyOf.has(9001) && anyOf.has(9002), '窗口为空时两条都可能出现')
+const exhausted = pick([9001, 9002])
+assert(exhausted.size > 0, '池子被摘空时退回全量（宁可重复，也不能不出事件）')
+// 窗口只摘最近的，不是"一局内永久拉黑"
+const sliding = pick([...Array.from({ length: 24 }, (_, i) => 8000 + i), 9002])
+assert(!sliding.has(9002) && sliding.has(9001), '窗口只摘最近 25 条，滑出去的还能再遇到')
+
+const storeSrc = readFileSync(join(process.cwd(), 'src', 'store', 'useGameStore.ts'), 'utf8')
+assert(/\.slice\(-RECENT_EVENT_WINDOW\)/.test(storeSrc), '记录时按窗口截断（不许无限增长）')
+const saveSrc = readFileSync(join(process.cwd(), 'src', 'utils', 'saveFile.ts'), 'utf8')
+assert(/'recentEvents'/.test(saveSrc), 'recentEvents 进了存档白名单')
+assert(/if \(version < 21\)/.test(storeSrc), '老存档有 v20→v21 迁移（补空数组）')
+
 console.log('== 8. 航段方针档案 ==')
 // 方针是游戏里**唯一**的速度/风险旋钮（原「航速档位」已并入）。
 // 这里锁定它的倍率表——改了这些数字，玩家的因果推演就全错了。

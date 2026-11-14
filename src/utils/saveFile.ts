@@ -20,7 +20,7 @@
 
 export const SAVE_KEY = 'age-of-discovery-save'
 /** 与 useGameStore.ts 的 persist version 保持一致；升版本时两处一起改 */
-export const SAVE_VERSION = 20
+export const SAVE_VERSION = 21
 
 /**
  * 导入白名单 = persist 的 partialize 字段表。
@@ -31,6 +31,8 @@ export const SAVE_FIELDS = [
   'shipPosition', 'simSpeed', 'completedTasks', 'activeTasks', 'eventLog',
   'discoveredPorts', 'gamePhase', 'tutorialStep', 'seenHistoricalEvents',
   'lastEventDay', 'marketStock', 'seenMarketTips', 'victoryDay', 'eventFlags',
+  // V21：最近触发过的事件 id（防重复滑动窗口，见 eventEngine.RECENT_EVENT_WINDOW）
+  'recentEvents',
   'stats', 'achievements', 'pendingVoyage', 'routeIntel', 'rivals', 'rivalNews',
   'officers', 'factionRep', 'crewRoster', 'notoriety', 'pendingHelm',
   'helmAdvance', 'weather', 'dialogueSeen', 'gameMode',

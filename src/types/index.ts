@@ -477,6 +477,15 @@ export interface GameState {
   victoryDay: number | null
   /** 事件链旗标（如海图残片、幽灵船遭遇），来自事件结果的 setsFlag */
   eventFlags: Record<string, number>
+  /**
+   * 最近触发过的**事件 id**（滑动窗口，见 utils/eventEngine 的 RECENT_EVENT_WINDOW）。
+   *
+   * 【为什么需要】全 63 条事件里只有 5 条带 requiresFlags/conflictsWithFlags 的"一次性"保护，
+   * 其余 58 条可以无限重复。一局大约走 11~17 条事件，撞上同一条两次时，
+   * 连选项的结果描述都一字不差 —— 玩家立刻看出这是台机器。
+   * 窗口 25 条：短局内完全不重复，长局也能循环回来，不会把内容抽干。
+   */
+  recentEvents: number[]
   /** 生涯统计 */
   stats: GameStats
   /** 已解锁成就 id */

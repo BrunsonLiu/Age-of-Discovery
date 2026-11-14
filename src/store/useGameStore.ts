@@ -13,7 +13,7 @@ import { goods } from '@/data/goods'
 import { calculateDailyConsumption, dangerLevelFromDistance, effectiveFleetSpeed, prevailingWindBearing, calculateSailingDays, dailyDistanceNm, haversineNm } from '@/utils/navigation'
 import { getRouteGeometry } from '@/utils/routePath'
 import { routeFacts, voyageDays, windFavorForRoute } from '@/utils/voyage'
-import { getRandomEvents, consumeEventFlags } from '@/utils/eventEngine'
+import { getRandomEvents, consumeEventFlags, RECENT_EVENT_WINDOW } from '@/utils/eventEngine'
 import { STANCES, segmentCountFor, nextSegmentBoundary, hazardLabel, dailyFoodUse, dailyWaterUse, dailyWearRate, settleWear } from '@/utils/segment'
 import { repairCost, taskGold, supplyCost, supplyAmounts, intelCost, INTERPRETER_FACTION_MUL } from '@/utils/crewPerks'
 import { rollSeaOmen } from '@/utils/seaOmen'
@@ -253,6 +253,7 @@ const initialGameState: GameState = {
   seenMarketTips: [],
   victoryDay: null,
   eventFlags: {},
+  recentEvents: [],
   stats: createInitialStats(),
   achievements: [],
   rivals: RIVALS.map(r => ({ ...r })),
@@ -1315,6 +1316,7 @@ export const useGameStore = create<GameStore>()(
           seenMarketTips: [],
           victoryDay: null,
           eventFlags: {},
+          recentEvents: [],
           stats: createInitialStats(),
           achievements: [],
           lastEventDay: 0,
@@ -1391,6 +1393,8 @@ export const useGameStore = create<GameStore>()(
         let newSimSpeed = state.simSpeed
         let newStats = { ...state.stats }
         let newEventFlags = state.eventFlags
+        // 最近触发过的事件 id（防重复的滑动窗口，见 eventEngine.RECENT_EVENT_WINDOW）
+        let newRecentEvents = state.recentEvents
         // 海上异闻（纯氛围）：这一天有没有"看见点什么"
         let newSeaOmen: GameStore['seaOmen'] = state.seaOmen ?? null
         /** 结算后船所在的现象 id（写回 store，用来判"下一次是不是换了一片水"） */
@@ -1571,6 +1575,8 @@ export const useGameStore = create<GameStore>()(
           if (triggeredEvent) {
             newCurrentEvent = triggeredEvent
             newGamePhase = 'event'
+            newRecentEvents = [...state.recentEvents, triggeredEvent.id]
+              .slice(-RECENT_EVENT_WINDOW)
             // 事件链：requiresFlags 事件触发后消耗旗标（一次性）
             if (triggeredEvent.triggerCondition.requiresFlags) {
               newEventFlags = consumeEventFlags(triggeredEvent, state.eventFlags)
@@ -1791,6 +1797,7 @@ export const useGameStore = create<GameStore>()(
           simSpeed: newSimSpeed,
           stats: newStats,
           eventFlags: newEventFlags,
+          recentEvents: newRecentEvents,
           rivals: newRivals,
           rivalNews: newRivalNews,
           officers: newOfficers,
@@ -3013,6 +3020,14 @@ export const useGameStore = create<GameStore>()(
         if (version < 20) {
           if (pState.tributes === undefined) pState.tributes = 0
         }
+        /*
+         * v20→v21: 最近触发过的事件 id（防重复的滑动窗口）。
+         * 老存档补空数组是诚实的：那一局过去遇到过什么，我们并没有记账，
+         * 不能凭空编一串 id 出来——玩家最多再多遇到一次旧事件，不影响任何数值。
+         */
+        if (version < 21) {
+          if (!Array.isArray(pState.recentEvents)) pState.recentEvents = []
+        }
         return persistedState
       },
       partialize: (state) => ({
@@ -3035,6 +3050,7 @@ export const useGameStore = create<GameStore>()(
         seenMarketTips: state.seenMarketTips,
         victoryDay: state.victoryDay,
         eventFlags: state.eventFlags,
+        recentEvents: state.recentEvents,
         stats: state.stats,
         achievements: state.achievements,
         pendingVoyage: state.pendingVoyage,
