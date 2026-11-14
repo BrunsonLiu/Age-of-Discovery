@@ -899,6 +899,63 @@ const logSrc = readFileSync(join(process.cwd(), 'src', 'components', 'panels', '
 assert(/ports\.length \+ achievements\.length \+ debrisKinds\.length \+ RELICS\.length/.test(logSrc),
   '图鉴总数一直是表长度相加（这条是范式，新加的表也要这么算）')
 
+console.log('== 17d. 说明书写的东西必须真的在代码里 ==')
+/*
+ * 帮助面板是新手唯一照着玩的东西；舰队面板上的称号效果也是。这两处写没做的事，
+ * 比不写更糟 —— 玩家会朝着一个不存在的东西攒几十个小时。
+ * 2026-11-14 逐条核对，发现三处空承诺：
+ *   · 势力特权"王家合约、黑市、护航"（一条都没实现）、"免费情报"（其实是半价）
+ *   · 称号"赌徒好结局 +4%""贪婪声望 -20%"（常量定义了没人读）
+ *   · 航线情报"80 金币"（随船学者/学者公会半价）
+ */
+const helpSrc = readFileSync(join(process.cwd(), 'src', 'components', 'intro', 'HelpPanel.tsx'), 'utf8')
+/*
+ * 剥注释再看。允许出现的一种情形：明确标了"尚未实装"的披露行
+ * （"（势力特权还在补齐：王家合约、黑市、护航尚未实装，面板上不会出现它们）"）——
+ * 那是诚实说明，不是承诺。其余任何地方出现这三个词都是空承诺。
+ */
+{
+  const badLines = stripComments(helpSrc).split('\n')
+    .filter(l => /王家合约|黑市|护航/.test(l) && !/尚未实装/.test(l))
+  assert(badLines.length === 0,
+    `帮助里不许把未实现的势力特权当成真的写：${badLines[0]?.trim().slice(0, 40) ?? ''}`)
+}
+assert(!/花 80 金币买/.test(helpSrc), '帮助里的情报价不许写死 80')
+assert(/\$\{achievements\.length\} 项成就/.test(helpSrc), '帮助里的成就数来自 achievements.length')
+assert(/尚未实装/.test(helpSrc), '帮助里明确写出哪些势力特权还没实装')
+
+/*
+ * 称号效果：只有 hoarder 那条是真加成（priceMultiplier 里读 GREED_PROFIT_BONUS），
+ * 其余四条必须是叙事 —— 只要 effect 里出现 %，就必须有对应实现。
+ * 这条判据的写法是"数百分比"：现在全表只有 1 个 %，一旦有人补了空承诺会立刻红。
+ */
+{
+  const { TITLES } = await import('../src/data/titles')
+  const withPct = TITLES.filter(t => t.effect.includes('%'))
+  assert(withPct.length === 1 && withPct[0].id === 'hoarder',
+    `称号效果里只有贪婪者的 +4% 是真加成（现在带百分比的：${withPct.map(t => t.id).join(',') || '无'}）`)
+  const traitSrc = readFileSync(join(process.cwd(), 'src', 'data', 'traits.ts'), 'utf8')
+  assert(/GREED_PROFIT_BONUS/.test(traitSrc), '贪婪者 +4% 确实被 priceMultiplier 读取')
+  /*
+   * 「要么被读，要么不存在」——配置里留一个没人读的数比没有更危险，
+   * 后来的人会以为改它有用。这两条已经从 gameConfig 删掉了（注释里留了原因）。
+   */
+  const balSrc = readFileSync(join(process.cwd(), 'src', 'data', 'gameConfig.ts'), 'utf8')
+  for (const dead of ['BOLD_LUCK_BONUS', 'GREED_FAME_PENALTY']) {
+    const declared = new RegExp(`^\\s*${dead}\\s*:`, 'm').test(balSrc)
+    const read = [traitSrc, readFileSync(join(process.cwd(), 'src', 'store', 'useGameStore.ts'), 'utf8')]
+      .some(t => new RegExp(dead).test(t))
+    assert(!declared || read, `${dead} 还留在配置里就必须有人读（要么实现，要么删掉）`)
+  }
+}
+
+// 士气警戒线只有一个来源（帮助/舰队面板/底栏都读 LOW_MORALE）
+const storeSrc2 = readFileSync(join(process.cwd(), 'src', 'store', 'useGameStore.ts'), 'utf8')
+assert(/fleet\.morale < LOW_MORALE/.test(storeSrc2), 'store 的士气警戒线读 LOW_MORALE 常量（不许写死 45）')
+const voyageSrc = readFileSync(join(process.cwd(), 'src', 'utils', 'voyage.ts'), 'utf8')
+assert(/export const LOW_MORALE = 45/.test(voyageSrc), 'LOW_MORALE 定义在 utils/voyage')
+assert(/低于 45 有哗变风险/.test(helpSrc), '帮助里写的 45 与常量一致')
+
 console.log('== 18. 新事件引擎条件 ==')
 const evElena = events.find(e => e.id === 238)!
 assert(!checkEventTrigger({ ...evElena, triggerCondition: { ...evElena.triggerCondition, probability: 1 } }, baseState), '伊莲事件：无学者在船不触发')

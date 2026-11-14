@@ -16,6 +16,17 @@ export interface CaptainTitle {
 /**
  * 海上人称谓：玩家的每一个两难选择都在累积"你是哪种船长"。
  * 称号不是属性加成，而是"后世怎么记载你"——效果刻意小而叙事优先。
+ *
+ * ⚠️ 【2026-11-14 逐条对过代码】`effect` 这个字段会显示在**舰队面板**上
+ * （`{captainTitle.name} · {captainTitle.effect}`），所以它不能写没做的事。
+ * 实际情况：
+ *   · hoarder（贪婪者）的「贸易毛利 +4%」是真的 —— data/traits.ts 的 priceMultiplier
+ *     里读 GAME_BALANCE.GREED_PROFIT_BONUS；
+ *   · 其余四条原本写着"好结局概率 +4%""走私不掉王室声望""情报永远半价"
+ *     "坏血病概率下降"，对应常量 BOLD_LUCK_BONUS / GREED_FAME_PENALTY 定义了没人读，
+ *     另外两条连常量都没有 —— 全是空承诺。
+ * 现在把它们改回**叙事**（称号本来就该是"后世怎么记你"），只留一条真加成。
+ * 将来真要做数值，先实现、再改文案，别反过来。
  */
 export const TITLES: CaptainTitle[] = [
   {
@@ -23,7 +34,7 @@ export const TITLES: CaptainTitle[] = [
     name: '铁腕者',
     axis: 'cruel',
     threshold: 3,
-    effect: '叛乱威胁镇压更快（哗变事件不再因低 morale 额外加权）',
+    effect: '水手们在甲板上说话，会先看你一眼',
     epithet: '酒馆里人们压低声音说：别惹那条船上的船长，他连自己人也不放过。',
   },
   {
@@ -31,7 +42,7 @@ export const TITLES: CaptainTitle[] = [
     name: '慈悲心',
     axis: 'mercy',
     threshold: 3,
-    effect: '坏血病与船员死亡概率下降；离船船员的忠诚衰减减半',
+    effect: '病号会先想到你舱里那箱柠檬',
     epithet: '每个受过他接济的水手都会在胸前画十字：那是会为你掉头回来的船长。',
   },
   {
@@ -39,7 +50,7 @@ export const TITLES: CaptainTitle[] = [
     name: '海上赌徒',
     axis: 'bold',
     threshold: 3,
-    effect: '事件好结局概率 +4%（坏结局也更狠，赌注是双向的）',
+    effect: '每次升帆，都有人等着看你押哪一边',
     epithet: '他的一生是一连串"再张一张帆"——最后一张帆恰好赶上了顺风。',
   },
   {
@@ -47,7 +58,7 @@ export const TITLES: CaptainTitle[] = [
     name: '守秘人',
     axis: 'secret',
     threshold: 3,
-    effect: '走私不再掉落王室声望；航线情报永远半价',
+    effect: '有些航线，只有你知道它存在',
     epithet: '没人见过他的航海日志第二页。人们只记得他总能带回"说不清的货"。',
   },
   {
@@ -55,7 +66,7 @@ export const TITLES: CaptainTitle[] = [
     name: '贪婪者',
     axis: 'greed',
     threshold: 3,
-    effect: '贸易毛利 +4%，但声望获取 -20%（钱和名声总得舍一个）',
+    effect: '贸易毛利 +4%（唯一实装的称号加成）',
     epithet: '他死于满舱的金币中间，账本上最后一页写着：还可以再多一点。',
   },
 ]

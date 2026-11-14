@@ -12,7 +12,7 @@ import { tasks } from '@/data/tasks'
 import { goods } from '@/data/goods'
 import { calculateDailyConsumption, dangerLevelFromDistance, effectiveFleetSpeed, prevailingWindBearing, calculateSailingDays, dailyDistanceNm, haversineNm } from '@/utils/navigation'
 import { getRouteGeometry } from '@/utils/routePath'
-import { routeFacts, voyageDays, windFavorForRoute } from '@/utils/voyage'
+import { routeFacts, voyageDays, windFavorForRoute, LOW_MORALE } from '@/utils/voyage'
 import { getRandomEvents, consumeEventFlags, RECENT_EVENT_WINDOW } from '@/utils/eventEngine'
 import { STANCES, segmentCountFor, nextSegmentBoundary, hazardLabel, dailyFoodUse, dailyWaterUse, dailyWearRate, settleWear } from '@/utils/segment'
 import { repairCost, taskGold, supplyCost, supplyAmounts, intelCost, INTERPRETER_FACTION_MUL } from '@/utils/crewPerks'
@@ -169,7 +169,8 @@ export function tickCrewLoyalty(
 ): { roster: CrewMember[]; left: CrewCharId[]; died: CrewCharId[] } {
   const roster = state.crewRoster
   if (roster.length === 0) return { roster, left: [], died: [] }
-  const lowMorale = fleet.morale < 45
+  // 士气警戒线只有 utils/voyage.LOW_MORALE 一个来源（帮助面板、舰队面板、底栏都读它）
+  const lowMorale = fleet.morale < LOW_MORALE
   // 这两位的特点都是"某个坏结果不再那么坏"，所以在这里一次算好，循环里直接用
   const hasGuide = roster.some(r => r.id === 'guide')
   const hasMedic = roster.some(r => r.id === 'medic')
