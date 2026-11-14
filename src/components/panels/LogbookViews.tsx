@@ -36,6 +36,7 @@ export function SightingsView() {
   const markLogbookRead = useGameStore(s => s.markLogbookRead)
   const setActivePanel = useGameStore(s => s.setActivePanel)
   const setCenter = useMapStore(s => s.setCenter)
+  const closeRecords = useMapStore(s => s.closeRecords)
 
   /*
    * mount 那一刻记下哪些是新的：effect 马上会把 read 标成 true，
@@ -47,12 +48,20 @@ export function SightingsView() {
   }, [logbook, markLogbookRead])
 
   const followClue = (targetPortId: number | null) => {
-    // 与岸上视角的「在地图上看看」共用 clueCenter：
-    // 只把地图移过去，不替玩家出航、不承诺奖励、不设期限
+    /*
+     * 与岸上视角的「在地图上看看」共用 clueCenter：
+     * 只把地图移过去，不替玩家出航、不承诺奖励、不设期限。
+     *
+     * 【必须同时退出航海志】这一页现在是整屏，`setActivePanel(null)` 只清 panel，
+     * 视图还停在资料页上 —— 玩家点了"在地图上看看"，屏幕一点变化都没有，
+     * 地图在整屏底下悄悄移了。这类"点了没反应"是本作最不能留的。
+     */
     const center = clueCenter(targetPortId)
     if (!center) return
     setCenter(center)
     setActivePanel(null)
+    // 合上整屏（不是"回海图"：岸上翻的册子，合上还该站在岸上）
+    closeRecords()
   }
 
   return (
@@ -334,7 +343,7 @@ export function AtlasView() {
       {nation && (
         <>
           <SectionTitle right={gotLegends.has(routesNation.legend.id) ? '已应验' : '未应验'}>传说</SectionTitle>
-          <div className="grid grid-cols-1 gap-1.5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
             <AtlasCell
               label={routesNation.legend.name}
               heard
@@ -368,7 +377,7 @@ export function AtlasView() {
       )}
 
       <SectionTitle right={`${discoveredPorts.length}/${ports.length}`}>港口</SectionTitle>
-      <div className="grid grid-cols-2 gap-1.5">
+      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-1.5">
         {ports.map(p => (
           <AtlasCell
             key={p.id}
@@ -389,7 +398,7 @@ export function AtlasView() {
       </div>
 
       <SectionTitle right={`${earned.length}/${achievements.length}`}>成就</SectionTitle>
-      <div className="grid grid-cols-2 gap-1.5">
+      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-1.5">
         {achievements.map(a => {
           const Icon = a.icon
           return (
@@ -406,7 +415,7 @@ export function AtlasView() {
       </div>
 
       <SectionTitle right={`${collected.length}/${debrisKinds.length}`}>海上拾遗</SectionTitle>
-      <div className="grid grid-cols-2 gap-1.5">
+      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-1.5">
         {debrisKinds.map(kind => (
           <AtlasCell
             key={kind}
@@ -425,7 +434,7 @@ export function AtlasView() {
         没拾到的格子只说一句"还没路过那里"，不剧透、也不催促。
       */}
       <SectionTitle right={`${gotRelics.size}/${RELICS.length}`}>海上遗物</SectionTitle>
-      <div className="grid grid-cols-2 gap-1.5">
+      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-1.5">
         {RELICS.map(r => (
           <AtlasCell
             key={r.id}
@@ -475,7 +484,7 @@ export function AtlasView() {
        * 纯本地、零算术、零服务器，也不制造"明天必须回来"的债务。
        */}
       <SectionTitle>个人纪录</SectionTitle>
-      <div className="grid grid-cols-2 gap-1.5">
+      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-1.5">
         {[
           { k: '靠过的岸', v: `${discoveredPorts.length} 座` },
           { k: '海上的日子', v: `${stats.daysSailed} 天` },

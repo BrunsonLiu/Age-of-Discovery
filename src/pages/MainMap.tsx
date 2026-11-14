@@ -1,6 +1,6 @@
 import { useEffect, lazy, Suspense } from 'react'
-import { Ship, Anchor, Scroll, Flag, Package, HelpCircle, Trophy, Newspaper, Hammer, Map } from 'lucide-react'
-import { useGameStore } from '@/store/useGameStore'
+import { Ship, Anchor, Scroll, Flag, Package, HelpCircle, Trophy, Newspaper, Hammer } from 'lucide-react'
+import { useGameStore, isRecordPanel } from '@/store/useGameStore'
 import { useMapStore } from '@/store/useMapStore'
 import HarborInvite from '@/components/harbor/HarborInvite'
 import SailingController from '@/components/map/SailingController'
@@ -56,10 +56,12 @@ const FleetPanel = lazy(() => import('@/components/panels/FleetPanel'))
 const PortDetail = lazy(() => import('@/components/panels/PortDetail'))
 const TradePanel = lazy(() => import('@/components/panels/TradePanel'))
 const ShipyardPanel = lazy(() => import('@/components/panels/ShipyardPanel'))
-const EventLog = lazy(() => import('@/components/panels/EventLog'))
-const TaskPanel = lazy(() => import('@/components/panels/TaskPanel'))
-const AchievementPanel = lazy(() => import('@/components/panels/AchievementPanel'))
-const RivalPanel = lazy(() => import('@/components/panels/RivalPanel'))
+/*
+ * 航海志（整屏）取代了四个记录类侧板：事件日志 / 任务 / 成就 / 同代船长。
+ * 它自己就是一块懒加载块 —— 里面装着图鉴、遗物、传说、21 张港口图和
+ * 15 位船员的肖像映射，不该跟着主包一起下来。
+ */
+const LogbookScreen = lazy(() => import('@/components/logbook/LogbookScreen'))
 const VoyagePlanModal = lazy(() => import('@/components/map/VoyagePlanModal'))
 const SegmentDecision = lazy(() => import('@/components/map/SegmentDecision'))
 const HelmModal = lazy(() => import('@/components/map/HelmModal'))
@@ -125,10 +127,7 @@ function prefetchSurface(): void {
     void import('@/components/panels/PortDetail')
     void import('@/components/panels/TradePanel')
     void import('@/components/panels/ShipyardPanel')
-    void import('@/components/panels/EventLog')
-    void import('@/components/panels/TaskPanel')
-    void import('@/components/panels/AchievementPanel')
-    void import('@/components/panels/RivalPanel')
+    void import('@/components/logbook/LogbookScreen')
     void import('@/components/map/VoyagePlanModal')
     void import('@/components/map/SegmentDecision')
     void import('@/components/map/HelmModal')
@@ -152,7 +151,7 @@ const panelButtons: { type: PanelType; icon: React.ReactNode; label: string; sid
   { type: 'task', icon: <Flag size={18} />, label: '任务', side: 'left' },
   { type: 'event', icon: <Scroll size={18} />, label: '日志', side: 'left' },
   { type: 'achievement', icon: <Trophy size={18} />, label: '成就', side: 'left' },
-  { type: 'rival', icon: <Newspaper size={18} />, label: '见闻', side: 'left' },
+  { type: 'rival', icon: <Newspaper size={18} />, label: '船长', side: 'left' },
   { type: 'port', icon: <Anchor size={18} />, label: '港口', side: 'right' },
   { type: 'trade', icon: <Package size={18} />, label: '贸易', side: 'right' },
   // 造船厂原来只能按键盘 8 打开，没有任何可见入口——功能存在但玩家发现不了。
@@ -175,10 +174,17 @@ const Z = {
   NOTIFICATION: 60,
   /** 移动端底部抽屉：必须压过底栏（40）与通知（60），但让位给事件卡（70）与小游戏 */
   DRAWER: 65,
+  /** 航海志整屏：压过侧栏与底栏（它有自己的一整套页签与关闭），让位给事件卡 */
+  LOGBOOK: 66,
   OVERLAY: 70,
 }
 
-const LEFT_PANELS: readonly PanelType[] = ['fleet', 'task', 'event', 'achievement', 'rival'] as const
+/*
+ * 左侧浮窗现在只剩「舰队」。
+ * 任务 / 日志 / 成就 / 同代船长搬进了航海志整屏（`gameStore.RECORD_PANEL_TAB`），
+ * 它们仍然有侧栏按钮，但点下去是把整屏打开，不是开这块浮窗。
+ */
+const LEFT_PANELS: readonly PanelType[] = ['fleet'] as const
 const RIGHT_PANELS: readonly PanelType[] = ['port', 'trade', 'shipyard'] as const
 
 export default function MainMap() {
@@ -348,6 +354,7 @@ export default function MainMap() {
   ])
 
   const viewMode = useMapStore(s => s.viewMode)
+  const recordsOpen = useMapStore(s => s.recordsOpen)
   const setViewMode = useMapStore(s => s.setViewMode)
   const deckView = useMapStore(s => s.deckView)
   const setDeckView = useMapStore(s => s.setDeckView)
@@ -396,6 +403,18 @@ export default function MainMap() {
    * title 说明「靠岸后才能上岸」，是可预期的灰，不是"点了没反应"。
    */
   const canAshore = !fleet.isSailing && fleet.currentPortId != null
+  /*
+   * 航海志是**整屏界面**：它占满一屏、有自己的页签与关闭按钮。
+   * 所以主屏那套浮层（罗盘、下一站、掮客卡、操舵、侧栏、底栏、空间入口）
+   * 在航海志开着时一律不挂 —— 否则"整屏"就只是"盖了一层"，
+   * 边角还露着地图上的按钮（实测「船上」入口是 z-900，会浮在资料页头顶）。
+   *
+   * 判据用 `recordsOpen` 而不是 viewMode：航海志是**浮层**，不是空间 ——
+   * 它在岸上也开着（岸上是整屏、自带服务按钮，不需要让位，反正被盖住），
+   * 在海图/甲板上要让开。岸上那份 chart UI 本来就由 viewMode 排除了。
+   */
+  const chartUiVisible = viewMode !== 'harbor' && !recordsOpen
+
   const viewLabel = viewMode === 'harbor' ? '回海图' : '上岸走走'
   const toggleViewMode = () => {
     if (viewMode === 'harbor') { setViewMode('chart'); return }
@@ -412,8 +431,19 @@ export default function MainMap() {
     ...rivals.map(r => ({ name: r.name, gold: r.gold, fame: r.fame, ports: r.portsFound, isPlayer: false })),
   ].sort((a, b) => b.gold - a.gold || b.fame - a.fame)
 
+  /*
+   * 侧栏按钮 = 面板开关。但「记录类」（任务/日志/成就/同代船长）没有侧板版本 ——
+   * 它们进**航海志**整屏，路由表在 gameStore.RECORD_PANEL_TAB（唯一来源）。
+   * 这里只负责"同一个按钮再点一次就退出"，因为整屏界面没有"点别处关闭"的手感。
+   */
   const togglePanel = (panel: PanelType) => {
     if (showHelp) setShowHelp(false)
+    /*
+     * 记录类四个按钮只是**入口**：册子一开，侧栏整列就不在 DOM 里了，
+     * 所以"再点一次关掉"根本点不到 —— 关闭只走册子自己的「回海图」与 Esc。
+     * （别为它留一条永远走不到的 toggle 分支：那会让人以为侧栏还在。）
+     */
+    if (isRecordPanel(panel)) { setActivePanel(panel); return }
     setActivePanel(activePanel === panel ? null : panel)
   }
 
@@ -504,7 +534,7 @@ export default function MainMap() {
         </Suspense>
       )}
 
-      {!deckView && viewMode !== 'harbor' && (
+      {!deckView && chartUiVisible && (
         /*
          * 「船上」入口。原来这个按钮在 DeckView 内部（它未打开时返回按钮）——
          * 那等于"为了一个按钮把三个视角的代码都下载下来"。搬到这里之后
@@ -523,6 +553,15 @@ export default function MainMap() {
           <Anchor size={14} aria-hidden="true" />
           船上
         </button>
+      )}
+
+      {/* 航海志整屏：压过侧栏与底栏，自带页签与关闭 */}
+      {recordsOpen && (
+        <div className="absolute inset-0" style={{ zIndex: Z.LOGBOOK }}>
+          <Suspense fallback={null}>
+            <LogbookScreen />
+          </Suspense>
+        </div>
       )}
 
       {viewMode === 'harbor' && (
@@ -555,7 +594,7 @@ export default function MainMap() {
         顺带，对比度审计此前正是在这里报出两条 1.09:1 的假红
         （它只看 rect 与 opacity，不看遮挡）。
       */}
-      {viewMode !== 'harbor' && (
+      {chartUiVisible && (
         <>
           <div
             /* 移动端原本是 top-11(44px)，而顶栏 h-12 是 48px —— 罗盘顶部被顶栏压住
@@ -590,7 +629,7 @@ export default function MainMap() {
         【为什么移动端走另一套结构】390px 屏没有这块空地，顶部还压着通知通栏。
         stack 分支并入底部 fixed 容器（见下），按文档流往上叠，不写死 bottom。
       */}
-      {!isMobile && viewMode !== 'harbor' && (
+      {!isMobile && chartUiVisible && (
         <div className="absolute left-[7.5rem] top-14" style={{ zIndex: Z.NEXT_HINT }}>
           <VoyageNextHint />
         </div>
@@ -616,7 +655,7 @@ export default function MainMap() {
         竖排在 360-430px 宽的屏上会把地图挤没。移动端走底部标签栏
         （见下方 MobileTabBar）。
       */}
-      {!isMobile && (
+      {!isMobile && chartUiVisible && (
         <>
         {/* pointer-events-none：这两列容器是 top-60/bottom-52 的整条矩形，按钮却是
             垂直居中排布的，两侧留出大片透明区域。容器默认拦截点击，会把落在
@@ -658,13 +697,17 @@ export default function MainMap() {
         >
           {/* 空间切换不是「第九个面板」：金边更亮、带一道分隔，和下面三块
               面板入口分开。位置固定在最上面，两个空间一眼可辨。 */}
+          {/*
+            这个按钮只出现在海图（chartUiVisible 已排除 harbor / log）——
+            岸上回海图的入口在 HarborView 自己的「回海图 · 准备出航」上，
+            资料页有自己的关闭按钮。所以下面不再判 viewMode。
+          */}
           <button
-            onClick={toggleViewMode}
-            disabled={!canAshore && viewMode !== 'harbor'}
+            onClick={() => toggleViewMode()}
+            disabled={!canAshore}
             data-testid="view-mode-switch"
             aria-label={viewLabel}
-            aria-pressed={viewMode === 'harbor'}
-            title={!canAshore && viewMode !== 'harbor' ? '还在海上，靠岸后才能上岸' : (viewMode === 'harbor' ? '回到海图（A）' : '上岸走走（A）')}
+            title={!canAshore ? '还在海上，靠岸后才能上岸' : '上岸走走（A）'}
             /*
              * 【为什么不再是半透明深蓝】原来是 `bg-ocean-900/55`：
              * 0.55 的底，海图上的地名（实测「地中海」）**从按钮底下透出来**，
@@ -680,7 +723,7 @@ export default function MainMap() {
           >
             <span>{viewLabel}</span>
             <span className="shrink-0 flex items-center justify-center w-5">
-              {viewMode === 'harbor' ? <Map size={18} /> : <Anchor size={18} />}
+              <Anchor size={18} />
             </span>
           </button>
           <div className="h-px mx-2 bg-gold-700/40" aria-hidden="true" />
@@ -736,11 +779,7 @@ export default function MainMap() {
       {activeLeftPanel && (
         isMobile ? (
           drawer(
-            activeLeftPanel === 'fleet' ? <FleetPanel />
-              : activeLeftPanel === 'task' ? <TaskPanel />
-              : activeLeftPanel === 'event' ? <EventLog />
-              : activeLeftPanel === 'achievement' ? <AchievementPanel />
-              : <RivalPanel />,
+            <FleetPanel />,
             () => setActivePanel(null),
           )
         ) : (
@@ -748,11 +787,9 @@ export default function MainMap() {
             className="absolute left-[5.75rem] top-12 bottom-12 w-80"
             style={{ zIndex: Z.PANEL }}
           >
-            {activeLeftPanel === 'fleet' && <FleetPanel />}
-            {activeLeftPanel === 'task' && <TaskPanel />}
-            {activeLeftPanel === 'event' && <EventLog />}
-            {activeLeftPanel === 'achievement' && <AchievementPanel />}
-            {activeLeftPanel === 'rival' && <RivalPanel />}
+            {/* 只剩「舰队」：另外四个记录类面板已经不是侧板，而是航海志整屏
+                （路由见 gameStore.setActivePanel）。这里留着分支就等于留了第二套实现。 */}
+            <FleetPanel />
           </div>
         )
       )}
@@ -808,7 +845,7 @@ export default function MainMap() {
       */}
       {/* 岸上是另一个空间：跑商提案是"站在海图前"的提示，压在港口近景上
           既违和、移动端还会盖住服务按钮。回海图后照常出现，不丢功能。 */}
-      {!isMobile && viewMode !== 'harbor' && <BrokerTip />}
+      {!isMobile && chartUiVisible && <BrokerTip />}
       {/*
         航行中：改方针 / 亲手掌舵 / 加餐（原来前两个是每段自动弹的全屏层）。
         桌面：浮在左下、底栏之上。
@@ -818,7 +855,7 @@ export default function MainMap() {
         但只渲染了移动端那一份 —— 桌面玩家除非知道按 H，否则**看不到这两个入口**。
         与掮客卡互斥（一个停泊时出现、一个航行时出现），所以同在左下不会打架。
       */}
-      {!isMobile && viewMode !== 'harbor' && <VoyageControls />}
+      {!isMobile && chartUiVisible && <VoyageControls />}
 
 
       {isMobile ? (

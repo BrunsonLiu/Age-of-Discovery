@@ -238,10 +238,16 @@ const detailPoint = await page.evaluate(() => {
   return [r.left + r.width / 2, r.top + r.height / 2]
 })
 if (detailPoint) await page.mouse.click(detailPoint[0], detailPoint[1])
+/*
+ * 「看航路」原来是打开 320px 的「冒险笔记」侧板。任务搬进航海志之后，
+ * 它打开的是整屏的任务页，航路卡在右栏。判据照样落在**同一张卡**上
+ * （[data-testid="voyage-next-card"]），只是换了"它在哪儿"的定位方式。
+ */
 const panelShown = await page.waitForFunction(
-  () => /冒险笔记/.test(document.body.innerText), { timeout: 12000, polling: 100 },
+  () => !!document.querySelector('[data-testid="logbook-page-task"] [data-testid="voyage-next-card"]'),
+  { timeout: 12000, polling: 100 },
 ).then(() => true).catch(() => false)
-check(panelShown, '「看航路」真的打开冒险笔记')
+check(panelShown, '「看航路」打开航海志的任务页，航路卡在右栏')
 const card = await page.evaluate(() => {
   // 直接读卡片根节点，不从整屏 innerText 里捞——后者会把常驻条、底栏的数字一起吃进来
   const root = document.querySelector('[data-testid="voyage-next-card"]')

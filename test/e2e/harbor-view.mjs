@@ -213,15 +213,24 @@ check(await until(() => window.__mapStore.getState().viewMode === 'harbor'), '�
 await page.keyboard.press('a')
 check(await until(() => window.__mapStore.getState().viewMode === 'chart'), '再按 A 回海图')
 
-// ---- 4b. 常驻空间开关：不再只藏在港口面板里 ----
+// ---- 4b. 空间入口：海图上开、岸上关（两张脸各在自己的屏上） ----
+/*
+ * 【为什么不再是"一个双向开关"】
+ * 岸上是整屏界面（harbor-view 不透明、连罗盘都收起来了），侧栏那一列根本不在 DOM 里 ——
+ * 开关的"回海图"态玩家一辈子看不到，却还挂着一个常驻按钮占位。
+ * 现在：海图侧栏给「上岸走走」（航行中禁用）；回程用岸上自己的「回海图 · 准备出航」。
+ */
 {
-  check(!!(await page.$('[data-testid="view-mode-switch"]')), '桌面侧栏有常驻的海图/岸上开关')
+  check(!!(await page.$('[data-testid="view-mode-switch"]')), '海图侧栏有常驻的「上岸走走」入口')
+  check(await page.evaluate(() => document.querySelector('[data-testid="view-mode-switch"]')?.getAttribute('aria-label')) === '上岸走走',
+    '它只是入口，不假装自己是双向开关')
   await page.click('[data-testid="view-mode-switch"]')
-  check(await until(() => window.__mapStore.getState().viewMode === 'harbor'), '点常驻开关 → 上岸')
-  check(await until(() => document.querySelector('[data-testid="view-mode-switch"]')?.getAttribute('aria-label') === '回海图'),
-    '开关文字随空间变化（是双向开关，不是只会开的入口）')
-  await page.click('[data-testid="view-mode-switch"]')
-  check(await until(() => window.__mapStore.getState().viewMode === 'chart'), '再点一次 → 回海图')
+  check(await until(() => window.__mapStore.getState().viewMode === 'harbor'), '点它 → 上岸')
+  check(await page.evaluate(() => !document.querySelector('[data-testid="view-mode-switch"]')),
+    '岸上整屏里不再挂那颗开关（它的"回海图"态从来没人看得见）')
+  check(!!(await page.$('[data-testid="harbor-back-to-chart"]')), '岸上有自己的「回海图 · 准备出航」')
+  await page.click('[data-testid="harbor-back-to-chart"]')
+  check(await until(() => window.__mapStore.getState().viewMode === 'chart'), '从岸上回到海图')
   const atSea = await page.evaluate(async () => {
     const s = window.__gameStore.getState()
     window.__gameStore.setState({ fleet: { ...s.fleet, isSailing: true } })
@@ -266,10 +275,10 @@ await page.evaluate(() => {
 check(await until(() => document.body.innerText.includes('第 2 次靠岸')), '铭牌写出「第 2 次靠岸」')
 check(!!(await page.$('[data-testid="harbor-previous-visit"]')), '上一趟留下的那页摆在见闻板里')
 await page.click('[data-testid="harbor-previous-visit"]')
-check(await until(() => window.__gameStore.getState().activePanel === 'event'), '点「上一趟」真的翻开航海日志')
+check(await until(() => window.__mapStore.getState().recordsOpen), '点「上一趟」真的翻开航海志（整屏浮层）')
 check(await mode() === 'harbor', '翻日志不把玩家踢回海图')
 await page.keyboard.press('Escape')
-await until(() => window.__gameStore.getState().activePanel === null)
+await until(() => window.__mapStore.getState().recordsOpen === false)
 
 // ---- 6. 出航自动回海图 / 航行中不能上岸 ----
 await page.evaluate(() => window.__mapStore.getState().setViewMode('harbor'))
@@ -392,7 +401,7 @@ check(mobile.btns.every(b => b.y >= 0 && b.y + b.h <= mobile.vh),
 check(backVisible, '移动端「回海图」按钮在视口内')
 check(!mobile.foreground, '移动端不渲染前景码头（会被多行底栏吃掉）')
 await page.click('[data-testid="harbor-service-logbook"]')
-check(await until(() => window.__gameStore.getState().activePanel === 'event'), '移动端真实鼠标点「航海日志」→ 面板打开')
+check(await until(() => window.__mapStore.getState().recordsOpen), '移动端真实鼠标点「航海日志」→ 航海志打开')
 check(await mode() === 'harbor', '移动端打开面板后仍在岸上')
 await page.screenshot({ path: `${SHOTS}/harbor-e2e-mobile.png` })
 

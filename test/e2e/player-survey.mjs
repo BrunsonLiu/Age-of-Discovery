@@ -142,7 +142,7 @@ await sleep(500)
 
 // 对手面板
 await page.evaluate(() => {
-  const b = [...document.querySelectorAll('button')].find(x => /对手|竞争|航海家/.test(x.textContent || ''))
+  const b = [...document.querySelectorAll('button')].find(x => (x.getAttribute('title') || x.getAttribute('aria-label') || '') === '船长')
   if (b) b.click()
 })
 await sleep(900)

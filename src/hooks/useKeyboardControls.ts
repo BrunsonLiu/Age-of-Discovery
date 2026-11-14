@@ -120,6 +120,18 @@ export function useKeyboardControls() {
 
       if (s.gamePhase !== 'playing') return
 
+      /*
+       * 航海志是**整屏浮层**，压在所有面板与空间之上 —— 所以 Esc 的第一层是它。
+       * 之前册子自己挂了一个 window 监听并 stopPropagation：stopPropagation 拦不住
+       * 同一个节点上的其他监听，于是「Esc 关册子」和「Esc 退出岸上」同时发生，
+       * 玩家在岸上翻完一次日志就被扔回海图。所有退路仍然只收在这一处。
+       */
+      if (key === 'escape' && useMapStore.getState().recordsOpen) {
+        e.preventDefault()
+        useMapStore.getState().closeRecords()
+        return
+      }
+
       // 6. 常规操作
       const panelIdx = Number.parseInt(key, 10) - 1
       if (Number.isFinite(panelIdx) && panelIdx >= 0 && panelIdx < PANEL_KEYS.length) {

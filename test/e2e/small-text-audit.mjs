@@ -117,12 +117,23 @@ await grab('常态主界面', '点击地图出航')
 // 面板名必须与 MainMap 的 LEFT_PANELS / RIGHT_PANELS 一致，写错就是假绿。
 // 特征文案也必须是**面板内独有**的：第一版用「舰队/任务/声望」当标记，
 // 那些恰好是侧栏按钮文字，面板根本没开时断言照样通过。
+/*
+ * 任务 / 日志 / 成就 / 同代船长已经搬进「航海志」整屏（浮层，不是侧板）。
+ * setState 直接改 activePanel 会绕过 store 里的路由，所以这四个走 openLogbook。
+ * 特征是**页内独有**的文案（冒险进度 / 记事 / 最大单笔 / 你的座次），
+ * 侧栏按钮上不会出现，避免"面板没开也判绿"。
+ */
+const RECORD_TAB = { task: 'task', event: 'journal', achievement: 'achievement', rival: 'rival' }
 for (const [p, marker] of [
   ['fleet', '总货舱'], ['task', '冒险进度'], ['event', '记事'], ['achievement', '最大单笔'],
   ['rival', '你的座次'], ['port', '甲板盛宴'], ['trade', '商品交易'], ['shipyard', '造船厂才有售'],
 ]) {
-  await page.evaluate(v => window.__gameStore.setState({ activePanel: v }), p)
-  await grab(`面板:${p}`, marker)
+  await page.evaluate(({ v, tab }) => {
+    if (tab) window.__mapStore.getState().openLogbook(tab)
+    else window.__gameStore.setState({ activePanel: v })
+  }, { v: p, tab: RECORD_TAB[p] })
+  await grab(`记录:${p}`, marker)
+  await page.evaluate(() => window.__mapStore.getState().closeRecords())
 }
 await page.evaluate(() => window.__gameStore.setState({ activePanel: null, showHelp: true }))
 await grab('帮助', '导出存档')

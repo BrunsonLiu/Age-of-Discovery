@@ -23,13 +23,31 @@ import { GAME_BALANCE } from '@/data/gameConfig'
 import { shipTemplates, shipResaleValue } from '@/data/ships'
 import { priceMultiplier, DEFAULT_TRAIT } from '@/data/traits'
 import { portFaction } from '@/data/factions'
+import { portMilestone } from '@/data/ports'
 import { checkAchievements } from '@/data/achievements'
 import { RIVALS, RIVAL_ACTIONS } from '@/data/rivals'
 import { OFFICER_MAP } from '@/data/officers'
 import { CREW_CHAR_MAP } from '@/data/crewChars'
 import { currentTitle } from '@/data/titles'
 import { useFxStore } from '@/store/useFxStore'
-import { useMapStore } from '@/store/useMapStore'
+import { useMapStore, type LogTab } from '@/store/useMapStore'
+
+/**
+ * 「记录类」面板 → 航海志的哪一页。
+ *
+ * 这四样是**长期积累、反复翻阅**的资料，塞进 320px 侧板只能当便条；
+ * 舰队 / 港口 / 贸易 / 造船要边看边点地图，继续留在浮窗里。
+ * 这张表是"哪个面板进哪一页"的唯一来源（setActivePanel 与侧栏都用它）。
+ */
+export const RECORD_PANEL_TAB: Partial<Record<PanelType, LogTab>> = {
+  task: 'task',
+  event: 'journal',
+  achievement: 'achievement',
+  rival: 'rival',
+}
+
+/** 这个面板是不是「记录类」（会进航海志整屏，而不是开侧板） */
+export const isRecordPanel = (panel: PanelType): boolean => !!panel && panel in RECORD_PANEL_TAB
 import type { CueName } from '@/utils/audio'
 import { helmReward, type HelmRunResult } from '@/utils/helm'
 import {
@@ -2128,7 +2146,18 @@ export const useGameStore = create<GameStore>()(
         // 商人谈下来的那部分赏金：卡片上写的数字就是这里结算的数字
         const goldGain = taskGold(task.reward.gold, state.crewRoster.some(m => m.id === 'merchant'))
         return withAchievements(state, {
-          fleet: syncUsedCapacity({ ...state.fleet, gold: state.fleet.gold + goldGain, fame: state.fleet.fame + fameGain }),
+          /*
+           * 【这里原来把 newCargo 算完就扔了】`{ ...state.fleet }` 用的是**旧货舱**，
+           * 于是交货时"扣除 requiredGoods"只写在任务说明里：赏金到账、任务消失、
+           * **货还在船上** —— 同一批蔗糖可以在每座港再交一次单，白拿赏金。
+           * 判据在单测与 e2e 里都盯"货舱必须少 N 件"。
+           */
+          fleet: syncUsedCapacity({
+            ...state.fleet,
+            cargo: newCargo,
+            gold: state.fleet.gold + goldGain,
+            fame: state.fleet.fame + fameGain,
+          }),
           completedTasks: [...state.completedTasks, taskId],
           activeTasks: state.activeTasks.filter(t => t.id !== taskId),
         })
@@ -2262,7 +2291,8 @@ export const useGameStore = create<GameStore>()(
         if (!port) return state
         const newlyDiscovered = [...state.discoveredPorts, portId]
         const isFirstDiscovery = newlyDiscovered.length === 2
-        const isMilestone = newlyDiscovered.length === 5 || newlyDiscovered.length === 10 || newlyDiscovered.length === 15 || newlyDiscovered.length === 20
+        // 里程碑判据只有 data/ports.portMilestone 一个来源（SailingController 的横幅也调它）
+        const isMilestone = portMilestone(newlyDiscovered.length) !== null
 
         // 到港发现的声望奖励
         //
@@ -2610,7 +2640,34 @@ export const useGameStore = create<GameStore>()(
         }
       }),
 
-      setActivePanel: (panel) => set({ activePanel: panel }),
+      /**
+       * 面板总开关 —— 也是「记录类面板」的唯一路由点。
+       *
+       * 【为什么要在这里路由】任务 / 日志 / 成就 / 同代船长早就没有侧板版本了：
+       * 它们统一进「航海志」整屏。但打开它们的入口不止侧栏一个 ——
+       * 岸上的「上一趟留下的那一页」、主屏的「刚带回」回执、翻船后的「继续」
+       * 都在调 setActivePanel('event')。以前每个入口各判一次，漏一处就会出现
+       * 「点了日志没反应」（岸上那处就是这样：侧板被整屏的岸上视图盖住，
+       * 点了等于什么都没发生）。
+       * 路由放在这里，所有入口自动走同一条路，且不用各自 import 地图 store。
+       */
+      setActivePanel: (panel) => {
+        const tab = panel ? RECORD_PANEL_TAB[panel] : undefined
+        if (tab) {
+          useMapStore.getState().openLogbook(tab)
+          return
+        }
+        /*
+         * `setActivePanel(null)` 在这套代码里到处都当"把界面收起来"用
+         * （线索跳转、帮助、能力**等等）。航海志是整屏，只清面板不会关它 ——
+         * 于是那些地方会变成"点了没反应"。这里兜住：关面板时若正停在资料页，一并退出。
+         * 不去动 harbor：岸上有自己的退出口，不该被这行顺带踢回海图。
+         */
+        if (panel === null && useMapStore.getState().recordsOpen) {
+          useMapStore.getState().closeRecords()
+        }
+        set({ activePanel: panel })
+      },
 
       /**
        * 打捞漂流物。
@@ -2802,13 +2859,14 @@ export const useGameStore = create<GameStore>()(
        * 资源拉回可航行区间是必要的：否则点完继续，开船第一天又断粮，
        * 「继续」就成了假按钮。
        */
-      continueAsVisitor: () => set((state) => ({
+      continueAsVisitor: () => (useMapStore.getState().openLogbook('journal'), set((state) => ({
         gameMode: 'visitor',
         gamePhase: 'playing',
         currentEvent: null,
         tutorialStep: -1,
         showHelp: false,
-        activePanel: 'event',
+        // 日志已经搬到「航海志」整屏：翻到那一页（原来设 activePanel:'event'，
+        // 而那个侧板版本已经不存在了，点了会静默什么都不发生）
         notifications: [],
         fleet: {
           ...state.fleet,
@@ -2833,7 +2891,7 @@ export const useGameStore = create<GameStore>()(
           targetPortId: null,
           read: false,
         }),
-      })),
+      }))),
 
       resetGame: () => {
         const startPort = ports.find(p => p.id === 6)

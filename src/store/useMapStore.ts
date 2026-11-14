@@ -1,8 +1,23 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 
-/** 玩家所处的空间：海图 = 从船上看世界；岸上 = 靠港后的近景舞台 */
+/**
+ * 玩家所处的空间（"这一刻人在哪儿"）：
+ *   chart  = 从船上看世界（主屏）
+ *   harbor = 靠港后的近景舞台
+ *   deck   = 甲板（独立懒加载 scene，见 components/deck）
+ *
+ * 【航海志为什么**不是**一个 viewMode】
+ * 它是"翻开一本册子"，不是"换一个地方"：在海上能翻，靠了岸也该能翻，
+ * 合上之后应该回到原来站着的那张屏（岸上就回岸上，海上就回海上）。
+ * 一开始把它做成 viewMode='log'，结果岸上点「航海日志」直接把人踢回海图 ——
+ * 甲板、岸上、船边的画面全都没了，只是"看一页纸"，不该有这种代价。
+ * 所以它是**整屏浮层**：`recordsOpen` 独立于空间，压在谁头上就还给谁。
+ */
 export type ViewMode = 'chart' | 'harbor'
+
+/** 航海志的页签 */
+export type LogTab = 'task' | 'journal' | 'atlas' | 'achievement' | 'rival'
 
 interface MapState {
   center: [number, number]
@@ -15,6 +30,17 @@ interface MapState {
    */
   viewMode: ViewMode
   setViewMode: (mode: ViewMode) => void
+  /**
+   * 航海志是否开着（整屏浮层，可以压在任何空间之上 —— 岸上、海上都能翻）。
+   * 与 viewMode 分开是有意的：见上面 ViewMode 的说明。
+   */
+  recordsOpen: boolean
+  /** 航海志当前页签 */
+  logTab: LogTab
+  openLogbook: (tab: LogTab) => void
+  closeRecords: () => void
+  /** 页内切标签（不退出航海志） */
+  setLogTab: (tab: LogTab) => void
   showWindOverlay: boolean
   showCurrentOverlay: boolean
   showPirateZones: boolean
@@ -108,9 +134,15 @@ export const useMapStore = create<MapState>()(
       renderMode: '2d',
       deckView: false,
       viewMode: 'chart',
+  recordsOpen: false,
+  logTab: 'journal',
       landDataReady: false,
       landDataFailed: false,
       setViewMode: (mode) => set({ viewMode: mode }),
+  /** 打开航海志并定位到某一页（侧栏五个按钮各自指向一页） */
+  openLogbook: (tab: LogTab) => set({ logTab: tab, recordsOpen: true }),
+  closeRecords: () => set({ recordsOpen: false }),
+  setLogTab: (tab: LogTab) => set({ logTab: tab }),
       setCenter: (center) => set({ center }),
       setZoom: (zoom) => set({ zoom }),
       toggleWindOverlay: () => set((s) => ({ showWindOverlay: !s.showWindOverlay })),

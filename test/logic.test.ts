@@ -888,7 +888,21 @@ assert(/description: `发现全部 \$\{ports\.length\} 座港口。`/.test(achSr
   '成就文案里的数字也来自 ports.length（否则再加港又要漏一处）')
 const sailSrc = readFileSync(join(process.cwd(), 'src', 'components', 'map', 'SailingController.tsx'), 'utf8')
 assert(!/20 - afterCount/.test(sailSrc), '里程碑横幅的分母不许写死 20')
-assert(/afterCount >= ports\.length/.test(sailSrc), '走遍世界有独立判定（21 % 5 ≠ 0，否则最后一座没有回执）')
+/*
+ * 里程碑判定只有一个来源（data/ports.portMilestone）：
+ * store 与控制器原来各写一套（`=== 5 || === 10 …` vs `% 5`），加一座港就分叉。
+ */
+assert(/portMilestone\(afterCount\)/.test(sailSrc), '控制器用 portMilestone 判定（不自己算 % 5）')
+assert(!/afterCount % 5/.test(sailSrc), '控制器不再自己写 % 5')
+assert(/portMilestone\(newlyDiscovered\.length\)/.test(storeSrc), 'store 用同一个 portMilestone')
+{
+  const { portMilestone, ports: PORTS } = await import('../src/data/ports')
+  assert(portMilestone(5) === 'five' && portMilestone(10) === 'five', '每 5 座一次')
+  assert(portMilestone(PORTS.length) === 'all', `走到 ${PORTS.length} 座 = 走遍世界`)
+  assert(portMilestone(4) === null && portMilestone(0) === null, '不足 5 座不弹横幅')
+  assert(portMilestone(PORTS.length - 1) !== 'all', '差一座时还不是"走遍世界"')
+  assert(portMilestone(-3) === null && portMilestone(Number.NaN) === null, '非法计数不弹')
+}
 const mapSrc = readFileSync(join(process.cwd(), 'src', 'pages', 'MainMap.tsx'), 'utf8')
 assert(!/discoveredPorts\.length}\/\d/.test(mapSrc), '翻船屏分母同样来自 ports.length')
 /*
@@ -934,6 +948,8 @@ const helpSrc = readFileSync(join(process.cwd(), 'src', 'components', 'intro', '
 assert(!/花 80 金币买/.test(helpSrc), '帮助里的情报价不许写死 80')
 assert(/\$\{achievements\.length\} 项成就/.test(helpSrc), '帮助里的成就数来自 achievements.length')
 assert(/尚未实装/.test(helpSrc), '帮助里明确写出哪些势力特权还没实装')
+/* "生涯回顾"这个界面从来没做过：帮助指了三处，玩家会去找一个不存在的屏 */
+assert(!/生涯回顾/.test(stripComments(helpSrc)), '帮助里不再指向不存在的「生涯回顾」界面')
 
 /*
  * 称号效果：只有 hoarder 那条是真加成（priceMultiplier 里读 GREED_PROFIT_BONUS），
@@ -1010,6 +1026,83 @@ console.log('== 17e. 肖像：每个角色都要有图，且图真的在 =')
   assert(/2026-11-14 逐张复核/.test(portraitSrc), '肖像质量声明已按实际图复核过（不是抄 README）')
   // 查旧声明的标题，不查"占位"这个词 —— 新注释里引用原句是说明，不是判断
   assert(!/⚠️ 质量声明（GPT README）/.test(portraitSrc), '旧的质量声明整段已作废，不许留着')
+}
+
+console.log('== 17f. 航海志：记录类面板只有一个来源 ==')
+/*
+ * 四个记录类面板（任务/日志/成就/同代船长）从 320px 侧板搬进「航海志」整屏。
+ * 搬家最容易出两件事，这里各钉一条：
+ *   ① 两套实现并存 —— 老侧板文件还在，某天有人又把它挂回去，内容就开始分叉；
+ *   ② 搬的时候丢掉"动作" —— 侧板里有、整屏忘了搬（交付领赏就这么丢过一次）。
+ */
+{
+  const { RECORD_PANEL_TAB, isRecordPanel } = await import('../src/store/useGameStore')
+  assert(Object.keys(RECORD_PANEL_TAB).length === 4, '四个记录类面板各有去向')
+  assert(isRecordPanel('task') && isRecordPanel('event') && isRecordPanel('achievement') && isRecordPanel('rival'),
+    '任务/日志/成就/船长都算记录类')
+  assert(!isRecordPanel('fleet') && !isRecordPanel('port') && !isRecordPanel('trade') && !isRecordPanel('shipyard'),
+    '舰队/港口/贸易/造船不是记录类（它们要边看边点地图，仍留浮窗）')
+
+  // 老侧板文件必须真的删掉（留着就是第二套实现）
+  for (const f of ['TaskPanel', 'EventLog', 'AchievementPanel', 'RivalPanel']) {
+    assert(!existsSync(join(process.cwd(), 'src', 'components', 'panels', `${f}.tsx`)),
+      `${f}.tsx 已删除（记录类只有航海志一套实现）`)
+  }
+
+  const lb = readFileSync(join(process.cwd(), 'src', 'components', 'logbook', 'LogbookScreen.tsx'), 'utf8')
+  // 侧板里原有的"动作"与"内容"，整屏必须都在
+  assert(/completeTask\(/.test(lb), '任务页仍能交付领赏（侧板里有的动作，整屏也得有）')
+  assert(/task-deliver-/.test(lb), '任务页给「交付领赏」一个可点锚点')
+  assert(/requireGoods|requiredGoods/.test(lb), '任务页写出需带的货与现有数量')
+  assert(/rivalPortrait\(/.test(lb), '船长页保留头像（脸比数字更快被认出来）')
+  assert(/stats\.bestDeal/.test(lb), '成就页保留生涯统计（最大单笔等六项）')
+  assert(/groupJournal\(/.test(lb), '日志页按天分组（不是把条目摊成一长条）')
+  assert(/historicalNote/.test(lb), '日志页保留历史注脚')
+}
+
+/*
+ * 交货必须真的扣货。
+ *
+ * 【真 bug】completeTask 里 `newCargo` 算完之后没被用上 ——
+ * `{ ...state.fleet }` 用回旧货舱，于是：赏金到账、任务消失、**货还在船上**。
+ * 同一批蔗糖可以在每座港再交一次单，白拿赏金。e2e 是量金币差额时顺带发现的。
+ */
+{
+  const base = useGameStore.getState()
+  const task4 = tasks.find(t => t.id === 4)!   // 蔗糖订单：目标塞维利亚，需 6 件 5 号货
+  const beforeGold = 1000
+  useGameStore.setState({
+    ...base,
+    activeTasks: [{ ...task4, status: 'active' }],
+    completedTasks: [],
+    crewRoster: [],
+    fleet: {
+      ...base.fleet,
+      currentPortId: 6,
+      isSailing: false,
+      gold: beforeGold,
+      cargo: [{ goodId: 5, quantity: 6 }],
+    },
+  })
+  useGameStore.getState().completeTask(4)
+  const after = useGameStore.getState()
+  assert(after.completedTasks.includes(4), '任务标记完成')
+  assert(after.fleet.gold === beforeGold + task4.reward.gold,
+    `赏金到账（${beforeGold} → ${after.fleet.gold}，应 +${task4.reward.gold}）`)
+  assert(!after.fleet.cargo.some(c => c.goodId === 5 && c.quantity > 0),
+    `交货后货舱真的少了 6 件（剩 ${JSON.stringify(after.fleet.cargo)}）`)
+
+  // 不在目标港不许交付（扣货更不许发生）
+  useGameStore.setState({
+    ...useGameStore.getState(),
+    activeTasks: [{ ...task4, status: 'active' }],
+    completedTasks: [],
+    fleet: { ...useGameStore.getState().fleet, currentPortId: 1, cargo: [{ goodId: 5, quantity: 6 }] },
+  })
+  useGameStore.getState().completeTask(4)
+  const wrong = useGameStore.getState()
+  assert(!wrong.completedTasks.includes(4), '不在目标港：任务不会完成')
+  assert(wrong.fleet.cargo.some(c => c.goodId === 5 && c.quantity === 6), '不在目标港：货一件也不扣')
 }
 
 console.log('== 18. 新事件引擎条件 ==')
@@ -6654,8 +6747,8 @@ console.log('\n== 天数口径守卫 ==')
 
   // 第二空间不能只有港口面板里的隐藏入口：桌面/移动都要有常驻开关
   assert(mainSrc2.includes('data-testid="view-mode-switch"'), '桌面侧栏有常驻的海图/岸上开关')
-  assert(/disabled=\{!canAshore && viewMode !== 'harbor'\}/.test(mainSrc2),
-    '航行中开关是明确的禁用态，不是"点了没反应"')
+  assert(/disabled=\{!canAshore\}/.test(mainSrc2),
+    '航行中开关是明确的禁用态，不是"点了没反应"（它只挂在海图，不必再判 viewMode）')
   const tabSrc = readFileSync(join(process.cwd(), 'src', 'components', 'ui', 'MobileTabBar.tsx'), 'utf8')
   assert(tabSrc.includes("it.key === 'view' ? 'view-mode-switch' : undefined"),
     '移动端底栏也有同一个常驻开关')
@@ -6729,10 +6822,8 @@ console.log('\n== 天数口径守卫 ==')
       ['FleetPanel', '@/components/panels/FleetPanel'],
       ['PortDetail', '@/components/panels/PortDetail'],
       ['ShipyardPanel', '@/components/panels/ShipyardPanel'],
-      ['TaskPanel', '@/components/panels/TaskPanel'],
-      ['AchievementPanel', '@/components/panels/AchievementPanel'],
-      ['RivalPanel', '@/components/panels/RivalPanel'],
-      ['EventLog', '@/components/panels/EventLog'],
+      // 四个记录类侧板已删除，合并成一块整屏（航海志）
+      ['LogbookScreen', '@/components/logbook/LogbookScreen'],
       ['VoyagePlanModal', '@/components/map/VoyagePlanModal'],
       ['SegmentDecision', '@/components/map/SegmentDecision'],
       ['HelmModal', '@/components/map/HelmModal'],
@@ -13308,9 +13399,15 @@ console.log('== 图鉴的「传说」一轨 + 上岸按钮不再是半透明 =='
    * 实测「地中海」的半个字压在按钮上。全站判据是"浮层 alpha ≥0.85"，它是唯一越线的一块。
    */
   const mm = readFileSync(join(process.cwd(), 'src', 'pages', 'MainMap.tsx'), 'utf8')
-  const sw = mm.slice(mm.indexOf('data-testid="view-mode-switch"') - 900, mm.indexOf('data-testid="view-mode-switch"') + 200)
+  /*
+   * 取这段按钮**自身**的源码（testid 到它的 className 结束），不取前后各 N 字：
+   * 前后文随时会变，取宽了就会把别的按钮的类名也读进来（本轮就假红了一次）。
+   */
+  const swStart = mm.indexOf('data-testid="view-mode-switch"')
+  const sw = mm.slice(swStart, mm.indexOf('</button>', swStart))
   assert(/side-plate--space/.test(mm), '空间切换用 .side-plate--space 材质')
-  assert(!/bg-ocean-9\d\d\/\d+/.test(sw), '空间切换不再用半透明深蓝底（地名会透出来）')
+  // 剥注释再查：这段代码里留着一句解释"为什么不再用 bg-ocean-900/55"
+  assert(!/bg-ocean-9\d\d\/\d+/.test(stripComments(sw)), '空间切换不再用半透明深蓝底（地名会透出来）')
   const css = readFileSync(join(process.cwd(), 'src', 'index.css'), 'utf8')
   const spaceRule = css.slice(css.indexOf('.side-plate--space {'), css.indexOf('.side-plate--space:hover'))
   assert(spaceRule.length > 50, 'index.css 里有 .side-plate--space 规则')

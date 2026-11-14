@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { useGameStore } from '@/store/useGameStore'
 import { useMapStore } from '@/store/useMapStore'
-import { ports } from '@/data/ports'
+import { ports, portMilestone } from '@/data/ports'
 import { isLandAt } from '@/utils/seaRoute'
 import { advanceAlongRoute } from '@/utils/sailStep'
 import { effectiveFleetSpeed, dailyDistanceNm } from '@/utils/navigation'
@@ -294,17 +294,20 @@ export default function SailingController() {
             /*
              * 里程碑两档：每 5 座一次，以及"走遍世界"那一次。
              *
-             * 【为什么要有第二档】21 座港，21 % 5 ≠ 0 —— 玩家发现最后一座（广州）时
-             * 什么都不会弹，"走遍世界"这件事没有回执。而且原来分母写死 20：
-             * 走到第 20 座时横幅会说"还差 0 座走遍世界"，可地图上明明还剩一座。
-             * 比分母更糟的是"完成了却没人告诉你"，那是玩家攒了几十个小时的最后一步。
+             * 判据只认 `data/ports.portMilestone`（store.discoverPort 也调它）：
+             * 同一件事原来写在两处、两套写法（store 是 `=== 5 || === 10 || …` 写死，
+             * 这里是 `% 5`），加一座港只改一边就必然分叉。
+             *
+             * "走遍世界"必须单独一档：21 座时 21 % 5 ≠ 0，玩家发现最后一座只会静悄悄
+             * —— 那是攒了几十个小时的最后一步，完成时不该没有回执。
              */
-            if (afterCount >= ports.length) {
+            const milestone = portMilestone(afterCount)
+            if (milestone === 'all') {
               useFx.getState().fx(
                 { kind: 'banner', tone: 'gold', text: '走遍世界', sub: `全部 ${ports.length} 座港口都已进过你的航海日志` },
                 'milestone',
               )
-            } else if (afterCount >= 5 && afterCount % 5 === 0) {
+            } else if (milestone === 'five') {
               useFx.getState().fx(
                 { kind: 'banner', tone: 'gold', text: `已探索 ${afterCount} 座港口`, sub: `声望 +5 · 还差 ${ports.length - afterCount} 座走遍世界` },
                 'milestone',

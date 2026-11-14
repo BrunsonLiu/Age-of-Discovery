@@ -65,14 +65,18 @@ await page.evaluate(() => {
 })
 await until(() => !document.body.innerText.includes('选择你的船长天赋'))
 
-// ---- 1. 日志面板三页 ----
+// ---- 1. 航海志：整屏、五个页签 ----
 await page.click('button[aria-label="日志"]')
-check(await until(() => document.body.innerText.includes('这本册子还是空的')), '打开日志 → 默认「见闻」页显示空状态')
+check(await until(() => !!document.querySelector('[data-testid="logbook-screen"]')), '打开日志 → 航海志整屏挂出来')
+check(await until(() => document.body.innerText.includes('这本册子还是空的')), '日志页左栏（见闻）显示空状态')
 check((await text()).includes('共 0 页') === false, '空册子不写"共 0 页"这种凑数句')
-for (const label of ['见闻', '图鉴', '记事']) {
+for (const label of ['任务', '日志', '图鉴', '成就', '船长']) {
   check(await until(l => [...document.querySelectorAll('[role=tab]')].some(b => b.textContent.includes(l)), 6000, label),
     `tab「${label}」存在`)
 }
+/* 整屏就是整屏：侧栏与底栏必须让开，否则"盖了一层"而已 */
+check(await page.evaluate(() => !document.querySelector('button[aria-label="舰队"]')),
+  '航海志打开时，主屏侧栏整列不挂（不是被盖住，是不在 DOM 里）')
 
 await page.evaluate(() => [...document.querySelectorAll('[role=tab]')].find(b => b.textContent.includes('图鉴'))?.click())
 /*
@@ -103,18 +107,18 @@ await page.evaluate(() => {
 })
 check(await until(() => document.body.innerText.includes('去了自然就点亮')), '未点亮格子点下去有详情回执')
 
-await page.evaluate(() => [...document.querySelectorAll('[role=tab]')].find(b => b.textContent.includes('记事'))?.click())
-check(await until(() => document.body.innerText.includes('还没写下第一页')), '「记事」页保留原来的船长日记空态')
+await page.evaluate(() => [...document.querySelectorAll('[role=tab]')].find(b => b.textContent.includes('日志'))?.click())
+check(await until(() => document.body.innerText.includes('还没写下第一页')), '「日志」页保留原来的船长日记空态')
 
 // ---- 2. 到港带回一页 + 侧栏未读小圆点 ----
 await page.evaluate(() => {
-  window.__gameStore.setState({ activePanel: null })
+  // 侧栏在整屏里是收起的，先合上册子（这一步本身就是"关闭"该做的事）
+  window.__mapStore.getState().closeRecords()
   window.__gameStore.getState().arriveAtPort(1)
 })
 check(await until(() => !!document.querySelector('[data-testid="logbook-unread-dot"]')), '靠岸后侧栏「日志」出现未读小圆点')
 await page.click('button[aria-label="日志"]')
-await page.evaluate(() => [...document.querySelectorAll('[role=tab]')].find(b => b.textContent.includes('见闻'))?.click())
-check(await until(() => document.body.innerText.includes('靠岸 · 哈瓦那')), '见闻页出现这一趟带回的那一页')
+check(await until(() => document.body.innerText.includes('靠岸 · 哈瓦那')), '日志页左栏出现这一趟带回的那一页')
 check((await text()).includes('不催'), '线索明说没有期限')
 check(await until(() => [...document.querySelectorAll('button')].some(b => b.textContent.includes('在地图上看看'))),
   '线索给了一个可点的「在地图上看看」')
@@ -153,13 +157,18 @@ check(echoState.echo?.day === 5 && /第 1 天.*塞维利亚.*哈瓦那/.test(ech
 
 await dismissDialogue()
 await page.click('button[aria-label="日志"]')
-check(await until(() => window.__gameStore.getState().activePanel === 'event'), '日志面板真的打开了（没被致辞遮罩吃掉）')
-await page.evaluate(() => [...document.querySelectorAll('[role=tab]')].find(b => b.textContent.includes('见闻'))?.click())
+check(await until(() => window.__mapStore.getState().recordsOpen),
+  '航海志（整屏）真的打开了（没被致辞遮罩吃掉）')
+check(await until(() => window.__mapStore.getState().logTab === 'journal'),
+  '侧栏「日志」直接翻到日历那一页（不是先落在任务上）')
+/* 「见闻」不再是页签：它现在是日志页的左栏，默认就在 */
+check(await until(() => !!document.querySelector('[data-testid="logbook-screen"]')), '整屏界面挂出来了')
 check(await until(() => !!document.querySelector('[data-testid="echo-entry"]')), '见闻页出现应验的那一页')
 check(await until(() => !!document.querySelector('[data-testid="clue-fulfilled"]')), '旧线索页补上「已应验」回执')
 check((await text()).includes('这句已应验 · 第 5 天到的'), '回执里的天数是真到达日，不是今天现算的')
 
 await page.evaluate(() => [...document.querySelectorAll('[role=tab]')].find(b => b.textContent.includes('图鉴'))?.click())
+check(await until(() => window.__mapStore.getState().logTab === 'atlas'), '点「图鉴」页签切到图鉴')
 const atlasEcho = await page.evaluate(() => {
   const el = [...document.querySelectorAll('span')].find(s => s.textContent === '应验的线索')
   return el?.parentElement?.innerText ?? ''
@@ -167,7 +176,6 @@ const atlasEcho = await page.evaluate(() => {
 check(/应验的线索\s*1 句/.test(atlasEcho), '图鉴个人纪录从日志推导出「1 句」，不写死')
 
 await page.evaluate(() => {
-  window.__gameStore.setState({ activePanel: null })
   window.__mapStore.getState().setViewMode('harbor')
 })
 check(await until(() => !!document.querySelector('[data-testid="harbor-view"]')), '切到岸上视角')
@@ -254,6 +262,7 @@ if (!helpOpen) {
       phase: window.__gameStore.getState().gamePhase,
       event: !!window.__gameStore.getState().currentEvent,
       viewMode: window.__mapStore.getState().viewMode,
+      recordsOpen: window.__mapStore.getState().recordsOpen,
       dialogue: window.__dialogueStore?.getState?.().scriptId ?? null,
     }
   })
@@ -318,11 +327,12 @@ const legendCell = () => page.evaluate(() =>
 
 await dismissDialogue()
 await page.evaluate(() => {
-  window.__gameStore.setState({ nation: 'china', collectedLegends: [], storyDone: ['china-1'], activePanel: 'event' })
+  window.__gameStore.setState({ nation: 'china', collectedLegends: [], storyDone: ['china-1'] })
+  window.__mapStore.getState().openLogbook('journal')
 })
-/* 先等面板真的挂出来（上一段刚做过存档导入 + reload，面板是关着的），
+/* 先等整屏真的挂出来（上一段刚做过存档导入 + reload，册子是关着的），
    再点 tab —— 顺序反了就成了"点了一个还不存在的按钮"。 */
-check(await until(() => document.querySelectorAll('[role=tab]').length === 3, 8000), '日志面板重新打开')
+check(await until(() => document.querySelectorAll('[role=tab]').length === 5, 8000), '航海志重新打开（5 个页签）')
 await page.evaluate(() => [...document.querySelectorAll('[role=tab]')].find(b => b.textContent.includes('图鉴'))?.click())
 check(await until((l) => [...document.querySelectorAll('h4')].some((h) => h.textContent.trim() === l), 8000, '传说'),
   '图鉴里有「传说」一节')
@@ -336,8 +346,8 @@ await page.evaluate(() => {
 })
 check(await until(() => [...document.querySelectorAll('p')].some((p) => /传说还在那片海上。离你 [\d,]+ 海里。/.test(p.textContent || ''))),
   '点未应验的传说 → 给出真实距离（不写"还要几天"，那要走 routeFacts）')
-check(await page.evaluate(() => window.__gameStore.getState().activePanel) === 'event',
-  '给距离时册子还开着（否则这句回执跟着面板一起没了）')
+check(await page.evaluate(() => window.__mapStore.getState().recordsOpen) === true,
+  '给距离时册子还开着（否则这句回执跟着整屏一起没了）')
 const movedTo = await page.evaluate(() => window.__mapStore.getState().center)
 check(Math.abs(movedTo[0] - 29.5) < 0.8 && Math.abs(movedTo[1] - 128.5) < 0.8,
   `海图挪到了传说海域（${movedTo.map(n => n.toFixed(1)).join(', ')}）`)
@@ -367,7 +377,7 @@ check(await until((n) => document.body.innerText.includes(`/ ${n} 格`), 6000, a
  * 里面没有它。而传说恰恰是最该被记下来的事。
  */
 await page.evaluate(() => {
-  window.__gameStore.setState({ collectedLegends: [], logbook: [], activePanel: null })
+  window.__gameStore.setState({ collectedLegends: [], logbook: [] })
   const s = window.__gameStore.getState()
   window.__gameStore.setState({ fleet: { ...s.fleet, isSailing: true } })
   // 归墟在 (29.5, 128.5)，开进 90 海里圈内

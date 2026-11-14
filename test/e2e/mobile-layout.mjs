@@ -166,7 +166,8 @@ console.log('\n=== 移动端布局（390×844）===')
     check(!!box && box.y + box.height <= VH + 2, `标签栏完整落在屏幕内（底边 ${box ? Math.round(box.y + box.height) : '?'} ≤ ${VH}）`)
     check(!!box && box.y > VH * 0.7, `标签栏贴在屏幕下沿（顶边 ${box ? Math.round(box.y) : '?'}）`)
     const labels = await page.$$eval('[data-testid="mobile-tab-bar"] button', els => els.map(e => e.getAttribute('aria-label')))
-    const want = ['上岸', '舰队', '任务', '日志', '成就', '见闻', '港口', '贸易', '造船', '帮助']
+    // 「见闻」已并入航海志的「船长」页：按钮名与页题统一，免得一个东西两个名字
+    const want = ['上岸', '舰队', '任务', '日志', '成就', '船长', '港口', '贸易', '造船', '帮助']
     const missing = want.filter(w => !labels.includes(w))
     check(missing.length === 0, `十个入口一个不少（缺：${missing.join('、') || '无'}）`)
   }

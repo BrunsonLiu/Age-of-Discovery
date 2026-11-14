@@ -258,3 +258,25 @@ export function localDemands(portId: number): number[] {
     .sort((a, b) => b.priceModifier - a.priceModifier)
     .map(pg => pg.goodId)
 }
+
+/**
+ * 港口里程碑：每 5 座一次，以及"走遍世界"那一次。
+ *
+ * 【为什么抽成函数】同一件事原来写在两个地方，而且两套判据：
+ *   · `store.discoverPort` 里是 `=== 5 || === 10 || === 15 || === 20`（写死）
+ *   · `SailingController` 里是 `>= 5 && % 5 === 0`，外加我 2026-11-14 补的
+ *     `>= ports.length` 走遍世界
+ * 于是第 21 座（广州）：控制器弹「走遍世界」横幅，store 却走普通"发现新港口"分支——
+ * 加一座港的时候只改一边就必然分叉。现在两处都调这里。
+ *
+ * `'all'` 优先于 `'five'`：21 座时 21 % 5 ≠ 0，但如果将来港口数正好是 5 的倍数，
+ * "走遍世界"应该是那句更重的，不该被"已探索 20 座"顶掉。
+ */
+export type PortMilestone = 'all' | 'five' | null
+
+export function portMilestone(count: number): PortMilestone {
+  if (!Number.isFinite(count) || count <= 0) return null
+  if (count >= ports.length) return 'all'
+  if (count >= 5 && count % 5 === 0) return 'five'
+  return null
+}

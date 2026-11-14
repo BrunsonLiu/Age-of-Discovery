@@ -1,3 +1,4 @@
+import type { ViewMode } from '@/store/useMapStore'
 import type { ReactNode } from 'react'
 import { Anchor, Compass, HelpCircle } from 'lucide-react'
 import type { PanelType } from '@/types'
@@ -11,7 +12,7 @@ interface MobileTabBarProps {
   showHelp: boolean
   onToggleHelp: () => void
   /** 第二空间的常驻开关：海图 / 岸上 */
-  viewMode: 'chart' | 'harbor'
+  viewMode: ViewMode
   canAshore: boolean
   onToggleView: () => void
 }
