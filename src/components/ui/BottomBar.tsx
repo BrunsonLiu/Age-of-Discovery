@@ -286,7 +286,15 @@ export default function BottomBar() {
         order：移动端排到图标组之后（见下面的图标组注释），
         桌面端回到原位（md:order-3）。
       */}
-      <div className="flex items-center gap-2 md:gap-3 shrink-0 order-4 md:order-3">
+      {/*
+        间距 md:gap-3 → md:gap-2（12 → 8px）。
+        【为什么改】1440 宽下这一整条内容比可用宽度**多 13px**：最后那组开关板
+        被顶到视口外 0.97px，把底栏右侧 12px 的内边距吃干净了（左侧还有 12px，
+        右端贴边看着就是歪的），而且 documentElement 还能横向滚 1px。
+        这不是新问题（底栏这半年没动过），但既然量到了就修：把两处内部间距各松
+        一点，留出约 5px 余量 —— 金币/天数变宽（3 位变 4 位）时不会再顶出去。
+      */}
+      <div className="flex items-center gap-2 md:gap-2 shrink-0 order-4 md:order-3">
         <div className="flex items-center gap-2 text-[13px] text-gold-300">
           <span className="text-gold-500 font-serif">第{fleet.day}天</span>
           {/* 金币也要带字——和粮/水/士气三个片保持同一种"图标 + 单字 + 数字"
@@ -328,7 +336,8 @@ export default function BottomBar() {
         给整组套一个凹陷槽：木头上挖下去、里面嵌着铜开关。
       */}
       <div
-        className="flex items-center gap-0.5 shrink-0 order-3 md:order-4 ml-auto rounded-md px-1 py-0.5"
+        /* gap-0.5 → gap-0：5 个间隔共省 10px（每个按钮自己带 p-1.5，图标不会贴在一起） */
+        className="flex items-center gap-0 shrink-0 order-3 md:order-4 ml-auto rounded-md px-1 py-0.5"
         style={{
           background: 'rgba(0,0,0,0.26)',
           boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.65), inset 0 -1px 0 rgba(255,238,186,0.055)',

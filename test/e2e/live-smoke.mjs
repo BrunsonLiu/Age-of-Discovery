@@ -86,20 +86,40 @@ async function visit(viewport, label) {
    * 中文字体单独验：不信状态码，直接把它抓下来量字节与 MIME。
    * （曾经只看 200，结果 preview 的 SPA 兜底把 index.html 当字体返回，
    *  界面静默回退系统字体，测试仍然全绿。）
+   *
+   * 【为什么是两片】中文字体按 unicode-range 拆成了 boot（首屏片，约 108KB）
+   * 与 rest（其余片，约 273KB）：浏览器只下载当前要渲染的那一片。
+   * 这里两片都要验 —— 只验一片的话，另一片 404 也照样绿，而后果一样是
+   * "某一段文字静默回退系统字体"，只是发现问题时已经上线了。
    */
-  const font = await page.evaluate(async () => {
-    const e = performance.getEntriesByType('resource').find(x => /noto-serif-sc-subset/.test(x.name))
-    if (!e) return { found: false }
-    try {
-      const r = await fetch(e.name, { cache: 'no-store' })
-      const buf = await r.arrayBuffer()
-      return { found: true, file: e.name.split('/').pop(), status: r.status, ct: r.headers.get('content-type') || '', bytes: buf.byteLength }
-    } catch (err) { return { found: true, file: e.name.split('/').pop(), error: String(err).slice(0, 80) } }
+  const fonts = await page.evaluate(async () => {
+    const out = []
+    for (const key of ['boot', 'rest']) {
+      const re = new RegExp(`noto-serif-sc-${key}`)
+      const e = performance.getEntriesByType('resource').find((x) => re.test(x.name))
+      if (!e) { out.push({ key, found: false }); continue }
+      try {
+        const r = await fetch(e.name, { cache: 'no-store' })
+        const buf = await r.arrayBuffer()
+        out.push({ key, found: true, status: r.status, ct: r.headers.get('content-type') || '', bytes: buf.byteLength })
+      } catch (err) {
+        out.push({ key, found: true, error: String(err).slice(0, 80) })
+      }
+    }
+    return out
   })
-  check(font.found, '中文字体子集被请求了')
-  check(!!font.found && font.status === 200, `中文字体返回 200（实际 ${font.status ?? font.error ?? '未请求'}）`)
-  check(!!font.found && /font|woff/i.test(font.ct || ''), `中文字体 MIME 是字体（实际 ${font.ct || '空'}）`)
-  check(!!font.found && (font.bytes ?? 0) > 200000, `中文字体体积对得上（${font.bytes ? Math.round(font.bytes / 1024) + 'KB' : '取不到'}，应 >200KB）`)
+  for (const f of fonts) {
+    const label = f.key === 'boot' ? '首屏片' : '其余片'
+    check(f.found, `中文字体${label}被请求了（noto-serif-sc-${f.key}）`)
+    check(!!f.found && f.status === 200, `中文字体${label}返回 200（实际 ${f.status ?? f.error ?? '未请求'}）`)
+    check(!!f.found && /font|woff/i.test(f.ct || ''), `中文字体${label} MIME 是字体（实际 ${f.ct || '空'}）`)
+    /* 下限按各自的量级定：boot ≈ 108KB、rest ≈ 273KB。取一半留余量，只抓"返回了 HTML"这类 */
+    const minKB = f.key === 'boot' ? 60 : 150
+    check(!!f.found && (f.bytes ?? 0) > minKB * 1024,
+      `中文字体${label}体积对得上（${f.bytes ? Math.round(f.bytes / 1024) + 'KB' : '取不到'}，应 >${minKB}KB）`)
+  }
+  const totalKB = Math.round(fonts.reduce((s, f) => s + (f.bytes ?? 0), 0) / 1024)
+  check(totalKB > 200000 / 1024, `两片字体合计 ${totalKB}KB（拆前是 369KB 的单文件）`)
 
   return { page, fcp, loadMs, bad, fake, pageErrors }
 }
