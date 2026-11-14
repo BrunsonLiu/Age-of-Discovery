@@ -291,10 +291,22 @@ export default function SailingController() {
           state.discoverPort(port.id)
           const afterCount = useGameStore.getState().discoveredPorts.length
           if (afterCount > beforeCount) {
-            // 第 5/10/15/20 座港口值得停下来庆祝一下
-            if (afterCount >= 5 && afterCount % 5 === 0) {
+            /*
+             * 里程碑两档：每 5 座一次，以及"走遍世界"那一次。
+             *
+             * 【为什么要有第二档】21 座港，21 % 5 ≠ 0 —— 玩家发现最后一座（广州）时
+             * 什么都不会弹，"走遍世界"这件事没有回执。而且原来分母写死 20：
+             * 走到第 20 座时横幅会说"还差 0 座走遍世界"，可地图上明明还剩一座。
+             * 比分母更糟的是"完成了却没人告诉你"，那是玩家攒了几十个小时的最后一步。
+             */
+            if (afterCount >= ports.length) {
               useFx.getState().fx(
-                { kind: 'banner', tone: 'gold', text: `已探索 ${afterCount} 座港口`, sub: `声望 +5 · 还差 ${Math.max(0, 20 - afterCount)} 座走遍世界` },
+                { kind: 'banner', tone: 'gold', text: '走遍世界', sub: `全部 ${ports.length} 座港口都已进过你的航海日志` },
+                'milestone',
+              )
+            } else if (afterCount >= 5 && afterCount % 5 === 0) {
+              useFx.getState().fx(
+                { kind: 'banner', tone: 'gold', text: `已探索 ${afterCount} 座港口`, sub: `声望 +5 · 还差 ${ports.length - afterCount} 座走遍世界` },
                 'milestone',
               )
             } else {

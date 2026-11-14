@@ -1,5 +1,6 @@
 import { Banknote, Beer, BookOpen, Calendar, ClipboardList, Coins, Crown, Gem, Globe, Handshake, Landmark, Map, Package, Sailboat, Scroll, Skull } from 'lucide-react'
 import type { Achievement } from '@/types'
+import { ports } from '@/data/ports'
 
 /**
  * 成就系统：给"自由探索"装上可见的里程碑。
@@ -51,9 +52,15 @@ export const achievements: Achievement[] = [
   {
     id: 'explorer_all',
     title: '四海归一',
-    description: '发现全部 20 座港口。',
+    /*
+     * 数字必须来自 ports.length —— 加了大明广州（第 21 港）之后，
+     * 这里还写着 20：玩家走到第 20 座港就解锁「发现全部港口」，
+     * 可地图上明明还剩一座没去过。成就是最不该说谎的地方。
+     * 文案里的数字同样不能写死，否则以后再加港又要漏一处。
+     */
+    description: `发现全部 ${ports.length} 座港口。`,
     icon: Globe,
-    check: (s) => s.discoveredPorts.length >= 20,
+    check: (s) => s.discoveredPorts.length >= ports.length,
   },
   {
     id: 'sailor_50',

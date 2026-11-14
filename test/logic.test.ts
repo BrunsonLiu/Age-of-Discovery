@@ -861,6 +861,44 @@ assert(!/discoveredPorts\.length}\/\d/.test(mainMapSrc), '探索港口的分母�
 assert(/discoveredPorts\.length}\//.test(mainMapSrc), '探索港口仍显示"已探索/总数"')
 assert(ports.length === 21, `港口表共 ${ports.length} 座（大明广州是第 21 座）`)
 
+console.log('== 17c. 港口总数：任何"全部港口"的说法都要来自 ports.length ==')
+/*
+ * 加了大明广州（第 21 港）之后，三处写死 20 的地方都错了：
+ *   · 翻船屏「探索港口 21/20」（上一轮修）
+ *   · 成就「四海归一：发现全部 20 座港口」—— 第 20 座就解锁
+ *   · 里程碑横幅「还差 20 - 已探索 座走遍世界」—— 走遍时报"还差 0 座"
+ * 而且 21 % 5 ≠ 0，最后一座港不会触发里程碑，"走遍世界"没有回执。
+ * 这三处的共同根因是同一件事：总数写在了代码里。
+ */
+const achSrc = readFileSync(join(process.cwd(), 'src', 'data', 'achievements.ts'), 'utf8')
+assert(/discoveredPorts\.length >= ports\.length/.test(achSrc),
+  '成就「四海归一」的阈值来自 ports.length（不许写死 20）')
+assert(/description: `发现全部 \$\{ports\.length\} 座港口。`/.test(achSrc),
+  '成就文案里的数字也来自 ports.length（否则再加港又要漏一处）')
+const sailSrc = readFileSync(join(process.cwd(), 'src', 'components', 'map', 'SailingController.tsx'), 'utf8')
+assert(!/20 - afterCount/.test(sailSrc), '里程碑横幅的分母不许写死 20')
+assert(/afterCount >= ports\.length/.test(sailSrc), '走遍世界有独立判定（21 % 5 ≠ 0，否则最后一座没有回执）')
+const mapSrc = readFileSync(join(process.cwd(), 'src', 'pages', 'MainMap.tsx'), 'utf8')
+assert(!/discoveredPorts\.length}\/\d/.test(mapSrc), '翻船屏分母同样来自 ports.length')
+/*
+ * 行为判据（不只是源码守卫）：成就的 check 函数在 20 座时必须是 false。
+ * 「四海归一」写着"发现全部港口"，20/21 就解锁等于提前宣布你走遍了世界。
+ */
+{
+  const { achievements: ACH } = await import('../src/data/achievements')
+  const exploreAll = ACH.find(a => a.id === 'explorer_all')!
+  const at20 = { ...baseState, discoveredPorts: ports.slice(0, 20).map(p => p.id) } as never
+  const at21 = { ...baseState, discoveredPorts: ports.map(p => p.id) } as never
+  assert(!exploreAll.check(at20), `只发现 20 座时不许解锁「四海归一」（一共 ${ports.length} 座）`)
+  assert(exploreAll.check(at21), '全部发现后解锁「四海归一」')
+  assert(exploreAll.description.includes(String(ports.length)),
+    `成就文案写的是"${exploreAll.description}"，数字必须等于 ${ports.length}`)
+}
+
+const logSrc = readFileSync(join(process.cwd(), 'src', 'components', 'panels', 'LogbookViews.tsx'), 'utf8')
+assert(/ports\.length \+ achievements\.length \+ debrisKinds\.length \+ RELICS\.length/.test(logSrc),
+  '图鉴总数一直是表长度相加（这条是范式，新加的表也要这么算）')
+
 console.log('== 18. 新事件引擎条件 ==')
 const evElena = events.find(e => e.id === 238)!
 assert(!checkEventTrigger({ ...evElena, triggerCondition: { ...evElena.triggerCondition, probability: 1 } }, baseState), '伊莲事件：无学者在船不触发')
