@@ -24,8 +24,12 @@ export const GAME_BALANCE = {
   PRICE_FLUCTUATION_MAX: 0.2,
   /** 库存每日恢复量 */
   STOCK_RECOVER_PER_DAY: 8,
-  /** 胜利条件：探索全部港口 */
-  VICTORY_DISCOVER_ALL: 20,
+  /*
+   * 曾经有 `VICTORY_DISCOVER_ALL: 20`：胜利判据"探索全部港口"。
+   * 加了大明广州（第 21 座）之后它就成了错的分母，而界面上没有一处能看出
+   * 这个数字从哪来。现在判据直接用 `ports.length`（见 store.checkVictories），
+   * 常量删掉 —— 配置里留一个没人读、又是错的数，比没有更危险。
+   */
   /** 胜利条件：累积金币（完成全部任务一档按 tasks.length 动态判定） */
   VICTORY_GOLD: 20000,
   /** 港口休整：消耗食物 */

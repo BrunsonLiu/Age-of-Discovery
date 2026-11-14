@@ -1105,6 +1105,36 @@ console.log('== 17f. 航海志：记录类面板只有一个来源 ==')
   assert(wrong.fleet.cargo.some(c => c.goodId === 5 && c.quantity === 6), '不在目标港：货一件也不扣')
 }
 
+console.log('== 17g. 收齐/走遍这类"最后一步"必须有人告诉你 ==')
+/*
+ * 第 21 座港之后，这一类问题出现过两次（翻船屏 21/20、成就"发现全部 20 座"、
+ * 里程碑"还差 0 座"）。这轮把剩下两处一起收：
+ *   · 胜利称号「海图尽头的船长」的阈值与文案还写着 20；
+ *   · 9 件海上遗物收齐时**没有任何回执**（第 9 件和第 1 件长得一模一样）。
+ */
+{
+  const { achievements: ACH } = await import('../src/data/achievements')
+  const { RELICS: R } = await import('../src/data/relics')
+  const relicAch = ACH.find(a => a.id === 'relic_collector')
+  assert(!!relicAch, '有「集齐全部遗物」的成就（收齐这个动作要有回执）')
+  assert(relicAch!.description.includes(String(R.length)),
+    `成就文案里的件数来自 RELICS.length（现写"${relicAch!.description}"）`)
+  const at = (n: number) => ({ ...baseState, collectedRelics: R.slice(0, n).map(r => r.id) }) as never
+  assert(!relicAch!.check(at(R.length - 1)), `差一件时不许解锁（${R.length - 1}/${R.length}）`)
+  assert(relicAch!.check(at(R.length)), `集齐 ${R.length} 件 → 解锁`)
+  assert(!relicAch!.check({ ...baseState, collectedRelics: [] } as never), '一件没有时不解锁')
+
+  const storeSrc3 = readFileSync(join(process.cwd(), 'src', 'store', 'useGameStore.ts'), 'utf8')
+  assert(!/VICTORY_DISCOVER_ALL/.test(storeSrc3), '胜利判据不再读写死的常量')
+  assert(/discoveredPorts\.length >= ports\.length/.test(storeSrc3),
+    '胜利「探索全部港口」用 ports.length 判（21 座时第 20 座不该给称号）')
+  assert(/desc: `\$\{ports\.length\} 座港口都靠过一次/.test(storeSrc3),
+    '称号文案里的港数也来自 ports.length（"二十座"这种写死会过期）')
+  const cfgSrc = readFileSync(join(process.cwd(), 'src', 'data', 'gameConfig.ts'), 'utf8')
+  assert(!/^\s*VICTORY_DISCOVER_ALL\s*:/m.test(cfgSrc),
+    '配置里删掉 VICTORY_DISCOVER_ALL（留着就是一份会漂的分母）')
+}
+
 console.log('== 18. 新事件引擎条件 ==')
 const evElena = events.find(e => e.id === 238)!
 assert(!checkEventTrigger({ ...evElena, triggerCondition: { ...evElena.triggerCondition, probability: 1 } }, baseState), '伊莲事件：无学者在船不触发')

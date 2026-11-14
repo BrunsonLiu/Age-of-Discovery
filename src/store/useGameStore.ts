@@ -857,11 +857,16 @@ function withAchievements(state: GameState & { notifications?: StoreNotification
 function checkVictories(state: GameState): VictoryClaim[] {
   const claimed = new Set(state.claimedVictories)
   const out: VictoryClaim[] = []
-  if (!claimed.has('all_ports') && state.discoveredPorts.length >= GAME_BALANCE.VICTORY_DISCOVER_ALL) {
+  /*
+   * 分母取 `ports.length`，不取常量：加了第 21 座（广州）之后，
+   * 常量还写着 20 —— 玩家走到第 20 座就领「海图尽头的船长」，
+   * 而地图上明明还剩一座没去过。称号写着"都靠过一次"，就不该有一次没靠过。
+   */
+  if (!claimed.has('all_ports') && state.discoveredPorts.length >= ports.length) {
     out.push({
       key: 'all_ports',
       name: '海图尽头的船长',
-      desc: '二十座港口都靠过一次，海图上再没有你没见过的岸。',
+      desc: `${ports.length} 座港口都靠过一次，海图上再没有你没见过的岸。`,
     })
   }
   if (!claimed.has('all_tasks') && state.completedTasks.length >= tasks.length && state.gameMode !== 'visitor') {

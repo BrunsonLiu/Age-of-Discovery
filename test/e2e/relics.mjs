@@ -355,6 +355,45 @@ check(after3d.has, `3D 里也拾到了「${target3d.name}」`)
 check(after3d.gold === g3Before, `3D 拾取同样不给金币（${g3Before} → ${after3d.gold}）`)
 check(after3d.dom === 0, '3D 里拾过的也从图上消失（2D 与 3D 同一份状态）')
 
+/*
+ * 收齐最后一件必须有回执。
+ *
+ * 9 件遗物在图鉴里各占一格，收齐这件事原来和"收第 1 件"一模一样：
+ * 一条通知 + 三秒飘字，然后就没了 —— 而这正是玩家攒了整局的目标
+ * （有的遗物还限定季节）。判据要落在**成就真的解锁**上，不看文案。
+ */
+console.log('=== 收齐最后一件 ===')
+{
+  const setup = await page.evaluate(async () => {
+    const m = await import('/Age-of-Discovery/src/data/relics.ts').catch(() => import('/src/data/relics.ts'))
+    const all = m.RELICS.map(r => r.id)
+    // 先给 8 件（差最后一件），再把船开到第 9 件旁边
+    const st = window.__gameStore.getState()
+    window.__gameStore.setState({ collectedRelics: all.slice(0, -1), achievements: [] })
+    const last = m.RELICS[m.RELICS.length - 1]
+    window.__gameStore.getState().setShipPosition([last.lat, last.lng])
+    return { lastId: last.id, lastName: last.name, total: all.length, prevDone: st.collectedRelics.length }
+  })
+  await sleep(300)
+  const beforeAch = await page.evaluate(() => window.__gameStore.getState().achievements.includes('relic_collector'))
+  check(beforeAch === false, `差一件时还没有「海上拾荒人」（${setup.total - 1}/${setup.total}）`)
+
+  await page.evaluate((id) => window.__gameStore.getState().collectRelic(id), setup.lastId)
+  await sleep(600)
+  const after = await page.evaluate(() => {
+    const st = window.__gameStore.getState()
+    return {
+      relics: st.collectedRelics.length,
+      ach: st.achievements.includes('relic_collector'),
+      banner: document.body.innerText.includes('海上拾荒人'),
+      note: document.body.innerText.includes('集齐全部'),
+    }
+  })
+  check(after.relics === setup.total, `第 ${setup.total} 件拾起来了（${after.relics}）`)
+  check(after.ach, '收齐即解锁「海上拾荒人」')
+  check(after.banner && after.note, `当场有回执（横幅/通知里出现成就名与"集齐全部"）`)
+}
+
 check(errors.length === 0, `无运行时错误（${errors.length} 条：${errors.slice(0, 2).join(' | ')}）`)
 
 console.log(`\n结论：${pass} 通过 / ${fail} 失败`)

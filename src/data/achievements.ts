@@ -1,6 +1,7 @@
 import { Banknote, Beer, BookOpen, Calendar, ClipboardList, Coins, Crown, Gem, Globe, Handshake, Landmark, Map, Package, Sailboat, Scroll, Skull } from 'lucide-react'
 import type { Achievement } from '@/types'
 import { ports } from '@/data/ports'
+import { RELICS } from '@/data/relics'
 
 /**
  * 成就系统：给"自由探索"装上可见的里程碑。
@@ -124,6 +125,22 @@ export const achievements: Achievement[] = [
     description: '完成 5 份冒险合约。',
     icon: ClipboardList,
     check: (s) => s.completedTasks.length >= 5,
+  },
+  {
+    /*
+     * 收齐全部海上遗物。
+     *
+     * 【为什么要有这一条】图鉴里 9 件遗物各占一格，收齐这件事原来**没有任何回执**：
+     * 第 9 件拾起来时和之前 8 件一模一样——一条通知、三秒飘字，然后就没了。
+     * 而这正是玩家攒了整局的目标（有的遗物还限定季节）。"完成了却没人告诉你"
+     * 是本作反复修的一类问题（第 21 座港就是这样）。
+     * 计数的分母用 RELICS.length：以后加遗物，这条自动跟着变，不会写死。
+     */
+    id: 'relic_collector',
+    title: '海上拾荒人',
+    description: `集齐全部 ${RELICS.length} 件海上遗物。`,
+    icon: Sailboat,
+    check: (s) => (s.collectedRelics?.length ?? 0) >= RELICS.length,
   },
 ]
 
