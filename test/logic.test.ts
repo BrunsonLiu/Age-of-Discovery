@@ -783,8 +783,29 @@ const discount = (fid: string, rep: number) =>
 assert(Math.abs(discount('guild', 30) - 0.01) < 1e-9, '商会 30 档 = 优惠 1%')
 assert(Math.abs(discount('guild', 60) - 0.03) < 1e-9, '商会 60 档 = 优惠 3%（else-if，不是 1%+3%）')
 assert(Math.abs(discount('crown', 90) - 0.03) < 1e-9, '王室 90 档 = 优惠 3%')
+/*
+ * 兄弟会：只在自家港口生效（皇家港/拿骚/托尔图加）。这条是 2026-11-14 新接的，
+ * 给价格链加了 portFaction 维度之后才可能实现 —— 顺手把 nextPerk 从死代码救活，
+ * 舰队面板现在会写"再 +X 点 · 优惠 4%"。
+ */
+const withPort = (fid: string, rep: number, portFaction: string) =>
+  1 - priceMultiplier({ fame: 0, trait: null }, { factionRep: { [fid]: rep } as never, portFaction: portFaction as never })
+assert(Math.abs(withPort('brethren', 30, 'brethren') - 0.04) < 1e-9, '兄弟会 30 档：自家港口优惠 4%')
+assert(withPort('brethren', 30, 'crown') === 0, '兄弟会 30 档：别人家的港口不给优惠')
+assert(withPort('brethren', 29, 'brethren') === 0, '兄弟会 29 还没到档')
+assert(withPort('crown', 90, 'brethren') === withPort('crown', 90, 'crown'),
+  '王室 90 是全局折扣，与港口归属无关')
+
+// 每个阵营至少有一条**已实装**的特权（perks 空数组等于这个阵营在界面上没有任何承诺）
+const FACTION_LIST = FACTIONS.map(f => ({ id: f.id, perks: f.perks.length }))
+assert(FACTION_LIST.every(f => f.perks > 0),
+  `四方势力都要有至少一条真特权（现在：${FACTION_LIST.map(f => `${f.id}:${f.perks}`).join(' ')}）`)
+// 面板必须真的把 perks 渲染出来（否则又是"数据有、界面没有"）
+const fleetSrc = readFileSync(join(process.cwd(), 'src', 'components', 'panels', 'FleetPanel.tsx'), 'utf8')
+assert(/nextPerk\(/.test(fleetSrc), '舰队面板调用 nextPerk 显示下一档特权')
 const factionSrc = readFileSync(join(process.cwd(), 'src', 'data', 'factions.ts'), 'utf8')
-assert(/航线情报半价（与随船学者不叠加/.test(factionSrc), '学者 30 档文案写明"不叠加"')
+// 面板文案只留一行能读完的短句（320px 宽），"不叠加"这条语义由上面 intelCost 的断言钉住
+assert(/text: '航线情报半价'/.test(factionSrc), '学者 30 档文案 = 航线情报半价')
 assert(!/大宗货物（≥50 件）/.test(factionSrc), '未实现的"大宗≥50 件"承诺不许留在 perks 里')
 
 /*

@@ -42,6 +42,8 @@ await page.evaluate(() => {
     dialogueSeen: ['opening_pilot'], activePanel: null,
     collectedDebris: [],
     discoveredPorts: [21, 12, 18, 11, 10, 6],
+    // 四方声望各给一档，一张截图里能同时看到"已达成"与"还没到"
+    factionRep: { crown: 95, guild: 55, scholars: 10, brethren: 35 },
     logbook: [
       { id: 'p1', day: 1, kind: 'port', title: '广州', text: '大明广东的市舶司所在。' },
       { id: 'p2', day: 4, kind: 'event', title: '海峡里的灯', text: '马六甲的水面上有灯在动。' },

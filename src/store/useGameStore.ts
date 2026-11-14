@@ -22,6 +22,7 @@ import { historicalTimeline } from '@/data/historicalTimeline'
 import { GAME_BALANCE } from '@/data/gameConfig'
 import { shipTemplates, shipResaleValue } from '@/data/ships'
 import { priceMultiplier, DEFAULT_TRAIT } from '@/data/traits'
+import { portFaction } from '@/data/factions'
 import { checkAchievements } from '@/data/achievements'
 import { RIVALS, RIVAL_ACTIONS } from '@/data/rivals'
 import { OFFICER_MAP } from '@/data/officers'
@@ -136,12 +137,14 @@ const createInitialNotoriety = (): Record<NotorietyAxis, number> => ({
 })
 
 /** 价格合成参数：把第二条线的状态喂给 priceMultiplier */
-function priceOpts(state: GameState) {
+function priceOpts(state: GameState, portId?: number) {
   return {
     officers: state.officers,
     crewRoster: state.crewRoster.map(c => c.id),
     factionRep: state.factionRep,
     title: currentTitle(state.notoriety),
+    // 港口归属只认 portFaction 一处（兄弟会的"自家港口"特权要用）
+    portFaction: portId != null ? portFaction(portId) : undefined,
   }
 }
 
@@ -567,7 +570,7 @@ export function selectBuyPrice(state: GameState, portId: number, goodId: number)
   const pg = portGoods.find(p => p.portId === portId && p.goodId === goodId)
   if (!pg) return null
   const stock = state.marketStock[`${portId}:${goodId}`] ?? pg.stock
-  return dynamicBuyPrice(pg, stock, pg.stock, state.fleet, priceOpts(state))
+  return dynamicBuyPrice(pg, stock, pg.stock, state.fleet, priceOpts(state, portId))
 }
 
 /**
@@ -581,7 +584,7 @@ export function selectSellPrice(state: GameState, portId: number, goodId: number
   const good = goods.find(g => g.id === goodId)
   if (!good) return null
   const pg = portGoods.find(p => p.portId === portId && p.goodId === goodId)
-  const opts = priceOpts(state)
+  const opts = priceOpts(state, portId)
   if (!pg) {
     // 本港不收：按全局基准价折价出清。声望/特质系数同样生效
     //（系数 <1 表示对玩家有利，除以它等于折价收得更高）。

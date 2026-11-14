@@ -79,6 +79,8 @@ export function priceMultiplier(
     crewRoster?: CrewCharId[]
     factionRep?: Partial<Record<FactionId, number>>
     title?: CaptainTitle | null
+    /** 当前交易港的归属势力（见 data/factions.portFaction）—— 兄弟会的"自家港口"特权要用 */
+    portFaction?: FactionId
   },
 ): number {
   const fame = fleet?.fame ?? 0
@@ -95,6 +97,15 @@ export function priceMultiplier(
   if ((opts?.factionRep?.crown ?? 0) >= 90) m -= 0.03
   // 称号：贪婪者更会榨取每一枚铜板
   if (opts?.title?.id === 'hoarder') m -= GAME_BALANCE.GREED_PROFIT_BONUS
+  /*
+   * 兄弟会：自家港口（皇家港/拿骚/托尔图加）买卖便宜 4%。
+   *
+   * 【为什么只有这一条带"港口归属"】其余阵营特权要么是全局折扣（王室 90 / 商会 30·60），
+   * 要么还没实现（见 data/factions.ts 里的设计稿注释）。兄弟会这三档原本一条都做不了，
+   * 因为价格链上根本没有"这是谁的港口"这个维度 —— 加上之后，它至少有一条真的了。
+   * 归属只认 `portFaction(portId)` 一处，别的地方不许再判港口 id。
+   */
+  if (opts?.portFaction === 'brethren' && (opts?.factionRep?.brethren ?? 0) >= 30) m -= 0.04
   return Math.max(0.5, m)
 }
 
