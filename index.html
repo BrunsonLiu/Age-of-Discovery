@@ -26,7 +26,62 @@
     -->
   </head>
   <body>
-    <div id="root"></div>
+    <!--
+      ============ 启动屏（纯 CSS，样式内联） ============
+
+      【为什么要有它】实测（slow4g，400KB/s + 300ms RTT，`test/e2e/_first-paint`）：
+        开场卡出现 1379ms、地图可看 4490ms
+      而开场卡是 React 挂上之后才有的 —— 也就是说**前 1.4 秒是一片深蓝色的空屏**。
+      那不是"慢"，是"看起来像坏了"：玩家第一件事是判断这游戏有没有反应。
+
+      【为什么样式内联、且不用任何外部资源】
+      这段必须在 **CSS 包（20KB）和主包（199KB）到达之前**就画出来，
+      所以不能引用 index.css、不能引用字体、不能引用图片：
+        · 图形手写内联 SVG（罗盘玫瑰，和开场卡同一个母题）
+        · 文字只用固定存在的 Georgia 系统衬线（英文副标题，躲开中文字体）
+        · 动画只用 transform / opacity（合成器线程，主线程在跑 JS 也照滑）
+
+      【它怎么消失】`createRoot(...).render()` 会清空容器已有的子节点，
+      所以把它放在 `#root` 里面，React 挂上的那一帧自动消失 —— 不需要任何 JS。
+      万一 JS 整个挂了，它就一直留着（比白屏或报错更好）。
+    -->
+    <style>
+      #boot-splash {
+        position: fixed; inset: 0; z-index: 99999;
+        display: flex; flex-direction: column; align-items: center; justify-content: center;
+        gap: 14px; background: radial-gradient(circle at 50% 42%, #1d3044 0%, #101c2a 62%, #0a121c 100%);
+      }
+      #boot-splash svg { width: 68px; height: 68px; opacity: 0.92; animation: bootBreath 2.4s ease-in-out infinite; }
+      #boot-splash .boot-sub {
+        font-family: Georgia, 'Times New Roman', serif;
+        font-size: 12px; letter-spacing: 0.42em; text-indent: 0.42em;
+        color: #c9a96e; opacity: 0.72;
+      }
+      #boot-splash .boot-bar { width: 132px; height: 1px; background: rgba(201, 169, 110, 0.18); overflow: hidden; }
+      #boot-splash .boot-bar i {
+        display: block; width: 100%; height: 1px; background: #c9a96e;
+        transform-origin: left center; animation: bootSweep 1.15s ease-in-out infinite;
+      }
+      @keyframes bootSweep { 0% { transform: scaleX(0.08); } 55% { transform: scaleX(0.85); } 100% { transform: scaleX(0.08); } }
+      @keyframes bootBreath { 0%, 100% { opacity: 0.72; } 50% { opacity: 1; } }
+      @media (prefers-reduced-motion: reduce) {
+        #boot-splash svg, #boot-splash .boot-bar i { animation: none; }
+        #boot-splash .boot-bar i { transform: scaleX(0.6); }
+      }
+    </style>
+    <div id="root">
+      <div id="boot-splash" aria-hidden="true">
+        <svg viewBox="0 0 100 100" role="img">
+          <circle cx="50" cy="50" r="46" fill="none" stroke="#c9a96e" stroke-opacity="0.28" stroke-width="1" />
+          <path d="M50 5 L57.5 42.5 L95 50 L57.5 57.5 L50 95 L42.5 57.5 L5 50 L42.5 42.5 Z"
+                fill="#c9a96e" fill-opacity="0.85" />
+          <path d="M50 24 L53.5 46.5 L76 50 L53.5 53.5 L50 76 L46.5 53.5 L24 50 L46.5 46.5 Z"
+                fill="#152436" />
+        </svg>
+        <div class="boot-sub">AGE OF DISCOVERY</div>
+        <div class="boot-bar"><i></i></div>
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

@@ -13319,6 +13319,68 @@ console.log('== 冷启动：不该为「一个按钮」下载三个视角 ==')
     '地图块预取带 PROD 判断')
 }
 
+console.log('== 启动屏：主包到达之前必须已经有画面（纯 CSS，零外部资源） ==')
+{
+  /*
+   * 【这条锁的是什么】实测（slow4g，`test/e2e/_first-paint.mjs`）：
+   *   ／启动屏前：FCP **1756ms**（那之前是一片深蓝空屏）
+   *   ／启动屏后：FCP **780ms**（≈ TTFB 300 + HTML 下载）
+   * 开场卡本身要到 1379ms 才挂上 —— 也就是说玩家前 1.4 秒看到的只有底色，
+   * 那不像"慢"，像"坏了"。这一屏不减少任何字节，只把空窗填掉。
+   *
+   * 判据必须盯住三件事，否则它随时会变成"又一个拖慢首屏的东西"：
+   *   ① 样式**内联**在 index.html 里（引用 index.css 就等于要等 20KB 的包）；
+   *   ② **零外部资源**（不许 url(...)、不许中文字体 —— 那正是要等的东西）；
+   *   ③ 动画只用 transform / opacity（合成器线程；主线程在解析 199KB 主包时也照滑）。
+   * 还有一条前提：main.tsx 必须是 createRoot（它会清空容器子节点），
+   * 换成 hydrateRoot 的话启动屏会一直留在 DOM 里。
+   */
+  const html = readFileSync(join(process.cwd(), 'index.html'), 'utf8')
+  assert(/<div id="root">[\s\S]{0,200}?id="boot-splash"/.test(html),
+    '启动屏在 #root 里（createRoot 首帧会把它清掉，不需要任何 JS）')
+  const styleBlock = html.match(/<style>([\s\S]*?)<\/style>/)
+  assert(!!styleBlock && /boot-splash/.test(styleBlock[1]),
+    '启动屏样式内联在 index.html（不能等 index.css）')
+  const css = styleBlock![1]
+  assert(!/url\(/.test(css), '启动屏样式里不许有 url(...)（图片/字体都要等网络）')
+  assert(!/Noto Serif SC|Crimson Text|Pirata One/.test(css),
+    '启动屏不许用自托管中文字体（它正是首屏要等的东西，用了就等于没这一屏）')
+  assert(/Georgia/.test(css), '启动屏只用系统衬线（Georgia 各平台都在）')
+  /*
+   * 动画只许 transform / opacity。
+   * 【为什么用括号配平扫描而不是正则】这两个关键帧各写在一行里，
+   * 正则 `@keyframes[\s\S]*?\n\s*\}` 会一路吃到后面 media query 的 `}`，
+   * 把 `animation: none` 也当成"关键帧里的属性"判红（第一次就是这么错的）。
+   */
+  const keyframes: string[] = []
+  {
+    let i = 0
+    while ((i = css.indexOf('@keyframes', i)) >= 0) {
+      let depth = 0
+      let j = css.indexOf('{', i)
+      for (; j < css.length; j++) {
+        if (css[j] === '{') depth++
+        else if (css[j] === '}') { depth--; if (depth === 0) break }
+      }
+      keyframes.push(css.slice(i, j + 1))
+      i = j + 1
+    }
+  }
+  assert(keyframes.length >= 2, `启动屏有进度条与呼吸两个关键帧（实际 ${keyframes.length}）`)
+  for (const k of keyframes) {
+    const props = [...k.matchAll(/\{\s*([a-z-]+)\s*:/g)].map((m) => m[1])
+    const bad = props.filter((p) => !['transform', 'opacity'].includes(p))
+    assert(bad.length === 0, `关键帧里只许动 transform/opacity，出现了 ${bad.join('/')}`)
+  }
+  /* prefers-reduced-motion 要停掉动画（无障碍） */
+  assert(/prefers-reduced-motion[\s\S]{0,120}animation:\s*none/.test(css),
+    '尊重 prefers-reduced-motion（停掉动画）')
+
+  const mainSrc = readFileSync(join(process.cwd(), 'src', 'main.tsx'), 'utf8')
+  assert(/createRoot\(/.test(mainSrc) && !/hydrateRoot\(/.test(mainSrc),
+    'main.tsx 用 createRoot（hydrateRoot 不会清空容器，启动屏会留在 DOM 里）')
+}
+
 console.log('== 冷启动：地图数据必须和地图分块**并行**取，不能串行 ==')
 {
   /*

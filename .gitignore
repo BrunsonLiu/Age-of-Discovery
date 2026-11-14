@@ -19,6 +19,7 @@ dist-analyze*/
 dist-probe*/
 # 本地量冷启动用的构建产物（dist 被占用时的替代目录）
 dist-live*/
+dist-boot/
 # 从 public/ 退役的旧素材备份：留在本地便于回查，不进仓库
 unused-assets/
 *.local

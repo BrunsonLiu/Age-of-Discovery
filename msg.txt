@@ -1,57 +1,37 @@
-perf(start): 慢速 4G 冷启动 6202 → 约 4.6 秒（−26%）—— 先量归因，再砍字节
+perf(start): 空屏 1.76 秒 → 0.78 秒 —— 主包到达前就用纯 CSS 画一屏
 
-这轮开头没有先动手，而是先做了一个**归因工具**，因为它推翻了我原本的判断。
+这轮换了问法：不再挤字节，而是问"**玩家第一眼看到什么**"。
+新探针 test/e2e/probe-first-paint.mjs（FCP + #root 挂载时刻 + 开场卡 + 地图可看）。
 
-【新工具：probe-block.mjs —— 「如果这个资源不存在，地图会早多少」】
-逐项 abort 一个 URL，量「陆地画出来」的提前量。slow4g（400KB/s + 300ms RTT）基线 5726ms：
+slow4g 实测（400KB/s + 300ms RTT，cache 关闭）：
+    FCP              1756ms   ← 也就是说前 1.76 秒只有一片深蓝底色
+    #root 有子节点    1414ms
+    开场卡            1414ms
+    地图可看          4853ms
+主包 199KB 要 1.27 秒才下完，React 挂上之前 `<div id="root">` 是空的。
+那不是"慢"，是"看起来像坏了" —— 玩家第一件事就是判断这游戏有没有反应。
 
-    noto 中文字体    −1131ms      bg_title      −551ms
-    sea-mask.bin     −349ms       ui_compass    −331ms
-    caravel 精灵     −222ms       elev-map      −139ms
-    sea-tile         −127ms       borders       −100ms
-    land.geojson / MapView chunk → 超时（没它们就没有地图）
+改法：在 index.html 的 #root 里放一屏**纯 CSS 启动屏**（罗盘玫瑰 + 英文副标题 + 细金线）。
+它必须满足三条，否则就是"又一个拖慢首屏的东西"：
+  · 样式**内联**在 index.html（引用 index.css 就等于要等 20KB 的 CSS 包）
+  · **零外部资源**（不许 url(...)、不许用自托管中文字体 —— 那些正是要等的东西）
+  · 动画只动 transform / opacity（合成器线程，主线程在解析主包时也照滑）
+消失不需要任何 JS：`createRoot(...).render()` 会清空容器子节点（所以判据里也锁了
+main.tsx 必须用 createRoot，换 hydrateRoot 就会把它留在 DOM 里）。
 
-结论一：**387KB 的 elev-map 只值 139ms，161KB 的标题图值 551ms**。
-按体积排行猜"谁最贵"是错的 —— 只有和地图抢同一条管子、且在地图之前被请求的
-字节才付得起钱。这也是为什么先做工具再做改动。
+结果：**FCP 1756 → 780ms**（780 ≈ TTFB 300 + HTML 下载），第一帧就是完整的一屏。
+地图可看 4853ms 基本不变（这一屏只有 1.3KB 内联 HTML，白送）。
+另外确认开场卡出现时启动屏已经消失（同一帧实测 splash=false / intro=true）。
 
-① 舰船精灵 512² PNG → 320² WebP（190KB → 20KB/张，整套 1918KB → 207KB）
-   显示尺寸实测：地图 84px、NPC 46px、卡面 40px、面板最大 96px（h-24）——
-   3 倍屏也就 288px。新脚本 scripts/shrink_images.mjs（本机没有 PIL/sharp/cwebp，
-   用 Chromium 自带 canvas.toDataURL('image/webp') 当编码器）。
-   目检：46/84/96 三档并排看不出差别。原 PNG 删除（切图脚本会重建，且已加说明）。
-   单测从"必须是 RGBA PNG"改成"合法 WebP + 带 alpha + **单文件 < 40KB**"（防腐化）。
+顺带做的两件事（都删掉了，没进仓库）：
+  · probe-bundle.mjs 用 esbuild metafile 看主包构成：events.ts 161KB（文案库，随主包
+    一起下，但它只在航行中才用）、react-dom 127KB、leaflet 在 MapView 分块里没进主包。
+    events 想挪成懒加载会动到 resolveOutcome 的同步链（预览=实际那条），风险不对等，没动。
+  · probe-block.mjs 复测时基线自己抖到 5971ms，所有候选都显示 −1.5s —— 说明这个探针
+    **单次不够可靠**（首个 context 在冷浏览器里跑）。结论：它适合找数量级，不适合判
+    0.2 秒级的差异；这类要改测 FCP/冷启动的重复测量。
 
-② 罗盘玫瑰 512² → 256²（67KB → 21KB），最大显示 112px。同上目检。
-
-③ 中文字体按 unicode-range 拆两片（369KB → boot 108KB + rest 273KB）
-   归因说字体值 1131ms，但它不是"挡渲染"——是**在地图数据下载的中途抢走整条管子**
-   （land.geojson 1768ms 开始，字体 1916ms 插进来，字体是 High 优先级）。
-   而首屏真正要画的中文只有 **61 个字**。
-   scripts/split_font_subset.py 从现有子集按码位切（A∪B 逐字等于原集合，不重切源字体）：
-     boot = 首屏用字 + ASCII/标点；rest = 其余 1579 码位
-   A 集合的判据是**实测**：抓首屏 DOM 文本存成 assets/fonts/boot-chars.txt。
-   第一次只按"源码文件白名单"取字，漏了 6 个字（制哥春晴朗节 —— 天气标签、季节名、
-   年表第一天的哥伦布、"绘制航海图…"），rest 于是在 2062ms 就被要走了，收益几乎为零；
-   改成实测字表后 rest 推到 5264ms（地图出来之后）。
-   unicode-range 允许"吸收两片都没有的码位"来连段，否则 CSS 从 55KB 涨到 95KB。
-   验证：font-coverage e2e 5/0 —— 2016 个字全部由 webfont 绘制，零回退。
-
-④ 地图数据和地图分块**并行**取（5407 → 4581ms，最大的一笔）
-   原来是串行链：主包(199KB) → MapView 分块(69KB) → land.geojson(368KB)。
-   时间轴显示 land 到 **@1768ms** 才发出，前面 1.7 秒全在等两块 JS。
-   在 MainMap 模块求值处（和分块预取同一个 PROD 块）提前发起
-   fetchLandGeojsonForRender() + loadLandData()（两者都缓存 Promise，不会重复请求；
-   landCheck 本来就在主包里，提前取一分字节没多）。
-
-结果（同一台机器、同一档限速，跑两遍）：**4536 / 4878ms**，传输 2209 → 2010KB。
-冷启动从本轮的 6202ms 降到约 4.6 秒；产物 19.5MB → **17.8MB**。
-地形符号仍在地图后约 280ms 补上（4356 像素，与改动前一致）。
-
-验证：单测 11488/0（新增 30 余条：两片 sha1 与 range 一致性、两片不许认领同一个字、
-首屏片必须 < 其余片 60%、boot-chars 非空且含晴朗/节、land 预取在 PROD 块里且
-landCheck 两个函数幂等）、font-coverage 5/0、map-legibility 8/0、clickable-audit 全部可点、
-tsc/eslint 干净、build 17.8MB/158。
-
-新增/改动的工具：test/e2e/probe-block.mjs（逐项拦截归因）、scripts/shrink_images.mjs
-（浏览器当图片编码器）、scripts/split_font_subset.py（按 unicode-range 拆字体）。
+验证：单测 11498/0（新增 11 条：启动屏在 #root 内、样式内联、零 url()、不用自托管字体、
+只用系统衬线、关键帧只许 transform/opacity、支持 prefers-reduced-motion、createRoot）、
+font-coverage 5/0、map-legibility 8/0、clickable-audit 全部可点、tsc/eslint 干净、
+build 17.8MB/158。
