@@ -40,7 +40,7 @@ import { rollSeaOmen, OMEN_CHANCE, OMEN_COOLDOWN_DAYS } from '../src/utils/seaOm
 import { voyageMilestones, nextMilestone, newlyReached, suggestPortFor } from '../src/data/voyageMilestones'
 import { advanceDebris, spawnDebris } from '../src/utils/seaDebris'
 import { debrisGain, DEBRIS_MAX, DEBRIS_TTL_DAYS, DEBRIS_SPAWN_CHANCE, type DebrisSpot } from '../src/data/debris'
-import { npcLegAt, npcPose } from '../src/utils/npcShips'
+import { NPC_LEGS, npcLegAt, npcPose } from '../src/utils/npcShips'
 import { getRouteGeometry } from '../src/utils/routePath'
 import {
   compositeShore, foamAlpha, shallowAlpha, FOAM_SPAN_DEG, FIRST_SEA_CELL_DEG,
@@ -970,7 +970,47 @@ console.log('== 23. 舰船精灵资产（WebP 320²，带 Alpha，且不许再�
    */
   const allSprites: Record<string, string> = { ...SHIP_SPRITES, ...SPECIAL_SPRITES }
   const spriteNames = Object.keys(allSprites)
-  assert(spriteNames.length === 10, `精灵清单共 10 项（实际 ${spriteNames.length}）`)
+  /*
+   * 6 项 = 玩家四型（caravel/galleon/sloop/frigate）+ 炮战两型（pirate/frigateWar）。
+   * 【为什么从 10 降到 7】原来 SPECIAL_SPRITES 里有 6 张，逐张 grep 引用后发现
+   * 只有 frigateWar 被用过一次，其余 5 张从做出来到现在**没有任何地方显示**。
+   * 4 张挪去 assets-src/ships-parked/（不随包发布），pirate 这一轮接进了炮战。
+   * 下面那条"每一项都必须被引用"就是防止再往表里塞不接线的素材。
+   */
+  assert(spriteNames.length === 6, `精灵清单共 6 项（实际 ${spriteNames.length}）`)
+
+  /*
+   * 【发布目录里的每张图都必须被代码引用】
+   *
+   * 这是"半成品素材"最可靠的判据：不看表里怎么写，只看 **public/assets/ships/
+   * 里躺着的文件**有没有被任何一处代码提到。因为 public/ 是整目录拷进产物的 ——
+   * 文件在，就一定会被发布出去（占体积）；代码不提，玩家就永远看不到它。
+   *
+   * 背景：这里原来有 10 张船图，其中 5 张从做出来到现在没有任何地方显示
+   * （SPECIAL_SPRITES 有 6 项，只有 frigateWar 被用过）。4 张已挪到
+   * assets-src/ships-parked/（不发布、不假装在游戏里），pirate 接进了炮战。
+   *
+   * 【为什么不用"看表里的 key 有没有被引用"】玩家四型是 `shipSprite(type)` 按变量取的，
+   * 字面量匹配会漏（第一版就这么写，误报 sloop/frigate 没人用）；
+   * 而特殊船走的是 CANNON_ENEMY_SPRITE 这层间接，也不该因为"间接"就判成没用。
+   * 落在**文件**上就没有这些歧义。
+   */
+  {
+    const walk = (dir: string): string[] => readdirSync(dir).flatMap((f) => {
+      const p = join(dir, f)
+      return statSync(p).isDirectory() ? walk(p) : [p]
+    })
+    const bodies = walk(join(process.cwd(), 'src'))
+      .filter((f) => /\.(ts|tsx)$/.test(f))
+      .map((f) => readFileSync(f, 'utf8'))
+    const shipDir = join(process.cwd(), 'public', 'assets', 'ships')
+    const onDisk = readdirSync(shipDir).filter((f) => /\.(webp|png)$/.test(f))
+    assert(onDisk.length === 6, `public/assets/ships 里应是 6 张（实际 ${onDisk.length}：${onDisk.join(',')}）`)
+    for (const f of onDisk) {
+      const referenced = bodies.some((b) => b.includes(`assets/ships/${f}`))
+      assert(referenced, `${f} 在 public 里（会被发布）却没有一处代码引用 —— 要么接进游戏，要么挪出发布目录`)
+    }
+  }
 
   /** 解析 WebP 头，返回 { ok, width, height, alpha }。三种容器都要认。 */
   const readWebp = (buf: Buffer) => {
@@ -2941,7 +2981,35 @@ console.log('== 37. 事件小游戏：舷炮对轰 ==')
     assert(cannonSrc.includes(`FX_ASSETS.${asset}`),
       `CannonGame 引用了 ${asset}（入库的特效图不能只躺在清单里）`)
   }
-  assert(cannonSrc.includes('SPECIAL_SPRITES.frigateWar'), 'CannonGame 用敌军战舰精灵')
+  /*
+   * 炮战敌舰：必须**按声明选图**，不能写死一张。
+   * 原来写死 frigateWar，而唯一一场炮战（事件 236）打的是海盗船长 ——
+   * 玩家跟海盗开炮，画面上是一艘皇家战舰。素材表里 pirate 一直有，没人接。
+   */
+  {
+    const spriteSrc = readFileSync(join(process.cwd(), 'src', 'data', 'shipSprites.ts'), 'utf8')
+    assert(/CANNON_ENEMY_SPRITE[\s\S]{0,200}pirate:[\s\S]{0,80}navy:/.test(spriteSrc),
+      'CANNON_ENEMY_SPRITE 覆盖 pirate 与 navy 两种敌舰')
+    assert(cannonSrc.includes('CANNON_ENEMY_SPRITE[enemyShip]'),
+      'CannonGame 按 enemyShip 选敌舰图（不能写死一张）')
+    /* 事件侧：唯一一场炮战必须声明对手是海盗 */
+    const evSrc = readFileSync(join(process.cwd(), 'src', 'data', 'events.ts'), 'utf8')
+    /*
+     * 按出现位置往后取一段，而不是正则跨行匹配 —— events.ts 是 CRLF，
+     * 而且 `miniGame: 'cannon',` 后面可能先跟一行注释（第一版就栽在这两处）。
+     */
+    const marks: number[] = []
+    for (let i = evSrc.indexOf("miniGame: 'cannon'"); i >= 0; i = evSrc.indexOf("miniGame: 'cannon'", i + 1)) marks.push(i)
+    assert(marks.length >= 1, `至少有一处炮战选项（实际 ${marks.length}）`)
+    for (const at of marks) {
+      const tail = evSrc.slice(at, at + 200)
+      assert(/enemyShip: '(pirate|navy)'/.test(tail),
+        '每个炮战选项都要声明 enemyShip（"对面是谁"）；漏写会默认画成海军战舰')
+    }
+    /* 那一场是海盗船长的仇人，必须是 pirate */
+    assert(/独眼玛格[\s\S]{0,600}enemyShip: 'pirate'/.test(evSrc),
+      '「独眼玛格的仇人」的炮战声明敌舰为 pirate（拉斐尔是海盗，不是海军）')
+  }
   const overlaySrc = readFileSync(join(process.cwd(), 'src', 'components', 'events', 'MiniGameOverlay.tsx'), 'utf8')
   assert(overlaySrc.includes("gameId === 'cannon'") && overlaySrc.includes('<CannonGame'),
     'MiniGameOverlay 真的分发 CannonGame')
@@ -13317,6 +13385,29 @@ console.log('== 冷启动：不该为「一个按钮」下载三个视角 ==')
   assert(mapImports.length === 1, `地图块预取只允许一处（实际 ${mapImports.length} 处）`)
   assert(/if \(import\.meta\.env\.PROD\)\s*\{[\s\S]{0,400}?void import\('@\/components\/map\/MapView'\)/.test(main),
     '地图块预取带 PROD 判断')
+}
+
+console.log('== 商船船型：地图上四艘船不该长得一样 ==')
+{
+  /*
+   * 【这条锁的是什么】原来四条 NPC 腿全画 `shipSprite('caravel')` ——
+   * 地图上四艘"不同的船"是同一张图。而船型是海上最基本的读图信息：
+   * 一眼看出"这艘比我大"要靠在图上看得出大小。
+   *
+   * 判据分两层：
+   *   ① 数据层：每条腿的 kind 必须是真实存在的船型（否则 shipSprite 会静默回退盖伦，
+   *      画面上看不出来，但玩家看到的船和他以为的不是一艘）；
+   *   ② 视觉层（e2e npc-variety）：DOM 里四张 <img> 的 src 至少两种不同。
+   */
+  assert(NPC_LEGS.length === 4, `四条商船腿（实际 ${NPC_LEGS.length}）`)
+  for (const leg of NPC_LEGS) {
+    assert(leg.kind in SHIP_SPRITES, `腿 ${leg.routeId} 的船型 ${leg.kind} 必须在 SHIP_SPRITES 里`)
+  }
+  const kinds = new Set(NPC_LEGS.map((l) => l.kind))
+  assert(kinds.size >= 2, `四条腿至少两种船型（实际 ${[...kinds].join('/')}）`)
+  /* 船型跟着航线走：同一条航线不许随存档/时间变（随机的话玩家会以为船换了） */
+  const src = readFileSync(join(process.cwd(), 'src', 'utils', 'npcShips.ts'), 'utf8')
+  assert(/kind:\s*'(caravel|galleon|sloop)'/.test(src), 'NPC_LEGS 每条腿显式写死 kind')
 }
 
 console.log('== 启动屏：主包到达之前必须已经有画面（纯 CSS，零外部资源） ==')

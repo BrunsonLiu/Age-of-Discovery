@@ -23,15 +23,41 @@ export const SHIP_SPRITES: Record<string, string> = {
   frigate: `${BASE}assets/ships/frigate.webp`,
 }
 
-/** 特殊船只（事件 / 对手用） */
+/**
+ * 特殊船只（炮战 / 事件用）。
+ *
+ * 【为什么只剩两张】这里原来有 6 张：ghost / pirate / galleonWar / galleonRoyal /
+ * frigateWar / frigateLine。逐张查过引用（`grep SPECIAL_SPRITES.<key>`）：
+ * 只有 `frigateWar` 被炮战用过一次，其余 5 张**从做出来到现在没有任何地方显示**。
+ * 素材生成了、切好了、写进表了，但没接进游戏 —— 那就是半成品。
+ *
+ * 这一轮的处理：
+ *   · `pirate` 接上了：唯一一场炮战（事件 236「独眼玛格的仇人」）对手是海盗，
+ *     原来却画一艘皇家战舰（见 CANNON_ENEMY_SPRITE）。
+ *   · 其余 4 张（ghost / galleonWar / galleonRoyal / frigateLine）挪到
+ *     `assets-src/ships-parked/`：**不随包发布**，也不再出现在表里。
+ *     不是删掉 —— 源图还在仓库（`精灵验收图_10艘.png`），将来有去处（对手旗舰、
+ *     幽灵船事件改成插画风）再挪回来。**留在表里却不显示，等于假装它在游戏里。**
+ *
+ * 单测有一条守着"表里每一项都必须在 src 里被引用"，加新素材时必须同时接进游戏。
+ */
 export const SPECIAL_SPRITES = {
-  ghost: `${BASE}assets/ships/ghost.webp`,
   pirate: `${BASE}assets/ships/pirate.webp`,
-  galleonWar: `${BASE}assets/ships/galleon_war.webp`,
-  galleonRoyal: `${BASE}assets/ships/galleon_royal.webp`,
   frigateWar: `${BASE}assets/ships/frigate_war.webp`,
-  frigateLine: `${BASE}assets/ships/frigate_line.webp`,
 } as const
+
+/**
+ * 炮战敌舰：**对面是谁就画谁**。
+ *
+ * 原来只有一种敌舰（皇家战舰），而唯一一场炮战（事件 236「独眼玛格的仇人」）
+ * 的对手是海盗船长 —— 玩家跟海盗开炮，画面上是一艘皇家战舰。
+ * 素材表里 `pirate` 一直有，只是没人接。现在由 `EventChoice.enemyShip` 指定，
+ * 不写则按海军（保持旧行为）。
+ */
+export const CANNON_ENEMY_SPRITE: Record<'pirate' | 'navy', string> = {
+  pirate: SPECIAL_SPRITES.pirate,
+  navy: SPECIAL_SPRITES.frigateWar,
+}
 
 /** 取船型精灵，未知船型回退盖伦 */
 export function shipSprite(type: string): string {

@@ -85,6 +85,28 @@ check(a.wakes.length > 0, `尾迹画出来了（${a.wakes.length} 条）`)
 check(a.ships.length > 0, `商船在场（${a.ships.length} 艘）`)
 check(a.wakes.length === a.ships.length, `每条商船一条尾迹（${a.wakes.length} 条 / ${a.ships.length} 艘）`)
 
+/*
+ * 船型：地图上四艘商船不该长得一样。
+ * 原来四条腿全画 caravel（同一张图），而"这艘比我大"是海上最基本的读图信息。
+ * 判据看真实 DOM：四张 <img> 的 src 至少两种不同，且都真的解码成功
+ * （只看数据字段不够 —— 字段改了但组件还在写死 'caravel' 的话，这里会红）。
+ */
+{
+  const kinds = await page.evaluate(() => {
+    const imgs = [...document.querySelectorAll('.npc-ship-icon img')]
+    return {
+      n: imgs.length,
+      srcs: imgs.map((i) => (i.getAttribute('src') || '').split('/').pop()),
+      loaded: imgs.every((i) => i.complete && i.naturalWidth > 0),
+      sizes: imgs.map((i) => `${i.naturalWidth}x${i.naturalHeight}`),
+    }
+  })
+  const distinct = new Set(kinds.srcs)
+  check(kinds.n >= 2, `地图上有商船图标（${kinds.n} 个）`)
+  check(distinct.size >= 2, `商船至少两种船型（${[...distinct].join(' / ')}）`)
+  check(kinds.loaded, `每个船型图都解码成功（${kinds.sizes.join(', ')}）`)
+}
+
 // ① 尾迹的末端就在船身上
 let attached = 0
 for (const w of a.wakes) {

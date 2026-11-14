@@ -36,6 +36,7 @@ const DEFAULT = [
   'harbor-mood.mjs', 'harbor-life.mjs',
   'event-result.mjs', 'arrival-receipt.mjs', 'logbook.mjs',
   'voyage-smoke.mjs', 'trade-quote.mjs', 'mobile-layout.mjs',
+  'npc-wake.mjs', 'cannon-enemy.mjs',
 ]
 
 /** 需要特殊环境的（生产包 / 线上 / 缺资源），默认跳过，避免把工具问题记成产品问题 */

@@ -226,6 +226,16 @@ export interface EventChoice {
   outcomes: EventOutcome[]
   /** 该选项附带的小游戏：选完先玩，表现再回头修正结局概率 */
   miniGame?: MiniGameId
+  /**
+   * 炮战时对面是谁（只对 `miniGame: 'cannon'` 有意义）。
+   *
+   * 【为什么必须显式声明】原来炮战只有一种敌舰 —— 一张海军战舰的图。
+   * 而当时**唯一**的炮战事件是「独眼玛格的仇人」，对手是海盗船长：
+   * 玩家跟海盗开炮，画面上却是一艘皇家战舰。素材表里明明有 `pirate`。
+   * 所以不是"少一张图"，是"图用错了"。声明它，顺带逼着以后加炮战事件时
+   * 想清楚"对面是谁"（不写就默认海军，单测会盯）。
+   */
+  enemyShip?: 'pirate' | 'navy'
 }
 
 export interface EventOutcome {

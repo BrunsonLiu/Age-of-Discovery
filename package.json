@@ -60,7 +60,8 @@
     "test:e2e:relics": "node test/e2e/relics.mjs",
     "test:e2e:deck": "node test/e2e/deck-view.mjs",
     "test:e2e:suite": "node test/e2e/run-suite.mjs",
-    "test:e2e:sweep": "node test/e2e/run-suite.mjs --all"
+    "test:e2e:sweep": "node test/e2e/run-suite.mjs --all",
+    "test:e2e:cannon": "node test/e2e/cannon-enemy.mjs"
   },
   "dependencies": {
     "clsx": "^2.1.1",

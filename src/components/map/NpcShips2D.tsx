@@ -5,7 +5,7 @@ import { ports } from '@/data/ports'
 import { routes } from '@/data/routes'
 import { shipSprite } from '@/data/shipSprites'
 import { getRouteGeometry } from '@/utils/routePath'
-import { NPC_LEGS, NPC_SPEED_NM, npcLegAt, npcPose } from '@/utils/npcShips'
+import { NPC_LEGS, NPC_SPEED_NM, npcLegAt, npcPose, type NpcShipKind } from '@/utils/npcShips'
 import { wakeNmForScreen, wakePolyline } from '@/utils/shipWake'
 import { pxPerNmAt } from '@/utils/mapScale'
 
@@ -53,7 +53,7 @@ export default function NpcShips2D() {
    * 它一挂载就已经是避陆后的真值（实测 439 → 781 海里，第一条差 78%）。
    */
   const legs = useMemo(() => {
-    const out: { geom: ReturnType<typeof getRouteGeometry>; phase0: number }[] = []
+    const out: { geom: ReturnType<typeof getRouteGeometry>; phase0: number; kind: NpcShipKind }[] = []
     for (let i = 0; i < NPC_LEGS.length; i++) {
       const r = routes.find(x => x.id === NPC_LEGS[i].routeId)
       if (!r) continue
@@ -62,7 +62,7 @@ export default function NpcShips2D() {
       if (!a || !b) continue
       const geom = getRouteGeometry([a.latitude, a.longitude], [b.latitude, b.longitude])
       if (!(geom.totalNm > 0)) continue
-      out.push({ geom, phase0: NPC_LEGS[i].phase0 })
+      out.push({ geom, phase0: NPC_LEGS[i].phase0, kind: NPC_LEGS[i].kind })
     }
     return out
   }, [])
@@ -77,7 +77,7 @@ export default function NpcShips2D() {
         // 退化直线与大圆直线的里程差得很远（439 vs 781 海里），
         // 所以这个数字一变，就说明有人把航线几何换回了直线。
         + `" data-leg-nm="${Math.round(leg.geom.totalNm)}">`
-        + `<img src="${shipSprite('caravel')}" alt="" draggable="false" `
+        + `<img src="${shipSprite(leg.kind)}" alt="" draggable="false" `
         + `style="display:block;height:${NPC_SIZE}px;width:auto;opacity:0.92;`
         + `filter:drop-shadow(0 1px 3px rgba(0,0,0,0.45))" onerror="this.style.display='none'"/>`
         + `</div>`,

@@ -33,11 +33,29 @@ import { positionAtNm, type RouteGeometry } from '@/utils/routePath'
  * 不为这件事再挪相位：真挪到框内就得让船贴着哈瓦那，等于把起点写成特例。
  * 其余三条各守一片海：1 加勒比、13 印度洋、27 东非。
  */
-export const NPC_LEGS: readonly { routeId: number; phase0: number }[] = [
-  { routeId: 1, phase0: 0.30 },
-  { routeId: 9, phase0: 0.50 },
-  { routeId: 13, phase0: 0.72 },
-  { routeId: 27, phase0: 0.15 },
+/**
+ * 商船的船型。
+ *
+ * 【为什么要有这个字段】原来四条腿全画同一张 `caravel` —— 也就是说地图上
+ * 四艘"不同的船"长得完全一样。而 `shipSprites` 里早就有 caravel/galleon/sloop
+ * 三种商船（还有五张特殊船一直在表里没人用，见该文件的注释）。
+ * 船型不是装饰：加勒比那条腿跑的是小快船，里斯本—伦敦那条是大帆船 ——
+ * 一眼能看出"这艘比我大"是海上最基本的读图信息。
+ *
+ * 【为什么按海域/航程选，而不是随机】随机的话同一艘船下次变成另一种，
+ * 玩家会以为"船换了"。船型跟着航线走 = 它属于这条航线。
+ */
+export type NpcShipKind = 'caravel' | 'galleon' | 'sloop'
+
+export const NPC_LEGS: readonly { routeId: number; phase0: number; kind: NpcShipKind }[] = [
+  /* 加勒比：岛间短程，小快船最合理 */
+  { routeId: 1, phase0: 0.30, kind: 'sloop' },
+  /* 塞维利亚—哈瓦那：跨大西洋的定期班船，大帆船 */
+  { routeId: 9, phase0: 0.50, kind: 'galleon' },
+  /* 印度洋：季风航线的中型商船 */
+  { routeId: 13, phase0: 0.72, kind: 'caravel' },
+  /* 东非：沿岸贸易，小快船 */
+  { routeId: 27, phase0: 0.15, kind: 'sloop' },
 ]
 /**
  * 海里/秒。

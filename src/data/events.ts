@@ -1283,6 +1283,8 @@ export const events: GameEvent[] = [
       {
         text: '掉头迎战：她的仇，也是全船的仇',
         miniGame: 'cannon',
+        /* 对面是"红发"拉斐尔 —— 海盗，不是皇家海军 */
+        enemyShip: 'pirate',
         outcomes: [
           { probability: 0.6, goldChange: 180, foodChange: 0, waterChange: 0, moraleChange: 5, durabilityChange: 0, crewChange: 0, crewEvent: { member: 'gunner', loyaltyChange: 30 }, factionChange: { crown: 6, brethren: -8 }, description: '三轮齐射之后，拉斐尔的船降了旗。玛格亲手接收了俘虏——她的炮位从此没人再敢质疑。' },
           { probability: 0.4, goldChange: 0, foodChange: 0, waterChange: 0, moraleChange: -5, durabilityChange: -15, crewChange: 0, crewEvent: { member: 'gunner', loyaltyChange: 15 }, factionChange: { crown: 3, brethren: -5 }, description: '拉斐尔跑了，跑前朝玛格甲板扔了一只血淋淋的耳朵。她大笑着挂帆——只有你知道，她回舱后吐了。' },

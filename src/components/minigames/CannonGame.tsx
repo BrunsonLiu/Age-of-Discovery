@@ -18,7 +18,7 @@ import { useMiniGameLoop } from '@/hooks/useMiniGameLoop'
 import { useFxStore as useFx } from '@/store/useFxStore'
 import { useGameStore } from '@/store/useGameStore'
 import { FX_ASSETS } from '@/data/envAssets'
-import { SHIP_SPRITES, SPECIAL_SPRITES, shipSprite } from '@/data/shipSprites'
+import { CANNON_ENEMY_SPRITE, SHIP_SPRITES, shipSprite } from '@/data/shipSprites'
 
 /**
  * 舷炮对轰：三轮齐射，每轮「先开火、再扛对方的反击」。
@@ -47,7 +47,8 @@ const SHOT_LABEL: Record<'hit' | 'graze' | 'miss', string> = {
   miss: '落水',
 }
 
-export default function CannonGame({ modifiers, onDone }: {
+export default function CannonGame({ modifiers, onDone, enemyShip = 'navy' }: {
+  enemyShip?: 'pirate' | 'navy'
   modifiers: MiniGameModifiers
   onDone: (score: number) => void
 }) {
@@ -385,7 +386,7 @@ export default function CannonGame({ modifiers, onDone }: {
         {/* 敌舰：弓朝左（对着我们） */}
         <div className="absolute left-1/2 top-9 -translate-x-1/2 w-32 h-32 flex items-center justify-center pointer-events-none">
           <img
-            src={SPECIAL_SPRITES.frigateWar}
+            src={CANNON_ENEMY_SPRITE[enemyShip]}
             alt="敌舰"
             draggable={false}
             className="w-32 h-32 select-none"

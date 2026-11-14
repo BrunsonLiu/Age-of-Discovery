@@ -33,7 +33,7 @@ export default function EventCard() {
   const [choiceIndex, setChoiceIndex] = useState<number | null>(null)
   const [bannerFailed, setBannerFailed] = useState(false)
   /** 待玩的小游戏：选了带 miniGame 的选项后，先玩再结算 */
-  const [miniGame, setMiniGame] = useState<{ id: MiniGameId; choice: number } | null>(null)
+  const [miniGame, setMiniGame] = useState<{ id: MiniGameId; choice: number; enemyShip?: 'pirate' | 'navy' } | null>(null)
   /** 天赋这一次具体做了什么（反事实差值）。结算屏上单独一行 */
   const [traitNote, setTraitNote] = useState<string | null>(null)
   /** 本次操作的表现分（0..1），用于结算提示 */
@@ -100,7 +100,8 @@ export default function EventCard() {
     // 带小游戏的选项：先上手操作，玩完再据表现分掷结果。
     // 这样"选项"不再等价于"点一下然后看天意"。
     if (choice.miniGame) {
-      setMiniGame({ id: choice.miniGame, choice: index })
+      /* enemyShip 一起带过去：炮战画面要画对面那艘船（见 EventChoice.enemyShip） */
+      setMiniGame({ id: choice.miniGame, choice: index, enemyShip: choice.enemyShip })
       return
     }
     resolveOutcome(choice.outcomes, undefined)
@@ -360,7 +361,7 @@ export default function EventCard() {
 
       {/* 小游戏覆盖层：选中有 miniGame 的选项后弹出，玩完才结算 */}
       {miniGame && (
-        <MiniGameOverlay gameId={miniGame.id} onFinish={handleMiniGameFinish} />
+        <MiniGameOverlay gameId={miniGame.id} enemyShip={miniGame.enemyShip} onFinish={handleMiniGameFinish} />
       )}
     </>
   )

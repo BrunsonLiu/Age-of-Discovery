@@ -29,6 +29,8 @@ type Phase = 'intro' | 'running' | 'done'
 interface MiniGameOverlayProps {
   /** 玩哪个小游戏 */
   gameId: MiniGameId
+  /** 炮战时对面是谁（见 EventChoice.enemyShip） */
+  enemyShip?: 'pirate' | 'navy'
   /** 结算回调：score 0..1 */
   onFinish: (score: number) => void
 }
@@ -60,7 +62,7 @@ function useMiniGameContext(): MiniGameContext {
  * 各原型的实时逻辑与界面在 src/components/minigames/ 下各自独立，
  * 共享 useMiniGameLoop（ref + 60fps + DOM 直改，不触发 React 重渲染）。
  */
-export default function MiniGameOverlay({ gameId, onFinish }: MiniGameOverlayProps) {
+export default function MiniGameOverlay({ gameId, onFinish, enemyShip }: MiniGameOverlayProps) {
   const ctx = useMiniGameContext()
   const modifiers = useMemo(() => computeModifiers(ctx), [ctx])
 
@@ -211,7 +213,7 @@ export default function MiniGameOverlay({ gameId, onFinish }: MiniGameOverlayPro
             {gameId === 'lookout' && <LookoutGame modifiers={modifiers} onDone={finishRun} />}
             {gameId === 'gamble' && <GambleGame modifiers={modifiers} onDone={finishRun} />}
             {gameId === 'haggle' && <HaggleGame modifiers={modifiers} onDone={finishRun} />}
-            {gameId === 'cannon' && <CannonGame modifiers={modifiers} onDone={finishRun} />}
+            {gameId === 'cannon' && <CannonGame modifiers={modifiers} onDone={finishRun} enemyShip={enemyShip} />}
           </>
         )}
 
