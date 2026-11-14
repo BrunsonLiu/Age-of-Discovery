@@ -171,14 +171,40 @@ check(lampDay >= 0 && lampDay <= 0.15, `白天水边的灯几乎不亮（opacity
 /*
  * 【云为什么不量像素】天空那一块在 e2e 里被教程遮罩压着：同一块纯天空，
  * 带遮罩 std 32.8、清掉之后 12.7（差 2.6 倍）—— 量出来的是遮罩，不是云。
- * 改成读 uniform（能证伪"把云关掉"），几何上的细节交给单测的源码守卫。
+ *
+ * 【这条断言为什么在 2026-11 改了口径】它原来读天空 shader 的 `uCloud`，
+ * 期望 > 0.5。但现在 `uCloud` 是**故意置 0** 的（DeckView 里那段注释写得很清楚：
+ * 噪声云只会给天空蒙一层等值线白纱，云完全交给 `cloudBillboards.ts`）。
+ * 于是这条断言变成了"守一个已经作废的 uniform" —— 它会是永远红的，
+ * 而真正该守的"白天有云"反而没人看。
+ * 现在改读**真正画云的那一层**（`deck-clouds`）：片数、纹理、白天透明度、
+ * 以及它有没有在漂（漂移是 `update(dt, rate)` 每帧绕 Y 转，实测 1.5 秒 0.0125 rad）。
  */
 const cloud = await page.evaluate(() => {
+  const g = window.__deckScene?.getObjectByName('deck-clouds')
   const u = window.__deckSky?.uniforms
-  return u ? { k: u.uCloud?.value ?? -1, drift: !!u.uCloudDrift, color: !!u.uCloudColor } : null
+  if (!g) return null
+  const kids = g.children.filter((k) => k.isMesh)
+  const opac = kids.map((k) => k.material?.opacity ?? -1)
+  return {
+    n: kids.length,
+    visible: g.visible && kids.filter((k) => k.visible).length === kids.length,
+    hasTex: kids.every((k) => !!k.material?.map),
+    opac: Math.max(...opac),
+    rot: g.rotation.y,
+    /* 天空那套 uniform 仍在（海图 3D 还用同一份噪声云公式），只是 uCloud 为 0 */
+    skyUniforms: !!u && !!u.uCloudDrift && !!u.uCloudColor,
+  }
 })
-check(!!cloud && cloud.k > 0.5, `白天云是开着的（uCloud=${cloud?.k?.toFixed(2)}）`)
-check(!!cloud?.drift && !!cloud?.color, '云有漂移与自己的颜色两个 uniform')
+check(!!cloud && cloud.n >= 1 && cloud.visible, `白天云层挂着（${cloud?.n} 片，全部可见）`)
+check(!!cloud?.hasTex, '云片带贴图（没有贴图就是几块灰板）')
+check(!!cloud && cloud.opac > 0.5, `白天云是不透明的白（opacity ${cloud?.opac?.toFixed(2)}）`)
+check(!!cloud?.skyUniforms, '天空仍有云的漂移/颜色 uniform（3D 海图共用那套公式）')
+/* 漂移：等 1.2 秒看整层有没有绕 Y 转（风向驱动，静风时也至少有 0.002 rad/s 的底速） */
+await sleep(1200)
+const rotLater = await page.evaluate(() => window.__deckScene?.getObjectByName('deck-clouds')?.rotation.y ?? null)
+check(cloud?.rot != null && rotLater != null && Math.abs(rotLater - cloud.rot) > 0.001,
+  `云在漂（1.2 秒转了 ${cloud?.rot != null && rotLater != null ? (rotLater - cloud.rot).toFixed(4) : '—'} rad）`)
 
 const waveDock = await readWave()
 check(waveDock !== null && Math.abs(waveDock - 0.34) < 0.03,
