@@ -589,6 +589,29 @@ export const OFFER_PRICE_RATIO = 0.5
  */
 export const GUILD_BUYBACK_REP = 90
 export const GUILD_BUYBACK_RATIO = 0.7
+
+/**
+ * 兄弟会 30 档「黑市开放：禁运品（武器/奢侈品）溢价收购」。
+ *
+ * 货物表本来就有 `category`（food / luxury / material / weapon / spice）——
+ * 这条特权不需要新维度，只要在**卖价**上按"这是谁的港口 + 这货是不是禁运品"再乘一档。
+ *
+ * 为什么只加在卖价、不加在买价：黑市是"有人肯收你的违禁品"，不是"卖你便宜货"。
+ * 买价给优惠是商会那条线的事，两条混在一起，玩家就说不清哪个声望在起作用。
+ */
+export const BRETHREN_BLACKMARKET_REP = 30
+export const BRETHREN_BLACKMARKET_MUL = 1.15
+const BLACKMARKET_CATEGORIES: ReadonlyArray<string> = ['weapon', 'luxury']
+
+function blackMarketMul(
+  portId: number,
+  category: string,
+  factionRep: Partial<Record<string, number>>,
+): number {
+  if (!BLACKMARKET_CATEGORIES.includes(category)) return 1
+  if (portFaction(portId) !== 'brethren') return 1
+  return (factionRep.brethren ?? 0) >= BRETHREN_BLACKMARKET_REP ? BRETHREN_BLACKMARKET_MUL : 1
+}
 function offerRatioFor(guildRep: number): number {
   return guildRep >= GUILD_BUYBACK_REP ? GUILD_BUYBACK_RATIO : OFFER_PRICE_RATIO
 }
@@ -628,10 +651,13 @@ export function selectSellPrice(state: GameState, portId: number, goodId: number
      * 比例按商会声望取一档：≥90 是七折（商会替你兜底），否则五折。
      */
     const ratio = offerRatioFor(state.factionRep.guild ?? 0)
-    return Math.round((good.basePrice * ratio) / priceMultiplier(state.fleet, opts))
+    const mk = blackMarketMul(portId, good.category, state.factionRep)
+    return Math.round((good.basePrice * ratio * mk) / priceMultiplier(state.fleet, opts))
   }
   const stock = state.marketStock[`${portId}:${goodId}`] ?? pg.stock
-  return dynamicSellPrice(pg, stock, pg.stock, state.fleet, opts)
+  // 兄弟会地盘上的黑市：武器/奢侈品溢价收购（面板与结算同一个数）
+  const mk = blackMarketMul(portId, good.category, state.factionRep)
+  return Math.round(dynamicSellPrice(pg, stock, pg.stock, state.fleet, opts) * mk)
 }
 
 /**

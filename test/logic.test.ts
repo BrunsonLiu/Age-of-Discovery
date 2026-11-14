@@ -935,15 +935,22 @@ console.log('== 17d. 说明书写的东西必须真的在代码里 ==')
  */
 const helpSrc = readFileSync(join(process.cwd(), 'src', 'components', 'intro', 'HelpPanel.tsx'), 'utf8')
 /*
- * 剥注释再看。允许出现的一种情形：明确标了"尚未实装"的披露行
- * （"（势力特权还在补齐：王家合约、黑市、护航尚未实装，面板上不会出现它们）"）——
- * 那是诚实说明，不是承诺。其余任何地方出现这三个词都是空承诺。
+ * 剥注释再看。允许出现的一种情形：明确标了"尚未实装"的披露行 ——
+ * 那是诚实说明，不是承诺。
+ *
+ * 【词表要跟着实现进度改】"黑市"与"护航"原本在这个黑名单里，2026-11-15 两条都
+ * 真做了（兄弟会黑市溢价、海盗遭遇率），继续禁着会把诚实文案判红。
+ * 现在只剩"王家合约"——它确实没有实现（没有王室委托这一类任务）。
  */
 {
   const badLines = stripComments(helpSrc).split('\n')
-    .filter(l => /王家合约|黑市|护航/.test(l) && !/尚未实装/.test(l))
+    .filter(l => /王家合约/.test(l) && !/尚未实装/.test(l))
   assert(badLines.length === 0,
     `帮助里不许把未实现的势力特权当成真的写：${badLines[0]?.trim().slice(0, 40) ?? ''}`)
+  // 帮助里提到的"已实装"必须真在数据里（改文案不算实现）
+  const facSrcH = readFileSync(join(process.cwd(), 'src', 'data', 'factions.ts'), 'utf8')
+  assert(/黑市：武器与奢侈品卖价/.test(facSrcH), '帮助提到"黑市"，数据里就得有这条特权')
+  assert(/海盗遭遇率 -20%/.test(facSrcH), '帮助提到"少遇海盗"，数据里就得有这条特权')
 }
 assert(!/花 80 金币买/.test(helpSrc), '帮助里的情报价不许写死 80')
 assert(/\$\{achievements\.length\} 项成就/.test(helpSrc), '帮助里的成就数来自 achievements.length')
@@ -1329,6 +1336,68 @@ console.log('== 17j. 商会 90 档：滞销货七折回收 ==')
 
   const facSrc4 = readFileSync(join(process.cwd(), 'src', 'data', 'factions.ts'), 'utf8')
   assert(/text: '滞销货按底价七折回收'/.test(facSrc4), '商会 90 档文案 = 滞销货按底价七折回收')
+}
+
+console.log('== 17k. 兄弟会 30 档：黑市禁运品溢价 ==')
+/*
+ * 「黑市开放：禁运品（武器/奢侈品）溢价收购」原来也是设计稿。
+ * 货物表本来就有 category，所以不需要新维度：卖价按"谁的港口 + 是不是禁运品"再乘一档。
+ * 只加在卖价 —— 黑市是"有人肯收你的违禁品"，不是"卖你便宜货"。
+ */
+{
+  const { selectSellPrice, BRETHREN_BLACKMARKET_MUL, BRETHREN_BLACKMARKET_REP } = await import('../src/store/useGameStore')
+  const { portFaction } = await import('../src/data/factions')
+  assert(BRETHREN_BLACKMARKET_REP === 30, '门槛 30 档（与文案一致）')
+  assert(BRETHREN_BLACKMARKET_MUL === 1.15, `溢价 15%（文案写 +15%）`)
+
+  // 找"兄弟会港口 + 它经营的禁运品"，与"它不经营的禁运品"，两条分支都要测
+  const smuggle = goods.find(g => g.category === 'weapon' || g.category === 'luxury')!
+  const brethrenPorts = ports.filter(p => portFaction(p.id) === 'brethren')
+  assert(brethrenPorts.length > 0, '数据里有兄弟会港口')
+  const homePort = brethrenPorts.find(p => portGoods.some(pg => pg.portId === p.id && pg.goodId === smuggle.id))
+    ?? brethrenPorts[0]
+  const otherPort = ports.find(p => portFaction(p.id) === 'crown')!
+
+  const mk = (brethrenRep: number, portId: number) => ({
+    ...baseState,
+    factionRep: { crown: 0, guild: 0, scholars: 0, brethren: brethrenRep },
+    fleet: { ...baseState.fleet, currentPortId: portId, isSailing: false },
+  }) as never
+  const at = (rep: number, portId = homePort.id) => selectSellPrice(mk(rep, portId), portId, smuggle.id)!
+  const p0 = at(0)
+  const p29 = at(29)
+  const p30 = at(30)
+  assert(p29 === p0, `声望 29 还没到档（${p29} = ${p0}）`)
+  assert(Math.abs(p30 - p0 * 1.15) <= 1, `声望 30：卖价 ×1.15（${p0} → ${p30}）`)
+  assert(p30 > p0, '溢价确实更高（否则这条特权等于没做）')
+
+  // 非禁运品不受影响
+  const food = goods.find(g => g.category === 'food')!
+  const f0 = selectSellPrice(mk(0, homePort.id), homePort.id, food.id)!
+  const f30 = selectSellPrice(mk(30, homePort.id), homePort.id, food.id)!
+  assert(f0 === f30, `食品不在黑市范围内（${f0} vs ${f30}）`)
+
+  // 别的势力的港口没有黑市
+  const w0 = selectSellPrice(mk(0, otherPort.id), otherPort.id, smuggle.id)
+  const w90 = selectSellPrice(mk(90, otherPort.id), otherPort.id, smuggle.id)
+  assert(w0 === w90, `王室港口不给黑市价（${w0} vs ${w90}）`)
+
+  // 结算侧：sellGood 按黑市价入账
+  const stB = useGameStore.getState()
+  useGameStore.setState({
+    ...stB,
+    factionRep: { crown: 0, guild: 0, scholars: 0, brethren: 30 },
+    fleet: { ...stB.fleet, currentPortId: homePort.id, isSailing: false, gold: 0, cargo: [{ goodId: smuggle.id, quantity: 2 }] },
+  })
+  const price = selectSellPrice(useGameStore.getState(), homePort.id, smuggle.id)!
+  useGameStore.getState().sellGood(homePort.id, smuggle.id, 2)
+  const afterB = useGameStore.getState()
+  assert(afterB.fleet.gold === price * 2, `入账 ${afterB.fleet.gold} = 面板价 ${price} × 2`)
+  useGameStore.setState({ ...stB, factionRep: stB.factionRep, fleet: stB.fleet })
+
+  const facSrc5 = readFileSync(join(process.cwd(), 'src', 'data', 'factions.ts'), 'utf8')
+  assert(/text: '黑市：武器与奢侈品卖价 \+15%'/.test(facSrc5), '黑市文案 = 武器与奢侈品卖价 +15%')
+  assert(!/黑市开放：禁运品/.test(facSrc5), '旧的"黑市开放：禁运品…"设计稿不许留着')
 }
 
 console.log('== 18. 新事件引擎条件 ==')
