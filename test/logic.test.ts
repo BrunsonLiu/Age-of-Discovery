@@ -1216,6 +1216,51 @@ console.log('== 17h. 王室两条特权：倍率只从 crewPerks 出 ==')
   useGameStore.setState({ ...st0, factionRep: st0.factionRep, fleet: st0.fleet })
 }
 
+console.log('== 17i. 兄弟会护航：海盗遭遇率 -20% / 不再拦船 ==')
+/*
+ * faction 里 60/90 档原来只有一句"设计稿"。现在实现在抽事件那一层：
+ * 抽到 pirate 事件先问一句"这艘船挂着兄弟会的旗，还用不用打"。
+ * 放在筛选层而不是改 63 条事件各自的 probability —— 下次加海盗事件不会漏。
+ */
+{
+  const ev = await import('../src/utils/eventEngine')
+  // 纯函数：边界 + 类型
+  assert(ev.pirateEncounterSuppressed('trade', 90) === false, '非海盗事件不受影响（哪怕声望 90）')
+  assert(ev.pirateEncounterSuppressed('pirate', 59) === false, '声望 59 还没到 60 档')
+  assert(ev.pirateEncounterSuppressed('pirate', 60, () => 0.05) === true, '60 档：掷到 0.05（<0.2）→ 这次不遇上')
+  assert(ev.pirateEncounterSuppressed('pirate', 60, () => 0.5) === false, '60 档：掷到 0.5（≥0.2）→ 照常遇上')
+  assert(ev.pirateEncounterSuppressed('pirate', 89, () => 0) === true, '89 仍是 60 档的 20% 规则')
+  assert(ev.pirateEncounterSuppressed('pirate', 90, () => 0.999) === true, '90 档：不看掷值，整类跳过')
+  assert(ev.BRETHREN_PIRATE_REDUCE === 0.2, '减免幅度的唯一来源是 0.2（文案写 20%）')
+
+  /*
+   * 接线：事件池里只剩海盗事件时，90 档抽不出任何事件；
+   * 0 档抽得出。用 Math.random=0 把"概率门槛"顶开（否则可能一开始就被全局概率挡掉）。
+   */
+  const mkPirate = (id: number) => ({
+    id, type: 'pirate', title: 't', description: 'd',
+    triggerCondition: { probability: 1 },
+    choices: [{ text: 'ok', outcomes: [{ probability: 1, goldChange: 0 }] }],
+  } as unknown as (typeof events)[number])
+  const pool = [mkPirate(9101), mkPirate(9102)]
+  const real = Math.random
+  const withRng = (v: number, fn: () => unknown) => { Math.random = () => v; try { return fn() } finally { Math.random = real } }
+  const at = (rep: number) => ({ ...baseState, recentEvents: [], factionRep: { crown: 0, guild: 0, scholars: 0, brethren: rep } }) as never
+  const draw = (rep: number) => withRng(0, () => ev.getRandomEvents(at(rep), pool, 99, 100))
+  assert(draw(0) !== null, '声望 0：海盗事件照常出现')
+  assert(draw(90) === null, '声望 90：整类海盗事件被跳过（这一趟改为太平）')
+  // 60 档：随机源给 0.05 → 每次都跳过；给 0.9 → 照常出现
+  const drawAt = (rep: number, v: number) => withRng(v, () => ev.getRandomEvents(at(rep), pool, 99, 100))
+  assert(drawAt(60, 0.05) === null, '声望 60 + 掷值 0.05 → 这次没有海盗')
+  assert(drawAt(60, 0.9) !== null, '声望 60 + 掷值 0.9 → 照常有海盗')
+
+  const facSrc3 = readFileSync(join(process.cwd(), 'src', 'data', 'factions.ts'), 'utf8')
+  assert(/text: '海盗遭遇率 -20%'/.test(facSrc3), '60 档文案 = 海盗遭遇率 -20%')
+  assert(/text: '海盗不再拦你的船'/.test(facSrc3), '90 档文案 = 海盗不再拦你的船')
+  // 剥注释再查：注释里留着这句话是在解释"为什么删掉"
+  assert(!/被俘时可赎金免战/.test(stripComments(facSrc3)), '删掉"被俘可赎金免战"（游戏里没有被俘状态）')
+}
+
 console.log('== 18. 新事件引擎条件 ==')
 const evElena = events.find(e => e.id === 238)!
 assert(!checkEventTrigger({ ...evElena, triggerCondition: { ...evElena.triggerCondition, probability: 1 } }, baseState), '伊莲事件：无学者在船不触发')

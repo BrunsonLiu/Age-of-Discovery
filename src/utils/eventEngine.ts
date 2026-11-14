@@ -181,6 +181,34 @@ const MIN_DAYS_BETWEEN_EVENTS = 5
  */
 export const RECENT_EVENT_WINDOW = 25
 
+/**
+ * 兄弟会的两条护航特权：60 档「海盗遭遇率 -20%」、90 档「海盗不再拦你的船」。
+ *
+ * 【为什么放在抽事件的循环里，而不是改事件概率】
+ * 事件表里每个 pirate 事件自带 `triggerCondition.probability`，
+ * 那是"这一条在符合条件的海域出现多密"；而特权说的是"这一整类遭遇少多少"。
+ * 两者相乘写在 63 条数据里，等于让每条海盗事件各背一份派系逻辑 ——
+ * 下次加一条海盗事件就会漏掉。所以判据放在**筛选**这一层：
+ * 抽到海盗事件时先问一句"这艘船挂着兄弟会的旗，还用不用打"。
+ *
+ * @param brethrenRep 兄弟会声望
+ * @param rng 注入随机源（单测要确定性）
+ */
+export const BRETHREN_PIRATE_REDUCE_REP = 60
+export const BRETHREN_PIRATE_REDUCE = 0.2
+export const BRETHREN_PIRATE_IMMUNE_REP = 90
+
+export function pirateEncounterSuppressed(
+  eventType: string,
+  brethrenRep: number,
+  rng: () => number = Math.random,
+): boolean {
+  if (eventType !== 'pirate') return false
+  if (brethrenRep >= BRETHREN_PIRATE_IMMUNE_REP) return true
+  if (brethrenRep >= BRETHREN_PIRATE_REDUCE_REP) return rng() < BRETHREN_PIRATE_REDUCE
+  return false
+}
+
 export function getRandomEvents(
   gameState: GameState,
   events: GameEvent[],
@@ -202,6 +230,12 @@ export function getRandomEvents(
   const fresh = events.filter(e => !recent.includes(e.id))
   const shuffled = [...(fresh.length ? fresh : events)].sort(() => Math.random() - 0.5)
   for (const event of shuffled) {
+    /*
+     * 兄弟会护航：抽到海盗事件先问一句"这艘船还用不用打"。
+     * 90 档整类跳过（被兄弟会打过招呼），60 档每次 20% 概率跳过。
+     * 被跳过就继续看下一条候选 —— 玩家这一趟改遇别的事，而不是"空手而归"。
+     */
+    if (pirateEncounterSuppressed(event.type, gameState.factionRep?.brethren ?? 0)) continue
     /*
      * 【这一次掷值必须留住】为了判断"这场遭遇是不是天赋给的"，
      * 命中之后要拿**同一个数**再跑一遍"没有探险家"的判定。

@@ -107,8 +107,13 @@ check(/✓/.test(mid.guild?.owned ?? '') && /再 \+5 点/.test(mid.guild?.next ?
   `商会 55：已生效 1% 与"再 +5 点"同时显示 —— ${mid.guild?.owned} / ${mid.guild?.next}`)
 check(!mid.scholars?.owned && /再 \+20 点/.test(mid.scholars?.next ?? ''),
   `学者 10：只有下一档 —— ${mid.scholars?.next}`)
-check(/✓/.test(mid.brethren?.owned ?? '') && !mid.brethren?.next,
-  `兄弟会 35：已达 30 档 —— ${mid.brethren?.owned}`)
+/*
+ * 兄弟会 35：30 档已生效，60 档还没到。
+ * 2026-11-15 接了 60/90 档（海盗遭遇率），所以这里**应该有一段"再 +25 点"** ——
+ * 原来断言"没有下一档"是因为当时 30 档就是最高档。
+ */
+check(/✓/.test(mid.brethren?.owned ?? '') && /再 \+25 点/.test(mid.brethren?.next ?? ''),
+  `兄弟会 35：已生效 4% 与"再 +25 点 → 海盗遭遇率 -20%"同时显示 —— ${mid.brethren?.owned} / ${mid.brethren?.next}`)
 await page.screenshot({ path: `${SHOTS}/faction-perks.png` })
 
 console.log('\n【3】界面上出现的百分比 = 代码里实际生效的折扣')
