@@ -15,7 +15,7 @@ import { getRouteGeometry } from '@/utils/routePath'
 import { routeFacts, voyageDays, windFavorForRoute, LOW_MORALE } from '@/utils/voyage'
 import { getRandomEvents, consumeEventFlags, RECENT_EVENT_WINDOW } from '@/utils/eventEngine'
 import { STANCES, segmentCountFor, nextSegmentBoundary, hazardLabel, dailyFoodUse, dailyWaterUse, dailyWearRate, settleWear } from '@/utils/segment'
-import { repairCost, taskGold, supplyCost, supplyAmounts, intelCost, INTERPRETER_FACTION_MUL } from '@/utils/crewPerks'
+import { repairCost, taskGold, supplyCost, supplyAmounts, intelCost, portServiceMul, escortRewardMul, INTERPRETER_FACTION_MUL } from '@/utils/crewPerks'
 import { rollSeaOmen } from '@/utils/seaOmen'
 import { canAfford, hasCargoSpace } from '@/utils/trade'
 import { historicalTimeline } from '@/data/historicalTimeline'
@@ -2057,7 +2057,12 @@ export const useGameStore = create<GameStore>()(
         if (!port || !port.services.includes('repair')) return state
         const ship = state.fleet.ships.find(s => s.id === shipId)
         if (!ship || ship.durability >= ship.maxDurability) return state
-        const cost = repairCost(ship.maxDurability - ship.durability, state.crewRoster.some(m => m.id === 'carpenter'))
+        // 王室港 + 声望 ≥60 → 九折（倍率只从 crewPerks 出，界面那边调同一个）
+        const cost = repairCost(
+          ship.maxDurability - ship.durability,
+          state.crewRoster.some(m => m.id === 'carpenter'),
+          portServiceMul(state.fleet.currentPortId, state.factionRep.crown ?? 0),
+        )
         if (state.fleet.gold < cost) return state
         return { fleet: { ...state.fleet, gold: state.fleet.gold - cost, ships: state.fleet.ships.map(s => s.id === shipId ? { ...s, durability: s.maxDurability } : s) } }
       }),
@@ -2066,7 +2071,11 @@ export const useGameStore = create<GameStore>()(
         if (!state.fleet.currentPortId) return state
         const port = ports.find(p => p.id === state.fleet.currentPortId)
         if (!port || !port.services.includes('supply')) return state
-        const totalCost = supplyCost(GAME_BALANCE.SUPPLY_TOTAL_COST, state.crewRoster.some(m => m.id === 'navigator'))
+        const totalCost = supplyCost(
+          GAME_BALANCE.SUPPLY_TOTAL_COST,
+          state.crewRoster.some(m => m.id === 'navigator'),
+          portServiceMul(state.fleet.currentPortId, state.factionRep.crown ?? 0),
+        )
         if (state.fleet.gold < totalCost) return state
         // 到手多少：与港口面板上写的数字同一个函数（厨子多给一半粮）
         const got = supplyAmounts(GAME_BALANCE.SUPPLY_AMOUNT, { hasCook: state.crewRoster.some(m => m.id === 'cook') })
@@ -2149,7 +2158,11 @@ export const useGameStore = create<GameStore>()(
         }
         const fameGain = task.reward.fame ?? 0
         // 商人谈下来的那部分赏金：卡片上写的数字就是这里结算的数字
-        const goldGain = taskGold(task.reward.gold, state.crewRoster.some(m => m.id === 'merchant'))
+        const goldGain = taskGold(
+          task.reward.gold,
+          state.crewRoster.some(m => m.id === 'merchant'),
+          escortRewardMul(task.type, state.factionRep.crown ?? 0),
+        )
         return withAchievements(state, {
           /*
            * 【这里原来把 newCargo 算完就扔了】`{ ...state.fleet }` 用的是**旧货舱**，

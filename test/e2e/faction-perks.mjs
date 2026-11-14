@@ -86,8 +86,13 @@ for (const f of IDS) {
   check(!!zero[f]?.next, `${f} 显示下一档（${zero[f]?.next ?? '没有'}）`)
   check(!zero[f]?.owned, `${f} 声望 0 时没有"已生效"标记`)
 }
-// 阈值来自数据：crown 90 / guild 30 / scholars 30 / brethren 30
-const expectAt = { crown: 90, guild: 30, scholars: 30, brethren: 30 }
+// 阈值从数据里算（写死就会像上一轮那样过期：王室加了 30 档之后，"
+// "声望 0 时下一档就是 30，不再是 90）
+const perkData = await page.evaluate(async () => {
+  const f = await import('/Age-of-Discovery/src/data/factions.ts').catch(() => import('/src/data/factions.ts'))
+  return Object.fromEntries(f.FACTIONS.map(x => [x.id, x.perks.map(pk => pk.at)]))
+})
+const expectAt = Object.fromEntries(Object.entries(perkData).map(([id, ats]) => [id, ats.length ? Math.min(...ats) : null]))
 for (const f of IDS) {
   const m = /再 \+(\d+) 点/.exec(zero[f]?.next ?? '')
   check(!!m && Number(m[1]) === expectAt[f], `${f} 的"再 +X 点"= ${expectAt[f]}（实际 ${m?.[1] ?? '无'}）`)
@@ -165,6 +170,7 @@ check(rBrethrenHome != null && Math.abs(rBrethrenHome - 0.04) < 0.012,
   `兄弟会 30 档在皇家港实测折扣 ${(rBrethrenHome * 100).toFixed(1)}%（文案写 4%）`)
 check(rBrethrenOther != null && rBrethrenOther <= 0.012,
   `兄弟会 30 档在塞维利亚没有折扣（实测 ${(rBrethrenOther * 100).toFixed(1)}%）`)
+
 
 check(errors.length === 0, `无页面错误（${errors.slice(0, 2).join(' | ') || '0'}）`)
 console.log(`\n最终结果：${pass} 通过 / ${fail} 失败`)

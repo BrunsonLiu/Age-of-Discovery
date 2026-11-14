@@ -10,6 +10,7 @@ import { OFFICERS } from '@/data/officers'
 import { CREW_CHARS } from '@/data/crewChars'
 import { officerPortrait, crewPortrait } from '@/data/portraits'
 import { portImage } from '@/data/portImages'
+import { portServiceMul, escortRewardMul } from '@/utils/crewPerks'
 import { repairCost, taskGold, supplyCost, supplyAmounts } from '@/utils/crewPerks'
 import { FACTIONS, portFaction, factionAttitude } from '@/data/factions'
 import Badge from '@/components/ui/Badge'
@@ -77,15 +78,21 @@ export default function PortDetail() {
   // 按钮上写的数字，就是点下去实际扣的数字
   const hasCarpenter = crewRoster.some(m => m.id === 'carpenter')
   const hasMerchant = crewRoster.some(m => m.id === 'merchant')
+  /*
+   * 王室特权（声望 ≥60 的王室港修理/补给九折；≥30 的护送委托 +25%）。
+   * 倍率只从 utils/crewPerks 出，这里只把"当前港 + 声望"传进去 ——
+   * 与 store 里扣款那两处调的是同一个函数，屏幕上写多少就扣多少。
+   */
+  const serviceMul = portServiceMul(fleet.currentPortId, factionRep.crown ?? 0)
   // 航海士谈得下补给价：按钮上写的数字，就是点下去实际扣的数字
-  const supplyCostNow = supplyCost(GAME_BALANCE.SUPPLY_TOTAL_COST, crewRoster.some(m => m.id === 'navigator'))
+  const supplyCostNow = supplyCost(GAME_BALANCE.SUPPLY_TOTAL_COST, crewRoster.some(m => m.id === 'navigator'), serviceMul)
   // 到手多少也要同一个函数：厨子多给一半粮，面板上写的份量就是实际增加的份量
   const supplyGot = supplyAmounts(GAME_BALANCE.SUPPLY_AMOUNT, { hasCook: crewRoster.some(m => m.id === 'cook') })
 
   const handleRepair = (shipId: number) => {
     const ship = fleet.ships.find(s => s.id === shipId)
     if (!ship) return
-    const cost = repairCost(ship.maxDurability - ship.durability, hasCarpenter)
+    const cost = repairCost(ship.maxDurability - ship.durability, hasCarpenter, serviceMul)
     if (fleet.gold < cost) return
     repairShip(shipId)
   }
@@ -351,7 +358,7 @@ export default function PortDetail() {
               </h4>
               {fleet.ships.map(ship => {
                 const damage = ship.maxDurability - ship.durability
-                const cost = repairCost(damage, hasCarpenter)
+                const cost = repairCost(damage, hasCarpenter, serviceMul)
                 return (
                   <div key={ship.id} className="flex items-center justify-between text-[13px] mb-1">
                     <span className="text-gold-300 font-serif">{ship.name} ({ship.durability}/{ship.maxDurability})</span>
@@ -555,7 +562,7 @@ export default function PortDetail() {
                     </button>
                   </div>
                   <div className="flex items-center justify-between text-gold-500 text-[13px] mt-0.5">
-                    <span>奖励: <Coins size={10} className="inline" /> {taskGold(task.reward.gold, hasMerchant)}{task.reward.fame ? ` +${task.reward.fame}声望` : ''}</span>
+                    <span>奖励: <Coins size={10} className="inline" /> {taskGold(task.reward.gold, hasMerchant, escortRewardMul(task.type, factionRep.crown ?? 0))}{task.reward.fame ? ` +${task.reward.fame}声望` : ''}</span>
                     {task.targetPortId && (
                       <span className="flex items-center gap-0.5">
                         <Map size={9} /> {ports.find(p => p.id === task.targetPortId)?.nameCn}

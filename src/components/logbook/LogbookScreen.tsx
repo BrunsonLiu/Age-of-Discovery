@@ -7,7 +7,7 @@ import { achievements } from '@/data/achievements'
 import { UI_ASSETS } from '@/data/uiAssets'
 import { tasks } from '@/data/tasks'
 import { goods } from '@/data/goods'
-import { taskGold } from '@/utils/crewPerks'
+import { taskGold, escortRewardMul } from '@/utils/crewPerks'
 import { ScrollText as ScrollIcon, CheckCircle2, Package, Coins } from 'lucide-react'
 import VoyageNextCard from '@/components/panels/VoyageNextCard'
 import { useFxStore as useFx } from '@/store/useFxStore'
@@ -196,7 +196,9 @@ function TaskPage() {
   const gameMode = useGameStore(s => s.gameMode)
   const crewRoster = useGameStore(s => s.crewRoster)
   const hasMerchant = crewRoster.some(m => m.id === 'merchant')
-  const gold = (g: number) => taskGold(g, hasMerchant)
+  // 王室声望 ≥30 的护送委托 +25%：与港口面板、store 结算同一个倍率函数
+  const crownRep = useGameStore(s => s.factionRep.crown ?? 0)
+  const gold = (g: number, type: string) => taskGold(g, hasMerchant, escortRewardMul(type, crownRep))
   const cargoOf = (goodId: number) => fleet.cargo.find(c => c.goodId === goodId)?.quantity ?? 0
 
   const available = tasks.filter(t => {
@@ -232,7 +234,7 @@ function TaskPage() {
     const before = completedTasks.includes(t.id)
     completeTask(t.id)
     if (before) return
-    const goldGot = gold(t.reward.gold)
+    const goldGot = gold(t.reward.gold, t.type)
     useFx.getState().fx({ kind: 'banner', tone: 'safe', text: '✦ 冒险达成 ✦', sub: t.title }, 'task')
     useFx.getState().fx({
       kind: 'float', tone: 'gold', text: `+${goldGot}`,
@@ -256,7 +258,7 @@ function TaskPage() {
                   <h3 className="font-serif text-[15px] text-gold-200 truncate">{t.title}</h3>
                 </div>
                 <p className="text-[13px] font-serif text-gold-500 mt-1 leading-relaxed">{t.description}</p>
-                <Reward gold={gold(t.reward.gold)} fame={t.reward.fame} />
+                <Reward gold={gold(t.reward.gold, t.type)} fame={t.reward.fame} />
               </div>
               <button
                 onClick={() => acceptTask(t.id)}
@@ -298,7 +300,7 @@ function TaskPage() {
                       })}
                     </div>
                   ) : null}
-                  <Reward gold={gold(t.reward.gold)} fame={t.reward.fame} />
+                  <Reward gold={gold(t.reward.gold, t.type)} fame={t.reward.fame} />
                 </div>
                 {done ? (
                   <button

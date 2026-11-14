@@ -1135,6 +1135,87 @@ console.log('== 17g. 收齐/走遍这类"最后一步"必须有人告诉你 ==')
     '配置里删掉 VICTORY_DISCOVER_ALL（留着就是一份会漂的分母）')
 }
 
+console.log('== 17h. 王室两条特权：倍率只从 crewPerks 出 ==')
+/*
+ * 「护送委托 +25%」「王室港修理/补给九折」原来是设计稿（数据里注释掉、界面不显示）。
+ * 这轮接上：倍率由 portServiceMul / escortRewardMul 给，界面与结算调同一个函数。
+ * 这类"乘一下"最容易分叉 —— 按钮写 135、扣 150 —— 所以判据要同时钉函数与调用方。
+ */
+{
+  const cp = await import('../src/utils/crewPerks')
+  const { portFaction } = await import('../src/data/factions')
+  // 找一座王室港与一座非王室港（不写死 id：归属表变了这里跟着变）
+  const crownPort = ports.find(p => portFaction(p.id) === 'crown')!
+  const otherPort = ports.find(p => portFaction(p.id) !== 'crown')!
+  assert(!!crownPort && !!otherPort, '港口表里同时有王室港与非王室港（判据的前提）')
+
+  assert(cp.portServiceMul(crownPort.id, 60) === cp.CROWN_SERVICE_MUL, '王室港 + 声望 60 → 九折')
+  assert(cp.portServiceMul(crownPort.id, 59) === 1, '声望 59 还没到档')
+  assert(cp.portServiceMul(otherPort.id, 90) === 1, '非王室港不给折扣（哪怕声望 90）')
+  assert(cp.portServiceMul(null, 90) === 1, '不在港（currentPortId 为空）时不给折扣')
+
+  assert(cp.escortRewardMul('escort', 30) === cp.CROWN_ESCORT_MUL, '护送 + 声望 30 → +25%')
+  assert(cp.escortRewardMul('escort', 29) === 1, '声望 29 还没到档')
+  assert(cp.escortRewardMul('trade', 90) === 1, '只有护送类有这份赏金（送货不给）')
+
+  // 与船员特长叠加：船匠 0.6 × 王室 0.9，向上取整
+  const rate = GAME_BALANCE.REPAIR_COST_PER_DURABILITY
+  const dmg = 10
+  assert(cp.repairCost(dmg, false, cp.CROWN_SERVICE_MUL) === Math.ceil(dmg * rate * 0.9),
+    `王室九折后修理费 = ceil(${dmg}×${rate}×0.9)`)
+  assert(cp.repairCost(dmg, true, cp.CROWN_SERVICE_MUL) === Math.ceil(dmg * rate * 0.6 * 0.9),
+    '船匠六折与王室九折相乘（不取其一）')
+  assert(cp.supplyCost(GAME_BALANCE.SUPPLY_TOTAL_COST, false, 0.9)
+    === Math.round(GAME_BALANCE.SUPPLY_TOTAL_COST * 0.9), '补给九折')
+  assert(cp.supplyCost(GAME_BALANCE.SUPPLY_TOTAL_COST, true, 0.9)
+    === Math.round(GAME_BALANCE.SUPPLY_TOTAL_COST * 0.5 * 0.9), '航海士半价与王室九折相乘')
+  assert(cp.taskGold(250, false, 1.25) === 313, '护送赏金 +25%（250 → 313，四舍五入）')
+  assert(cp.taskGold(250, true, 1.25) === 391, '商人 +25% 与王室 +25% 相乘（250 → 391）')
+
+  /*
+   * 结算侧：store 的 repairShip 必须真的按九折扣钱。
+   * 只测函数不够 —— 曾有"函数对、调用处忘传参"的情况（按钮写折扣价、扣原价）。
+   */
+  const st0 = useGameStore.getState()
+  useGameStore.setState({
+    ...st0,
+    factionRep: { crown: 60, guild: 0, scholars: 0, brethren: 0 },
+    fleet: {
+      ...st0.fleet,
+      currentPortId: crownPort.id,
+      isSailing: false,
+      gold: 100000,
+      ships: st0.fleet.ships.map((sh, i) => i === 0 ? { ...sh, durability: sh.maxDurability - dmg } : sh),
+    },
+  })
+  const damaged = useGameStore.getState().fleet.ships[0]
+  const expectDisc = cp.repairCost(dmg, false, cp.CROWN_SERVICE_MUL)
+  const expectFull = cp.repairCost(dmg, false, 1)
+  const goldBefore = useGameStore.getState().fleet.gold
+  useGameStore.getState().repairShip(damaged.id)
+  const afterRepair = useGameStore.getState()
+  assert(afterRepair.fleet.ships[0].durability === afterRepair.fleet.ships[0].maxDurability, '船修好了')
+  assert(goldBefore - afterRepair.fleet.gold === expectDisc,
+    `王室港按九折扣款（应扣 ${expectDisc}，实扣 ${goldBefore - afterRepair.fleet.gold}；原价 ${expectFull}）`)
+  assert(expectDisc < expectFull, '九折确实比原价便宜（否则这条特权等于没做）')
+
+  // 数据文案必须与实现一致（改倍率会让这条红）
+  const facSrc2 = readFileSync(join(process.cwd(), 'src', 'data', 'factions.ts'), 'utf8')
+  assert(/text: '护送委托赏金 \+25%'/.test(facSrc2), '王室 30 档文案 = 护送委托赏金 +25%')
+  assert(/text: '王室港修理与补给九折'/.test(facSrc2), '王室 60 档文案 = 王室港修理与补给九折')
+  assert(!/塞维利亚\/加的斯\/卡塔赫纳/.test(facSrc2),
+    '不再逐一列举"王室港"（PORT_FACTION 里其实有 9 座）')
+  // 显示侧必须调同一个倍率函数（不自己乘）
+  const pdSrc = readFileSync(join(process.cwd(), 'src', 'components', 'panels', 'PortDetail.tsx'), 'utf8')
+  assert(/portServiceMul\(/.test(pdSrc), '港口面板用 portServiceMul 算修理/补给价')
+  assert(/escortRewardMul\(task\.type/.test(pdSrc), '港口面板的委托赏金按任务类型算')
+  const lbs = readFileSync(join(process.cwd(), 'src', 'components', 'logbook', 'LogbookScreen.tsx'), 'utf8')
+  assert(/escortRewardMul\(type, crownRep\)/.test(lbs), '任务页赏金也走同一个倍率')
+
+  // 把状态还回去：下面的用例还在用 baseState 那条船
+  useGameStore.setState({ ...st0, factionRep: st0.factionRep, fleet: st0.fleet })
+}
+
 console.log('== 18. 新事件引擎条件 ==')
 const evElena = events.find(e => e.id === 238)!
 assert(!checkEventTrigger({ ...evElena, triggerCondition: { ...evElena.triggerCondition, probability: 1 } }, baseState), '伊莲事件：无学者在船不触发')

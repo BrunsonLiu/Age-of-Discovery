@@ -12,6 +12,7 @@
  * 就地写在 store 里，不必绕一圈。
  */
 import { GAME_BALANCE } from '@/data/gameConfig'
+import { portFaction } from '@/data/factions'
 
 /** 船匠：靠港修理费六折（自己动手，只算料钱） */
 export const CARPENTER_COST_MUL = 0.6
@@ -24,9 +25,37 @@ export const CARPENTER_COST_MUL = 0.6
  * @param damage 需要修复的耐久点数
  * @param hasCarpenter 船匠（木匠马蒂亚斯）在船
  */
-export function repairCost(damage: number, hasCarpenter: boolean): number {
+export function repairCost(damage: number, hasCarpenter: boolean, serviceMul = 1): number {
   const raw = damage * GAME_BALANCE.REPAIR_COST_PER_DURABILITY
-  return Math.ceil(raw * (hasCarpenter ? CARPENTER_COST_MUL : 1))
+  return Math.ceil(raw * (hasCarpenter ? CARPENTER_COST_MUL : 1) * serviceMul)
+}
+
+/*
+ * ── 王室的两条特权 ─────────────────────────────────────────────
+ *
+ * 【为什么抽成函数、而不是在调用处乘一下】
+ * 修理费/补给价在界面与结算各出现一次（港口面板的按钮、store 的扣款）。
+ * 只要有一处漏乘，屏幕上就是"按钮写 150、扣 135"——本项目最硬的一条规矩。
+ * 所以倍率只能由这里给，调用处只负责把"当前港 + 声望"传进来。
+ *
+ * 【王室港到底是哪几座】perks 文案原来写"塞维利亚/加的斯/卡塔赫纳"，
+ * 而 PORT_FACTION 里归 crown 的其实有 9 座（哈瓦那、圣胡安、塞维利亚、埃尔米纳、
+ * 开普敦、果阿、卡塔赫纳、韦拉克鲁斯、加的斯）。按真实归属写，文案改成"王室港"。
+ */
+export const CROWN_SERVICE_MUL = 0.9
+export const CROWN_SERVICE_REP = 60
+export const CROWN_ESCORT_MUL = 1.25
+export const CROWN_ESCORT_REP = 30
+
+/** 当前港的修理/补给折扣：王室港 + 王室声望 ≥60 → 九折；别处一律 1 */
+export function portServiceMul(portId: number | null | undefined, crownRep = 0): number {
+  if (portId == null || crownRep < CROWN_SERVICE_REP) return 1
+  return portFaction(portId) === 'crown' ? CROWN_SERVICE_MUL : 1
+}
+
+/** 护送类委托在王室的赏金倍率：声望 ≥30 时 +25% */
+export function escortRewardMul(taskType: string, crownRep = 0): number {
+  return taskType === 'escort' && crownRep >= CROWN_ESCORT_REP ? CROWN_ESCORT_MUL : 1
 }
 
 /** 商人：委托赏金 +25%（她替你谈价） */
@@ -53,8 +82,8 @@ export const NAVIGATOR_SUPPLY_COST_MUL = 0.5
  * 面板上有三处要显示赏金（任务面板的列表、任务面板的浮动提示、港口面板的可接任务），
  * 各抄一遍 `reward.gold` 的话，商人在船时就是"卡片写 480、到账 600"。
  */
-export function taskGold(gold: number, hasMerchant: boolean): number {
-  return Math.round(gold * (hasMerchant ? MERCHANT_REWARD_MUL : 1))
+export function taskGold(gold: number, hasMerchant: boolean, escortMul = 1): number {
+  return Math.round(gold * (hasMerchant ? MERCHANT_REWARD_MUL : 1) * escortMul)
 }
 
 /**
@@ -63,8 +92,8 @@ export function taskGold(gold: number, hasMerchant: boolean): number {
  * 港口面板的按钮上写着这个数字，store 里扣的也是这个数字——同一个函数。
  * @param hasNavigator 航海士（巴托洛梅乌）在船
  */
-export function supplyCost(baseCost: number, hasNavigator: boolean): number {
-  return Math.round(baseCost * (hasNavigator ? NAVIGATOR_SUPPLY_COST_MUL : 1))
+export function supplyCost(baseCost: number, hasNavigator: boolean, serviceMul = 1): number {
+  return Math.round(baseCost * (hasNavigator ? NAVIGATOR_SUPPLY_COST_MUL : 1) * serviceMul)
 }
 
 /**
