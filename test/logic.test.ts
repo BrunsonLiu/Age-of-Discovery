@@ -14326,6 +14326,23 @@ console.log('== 岸上的"活"：走动的影子与海鸥的布局 ==')
     `册子里没有带透明度的金色文字（实际 ${faded.join(',')}；/80 会把 6.19 打回 4.07）`)
 }
 
+/*
+ * ---- 港口卡的头一眼：缩略图要全幅 ----
+ *
+ * 原来那张图是 `h-24`，在 288px 宽里就是 3:1；而原图 1600×900 用 object-cover
+ * 会被裁掉上下各 40% —— "这地方长什么样"只剩中间一条。港口图是玩家到港
+ * 第一眼认路的东西，162px 高才算一张画。
+ * 改 16:9 之后多占 66px，正文区必须跟着放到 76vh，否则「港口服务」那一排
+ * 会被切一半（修理/补给看得见，招募/贸易/造船厂藏在裁切线以下）。
+ */
+{
+  const pd = readFileSync(join(process.cwd(), 'src', 'components', 'panels', 'PortDetail.tsx'), 'utf8')
+  assert(/data-testid="port-panel"/.test(pd), '港口卡有 port-panel 锚点（另两块面板都有，就它漏了）')
+  assert(/aspect-\[16\/9\] overflow-hidden rounded-sm/.test(pd), '港口缩略图是 16:9（不是 3:1 的 h-24）')
+  assert(/bodyClassName="max-h-\[68dvh\] md:max-h-\[76vh\]/.test(pd), '正文区放到 76vh（给多出来的 66px 让位）')
+  assert(!/mb-2 h-24 overflow-hidden/.test(pd), '旧的 h-24 已经撤掉')
+}
+
 console.log('== 事件结算屏：数字是这一屏唯一要读的东西 ==')
 {
   /*

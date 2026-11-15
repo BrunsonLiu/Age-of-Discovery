@@ -182,6 +182,42 @@ for (const [svc, sel] of [['trade', '[data-testid="trade-panel"]'], ['shipyard',
   check(ok, `${svc} 按钮切到了对应面板（${sel}）`)
 }
 
+/*
+ * ---- 港口卡的头一眼：缩略图要是全幅，五个服务要都在 ----
+ *
+ * 缩略图原来是 h-24 —— 288px 宽里就是 3:1，而原图 1600×900 被 object-cover
+ * 裁掉上下各 40%，"这地方长什么样"只剩中间一条。改成 16:9 之后画面才完整，
+ * 但多占 66px，默认的 60vh 正文区会把「港口服务」切一半
+ * （修理/补给看得见，招募/贸易/造船厂藏在裁切线以下 —— 玩家会以为只有两样）。
+ */
+// 上面的循环最后停在造船厂面板上，这里重新把港口卡打开再量
+await page.evaluate(() => window.__gameStore.getState().setActivePanel('port'))
+await sleep(700)
+const head = await page.evaluate(() => {
+  const panel = document.querySelector('[data-testid="port-panel"]')
+  const img = panel?.querySelector('img')
+  const services = [...document.querySelectorAll('[data-service]')]
+  const pr = panel?.getBoundingClientRect()
+  const visible = services.filter(el => {
+    const r = el.getBoundingClientRect()
+    return r.top >= 0 && r.bottom <= innerHeight && r.height > 20
+  })
+  const ir = img?.getBoundingClientRect()
+  return {
+    imgRatio: ir ? +(ir.width / ir.height).toFixed(2) : null,
+    services: services.length,
+    visible: visible.length,
+    panelW: Math.round(pr?.width || 0),
+  }
+})
+if (head.services > 0) {
+  check(head.imgRatio !== null && Math.abs(head.imgRatio - 16 / 9) < 0.12,
+    `港口缩略图是 16:9 全幅（实际 ${head.imgRatio}，h-24 时是 3.0）`)
+  check(head.visible === head.services,
+    `五个服务全在视口内（${head.visible}/${head.services}）—— 不许有半截藏在裁切线外`)
+  check(head.panelW <= 340, `港口面板仍是 320 宽的"读一段+点入口"（实际 ${head.panelW}）`)
+}
+
 console.log(`\n结果：${pass} 通过 / ${fail} 失败`)
 await browser.close()
 process.exit(fail === 0 ? 0 : 1)

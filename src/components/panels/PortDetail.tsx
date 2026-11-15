@@ -137,8 +137,17 @@ export default function PortDetail() {
   }
 
   return (
-    <div className="w-full md:w-80 animate-slide-in-right">
-      <ParchmentCard title={port.nameCn} onClose={() => setActivePanel(null)}>
+    <div className="w-full md:w-80 animate-slide-in-right" data-testid="port-panel">
+      <ParchmentCard
+        title={port.nameCn}
+        /*
+         * 正文区放到 76vh：缩略图从 3:1 改成 16:9 之后多占 66px，默认 60vh
+         * 会把「港口服务」那一排切掉一半 —— 修理/补给看得见，招募/贸易/造船厂
+         * 藏在裁切线以下，玩家以为这港只有两样服务。
+         */
+        bodyClassName="max-h-[68dvh] md:max-h-[76vh] overflow-y-auto scroll-parchment"
+        onClose={() => setActivePanel(null)}
+      >
         {/* 港口场景插图（C 组）：到港第一眼——按区域/建筑风格选图 */}
         {portImg && (
           /*
@@ -150,7 +159,7 @@ export default function PortDetail() {
            * 内侧暗角同时压住四个角，画面边缘才不会和面板底色抢。
            */
           <div
-            className="relative -mx-1 mb-2 h-24 overflow-hidden rounded-sm"
+            className="relative -mx-1 mb-2 aspect-[16/9] overflow-hidden rounded-sm"
             style={{
               boxShadow:
                 'inset 0 0 0 1px rgba(206,172,108,0.62), inset 0 0 0 3px rgba(18,12,5,0.9), inset 0 0 18px rgba(0,0,0,0.5), 0 2px 7px rgba(0,0,0,0.55)',
