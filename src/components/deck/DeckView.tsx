@@ -3,6 +3,7 @@ import * as THREE from 'three'
 import { Footprints, X } from 'lucide-react'
 import { useGameStore } from '@/store/useGameStore'
 import { useMapStore } from '@/store/useMapStore'
+import { STANCES, type StanceId } from '@/utils/segment'
 import { cloudDriftRadPerSec, createCloudLayer } from './cloudBillboards'
 import { skyAt } from '@/utils/skyClock'
 import { getPreset, getQuality, onQualityChange, setQuality } from '@/utils/quality'
@@ -91,15 +92,26 @@ const DUSK_ZENITH = new THREE.Color(0x4e4a66)
  * 否则甲板上写"约 12 天"、出航计划写"约 15 天"，玩家不知道该信哪个。
  */
 function DeckSpotPanel({
-  spot, fleet, weather, next, sighting, onClose,
+  spot, fleet, weather, next, sighting, stance, onClose, onOpenChart,
 }: {
-  spot: 'hatch' | 'wheel' | 'crow'
+  spot: 'hatch' | 'wheel' | 'crow' | 'chart'
   fleet: ReturnType<typeof useGameStore.getState>['fleet']
   weather: ReturnType<typeof useGameStore.getState>['weather']
   next: ReturnType<typeof useVoyageNext>
   /** 当前位置的最近陆地（`findCoast` 的结果，与 HUD 同一个来源） */
   sighting: CoastSighting | null
+  /** 航段方针（`STANCES` 的唯一来源，与出航计划里选的是同一个字段） */
+  stance: StanceId
   onClose: () => void
+  /**
+   * 「铺开海图」：退出甲板、回到 2D 海图、把海图对准船位。
+   *
+   * 【为什么船长室里不能直接开出航计划】出航计划要一个**目的地**，
+   * 而目的地是在海图上点出来的（`planVoyage` 由 MapClickHandler 发起）。
+   * 舱内既没有海图交互，也不该替玩家选一个目标。
+   * 所以这张桌子的作用是把人送回能"定航路"的地方 —— 这一下点击本身就是回执。
+   */
+  onOpenChart: () => void
 }) {
   const flagship = fleet.ships.find((s) => s.id === fleet.flagshipId) ?? fleet.ships[0]
   const capacity = flagship?.capacity ?? 0
@@ -116,7 +128,10 @@ function DeckSpotPanel({
     >
       <div className="flex items-baseline justify-between">
         <div className="text-xs tracking-[0.3em] text-gold-400">
-          {spot === 'hatch' ? '货舱口' : spot === 'wheel' ? '舵轮' : '桅顶瞭望台'}
+          {spot === 'hatch' ? '货舱口'
+            : spot === 'wheel' ? '舵轮'
+            : spot === 'crow' ? '桅顶瞭望台'
+            : '海图桌'}
         </div>
         <button
           type="button"
@@ -154,6 +169,45 @@ function DeckSpotPanel({
                 <div className="tabular-nums">{Math.round(Number(v))}</div>
               </div>
             ))}
+          </div>
+        </>
+      ) : spot === 'chart' ? (
+        <>
+          <div className="mt-1 text-sm">
+            {next.suggest ? (
+              <>
+                图上画到 <span className="text-gold-300">{next.suggest.nameCn}</span>
+                {next.suggest.distanceNm != null && (
+                  <span className="ml-2 text-xs text-parchment-200/70">
+                    {Math.round(next.suggest.distanceNm)} 海里
+                  </span>
+                )}
+                {next.days != null && (
+                  <span className="ml-2 text-xs text-parchment-200/70">约 {next.days} 天</span>
+                )}
+              </>
+            ) : (
+              <span className="text-parchment-200/70">图上还没有航线 —— 得先在海上挑一处目的地</span>
+            )}
+          </div>
+          {/* 方针分两行：名字一行、取舍一行。挤成一行时后半句会被读成一串（实测截图里
+              "按部就班 照常航行——不快不慢，什么都不额外发生" 连成一条，看不出哪里是名字哪里是说明）。 */}
+          <div className="mt-2 text-xs">
+            <div className="text-parchment-200/70">
+              当前方针 <span className="text-gold-300">{STANCES[stance].name}</span>
+            </div>
+            <div className="mt-0.5 leading-snug text-parchment-200/60">{STANCES[stance].hint}</div>
+          </div>
+          <button
+            type="button"
+            onClick={onOpenChart}
+            data-testid="deck-chart-open"
+            className="mt-2.5 w-full rounded border border-gold-600/55 bg-gold-700/15 px-2.5 py-1.5 text-sm text-gold-100 transition hover:bg-gold-700/30"
+          >
+            铺开海图 · 定航路
+          </button>
+          <div className="mt-1.5 text-xs leading-snug text-parchment-200/60">
+            桌上的图只画到你正要去的那一处。真正的航线、方针与补给，得在海图上点出来。
           </div>
         </>
       ) : spot === 'crow' ? (
@@ -292,7 +346,23 @@ export default function DeckView() {
    * 甲板上被点开的物件（舱口 / 舵轮）。null = 没点开。
    * 用 React state 而不是 ref：它要驱动一个 DOM 面板，跟 3D 场景重建无关。
    */
-  const [spot, setSpot] = useState<null | 'hatch' | 'wheel' | 'crow'>(null)
+  const [spot, setSpot] = useState<null | 'hatch' | 'wheel' | 'crow' | 'chart'>(null)
+  /*
+   * 海图桌上的那一下：合上甲板、回到海图、把海图对准船位。
+   *
+   * 【为什么不是"直接打开出航计划"】那个弹窗要一个目的地，而目的地是在海图上
+   * 点出来的（planVoyage 由 MapClickHandler 发起）。舱里既没有海图交互，
+   * 也不该替玩家挑一处港 —— 所以这张桌子负责把人送回"能定航路"的那张图上。
+   * 三件事的顺序也有讲究：先退甲板再设 viewMode，否则会闪一下两张屏。
+   */
+  const openChart = () => {
+    setSpot(null)
+    setDeckView(false)
+    const { setViewMode, setCenter } = useMapStore.getState()
+    setViewMode('chart')
+    const pos = useGameStore.getState().shipPosition
+    if (pos) setCenter(pos)
+  }
   /*
    * 「正在上甲板」——第一次进这个视角时，98 个着色器程序要在这一下编译完。
    * 实测（Intel UHD 630 / D3D11，真实核显）**主线程连续占用 1512ms**，
@@ -332,6 +402,7 @@ export default function DeckView() {
    */
   const fleet = useGameStore((s) => s.fleet)
   const weather = useGameStore((s) => s.weather)
+  const stance = useGameStore((s) => s.stance)
   const next = useVoyageNext()
   nextRef.current = next
   const setDeckView = useMapStore((s) => s.setDeckView)
@@ -1565,10 +1636,14 @@ export default function DeckView() {
        * 现在合成一张表，取 `hits` 里**第一个**在表里的对象：谁近听谁的。
        */
       const hits = picker.intersectObjects(ship.children, true)
-      const ACTIONS: Record<string, 'hatch' | 'wheel' | 'crow' | 'enter' | 'exit'> = {
+      const ACTIONS: Record<string, 'hatch' | 'wheel' | 'crow' | 'chart' | 'enter' | 'exit'> = {
         'ship-hatch': 'hatch',
         'ship-wheel': 'wheel',
         'ship-crow': 'crow',
+        // 舱里那张会画航线的图（shipModel 里叫 ship-cabin-chart）。
+        // 【补上这一条之前它只是一张贴图】模型里给它起了名字、还每帧往上画"往哪走"，
+        // 但拾取表里没有它 —— 玩家走到桌前点半天，什么都不会发生（注释却写着"要点它们"）。
+        'ship-cabin-chart': 'chart',
         'ship-cabin-door': 'enter',
         'ship-cabin-inner-door': 'exit',
       }
@@ -2392,13 +2467,18 @@ export default function DeckView() {
           weather={weather}
           next={next}
           sighting={sightingRef.current}
+          stance={stance}
           onClose={() => setSpot(null)}
+          onOpenChart={openChart}
         />
       ) : null}
       {walking ? (
         <>
-          <div className="pointer-events-none absolute bottom-4 left-1/2 -translate-x-1/2 text-xs tracking-wider text-parchment-200/70">
-            WASD 走动 ｜ 拖拽转头 ｜ F 回看船
+          <div
+            className="pointer-events-none absolute bottom-4 left-1/2 -translate-x-1/2 text-xs tracking-wider text-parchment-200/70"
+            data-testid="deck-walk-hint"
+          >
+            {inCabin ? 'WASD 走动 ｜ 拖拽转头 ｜ 点桌上的海图摊开航路' : 'WASD 走动 ｜ 拖拽转头 ｜ F 回看船'}
           </div>
           {/*
             移动端方向键：与键盘共用 keysRef（不是 state —— 按住要连续生效，

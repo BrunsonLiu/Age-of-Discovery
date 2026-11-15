@@ -1514,6 +1514,45 @@ console.log('== 17l. 古海图（学者 90 档）：近处一处 + 远处一处 
     '旧设计稿那句"未标记的潜在地点"不许留在文案里')
 }
 
+console.log('== 17m. 船长室的海图桌：起了名字就得有人接 ==')
+/*
+ * 【这一条是"注释在撒谎"那一类】
+ * shipModel 里给海图桌起了名字（`ship-cabin-chart`）、每帧往 canvas 上画航向，
+ * 注释还写着"留住海图桌与两道门：进舱后要点它们" —— 但 DeckView 的拾取表里
+ * 从来没有它。玩家走进船长室、站到桌前点半天，什么都不会发生。
+ *
+ * 判据分两层：
+ *   ① 模型里起名的**每一件可交互物**，拾取表里都得有对应的动作；
+ *   ② 那个动作的面板必须真的存在，并且能把人送回能定航路的地方。
+ */
+{
+  const dvSrc = readFileSync(join(process.cwd(), 'src', 'components', 'deck', 'DeckView.tsx'), 'utf8')
+  const smSrc = readFileSync(join(process.cwd(), 'src', 'components', 'deck', 'shipModel.ts'), 'utf8')
+
+  // ① 模型里被"按名字找"的东西 → 拾取表里必须有
+  const named = ['ship-hatch', 'ship-wheel', 'ship-crow', 'ship-cabin-chart', 'ship-cabin-door', 'ship-cabin-inner-door']
+  for (const n of named) {
+    assert(smSrc.includes(`'${n}'`), `模型里确实有这个节点名：${n}`)
+    assert(new RegExp(`'${n}':\\s*'`).test(dvSrc), `拾取表里有 ${n} 的动作（否则就是"看得见、点不动"）`)
+  }
+  assert(/ship-cabin-chart': 'chart'/.test(dvSrc), '海图桌的动作名是 chart')
+
+  // ② 面板：标题、方针、以及那颗把人送回海图的按钮
+  assert(/spot === 'chart' \? \(/.test(dvSrc), '海图桌有自己的面板分支')
+  assert(/data-testid="deck-chart-open"/.test(dvSrc), '面板里有「铺开海图」的锚点（e2e 按它点）')
+  assert(/STANCES\[stance\]\.name/.test(dvSrc), '面板里的方针读 STANCES（与出航计划同一个来源）')
+  const openChart = dvSrc.slice(dvSrc.indexOf('const openChart = ()'), dvSrc.indexOf('const openChart = ()') + 900)
+  assert(/setDeckView\(false\)/.test(openChart), '「铺开海图」真的合上甲板')
+  assert(/setViewMode\('chart'\)/.test(openChart), '「铺开海图」把视图切回海图')
+  assert(/setCenter\(pos\)/.test(openChart), '「铺开海图」把海图对准船位（不是打开在别处）')
+
+  // ③ 舱内提示要告诉玩家这张桌子能点（12px 小字，别再往上堆东西）
+  assert(/点桌上的海图/.test(dvSrc), '舱内行走提示里写了"点桌上的海图"')
+
+  // ④ 床与箱子是**故意**不可点的：模型注释里要写清，免得下一个人以为漏了
+  assert(/床与箱子是\*\*故意\*\*不可点的/.test(smSrc), '模型里注明床与箱子为何不可点（不做空壳交互）')
+}
+
 console.log('== 18. 新事件引擎条件 ==')
 const evElena = events.find(e => e.id === 238)!
 assert(!checkEventTrigger({ ...evElena, triggerCondition: { ...evElena.triggerCondition, probability: 1 } }, baseState), '伊莲事件：无学者在船不触发')

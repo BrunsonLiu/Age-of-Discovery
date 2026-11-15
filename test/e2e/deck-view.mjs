@@ -1028,6 +1028,130 @@ await sleep(1200)
 check(await page.evaluate(() => !document.querySelector('[data-testid=deck-view]')), '「回海图」关掉了船上视角')
 check(await page.evaluate(() => !window.__deckScene), '关闭时把 __deckScene 清掉了（资源确实释放）')
 
+// ---- ⑦ 船长室的海图桌：点得开，而且真的把人送回能定航路的地方 ----
+/*
+ * 【为什么补这一节】模型里给这张桌子起了名字（`ship-cabin-chart`）、
+ * 还每帧往 canvas 上画"你正在往哪走"，但 `ACTIONS` 拾取表里一直没有它 ——
+ * 玩家走进船长室、站到桌前点半天，什么都不会发生。
+ * 而 `shipModel` 里那句注释写着"留住海图桌与两道门：进舱后要点它们"。
+ * 这一节就是那句话的凭据：点得开、面板里的数与 store 一致、按下去真的回海图。
+ */
+{
+  // ⑥ 刚把甲板关掉（并验过场景已释放），这里重新进一次
+  await page.evaluate(() => window.__mapStore.getState().setDeckView(true))
+  await sleep(1400)
+  let sceneBack = false
+  for (let i = 0; i < 40 && !sceneBack; i++) {
+    sceneBack = await page.evaluate(() => !!window.__deckScene)
+    if (!sceneBack) await sleep(150)
+  }
+  check(sceneBack, '（前置）甲板场景重新建起来')
+  await page.evaluate(() => document.querySelector('[data-testid=deck-walk-toggle]')?.click())
+  await sleep(1200)
+  check(await page.evaluate(() => window.__deckWalk?.get()?.walking === true), '（前置）又进了行走模式')
+
+  // 站到舱门前，真实鼠标点进去
+  await page.evaluate(() => window.__deckWalk?.set({ x: 1.5, z: -9.2, yaw: Math.PI - 0.12, pitch: -0.18 }))
+  await sleep(1000)
+  const doorPt3 = await page.evaluate(() => {
+    const THREE = window.__THREE, o = window.__deckScene.getObjectByName('ship-cabin-door')
+    if (!o) return null
+    const v = new THREE.Vector3(); o.getWorldPosition(v)
+    v.y -= 0.03
+    window.__deckCam.updateMatrixWorld(true)
+    v.project(window.__deckCam)
+    return { x: Math.round(((v.x + 1) / 2) * innerWidth), y: Math.round(((-v.y + 1) / 2) * innerHeight) }
+  })
+  if (doorPt3) await page.mouse.click(doorPt3.x, doorPt3.y)
+  await sleep(1100)
+  check(await page.evaluate(() => !!document.querySelector('[data-testid=deck-cabin-badge]')), '（前置）又站进了船长室')
+
+  /*
+   * 走到桌子正面、低头看那张图。
+   * 位置由**图自己的世界坐标**推出来（`getWorldPosition`），不写死 z ——
+   * 桌子挪过位置的话这里跟着走，不会变成"站在墙角点空气"。
+   */
+  const aim = await page.evaluate(() => {
+    const THREE = window.__THREE
+    const ship = window.__deckScene.getObjectByName('deck-ship')
+    const o = window.__deckScene.getObjectByName('ship-cabin-chart')
+    if (!o || !ship) return null
+    const v = new THREE.Vector3(); o.getWorldPosition(v)
+    /*
+     * 【坐标必须换算到船体局部系】`__deckWalk.set` 收的是**船体米制坐标**
+     * （舱在 z≈-14.6），而 `getWorldPosition` 给的是世界坐标 —— 整船有
+     * `SHIP_SCALE`（≈0.05）。第一版直接拿世界坐标去设位置，人被扔到了船头
+     * 附近（z=0.28），投影出来的点落在画面外，点了自然什么都不会发生。
+     */
+    const L = ship.worldToLocal(v.clone())
+    // 站在桌子南侧 1 米、低头约 40°：桌沿不会挡到桌面中央
+    const yaw = Math.atan2(-(L.x - L.x), L.z - (L.z + 1.0))
+    window.__deckWalk?.set({ x: L.x, z: L.z + 1.0, yaw, pitch: -0.72 })
+    return { local: [+L.x.toFixed(2), +L.z.toFixed(2)] }
+  })
+  check(!!aim, '船长室里有海图桌（ship-cabin-chart 这个节点在）')
+  await sleep(900)
+  // 低头之后重新投影一次：相机已经动了，上面那组坐标是"设位置那一瞬间"的
+  const chartPt = await page.evaluate(() => {
+    const THREE = window.__THREE, o = window.__deckScene.getObjectByName('ship-cabin-chart')
+    const v = new THREE.Vector3(); o.getWorldPosition(v)
+    window.__deckCam.updateMatrixWorld(true)
+    v.project(window.__deckCam)
+    return { x: Math.round(((v.x + 1) / 2) * innerWidth), y: Math.round(((-v.y + 1) / 2) * innerHeight) }
+  })
+  const inView = chartPt.x > 0 && chartPt.x < 1440 && chartPt.y > 0 && chartPt.y < 900
+  check(inView, `低头就能把桌子看进画面（投影 ${chartPt.x},${chartPt.y}）`)
+  await page.mouse.click(chartPt.x, chartPt.y)
+  await sleep(700)
+  const panel = await page.evaluate(() => {
+    const el = document.querySelector('[data-testid=deck-spot-chart]')
+    return el
+      ? { text: (el.textContent || '').replace(/\s+/g, ' '), hasBtn: !!el.querySelector('[data-testid=deck-chart-open]') }
+      : null
+  })
+  check(!!panel, '真鼠标点桌上的海图 → 面板打开（以前点它什么都不会发生）')
+  const st = await page.evaluate(() => window.__gameStore.getState().stance)
+  const STANCE_NAME = { rush: '抢行', steady: '按部就班', careful: '谨慎' }
+  check(!!panel && panel.text.includes('海图桌'), '面板标题是「海图桌」')
+  check(!!panel && panel.text.includes(`当前方针 ${STANCE_NAME[st]}`),
+    `面板里的方针与 store 一致（${STANCE_NAME[st]}）`)
+  check(!!panel && /图上画到|图上还没有航线/.test(panel.text),
+    '面板说清"图上画到哪"（或明说还没航线）')
+  check(!!panel?.hasBtn, '面板里有「铺开海图 · 定航路」这一颗按钮')
+
+  // 按下去：必须真的回到 2D 海图，并且把海图对准船位
+  const btnPt = await page.evaluate(() => {
+    const b = document.querySelector('[data-testid=deck-chart-open]')
+    if (!b) return null
+    const r = b.getBoundingClientRect()
+    const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)
+    return {
+      x: r.left + r.width / 2, y: r.top + r.height / 2,
+      self: !!top && (top === b || b.contains(top)),
+      under: top ? `${top.tagName}.${String(top.className).slice(0, 24)}` : 'null',
+    }
+  })
+  check(btnPt?.self === true, `按钮中心真的命中自己（不是被盖住：${btnPt?.under}）`)
+  if (btnPt) await page.mouse.click(btnPt.x, btnPt.y)
+  await sleep(1300)
+  const after = await page.evaluate(() => {
+    const m = window.__mapStore.getState(), g = window.__gameStore.getState()
+    return {
+      deck: m.deckView, view: m.viewMode, center: m.center, ship: g.shipPosition,
+      leaflet: !!document.querySelector('.leaflet-container'),
+    }
+  })
+  check(after.deck === false, '「铺开海图」真的合上了甲板视角')
+  check(after.view === 'chart', `视图回到海图（viewMode=${after.view}）`)
+  check(after.leaflet, '2D 海图挂出来了（不是留在一块空屏上）')
+  if (after.ship) {
+    const d = Math.hypot(after.center[0] - after.ship[0], after.center[1] - after.ship[1])
+    check(d < 0.05, `海图对准了船位（偏差 ${d.toFixed(4)}°）`)
+  } else {
+    check(true, '（船位为空，跳过对准判据）')
+  }
+}
+
 check(errors.length === 0, `无运行时错误（${errors.length} 条：${errors.slice(0, 2).join(' | ')}）`)
 
 console.log(`\n结论：${pass} 通过 / ${fail} 失败 / ${skipped} 跳过（帧率太低、窗口落在动作谷底）`)
