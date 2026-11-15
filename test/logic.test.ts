@@ -8145,6 +8145,31 @@ console.log('\n== 天数口径守卫 ==')
     '掮客对账读的是稳定 DOM 锚点，不是从整屏文本里正则捞')
   assert(/埃尔米纳|买进并起航/.test(audit),
     '掮客对账真的点「买进并起航」把出航计划面板开出来比数字')
+  /*
+   * ---- 贸易面板的版式：宽一点、只留一层滚动 ----
+   *
+   * 320px 时每行挤成两截（名字+库存一行、价格+三档按钮一行），列表还套着
+   * max-h-60 的内滚动区，而 ParchmentCard 自己又是滚动容器 —— **两层滚动条**：
+   * 滚轮到一半发现滚的是内层，外面永远不动（这个毛病在项目里反复出现过）。
+   * 现在：面板 26rem（416px）、去掉内层 ScrollFade、正文区放到 76vh，
+   * 900 高下一屏能看全 5 个商品行。
+   *
+   * 守四件：
+   *   ① MainMap 给 trade 单独一个宽度（港口/造船厂仍是 320，它们没这个密度）；
+   *   ② TradePanel 里不再有内层 ScrollFade；
+   *   ③ 它把 bodyClassName 传给 ParchmentCard（正文区高度）；
+   *   ④ ParchmentCard 对 bodyClassName 用 `??` 兜底，不传时行为不变。
+   */
+  {
+    const mainMap = readFileSync(join(process.cwd(), 'src', 'pages', 'MainMap.tsx'), 'utf8')
+    const card = readFileSync(join(process.cwd(), 'src', 'components', 'ui', 'ParchmentCard.tsx'), 'utf8')
+    assert(/activeRightPanel === 'trade' \? 'w-\[26rem\]' : 'w-80'/.test(mainMap),
+      '贸易面板有独立宽度（26rem），港口/造船厂仍是 320')
+    assert(/md:w-\[26rem\]/.test(trade), '贸易面板自身宽度也跟着改成 26rem')
+    assert(!/<ScrollFade/.test(trade), '贸易面板里不再套内层滚动容器（两层滚动条会让滚轮失灵）')
+    assert(/bodyClassName=/.test(trade), '贸易面板把正文区高度传给容器')
+    assert(/bodyClassName \?\? \(/.test(card), 'ParchmentCard 对 bodyClassName 兜底（不传时与旧行为一致）')
+  }
 }
 
 // ---------------- 航线几何没就绪：地图不许拿直线冒充航线 ----------------

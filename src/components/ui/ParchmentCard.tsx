@@ -14,10 +14,17 @@ interface ParchmentCardProps {
    */
   footer?: ReactNode
   className?: string
+  /**
+   * 正文滚动区的高度上限（默认移动 68dvh / 桌面 60vh）。
+   * 只有「一屏要塞下更多行」的面板才需要覆盖它 —— 目前是贸易面板：
+   * 它每行 72px、5 行要 360px，加上头部 160px 就顶穿了 60vh，
+   * 第 5 个商品被裁在面板底缘（实测蔗糖那一行只露出一半）。
+   */
+  bodyClassName?: string
   onClose?: () => void
 }
 
-export default function ParchmentCard({ title, subtitle, children, footer, className = '', onClose }: ParchmentCardProps) {
+export default function ParchmentCard({ title, subtitle, children, footer, className = '', bodyClassName, onClose }: ParchmentCardProps) {
   return (
     <div
       className={`relative rounded-lg overflow-hidden ${className}`}
@@ -120,11 +127,11 @@ export default function ParchmentCard({ title, subtitle, children, footer, class
             和之前 7 个内层列表是同一个毛病。渐隐色就是本卡片的底色 #30241a。 */}
         {/* 有常驻页脚时给正文让出高度，否则两层加起来会顶出屏幕。
             没有 footer 的 11 个面板仍是原来的 68dvh / 60vh，不受影响。 */}
-        <ScrollFade className={
+        <ScrollFade className={bodyClassName ?? (
           footer
             ? 'max-h-[40dvh] md:max-h-[38vh] overflow-y-auto scroll-parchment'
             : 'max-h-[68dvh] md:max-h-[60vh] overflow-y-auto scroll-parchment'
-        }>
+        )}>
           {children}
         </ScrollFade>
         {footer}

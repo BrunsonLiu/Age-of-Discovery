@@ -201,6 +201,42 @@ check(sweep.length >= 5, `逐行核对覆盖了足够多的商品（${sweep.leng
 check(mismatched.length === 0,
   `逐行核对：显示价 = 实扣金（不一致 ${mismatched.length} 行${mismatched.length ? '：' + JSON.stringify(mismatched.slice(0, 3)) : ''}）`)
 
+/*
+ * ---- 面板版式：一屏看全 5 个商品，且只有一层滚动 ----
+ *
+ * 320px 宽时每行挤成两截（名字/库存一行、价格/按钮一行），列表还套着
+ * max-h-60 的内滚动区；外面 ParchmentCard 自己又是滚动容器 —— 两层滚动条，
+ * 滚轮到一半发现滚的是内层，外面永远不动。
+ * 现在：面板 26rem（416px）、去掉内层滚动、正文区放到 76vh。
+ */
+const layout = await page.evaluate(() => {
+  const panel = document.querySelector('[data-testid="trade-panel"]')
+  const rows = [...document.querySelectorAll('[data-testid="trade-buy-row"]')]
+  const pr = panel?.getBoundingClientRect()
+  // 统计"可滚动"的容器（scrollHeight 明显大于 clientHeight 且 overflow-y 是 auto/scroll）
+  const scrollers = [...panel.querySelectorAll('*')].filter(el => {
+    const cs = getComputedStyle(el)
+    if (!/(auto|scroll)/.test(cs.overflowY)) return false
+    return el.scrollHeight > el.clientHeight + 4
+  })
+  const last = rows[rows.length - 1]
+  const lr = last?.getBoundingClientRect()
+  return {
+    panelW: Math.round(pr?.width || 0),
+    rows: rows.length,
+    scrollers: scrollers.length,
+    // 最后一行是否整行落在面板内（不贴着裁切线）
+    lastInside: !!lr && !!pr && lr.bottom <= pr.bottom + 1 && lr.top >= pr.top,
+    lastBottom: lr ? Math.round(lr.bottom) : null,
+    panelBottom: pr ? Math.round(pr.bottom) : null,
+  }
+})
+check(layout.panelW >= 400, `贸易面板加宽到 ≥400px（实际 ${layout.panelW}）`)
+check(layout.rows >= 5, `买入行至少 5 个（${layout.rows}）`)
+check(layout.lastInside,
+  `最后一行整行在面板内（行底 ${layout.lastBottom} ≤ 面板底 ${layout.panelBottom}）`)
+check(layout.scrollers <= 1, `最多一层滚动容器（实际 ${layout.scrollers} 层 —— 两层会让滚轮失灵）`)
+
 await page.screenshot({ path: `${SHOTS}/trade-quote-final.png` })
 
 console.log(`\n结果：${pass} 通过 / ${fail} 失败`)

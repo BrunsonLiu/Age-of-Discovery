@@ -6,7 +6,6 @@ import { portGoods, localSpecialties, localDemands } from '@/data/ports'
 import { goods } from '@/data/goods'
 import ParchmentCard from '@/components/ui/ParchmentCard'
 import ActionButton from '@/components/ui/ActionButton'
-import ScrollFade from '@/components/ui/ScrollFade'
 import { useFxStore as useFx } from '@/store/useFxStore'
 
 /**
@@ -232,8 +231,17 @@ export default function TradePanel() {
   }
 
   return (
-    <div className="w-full md:w-80 animate-slide-in-right" data-testid="trade-panel">
-      <ParchmentCard title="商品交易" onClose={() => setActivePanel(null)}>
+    <div className="w-full md:w-[26rem] animate-slide-in-right" data-testid="trade-panel">
+      <ParchmentCard
+        title="商品交易"
+        /*
+         * 正文区放到 76vh：本港 5 个商品行各 72px，加头部 160px 一共 520px，
+         * 默认的 60vh（900 高下 = 540 扣掉标题只剩 470）会把最后一行裁一半。
+         * 一屏看全，玩家才不用一边滚一边记价。
+         */
+        bodyClassName="max-h-[68dvh] md:max-h-[76vh] overflow-y-auto scroll-parchment"
+        onClose={() => setActivePanel(null)}
+      >
         <div className="space-y-3">
           <div className="flex items-center justify-between text-[13px] text-gold-400 font-serif">
             <span className="flex items-center gap-1"><Coins size={12} /> {fleet.gold} 金币</span>
@@ -310,7 +318,10 @@ export default function TradePanel() {
           </div>
 
           {tab === 'buy' && (
-            <ScrollFade className="space-y-1.5 max-h-60 overflow-y-auto scroll-parchment">
+            /* 不再套一层内滚动：ParchmentCard 的内容区已经是滚动容器，
+                在它里面再放一条更矮的滚动区就是两层滚动条 —— 玩家滚轮滚到一半
+                 发现滚的是内层，外层永远不动。让列表自然铺开，交给外层统一滚。 */
+            <div className="space-y-1.5">
               {currentPortGoods.map(pg => (
                 <BuyRow
                   key={pg.goodId}
@@ -323,11 +334,14 @@ export default function TradePanel() {
                   recommended={deal?.goodId === pg.goodId}
                 />
               ))}
-            </ScrollFade>
+            </div>
           )}
 
           {tab === 'sell' && (
-            <ScrollFade className="space-y-1.5 max-h-60 overflow-y-auto scroll-parchment">
+            /* 不再套一层内滚动：ParchmentCard 的内容区已经是滚动容器，
+                在它里面再放一条更矮的滚动区就是两层滚动条 —— 玩家滚轮滚到一半
+                 发现滚的是内层，外层永远不动。让列表自然铺开，交给外层统一滚。 */
+            <div className="space-y-1.5">
               {fleet.cargo.length === 0 ? (
                 <p className="text-gold-400 text-[13px] font-serif text-center py-4">货舱空空如也</p>
               ) : (
@@ -335,7 +349,7 @@ export default function TradePanel() {
                   <SellRow key={item.goodId} portId={portId} item={item} onSell={handleSell} />
                 ))
               )}
-            </ScrollFade>
+            </div>
           )}
         </div>
       </ParchmentCard>

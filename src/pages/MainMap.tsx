@@ -806,7 +806,15 @@ export default function MainMap() {
           )
         ) : (
           <div
-            className="absolute right-[5.75rem] top-12 bottom-12 w-80"
+            /*
+             * 贸易面板比另外两个宽 100px：它是**核心玩法**，一屏要同时放下
+             * 5~8 个商品行（名字 + 价格 + 库存 + 三档数量按钮）。
+             * 320px 时每行挤成两截、列表只看得到 3 行 —— 玩家得一边滚一边记价。
+             * 港口 / 造船厂没有这个密度，维持 320。
+             */
+            className={`absolute right-[5.75rem] top-12 bottom-12 ${
+              activeRightPanel === 'trade' ? 'w-[26rem]' : 'w-80'
+            }`}
             style={{ zIndex: Z.PANEL }}
           >
             {activeRightPanel === 'port' && <PortDetail />}
