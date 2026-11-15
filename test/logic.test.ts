@@ -1130,6 +1130,30 @@ console.log('== 17f. 航海志：记录类面板只有一个来源 ==')
   assert(/groupJournal\(/.test(lb), '日志页按天分组（不是把条目摊成一长条）')
   assert(/historicalNote/.test(lb), '日志页保留历史注脚')
   /*
+   * 【日志页：时间轴 + 展开当天的场景图】
+   * 原来是一列卡片、卡片自己写"第 63 天"——整屏之后只是"一堆卡"，看不出日子在走。
+   * 现在日期挪到左边成一列、中间一条竖线串起来，展开那天顶部配一张事件插图。
+   *
+   * 守五件（只认渲染路径）：
+   *   ① 竖线有独立锚点（它不在行的 .relative 里，e2e 靠锚点量"点是否落在线上"）；
+   *   ② 日期在左侧一列、圆点在线上（布局契约，不靠肉眼）；
+   *   ③ 场景图取自 `event.sceneKey` → `sceneImage`，不是按 type 猜；
+   *   ④ 场景图只在**展开**时渲染（收起就离开 DOM，不白占内存与带宽）；
+   *   ⑤ 没有见闻时记事占满整宽（不留 420px 空柱）。
+   */
+  {
+    assert(/data-testid="journal-axis"/.test(lb), '时间轴竖线有锚点（journal-axis）')
+    assert(/absolute left-\[2\.9rem\][\s\S]{0,80}w-\[1\.5px\]/.test(lb), '竖线是一条 1.5px 的定宽线')
+    assert(/absolute left-\[2\.72rem\][\s\S]{0,120}rounded-full/.test(lb), '圆点钉在同一个 x 上（2.72rem 宽 7px → 中心 47.0px）')
+    assert(/heaviestEntry\(entries\)/.test(lb), '场景图取"当天最重那条"（与 headline 同一套权重）')
+    assert(/sceneImage\(top\?\.event\.sceneKey\)/.test(lb), '图走 event.sceneKey → sceneImage（25 张事件插图）')
+    assert(/\{open && \(\s*<>[\s\S]{0,120}\{scene && \(/.test(lb), '场景图在 open 分支里渲染（收起即卸载）')
+    assert(/data-testid=\{`journal-scene-\$\{day\}`\}/.test(lb), '场景图有锚点（journal-scene-<day>）')
+    assert(/const hasSightings = logbook\.length > 0/.test(lb), '见闻有无决定排法')
+    assert(/if \(!hasSightings\) \{[\s\S]{0,400}\{journal\}[\s\S]{0,900}<SightingsView \/>/.test(lb),
+      '没有见闻时走单栏（记事在上、见闻提示在页尾）')
+  }
+  /*
    * 【成就页：三面墙 + 自绘勋章】
    * 这一页原来是一张 4~5 列的卡片墙，17 格里 11 格是灰的 —— 整屏是整屏了，
    * 但玩家只看得见"还差 11 个"，看不出还差哪一类；勋章也只是个小图标。

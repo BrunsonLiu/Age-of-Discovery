@@ -14,8 +14,9 @@ import { useFxStore as useFx } from '@/store/useFxStore'
 import { rivalPortrait } from '@/data/portraits'
 import type { Rival, Achievement } from '@/types'
 import type { LucideIcon } from 'lucide-react'
-import { groupJournal } from '@/utils/captainLog'
+import { groupJournal, heaviestEntry } from '@/utils/captainLog'
 import { standings } from '@/utils/rivalRank'
+import { sceneImage } from '@/data/sceneImages'
 import { EVENT_TYPE_COLORS, renderEventIcon } from '@/utils/eventTypeStyles'
 import { AtlasView, SightingsView } from '@/components/panels/LogbookViews'
 import ScrollFade from '@/components/ui/ScrollFade'
@@ -388,107 +389,186 @@ function TaskPage() {
 /* ────────────────────────── 日志 ────────────────────────── */
 
 function JournalPage() {
-  /*
+  /**
    * 记事来自 `eventLog`（每天一行的那种），不是 `logbook`（带回的整页见闻）。
    * 两者是两本账：`logbook` 的 kind 只有 arrival/title/echo/legend/tribute，
-   * 一页一页的"带回了什么"；`eventLog` 才是流水账。
+   * 一页一页的「带回了什么」；`eventLog` 才是流水账。
    *
    * 【为什么按天折叠、而不是把所有条目摊开】
-   * 摊开之后一屏里是十几条"我选了…／于是…"，像调试日志；而日志是这游戏里
-   * 唯一能成为"回忆"的地方。一天一行（≤24 字），点开才是当天的账；
-   * 默认展开最新一天 —— 翻开日志的人通常想知道"刚才那次到底怎么回事"。
+   * 摊开之后一屏里是十几条「我选了…／于是…」，像调试日志；而日志是这游戏里
+   * 唯一能成为「回忆」的地方。一天一行（≤24 字），点开才是当天的账；
+   * 默认展开最新一天 —— 翻开日志的人通常想知道「刚才那次到底怎么回事」。
+   *
+   * 【为什么排成时间轴】原来是一列卡片，卡片自己写「第 63 天」。整屏之后
+   * 它只是「一堆卡」，看不出日子在走。现在日期挪到左边成一列，中间一条竖线
+   * 串起来（当天展开时那个点会亮），读起来才像一本按天翻的册子。
+   *
+   * 【为什么展开时配一张场景图】项目里有 25 张事件插图（`data/sceneImages`，
+   * 63 个事件里 64 处带 `sceneKey`），原来只在事件弹窗里出现一次，进册子就没了。
+   * 展开那天在顶部放一条 400:140 的横幅（与事件卡同一个裁切比例，零二次裁剪），
+   * 用的是**当天最重那条**的场景 —— 这一天到底怎么回事，一张图就说清了。
    */
   const eventLog = useGameStore(s => s.eventLog)
   const fleetName = useGameStore(s => s.fleet.name)
+  const logbook = useGameStore(s => s.logbook)
   const days = groupJournal(eventLog)
   const [openDays, setOpenDays] = useState<number[]>(() => (days.length ? [days[0].day] : []))
   const toggle = (day: number) =>
     setOpenDays(prev => (prev.includes(day) ? prev.filter(d => d !== day) : [...prev, day]))
+  /*
+   * 没有见闻时不要留一根 420px 的空柱：左栏整块收掉，让记事占满整屏。
+   * 判据用 logbook.length —— SightingsView 自己也是从这本账里挑页的。
+   */
+  const hasSightings = logbook.length > 0
 
-  return (
-    /*
-     * 两栏：左边是"带回来的那一页"（见闻卡本来就该像册子的一页），
-     * 右边是按天折叠的流水账。
-     * 之前在整屏里上下堆：见闻挤在上方一行、记事被拉成 1000px 长条 ——
-     * 12px 的字铺满整屏，眼睛要横着跑，读两行就累了。
-     */
-    <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,420px)_minmax(0,1fr)] gap-8 xl:gap-10">
-      <div className="min-w-0">
-        <SightingsView />
+  const journal = (
+    <div className="min-w-0">
+      <div className="flex items-baseline gap-3 mb-3 pb-2 border-b border-gold-700/30">
+        <h2 className="font-serif text-lg text-gold-300">记事</h2>
+        <span className="text-gold-200 text-[13px] font-serif">{fleetName}</span>
+        <span className="ml-auto text-gold-600 text-xs font-serif">
+          {days.length > 0 ? `共 ${days.length} 天有记载` : '还没写下第一页'}
+        </span>
       </div>
 
-      <div className="min-w-0">
-        <div className="flex items-baseline gap-3 mb-3 pb-2 border-b border-gold-700/30">
-          <h2 className="font-serif text-lg text-gold-300">记事</h2>
-          <span className="text-gold-200 text-[13px] font-serif">{fleetName}</span>
-          <span className="ml-auto text-gold-600 text-xs font-serif">
-            {days.length > 0 ? `共 ${days.length} 天有记载` : '还没写下第一页'}
-          </span>
-        </div>
-
-        {days.length === 0 ? (
-          <Empty>出海吧，笔在后面追着你。</Empty>
-        ) : (
-          <div className="space-y-1.5">
+      {days.length === 0 ? (
+        <Empty>出海吧，笔在后面追着你。</Empty>
+      ) : (
+        <div className="relative">
+          {/* 贯穿整条时间轴的竖线 */}
+          <span
+            aria-hidden="true"
+            data-testid="journal-axis"
+            className="absolute left-[2.9rem] top-3 bottom-3 w-[1.5px] bg-gradient-to-b from-gold-500/55 via-gold-600/30 to-transparent"
+          />
+          <div className="space-y-2">
             {days.map(({ day, headline, entries }) => {
               const open = openDays.includes(day)
+              const top = heaviestEntry(entries)
+              const scene = sceneImage(top?.event.sceneKey)
               return (
-                <div key={day} className="rounded-sm border border-gold-700/20 bg-black/15 overflow-hidden">
-                  <button
-                    type="button"
-                    onClick={() => toggle(day)}
-                    aria-expanded={open}
-                    data-testid={`journal-day-${day}`}
-                    className="w-full min-h-[40px] flex items-start gap-2.5 px-3 py-2 text-left press hover:bg-gold-700/10 transition-colors"
-                  >
-                    <Calendar size={13} className="mt-1 shrink-0 text-gold-600" aria-hidden="true" />
-                    <span className="shrink-0 text-gold-500 text-xs font-serif tabular-nums w-14">第 {day} 天</span>
-                    <span className="flex-1 text-gold-200 text-[13px] font-serif leading-snug">
-                      {headline ?? '（这一天没有记载）'}
-                    </span>
-                    <ChevronDown
-                      size={14}
-                      aria-hidden="true"
-                      className={`shrink-0 mt-0.5 text-gold-600 transition-transform ${open ? 'rotate-180' : ''}`}
-                    />
-                  </button>
+                <div key={day} className="relative">
+                  {/* 左边一列只有日子 */}
+                  <span className="absolute left-0 top-[0.6rem] w-11 text-right font-serif leading-none">
+                    <span className="text-[15px] tabular-nums text-gold-300">{day}</span>
+                    <span className="text-xs text-gold-600 ml-0.5">天</span>
+                  </span>
+                  {/* 竖线上的点：当天展开时亮起来 */}
+                  <span
+                    aria-hidden="true"
+                    className={`absolute left-[2.72rem] top-[0.72rem] h-[7px] w-[7px] rounded-full ring-2 ring-[#0d0f11]
+                      ${open ? 'bg-gold-300' : 'bg-gold-600'}`}
+                  />
+                  <div className="ml-14 rounded-sm border border-gold-700/20 bg-black/15 overflow-hidden">
+                    <button
+                      type="button"
+                      onClick={() => toggle(day)}
+                      aria-expanded={open}
+                      data-testid={`journal-day-${day}`}
+                      className="w-full min-h-[40px] flex items-start gap-2.5 px-3 py-2 text-left press hover:bg-gold-700/10 transition-colors"
+                    >
+                      <Calendar size={13} className="mt-1 shrink-0 text-gold-600" aria-hidden="true" />
+                      <span className="flex-1 text-gold-200 text-[13px] font-serif leading-snug">
+                        {headline ?? '（这一天没有记载）'}
+                      </span>
+                      <ChevronDown
+                        size={14}
+                        aria-hidden="true"
+                        className={`shrink-0 mt-0.5 text-gold-600 transition-transform ${open ? 'rotate-180' : ''}`}
+                      />
+                    </button>
 
-                  {open && (
-                    <div className="px-3 pb-3 pt-2 space-y-2.5 border-t border-gold-700/20">
-                      {entries.map((entry, i) => (
-                        <div
-                          key={`${entry.day}-${entry.event.id}-${entry.choiceIndex}-${i}`}
-                          className={`pl-2.5 border-l-2 ${EVENT_TYPE_COLORS[entry.event.type] || 'border-l-gold-500/50'}`}
-                        >
-                          <div className="flex items-center gap-1.5">
-                            {renderEventIcon(entry.event.type, 13)}
-                            <span className="text-gold-200 text-[13px] font-serif">{entry.event.title}</span>
+                    {open && (
+                      <>
+                        {scene && (
+                          <div className="relative aspect-[400/140] w-full overflow-hidden border-y border-gold-700/20">
+                            <img
+                              src={scene}
+                              alt=""
+                              aria-hidden="true"
+                              loading="lazy"
+                              decoding="async"
+                              data-testid={`journal-scene-${day}`}
+                              className="h-full w-full object-cover"
+                            />
+                            <span
+                              aria-hidden="true"
+                              className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-black/85 to-transparent"
+                            />
+                            <span className="absolute left-3 bottom-1.5 text-gold-200 text-xs font-serif">
+                              {top?.event.title}
+                            </span>
                           </div>
-                          <p className="text-gold-300 text-[13px] font-serif mt-0.5 leading-snug">
-                            我选了：{entry.event.choices[entry.choiceIndex]?.text}
-                          </p>
-                          <p className="text-gold-400 text-[13px] font-serif leading-snug mt-0.5">
-                            {entry.outcome.description}
-                          </p>
-                          {entry.outcome.historicalNote && (
-                            <p className="mt-1 pl-2 border-l border-gold-700/40 text-[12px] leading-relaxed text-gold-500 font-serif">
-                              {entry.outcome.historicalNote}
-                            </p>
-                          )}
+                        )}
+                        <div className="px-3 pb-3 pt-2 space-y-2.5">
+                          {entries.map((entry, i) => (
+                            <div
+                              key={`${entry.day}-${entry.event.id}-${entry.choiceIndex}-${i}`}
+                              className={`pl-2.5 border-l-2 ${EVENT_TYPE_COLORS[entry.event.type] || 'border-l-gold-500/50'}`}
+                            >
+                              <div className="flex items-center gap-1.5">
+                                {renderEventIcon(entry.event.type, 13)}
+                                <span className="text-gold-200 text-[13px] font-serif">{entry.event.title}</span>
+                              </div>
+                              <p className="text-gold-300 text-[13px] font-serif mt-0.5 leading-snug">
+                                我选了：{entry.event.choices[entry.choiceIndex]?.text}
+                              </p>
+                              <p className="text-gold-400 text-[13px] font-serif leading-snug mt-0.5">
+                                {entry.outcome.description}
+                              </p>
+                              {entry.outcome.historicalNote && (
+                                <p className="mt-1 pl-2 border-l border-gold-700/40 text-[12px] leading-relaxed text-gold-500 font-serif">
+                                  {entry.outcome.historicalNote}
+                                </p>
+                              )}
+                            </div>
+                          ))}
                         </div>
-                      ))}
-                    </div>
-                  )}
+                      </>
+                    )}
+                  </div>
                 </div>
               )
             })}
           </div>
-        )}
+        </div>
+      )}
+    </div>
+  )
+
+  /*
+   * 两栏：左边是「带回来的那一页」（见闻卡本来就该像册子的一页），
+   * 右边是按天折叠的流水账。没有见闻时不排两栏 —— 否则左栏是一根 420px
+   * 宽的空柱，里面只有一句「这本册子还是空的」，整屏左边三分之一是空的。
+   */
+  if (!hasSightings) {
+    return (
+      <div className="space-y-8">
+        {journal}
+        {/*
+          页尾的见闻提示也要穿同一件衣服：不包卡的话，内容到此为止、下面
+          直接露出页面底（比卡片浅一档），看起来像贴了一块蓝板子在页脚。
+          ml-14 与上面的记事行对齐（让出日期那一列）。
+        */}
+        <div className="ml-14 rounded-sm border border-gold-700/20 bg-black/15 px-4 pb-1 pt-3">
+          <div className="flex items-baseline gap-2 pb-2 border-b border-gold-700/20">
+            <h3 className="font-serif text-[13px] text-gold-300">见闻</h3>
+            <span className="text-xs font-serif text-gold-600">靠了岸，才多一页</span>
+          </div>
+          <SightingsView />
+        </div>
       </div>
+    )
+  }
+  return (
+    <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,420px)_minmax(0,1fr)] gap-8 xl:gap-10">
+      <div className="min-w-0">
+        <SightingsView />
+      </div>
+      {journal}
     </div>
   )
 }
-
 /* ────────────────────────── 成就 ────────────────────────── */
 
 /**
