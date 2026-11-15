@@ -139,7 +139,7 @@ import { sceneImage, shouldUseSceneImage } from '../src/data/sceneImages'
 import { UI_ASSETS } from '../src/data/uiAssets'
 import { getStatusColor } from '../src/utils/resourceColor'
 import { FX_ASSETS, BG_ASSETS } from '../src/data/envAssets'
-import { harborBackdrop, portImage } from '../src/data/portImages'
+import { harborBackdrop, portImage, portThumb } from '../src/data/portImages'
 import {
   DIALOGUE_SCRIPTS, OPENING_SCRIPT_ID, SPEAKERS,
   advanceDialogueIndex, getScript, getSpeaker,
@@ -2365,6 +2365,46 @@ console.log('== 29. 环境资产：海面/港口/天气层/结局背景 ==')
     assert(h >= 900, `全景图原生高 ≥900（实际 ${w}×${h}）`)
     const kb = Math.round(buf.length / 1024)
     assert(kb <= 600, `全景图体积 ≤600KB（实际 ${kb}KB；原始无损是 2.7MB，别直接塞回去）`)
+  }
+  /*
+   * 【图鉴的港口小画】册子图鉴页给每座**靠过的岸**配一张 400×225 的画。
+   *
+   * 原来 21 个港口格全是「⚓ 名字 / 区域」两行字，整屏翻下来是一本通讯录。
+   * 现在已发现的港带画，未发现的仍是小格 —— 但画不能直接拿大图：
+   * 一张 150~390KB，21 格就是 3.6MB，打开册子先等四兆。
+   *
+   * 守四条：
+   *   ① 每个港口都取得到小图，且与大图**同名同目录**（映射只有 portImage 一份，
+   *      不会出现"大图换了、小图还指着旧的"）；
+   *   ② 文件真的在 public 里（不是拼了个 404 路径）；
+   *   ③ 真是小图：400×225；
+   *   ④ 体积 ≤40KB。谁把大图塞进 thumb/ 就会在这里红 —— 这条是给未来的人看的。
+   */
+  {
+    let thumbTotal = 0
+    let thumbCount = 0
+    for (const port of ports) {
+      const thumb = portThumb(port.id)
+      const full = portImage(port.id)!
+      assert(!!thumb, `港口 ${port.nameCn} 有小图路径`)
+      assert(thumb!.endsWith(`/thumb/${full.split('/').pop()}`),
+        `港口 ${port.nameCn} 的小图与大图同名（${thumb}）`)
+      const rel = thumb!.slice(thumb!.indexOf('assets/ports/'))
+      const p = join(pubDir, 'public', rel)
+      assert(existsSync(p), `港口 ${port.nameCn} 的小图文件存在（${rel}）`)
+      const buf = readFileSync(p)
+      const info = imageInfo(buf)
+      assert(info.width === 400 && info.height === 225,
+        `港口 ${port.nameCn} 的小图为 400×225（实际 ${info.width}×${info.height}）`)
+      const kb = buf.length / 1024
+      assert(kb <= 40, `港口 ${port.nameCn} 的小图 ≤40KB（实际 ${kb.toFixed(0)}KB）`)
+      thumbTotal += buf.length
+      thumbCount++
+    }
+    // 全库总量：21 个格子最多就是这些字节，别悄悄长成第二套大图
+    const totalKb = Math.round(thumbTotal / 1024)
+    assert(thumbCount === ports.length && totalKb <= 400,
+      `${thumbCount} 张小图合计 ${totalKb}KB（大图那套是 3.6MB）`)
   }
   // G 组天气层：四张 1024² 带透明通道（雨/雾/飞沫/云）—— alpha 是硬需求，丢了会出黑框
   for (const [key, url] of Object.entries(FX_ASSETS)) {
@@ -8163,7 +8203,15 @@ console.log('\n== 天数口径守卫 ==')
   const art = readFileSync(join(process.cwd(), 'src', 'data', 'logbookArt.ts'), 'utf8')
 
   assert(/from '@\/data\/logbookArt'/.test(views), '插图走 logbookArt 单一入口（换素材只改一处）')
-  assert(!/portImage/.test(views), '面板里不再直接引 portImage（否则换 sighting_* 要动渲染代码）')
+  /*
+   * 【为什么判据是 `portImage(` 而不是 `portImage`】
+   * 这条守的是"面板别自己去取那张大图"。图鉴的港口卡现在要小图，
+   * 走的是同模块的 portThumb（400×225，7~27KB），而 portThumb 内部就是
+   * portImage 那**一份**映射。按裸词判会把 `@/data/portImages` 这个模块名
+   * 和 portThumb 一起判红 —— 那是在禁"取小图"，不是在禁"取大图"。
+   * 真正要拦的是**调用**：面板里出现 `portImage(` 就等于自己取了大图。
+   */
+  assert(!/\bportImage\s*\(/.test(views), '面板里不直接调 portImage 取大图（走 logbookArt / portThumb）')
   assert(/idx === 0 \? logbookArt\(entry\.portId\)/.test(views), '只有最上面那一页取图')
   assert(/data-testid="logbook-art"/.test(views), '插图有稳定锚点（巡检与截图都靠它）')
   assert(/onError=/.test(views), '图挂了要隐藏，不能留个空框（路径错会静默 404）')
@@ -12164,6 +12212,27 @@ console.log('\n== 天数口径守卫 ==')
   const atlasSrc = readFileSync(join(process.cwd(), 'src', 'components', 'panels', 'LogbookViews.tsx'), 'utf8')
   assert(/航路/.test(atlasSrc) && /storyStep\(nation/.test(atlasSrc), '图鉴里有「航路」一节，进度走 storyStep')
   assert(/nation && \(/.test(atlasSrc), '没选国别（老存档/参观模式）时整块不出现')
+  /*
+   * 【图鉴的港口格必须有画】这条守的不是"能不能跑"，是"有没有意思"：
+   * 册子已经从浮窗变成整屏了，可港口区如果还是「⚓ 名字 / 区域」两行字，
+   * 整屏翻下来仍旧是一本通讯录。
+   *
+   * 判据三条（都只认**实际渲染路径**，不认注释）：
+   *   ① 港口格走 PortAtlasCard，而不是通用 AtlasCell；
+   *   ② 那个组件里真的有一张 <img>，src 来自 portThumb；
+   *   ③ 未靠过的港仍旧是小格（不给图 = 不提前剧透那片岸长什么样）。
+   */
+  {
+    assert(/<PortAtlasCard/.test(atlasSrc), '图鉴的港口格用带画的 PortAtlasCard')
+    const card = atlasSrc.slice(atlasSrc.indexOf('function PortAtlasCard'))
+    const cardBody = card.slice(0, card.indexOf('\nfunction '))
+    assert(/portThumb\(/.test(cardBody), '港口卡的小图走 portThumb（不是另拼一条路径）')
+    assert(/<img[\s\S]*?src=\{src\}/.test(cardBody), '港口卡里真的渲染了一张 <img>')
+    assert(/loading="lazy"/.test(cardBody), '港口卡的图是懒加载（册子一开不必等全部小图）')
+    assert(/还没靠过的岸/.test(atlasSrc), '未靠过的港单独一组，不跟着做成大卡')
+    assert(/ports\.filter\(p => !gotPorts\.has\(p\.id\)\)/.test(atlasSrc),
+      '未靠过的港走 filter 出来的小格（不是全 21 个都做成大卡）')
+  }
   const storeSrc3 = readFileSync(join(process.cwd(), 'src', 'store', 'useGameStore.ts'), 'utf8')
   assert(/makeTitleEntry\(finaleClaim/.test(storeSrc3), '名号走的是与其它称号同一条写入路径（写进册子）')
 }

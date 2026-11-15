@@ -99,6 +99,25 @@ export function portImage(port: number | Pick<Port, 'id' | 'region'>): string | 
 }
 
 /**
+ * 图鉴格子里的港口小画：400×225，每张 7~27KB（`scripts/make_port_thumbs.py`）。
+ *
+ * 【为什么不能直接拿 portImage 那张】大图一张 150~390KB。册子图鉴页一屏
+ * 21 个港口格，直接塞大图 = 3.6MB —— 打开册子要先等四兆，这比"格子没图"
+ * 更糟。缩略图全 17 张加起来 293KB（原图的 8.1%），且按 400×225 做，
+ * 正好覆盖 195px 格宽 × DPR2。
+ *
+ * 【为什么按"同名"派生而不是另写一张表】取到哪张大图，就取同名小图 ——
+ * 映射只有 portImage 那一份。新加一个港只要补大图 + 跑一次脚本，
+ * 不会出现"大图换了、小图还指着旧的"。
+ */
+export function portThumb(port: number | Pick<Port, 'id' | 'region'>): string | undefined {
+  const full = portImage(port)
+  if (!full) return undefined
+  const i = full.lastIndexOf('/')
+  return `${full.slice(0, i)}/thumb/${full.slice(i + 1)}`
+}
+
+/**
  * 岸上视角的**整屏**背景，与上面那套 96px 缩略图分开取。
  *
  * 【为什么必须分开】面板里那张图只显示 96px 高，原生 800×220 插值到 1600×900

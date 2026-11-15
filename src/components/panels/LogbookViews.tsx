@@ -11,6 +11,8 @@ import { REGION_CN, countEchoes, echoDayFor } from '@/data/logbook'
 import { logbookArt } from '@/data/logbookArt'
 import { clueCenter } from '@/utils/harbor'
 import { legendDistanceNm, nationById, storyStep } from '@/data/nations'
+import { portThumb } from '@/data/portImages'
+import type { Port } from '@/types'
 import type { DebrisKind } from '@/data/debris'
 
 /**
@@ -203,7 +205,7 @@ export function SightingsView() {
  * 所以 `heard` 的格子：名字照写、状态写"还没到过那片海"，图标用罗盘不用锁。
  */
 function AtlasCell({
-  label, sub, found, onClick, icon, heard = false,
+  label, sub, found, onClick, icon, heard = false, testId,
 }: {
   label: string
   sub: string
@@ -212,6 +214,8 @@ function AtlasCell({
   icon?: React.ReactNode
   /** 玩家已经听说过它（传说）：名字照写，只是标"未寻见" */
   heard?: boolean
+  /** 给 e2e 一个能精确命中的把手（未发现的格都是「区域 · 还没见过」，靠文字定位会撞车） */
+  testId?: string
 }) {
   const showName = found || heard
   return (
@@ -220,6 +224,7 @@ function AtlasCell({
       onClick={onClick}
       aria-label={found ? label : heard ? `${label} · ${sub}` : `${sub} · 还没见过`}
       data-found={found ? '1' : '0'}
+      data-testid={testId}
       className={`min-h-[44px] w-full text-left rounded px-2 py-1.5 border press transition-colors ${
         found
           ? 'border-gold-500/45 bg-gold-700/15 hover:bg-gold-700/25'
@@ -237,6 +242,52 @@ function AtlasCell({
         </span>
       </span>
       <span className="block text-xs font-serif text-gold-500 mt-0.5 truncate">{sub}</span>
+    </button>
+  )
+}
+
+/**
+ * 图鉴的港口格：一张画 + 一行字。只用于**已经靠过岸**的港口。
+ *
+ * 【为什么港口格与别的格长得不一样】遗物、漂流物、成就问的是"有没有这件东西"
+ * ——一个图标一格就够。港口问的是"那片岸长什么样"，而项目里已经有 17 张
+ * 港口场景图。只写「⚓ 马六甲 / 东方」，21 个格子排下来就是一本通讯录，
+ * 这就是册子「整屏了但里面还是表格」的那种没意思。
+ *
+ * 【为什么没靠过的港不进这里】带图等于把"那边是座什么样的城"提前给了。
+ * 它们留在下面一组小格里（见 AtlasView 的港口段）。
+ *
+ * 【图是缩略图不是原图】见 data/portImages 的 portThumb：一张大图
+ * 150~390KB，21 格就是 3.6MB；小图全 17 张共 293KB。
+ */
+function PortAtlasCard({ port, onClick }: { port: Port; onClick: () => void }) {
+  const src = portThumb(port.id)
+  const region = REGION_CN[port.region] ?? ''
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={port.nameCn}
+      data-testid={`atlas-port-${port.id}`}
+      className="w-full overflow-hidden rounded border border-gold-500/45 bg-gold-700/10 text-left press transition-colors hover:border-gold-400/70"
+    >
+      <span className="relative block aspect-[16/9] w-full overflow-hidden bg-black/40">
+        {src && (
+          <img
+            src={src}
+            alt={port.nameCn}
+            loading="lazy"
+            decoding="async"
+            data-testid={`atlas-port-img-${port.id}`}
+            className="h-full w-full object-cover"
+          />
+        )}
+      </span>
+      <span className="flex items-baseline gap-1.5 px-1.5 py-1">
+        <Anchor size={11} className="shrink-0 text-gold-300" aria-hidden="true" />
+        <span className="text-[12px] font-serif truncate text-gold-200">{port.nameCn}</span>
+        <span className="ml-auto shrink-0 text-xs font-serif text-gold-500">{region}</span>
+      </span>
     </button>
   )
 }
@@ -376,26 +427,51 @@ export function AtlasView() {
         </>
       )}
 
+      {/*
+        【港口分成两段：靠过的岸带画，没靠过的只占一行】
+        21 个格子全部做成 16:9 大卡时，未发现的那 13 个就是 13 块同样大小的
+        暗格 —— 一屏里六成面积是空的，翻起来像看一张"还没下载完"的列表。
+        已靠过的岸才配得上那格画（这是玩家真的看见过的地方），
+        没靠过的仍旧是一行小格，与下面的成就、遗物同一密度。
+        光标那一行的总数（8/21）数的是全部港口，不是画廊里那几张。
+      */}
       <SectionTitle right={`${discoveredPorts.length}/${ports.length}`}>港口</SectionTitle>
-      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-1.5">
-        {ports.map(p => (
-          <AtlasCell
-            key={p.id}
-            label={p.nameCn}
-            sub={REGION_CN[p.region] ?? ''}
-            found={gotPorts.has(p.id)}
-            icon={<Anchor size={13} />}
-            onClick={() => {
-              if (!gotPorts.has(p.id)) {
-                setDetail(`${REGION_CN[p.region] ?? '那片海'}还有没靠过的岸。去了自然就点亮，不去也没关系。`)
-                return
-              }
-              setCenter([p.latitude, p.longitude])
-              setActivePanel(null)
-            }}
-          />
-        ))}
-      </div>
+      {discoveredPorts.length > 0 && (
+        <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-1.5">
+          {ports.filter(p => gotPorts.has(p.id)).map(p => (
+            <PortAtlasCard
+              key={p.id}
+              port={p}
+              onClick={() => {
+                setCenter([p.latitude, p.longitude])
+                setActivePanel(null)
+              }}
+            />
+          ))}
+        </div>
+      )}
+      {ports.some(p => !gotPorts.has(p.id)) && (
+        <>
+          <p className="text-gold-500 text-[12px] font-serif pt-1 pb-0.5">
+            还没靠过的岸 · 去了自然就点亮，不去也没关系
+          </p>
+          <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-1.5">
+            {ports.filter(p => !gotPorts.has(p.id)).map(p => (
+              <AtlasCell
+                key={p.id}
+                label={p.nameCn}
+                sub={REGION_CN[p.region] ?? ''}
+                found={false}
+                testId={`atlas-unfound-${p.id}`}
+                icon={<Anchor size={13} />}
+                onClick={() => setDetail(
+                  `${REGION_CN[p.region] ?? '那片海'}还有没靠过的岸。去了自然就点亮，不去也没关系。`,
+                )}
+              />
+            ))}
+          </div>
+        </>
+      )}
 
       <SectionTitle right={`${earned.length}/${achievements.length}`}>成就</SectionTitle>
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-1.5">
