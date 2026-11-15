@@ -51,6 +51,7 @@ await page.evaluate(() => {
     logbook: [], claimedVictories: [], collectedDebris: [],
     discoveredPorts: [21, 12, 18],
     recentEvents: [204, 207, 236],
+    donatedRelics: ['dias_mast'],
     fleet: { ...s.fleet, currentPortId: 12, isSailing: false, day: 42, gold: 1234 },
   })
 })
@@ -64,16 +65,21 @@ check(!!saved, '存档已写入 localStorage')
 check(saved?.version >= 21, `存档版本 ${saved?.version}（≥21）`)
 check(Array.isArray(saved?.state?.recentEvents) && saved.state.recentEvents.length === 3,
   `recentEvents 进了存档（${saved?.state?.recentEvents?.join(',') || '无'}）`)
+// V22：报呈过的遗物也要进存档 —— 否则读档后按钮会"凭空又能按一次"
+check(saved?.state?.donatedRelics?.join(',') === 'dias_mast',
+  `donatedRelics 进了存档（${saved?.state?.donatedRelics?.join(',') || '无'}）`)
 
 /* ---- 手动降级成 v20：删掉 recentEvents、版本写回 20 ---- */
 await page.evaluate((k) => {
   const raw = JSON.parse(localStorage.getItem(k))
   raw.version = 20
   delete raw.state.recentEvents
+  delete raw.state.donatedRelics
   localStorage.setItem(k, JSON.stringify(raw))
 }, SAVE_KEY)
 const downgraded = await page.evaluate((k) => JSON.parse(localStorage.getItem(k)), SAVE_KEY)
-check(downgraded.version === 20 && downgraded.state.recentEvents === undefined, '已降级成 v20 存档（无 recentEvents）')
+check(downgraded.version === 20 && downgraded.state.recentEvents === undefined
+  && downgraded.state.donatedRelics === undefined, '已降级成 v20 存档（无 recentEvents / donatedRelics）')
 
 await page.reload({ waitUntil: 'networkidle2', timeout: 60000 })
 check(await until(() => !!window.__gameStore), '刷新后 store 起来了（没白屏）')
@@ -83,6 +89,7 @@ const after = await page.evaluate(() => {
   const s = window.__gameStore.getState()
   return {
     recentEvents: s.recentEvents,
+    donatedRelics: s.donatedRelics,
     day: s.fleet.day,
     gold: s.fleet.gold,
     port: s.fleet.currentPortId,
@@ -92,6 +99,9 @@ const after = await page.evaluate(() => {
 })
 check(Array.isArray(after.recentEvents), `recentEvents 补成了数组（现 ${JSON.stringify(after.recentEvents)}）`)
 check(after.recentEvents?.length === 0, '老存档没有事件记账 → 补空数组（不凭空编 id）')
+// V22 的迁移：老档没有"报呈"记账 → 补空数组（宁可让玩家再报一次，也不凭空编一串 id）
+check(Array.isArray(after.donatedRelics) && after.donatedRelics.length === 0,
+  `donatedRelics 补成了空数组（现 ${JSON.stringify(after.donatedRelics)}）`)
 check(after.day === 42, `天数没丢（${after.day}）`)
 check(after.gold === 1234, `金币没丢（${after.gold}）`)
 check(after.port === 12, `停靠港没丢（${after.port}）`)

@@ -262,6 +262,29 @@ export function makeTributeEntry(rule: { portId: number; label: string; gift: st
   }
 }
 
+/**
+ * 报呈页：每一次"把发现物报呈公会"都写一页。
+ *
+ * 【为什么值得单独一页】报呈换来的只有名号，而名号是个数字 ——
+ * 数字不会让玩家记住任何事。这一页记的是**那件东西本身**：
+ * 它的名字、它是什么（`relic.hint`）、以及它背后那一行史实（`relic.note`）。
+ * 也就是说，报呈的真正回报是"你讲的东西被写进了别人的档案"。
+ */
+export function makeDonationEntry(relic: { id: string; name: string; hint: string; note: string }, day: number, fame: number, portId: number): LogbookEntry {
+  return {
+    id: `donate-${relic.id}`,
+    kind: 'echo',
+    day,
+    portId,
+    title: `公会档案 · ${relic.name}`,
+    text: relic.hint,
+    aside: `${relic.note}（名号 +${fame}）`,
+    hint: null,
+    targetPortId: null,
+    read: false,
+  }
+}
+
 /** 全部标已读（打开「见闻」页时调用） */
 export function markAllRead(list: readonly LogbookEntry[]): LogbookEntry[] {
   return list.some(e => !e.read) ? list.map(e => (e.read ? e : { ...e, read: true })) : [...list]

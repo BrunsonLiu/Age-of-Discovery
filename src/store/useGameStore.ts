@@ -16,6 +16,7 @@ import { routeFacts, voyageDays, windFavorForRoute, LOW_MORALE } from '@/utils/v
 import { getRandomEvents, consumeEventFlags, RECENT_EVENT_WINDOW } from '@/utils/eventEngine'
 import { STANCES, segmentCountFor, nextSegmentBoundary, hazardLabel, dailyFoodUse, dailyWaterUse, dailyWearRate, settleWear } from '@/utils/segment'
 import { repairCost, taskGold, supplyCost, supplyAmounts, intelCost, portServiceMul, escortRewardMul, INTERPRETER_FACTION_MUL } from '@/utils/crewPerks'
+import { donatableRelics, donateFame } from '@/utils/donation'
 import { rollSeaOmen } from '@/utils/seaOmen'
 import { canAfford, hasCargoSpace } from '@/utils/trade'
 import { historicalTimeline } from '@/data/historicalTimeline'
@@ -60,7 +61,7 @@ import { findRelic, relicDistanceNm, relicInSeason, RELIC_PICKUP_NM } from '@/da
 import { nationById, legendPending, nextChapter, tributeState, DEFAULT_NATION } from '@/data/nations'
 import { phenomenonAt, phenomenonEventBias, SEA_PHENOMENA } from '@/data/seaPhenomena'
 import { newlyReached } from '@/data/voyageMilestones'
-import { appendLogbook, findClueFor, makeArrivalEntry, makeEchoEntry, makeLegendEntry, makeTitleEntry, makeTributeEntry, markAllRead } from '@/data/logbook'
+import { appendLogbook, findClueFor, makeArrivalEntry, makeDonationEntry, makeEchoEntry, makeLegendEntry, makeTitleEntry, makeTributeEntry, markAllRead } from '@/data/logbook'
 import { SAVE_KEY, SAVE_VERSION } from '@/utils/saveFile'
 
 const createStartingShip = (name = '圣玛利亚号'): Ship => ({
@@ -290,6 +291,7 @@ const initialGameState: GameState = {
   claimedVictories: [],
   collectedDebris: [],
   collectedRelics: [],
+  donatedRelics: [],
   knownPassages: [],
   /** 开局国别（见 data/nations）；initGame(nationId) 写入 */
   nation: null,
@@ -452,6 +454,12 @@ interface GameStore extends GameState {
    * 一律不放行 —— 界面那边按钮也据此变灰，不会出现"写着能交、点下去没反应"。
    */
   payTribute: () => void
+  /**
+   * 学者 60 档：把一件**已拾到、未报呈**的遗物报呈公会，换名号（60 档翻倍）。
+   *
+   * 只在学者港（里斯本/广州）能按；没有可报呈的就什么都不做（按钮那时是灰的）。
+   */
+  donateRelic: () => void
   /** 第三条线：操舵挑战结算——沿当前航线真实推进一段航程，并按评级结算士气/耐久/声望 */
   finishHelmRun: (result: HelmRunResult) => void
   /**
@@ -2957,6 +2965,32 @@ export const useGameStore = create<GameStore>()(
         }),
       }))),
 
+      donateRelic: () => set((state) => {
+        const portId = state.fleet.currentPortId
+        if (portId == null || state.fleet.isSailing) return state
+        if (portFaction(portId) !== 'scholars') return state
+        const next = donatableRelics(state.collectedRelics, state.donatedRelics)[0]
+        if (!next) return state
+        const gain = donateFame(state.factionRep.scholars ?? 0)
+        /*
+         * 回执走横幅（与朝贡同一档）：报呈是"一次性动作"，它需要一个当场的声音，
+         * 而册子里那一页是事后才翻得到的东西 —— 两者都要有。
+         */
+        useFxStore.getState().fx(
+          { kind: 'banner', tone: 'gold', text: `报呈 · ${next.name}`, sub: `名号 +${gain} · 公会抄了一份存档` },
+          'milestone',
+        )
+        return withAchievements(state, {
+          fleet: { ...state.fleet, fame: state.fleet.fame + gain },
+          // 账记在状态里（册子会被 120 条上限丢页，不能拿它当凭据）
+          donatedRelics: [...state.donatedRelics, next.id],
+          logbook: appendLogbook(
+            state.logbook,
+            makeDonationEntry(next, state.fleet.day, gain, portId),
+          ),
+        })
+      }),
+
       resetGame: () => {
         const startPort = ports.find(p => p.id === 6)
         set({
@@ -3151,6 +3185,15 @@ export const useGameStore = create<GameStore>()(
         if (version < 21) {
           if (!Array.isArray(pState.recentEvents)) pState.recentEvents = []
         }
+        /*
+         * v21→v22：已报呈的遗物 id。
+         * 老存档补空数组是诚实的：那一局过去报呈过什么我们没记账，
+         * 补空最多让玩家能把手上那几件再报一次（名号 +6/+12），不涉及任何金钱与航程。
+         * 反过来凭空编一串 id 会让"报呈"这个按钮凭空消失。
+         */
+        if (version < 22) {
+          if (!Array.isArray(pState.donatedRelics)) pState.donatedRelics = []
+        }
         return persistedState
       },
       partialize: (state) => ({
@@ -3193,6 +3236,7 @@ export const useGameStore = create<GameStore>()(
         claimedVictories: state.claimedVictories,
         collectedDebris: state.collectedDebris,
         collectedRelics: state.collectedRelics,
+        donatedRelics: state.donatedRelics,
         knownPassages: state.knownPassages,
         nation: state.nation,
         collectedLegends: state.collectedLegends,

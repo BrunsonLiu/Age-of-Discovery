@@ -13,6 +13,7 @@ import { portImage } from '@/data/portImages'
 import { portServiceMul, escortRewardMul } from '@/utils/crewPerks'
 import { repairCost, taskGold, supplyCost, supplyAmounts } from '@/utils/crewPerks'
 import { FACTIONS, portFaction, factionAttitude } from '@/data/factions'
+import { donatableRelics, donateFame, DONATE_DOUBLE_REP, DONATE_FAME } from '@/utils/donation'
 import Badge from '@/components/ui/Badge'
 import { UI_ASSETS } from '@/data/uiAssets'
 import { prefersReducedMotion } from '@/utils/motion'
@@ -58,6 +59,9 @@ export default function PortDetail() {
   const payTribute = useGameStore(s => s.payTribute)
   const tributeCount = useGameStore(s => s.tributes)
   const claimedVictories = useGameStore(s => s.claimedVictories)
+  const collectedRelics = useGameStore(s => s.collectedRelics)
+  const donatedRelics = useGameStore(s => s.donatedRelics)
+  const donateRelic = useGameStore(s => s.donateRelic)
 
   const portId = fleet.currentPortId || selectedPortId
   const port = ports.find(p => p.id === portId)
@@ -65,6 +69,13 @@ export default function PortDetail() {
   if (!port) return null
 
   const isAtPort = fleet.currentPortId === port.id
+  /*
+   * 公会登记（学者 60 档）：只能在学者港、且手上还有"已拾到但未报呈"的遗物。
+   * 报呈的是**记录**不是实物 —— 图鉴里那一格不会空，这是这个动作的定义。
+   */
+  const scholarsRep = factionRep.scholars ?? 0
+  const canDonate = donatableRelics(collectedRelics, donatedRelics)
+  const donateGain = donateFame(scholarsRep)
   const portImg = portImage(port)
   const portTasks = tasks.filter(t => {
     if (t.portId !== port.id || t.status !== 'available') return false
@@ -299,6 +310,53 @@ export default function PortDetail() {
             货不够时按钮灰着并写清"还差几担"，冷却时写"再过几天"——
             不会出现"写着能交、点下去没反应"。
           */}
+          {/*
+            ---- 公会登记（学者港：里斯本 / 广州）----
+            「把发现物报呈公会」是学者 60 档的特权。原文写的是"献学者换双倍报酬"，
+            而这一作不再扩展金钱玩法，所以两处都换了词、但意思没变小：
+              · "献" → **报呈**：实物还在你手上（图鉴那一格不会空），公会抄一份存档；
+              · "报酬" → **名号**：60 档的实现就是翻倍（+6 → +12）。
+            没有可报呈的时候这里写清"捞起来才算数"，而不是让按钮灰着让人猜。
+          */}
+          {isAtPort && !fleet.isSailing && portFaction(port.id) === 'scholars' && (
+            <div data-service-anchor="donate" className="border-t border-gold-700/30 pt-2">
+              <h4 className="text-gold-300 font-serif text-[13px] mb-1.5 flex items-center gap-1">
+                <ScrollText size={12} /> 公会登记
+              </h4>
+              {canDonate.length === 0 ? (
+                <p className="text-gold-400 font-serif text-xs leading-snug">
+                  {collectedRelics.length === 0
+                    ? '手上没有可报呈的发现物 —— 海上那些半埋着的旧物，捞起来才算数。'
+                    : `你带回来的 ${collectedRelics.length} 件都已经登记过了。`}
+                </p>
+              ) : (
+                <div className="space-y-1.5">
+                  <div className="text-gold-400 font-serif text-[13px]">
+                    可报呈 <span className="text-gold-200">{canDonate.length}</span> 件
+                    <span className="text-gold-600"> · 已登记 {donatedRelics.length}/{collectedRelics.length}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-[13px]">
+                    <span className="text-gold-400 font-serif">
+                      《{canDonate[0].name}》 · 名号 +{donateGain}
+                    </span>
+                    {/* data-testid：面板里还有别的次级按钮，e2e 要点的是这一颗 */}
+                    <ActionButton onClick={donateRelic} variant="secondary" testId="donate-submit">
+                      报呈
+                    </ActionButton>
+                  </div>
+                  <p className="text-gold-300 text-xs font-serif leading-snug">
+                    {scholarsRep >= DONATE_DOUBLE_REP
+                      ? `学者公会 ${DONATE_DOUBLE_REP} 档：名号翻倍（+${DONATE_FAME} → +${donateGain}）`
+                      : `学者公会声望到 ${DONATE_DOUBLE_REP} 后名号翻倍（+${DONATE_FAME} → +${DONATE_FAME * 2}）`}
+                  </p>
+                  <p className="text-gold-400 text-xs font-serif leading-snug">
+                    实物不会被收走 —— 公会要的是「记录」。报呈之后册子里多一页档案。
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+
           {isAtPort && tribute && port.id === tribute.rule.portId && (
             <div data-service-anchor="tribute" className="border-t border-gold-700/30 pt-2">
               <h4 className="text-gold-300 font-serif text-[13px] mb-1.5 flex items-center gap-1">

@@ -954,7 +954,16 @@ const helpSrc = readFileSync(join(process.cwd(), 'src', 'components', 'intro', '
 }
 assert(!/花 80 金币买/.test(helpSrc), '帮助里的情报价不许写死 80')
 assert(/\$\{achievements\.length\} 项成就/.test(helpSrc), '帮助里的成就数来自 achievements.length')
-assert(/尚未实装/.test(helpSrc), '帮助里明确写出哪些势力特权还没实装')
+/*
+ * 【2026-11-15：12 条势力特权全部落地之后，这条判据要反过来】
+ * 原来守的是"帮助里必须写清哪些特权还没实装"。现在没有未实现的了，
+ * 继续要求那句话就等于要求帮助去撒谎。改成：帮助里**不许**再出现"尚未实装"，
+ * 并且要明说"面板上出现的就是能用的"。
+ */
+assert(!/尚未实装/.test(stripComments(helpSrc)),
+  '帮助里不再声明"尚未实装"（12 条特权已全部落地）')
+assert(/十二档势力特权现在都有实现/.test(helpSrc),
+  '帮助里说清"面板上出现的就是能用的"')
 /* "生涯回顾"这个界面从来没做过：帮助指了三处，玩家会去找一个不存在的屏 */
 assert(!/生涯回顾/.test(stripComments(helpSrc)), '帮助里不再指向不存在的「生涯回顾」界面')
 
@@ -1551,6 +1560,96 @@ console.log('== 17m. 船长室的海图桌：起了名字就得有人接 ==')
 
   // ④ 床与箱子是**故意**不可点的：模型注释里要写清，免得下一个人以为漏了
   assert(/床与箱子是\*\*故意\*\*不可点的/.test(smSrc), '模型里注明床与箱子为何不可点（不做空壳交互）')
+}
+
+console.log('== 17n. 学者 60 档：报呈发现物（名号翻倍）==')
+/*
+ * 势力特权里最后一条设计稿。原文「发现物与遗物献学者可换双倍报酬」，
+ * 实现换了两处措辞但没缩小：报呈（实物还在你手上）换名号，60 档翻倍（+6 → +12）。
+ * 判据要落在**钱一分不加、名号按档位加**上 —— 这一作不扩展金钱玩法。
+ */
+{
+  const { donateFame, donatableRelics, DONATE_FAME, DONATE_DOUBLE_REP } = await import('../src/utils/donation')
+  assert(DONATE_FAME === 6, `基础名号 ${DONATE_FAME}（面板写 +6）`)
+  assert(DONATE_DOUBLE_REP === 60, `翻倍门槛 ${DONATE_DOUBLE_REP}（factions 那是学者 60 档）`)
+  assert(donateFame(0) === 6 && donateFame(59) === 6, '声望 59 还没到档：+6')
+  assert(donateFame(60) === 12 && donateFame(100) === 12, '声望 60 起翻倍：+12')
+
+  // 只能报呈"已拾到且没报呈过"的；顺序跟 RELICS 表一致（不是拾取顺序）
+  const two = RELICS.slice(0, 2).map(r => r.id)
+  const cand = donatableRelics([two[1], two[0]], [])
+  assert(cand.map(r => r.id).join(',') === two.join(','), `按表序、不按拾取序（${cand.map(r => r.id).join(',')}）`)
+  assert(donatableRelics([two[0]], []).length === 1, '只拾到一件就只有一件可报呈')
+  assert(donatableRelics([two[0]], [two[0]]).length === 0, '报呈过的不能再报呈')
+  assert(donatableRelics([], two).length === 0, '没拾到的东西不能凭空报呈')
+
+  /*
+   * 结算侧：只在学者港、且不航行时能按。
+   * 用 store 真跑一遍 —— 这里最容易出"函数对、接线忘判港口"的事故。
+   */
+  const { portFaction } = await import('../src/data/factions')
+  const scholarPort = ports.find(p => portFaction(p.id) === 'scholars')!
+  const otherPort = ports.find(p => portFaction(p.id) !== 'scholars')!
+  const before = useGameStore.getState()
+  const seed = (over: Record<string, unknown>) => useGameStore.setState({
+    ...before,
+    collectedRelics: two.slice(0, 2),
+    donatedRelics: [],
+    logbook: [],
+    factionRep: { crown: 0, guild: 0, scholars: 0, brethren: 0 },
+    fleet: { ...before.fleet, currentPortId: scholarPort.id, isSailing: false, fame: 100, gold: 500 },
+    ...over,
+  } as never)
+
+  seed({})
+  useGameStore.getState().donateRelic()
+  let st2 = useGameStore.getState()
+  assert(st2.fleet.fame === 106, `名号 +6（100 → ${st2.fleet.fame}）`)
+  assert(st2.donatedRelics.length === 1 && st2.donatedRelics[0] === two[0], '账上记下了那件')
+  assert(st2.fleet.gold === 500, '金币一分没动（这条特权的报酬不是钱）')
+  assert(st2.logbook.some(e => e.id === `donate-${two[0]}`), '册子里多了一页「公会档案」')
+  const page = st2.logbook.find(e => e.id === `donate-${two[0]}`)!
+  assert(page.kind === 'echo' && page.portId === scholarPort.id, '那一页是"带回的见闻"，且挂在学者港上')
+
+  // 再按一次：换下一件，不是同一件再来一次
+  useGameStore.getState().donateRelic()
+  st2 = useGameStore.getState()
+  assert(st2.donatedRelics.length === 2 && st2.fleet.fame === 112, `第二次报呈另一件（名号 ${st2.fleet.fame}）`)
+  // 没有了：什么都不发生（不许白给）
+  useGameStore.getState().donateRelic()
+  const st3 = useGameStore.getState()
+  assert(st3.fleet.fame === 112 && st3.donatedRelics.length === 2, '没有可报呈的时候按下去什么都不发生')
+
+  // 60 档：同一次 +12
+  seed({ factionRep: { crown: 0, guild: 0, scholars: 60, brethren: 0 } })
+  useGameStore.getState().donateRelic()
+  assert(useGameStore.getState().fleet.fame === 112, `60 档翻倍（100 → ${useGameStore.getState().fleet.fame}）`)
+
+  // 不在学者港 / 航行中：按不动
+  seed({ fleet: { ...before.fleet, currentPortId: otherPort.id, isSailing: false, fame: 100 } })
+  useGameStore.getState().donateRelic()
+  assert(useGameStore.getState().fleet.fame === 100, '非学者港不给报呈')
+  seed({ fleet: { ...before.fleet, currentPortId: scholarPort.id, isSailing: true, fame: 100 } })
+  useGameStore.getState().donateRelic()
+  assert(useGameStore.getState().fleet.fame === 100, '航行中不给报呈（得靠了岸才有人接）')
+  useGameStore.setState(before)
+
+  // 数据与界面必须对得上
+  const facSrc6 = readFileSync(join(process.cwd(), 'src', 'data', 'factions.ts'), 'utf8')
+  assert(/text: '报呈发现物：名号翻倍'/.test(facSrc6), '学者 60 档文案 = 报呈发现物：名号翻倍')
+  assert(!/发现物与遗物献学者可换双倍报酬/.test(stripComments(facSrc6)),
+    '旧设计稿那句"换双倍报酬"不许留着（报酬是名号，不是钱）')
+  const pdSrc2 = readFileSync(join(process.cwd(), 'src', 'components', 'panels', 'PortDetail.tsx'), 'utf8')
+  assert(/data-service-anchor="donate"/.test(pdSrc2), '港口面板里有报呈的锚点')
+  assert(/donateFame\(scholarsRep\)/.test(pdSrc2), '面板上的名号与结算用同一个 donateFame')
+  assert(/testId="donate-submit"/.test(pdSrc2), '报呈按钮有稳定锚点（e2e 按它点）')
+
+  // 存档：字段必须进白名单，且老档补空数组（否则按钮会凭空消失/永远不消失）
+  const saveSrc2 = readFileSync(join(process.cwd(), 'src', 'utils', 'saveFile.ts'), 'utf8')
+  assert(/'donatedRelics'/.test(saveSrc2), 'donatedRelics 进了存档白名单')
+  const storeSrc4 = readFileSync(join(process.cwd(), 'src', 'store', 'useGameStore.ts'), 'utf8')
+  assert(/if \(version < 22\)/.test(storeSrc4), '老存档有 v21→v22 迁移（补空数组）')
+  assert(/donatedRelics: state\.donatedRelics/.test(storeSrc4), 'partialize 里有这个字段（与导入白名单两份同步）')
 }
 
 console.log('== 18. 新事件引擎条件 ==')
