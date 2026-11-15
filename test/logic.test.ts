@@ -1074,6 +1074,29 @@ console.log('== 17f. 航海志：记录类面板只有一个来源 ==')
   assert(/stats\.bestDeal/.test(lb), '成就页保留生涯统计（最大单笔等六项）')
   assert(/groupJournal\(/.test(lb), '日志页按天分组（不是把条目摊成一长条）')
   assert(/historicalNote/.test(lb), '日志页保留历史注脚')
+  /*
+   * 【成就页：三面墙 + 自绘勋章】
+   * 这一页原来是一张 4~5 列的卡片墙，17 格里 11 格是灰的 —— 整屏是整屏了，
+   * 但玩家只看得见"还差 11 个"，看不出还差哪一类；勋章也只是个小图标。
+   *
+   * 守四件（都只认渲染路径，不认注释）：
+   *   ① 三面墙从 ACHIEVEMENT_GROUPS 来，不在这里写死中文组名；
+   *   ② 每组自己算已得数（`on` 与 `list.length` 一起上屏）；
+   *   ③ 勋章是自绘 svg（圆盘 + 绶带），已得/未得的环用不同 stroke；
+   *   ④ 每张卡仍带 data-testid + data-earned（e2e 靠它数"已得几张"）。
+   */
+  {
+    assert(/ACHIEVEMENT_GROUPS\.map/.test(lb), '三面墙由 ACHIEVEMENT_GROUPS 驱动')
+    assert(/data-testid=\{`ach-group-\$\{g\.key\}`\}/.test(lb), '每面墙有独立锚点')
+    assert(/list\.filter\(a => got\.has\(a\.id\)\)\.length/.test(lb), '每面墙自己算已得数')
+    assert(/ach-group-count-/.test(lb), '进度数字有锚点（e2e 要把它加起来跟总进度对账）')
+    assert(/<svg[\s\S]*?viewBox="0 0 56 64"/.test(lb), '勋章是自绘 svg（零素材，任意 DPR 不糊）')
+    assert(/strokeDasharray=\{earned \? undefined : '3 4'\}/.test(lb),
+      '已得是实线金环、未得是虚线暗环（一眼分得开）')
+    assert(/stroke=\{earned \? '#e6c67a'/.test(lb), '未得的环换色（不是同一条描边换个透明度）')
+    assert(/data-testid=\{`achievement-\$\{a\.id\}`\}/.test(lb), '每张卡仍有 achievement-<id> 锚点')
+    assert(/data-earned=\{earned \? '1' : '0'\}/.test(lb), '每张卡仍标 data-earned')
+  }
 }
 
 /*
@@ -4110,6 +4133,36 @@ console.log('== 50. 特质与成就的完整性 ==')
   for (const a of achievements) {
     assert(!!a.id && !!a.title && !!a.description && !!a.icon && typeof a.check === 'function',
       `成就 ${a.id} 字段齐全（含判定函数）`)
+  }
+  /*
+   * 【成就分三面墙上】17 枚勋章平铺成一片网格时，玩家只看见"还差 11 个"，
+   * 看不出还差**哪一类**。分组之后每面墙自带进度，但那三个进度必须真的
+   * 加起来等于总数 —— 否则屏幕上会同时出现「已得 6 / 17」和「2/7 + 2/5 + 2/5」
+   * （=6/17 恰好对上）或更糟的 5/17 与 6 之间的缺口，玩家只会认为界面坏了。
+   *
+   * 四条：
+   *   ① 每条成就的 group 都合法（拼错的 group 会让它从三面墙上一起消失，
+   *      总数却还在算它 —— 那是最典型的"数字对不上"）；
+   *   ② 每个组都非空（空组等于墙上挂一块"还没做的内容"的牌子）；
+   *   ③ 组内数量之和 === 成就总数（一条不许漏、一条不许重）；
+   *   ④ 组的顺序由 ACHIEVEMENT_GROUPS 决定，不散落在界面里。
+   */
+  {
+    const { ACHIEVEMENT_GROUPS } = await import('../src/data/achievements')
+    const valid = new Set(ACHIEVEMENT_GROUPS.map(g => g.key))
+    assert(valid.size === 3, `成就分 3 个门类（实际 ${valid.size}）`)
+    for (const a of achievements) {
+      assert(valid.has(a.group), `成就 ${a.id} 的 group 合法（${a.group}）`)
+    }
+    let sum = 0
+    for (const g of ACHIEVEMENT_GROUPS) {
+      const list = achievements.filter(a => a.group === g.key)
+      assert(list.length > 0, `门类「${g.label}」里至少有一条（${list.length} 条）`)
+      assert(!!g.label && !!g.en, `门类 ${g.key} 有中英文名（${g.label} / ${g.en}）`)
+      sum += list.length
+    }
+    assert(sum === achievements.length,
+      `三面墙的条数加起来等于总数（${sum} vs ${achievements.length}）`)
   }
 }
 

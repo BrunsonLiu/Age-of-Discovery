@@ -1,9 +1,9 @@
 import { useMemo, useState } from 'react'
-import { BookOpen, X, Compass, Trophy, Newspaper, Calendar, ChevronDown, Lock } from 'lucide-react'
+import { BookOpen, X, Compass, Trophy, Newspaper, Calendar, ChevronDown } from 'lucide-react'
 import { useGameStore } from '@/store/useGameStore'
 import { useMapStore, type LogTab } from '@/store/useMapStore'
 import { ports } from '@/data/ports'
-import { achievements } from '@/data/achievements'
+import { achievements, ACHIEVEMENT_GROUPS } from '@/data/achievements'
 import { UI_ASSETS } from '@/data/uiAssets'
 import { tasks } from '@/data/tasks'
 import { goods } from '@/data/goods'
@@ -13,7 +13,8 @@ import VoyageNextCard from '@/components/panels/VoyageNextCard'
 import { useFxStore as useFx } from '@/store/useFxStore'
 import { rivalPortrait } from '@/data/portraits'
 import { Ship } from 'lucide-react'
-import type { Rival } from '@/types'
+import type { Rival, Achievement } from '@/types'
+import type { LucideIcon } from 'lucide-react'
 import { groupJournal } from '@/utils/captainLog'
 import { EVENT_TYPE_COLORS, renderEventIcon } from '@/utils/eventTypeStyles'
 import { AtlasView, SightingsView } from '@/components/panels/LogbookViews'
@@ -490,6 +491,73 @@ function JournalPage() {
 
 /* ────────────────────────── 成就 ────────────────────────── */
 
+/**
+ * 一枚勋章：圆盘 + 绶带。已得是实心金环，未得是暗铜虚线环。
+ *
+ * 【为什么画 SVG 而不是用图片】项目里没有 17 张勋章素材，而成就这一页
+ * 的视觉重心本来就该是"章"，不是一段描述文字。圆盘 + 绶带用几何画出来，
+ * 零素材、任意 DPR 不糊，而且"已得/未得"只改两个颜色就能一眼分开。
+ *
+ * 尺寸：56×64 的框，盘心 (28,26) r=24，绶带从盘底垂到 y=58。
+ * 图标必须落在盘心 —— 所以它被单独绝对定位在 `top-0 h-[52px]` 那一格里
+ * （盘心正好是 26），不是塞进 svg 里（lucide 是 React 组件，不能当 svg 子节点）。
+ */
+function AchievementMedal({ icon: Icon, earned }: { icon: LucideIcon; earned: boolean }) {
+  return (
+    <span className="relative block h-16 w-14 shrink-0" aria-hidden="true">
+      <svg
+        viewBox="0 0 56 64"
+        className="absolute inset-0 h-full w-full"
+        style={earned ? { filter: 'drop-shadow(0 0 7px rgba(230,198,122,0.42))' } : undefined}
+      >
+        {/* 绶带：两条带子 + 剪口。先画，压在盘下面 */}
+        <path
+          d="M19 38 H37 L34 58 L28 54 L22 58 Z"
+          fill={earned ? 'rgba(198,156,64,0.85)' : 'rgba(58,46,28,0.75)'}
+        />
+        {/* 盘面：已得带一点暖光，未得是个凹进去的暗圆 */}
+        <circle cx="28" cy="26" r="24" fill={earned ? 'rgba(232,200,120,0.13)' : 'rgba(0,0,0,0.45)'} />
+        <circle
+          cx="28" cy="26" r="24" fill="none"
+          stroke={earned ? '#e6c67a' : 'rgba(122,94,44,0.5)'}
+          strokeWidth={earned ? 2 : 1.2}
+          strokeDasharray={earned ? undefined : '3 4'}
+        />
+        <circle
+          cx="28" cy="26" r="18.5" fill="none"
+          stroke={earned ? 'rgba(230,198,122,0.32)' : 'rgba(122,94,44,0.2)'}
+          strokeWidth="1"
+        />
+      </svg>
+      <span className="absolute inset-x-0 top-0 grid h-[52px] place-items-center">
+        <Icon size={24} className={earned ? 'text-gold-100' : 'text-gold-700'} />
+      </span>
+    </span>
+  )
+}
+
+function AchievementCard({ a, earned }: { a: Achievement; earned: boolean }) {
+  return (
+    <div
+      data-testid={`achievement-${a.id}`}
+      data-earned={earned ? '1' : '0'}
+      className={`flex items-start gap-3 rounded-sm border p-3 transition-colors
+        ${earned ? 'border-gold-600/55 bg-gold-700/12' : 'border-gold-700/20 bg-black/20'}`}
+    >
+      <AchievementMedal icon={a.icon} earned={earned} />
+      <div className="min-w-0 flex-1">
+        <div className="flex items-baseline gap-2">
+          <h3 className={`font-serif text-[13px] ${earned ? 'text-gold-200' : 'text-gold-600'}`}>{a.title}</h3>
+          {earned && <span className="ml-auto shrink-0 text-xs tracking-wider text-gold-500">已得</span>}
+        </div>
+        <p className={`mt-1 text-xs font-serif leading-relaxed ${earned ? 'text-gold-500' : 'text-gold-600'}`}>
+          {a.description}
+        </p>
+      </div>
+    </div>
+  )
+}
+
 function AchievementPage() {
   const earned = useGameStore(s => s.achievements)
   const stats = useGameStore(s => s.stats)
@@ -500,11 +568,17 @@ function AchievementPage() {
     <div className="space-y-7">
       {/* 门面 + 总进度 */}
       <div className="flex items-center gap-5">
+        {/*
+          门面那张 ui_medal 是红色缎带勋章，和下面自绘的金色圆盘勋章**不是一套**。
+          不换素材（换了它就成了孤儿资源，审计会红），而是把它压成同一色系：
+          去饱和 → 上棕金 → 提亮，读起来像同一块铜。
+        */}
         <img
           src={UI_ASSETS.medal}
           alt=""
           aria-hidden="true"
           className="h-14 w-auto object-contain shrink-0 drop-shadow-[0_0_14px_rgba(212,168,56,0.4)]"
+          style={{ filter: 'grayscale(1) sepia(0.62) saturate(1.7) brightness(1.12)' }}
         />
         <div className="min-w-0 flex-1">
           <div className="flex items-baseline gap-3">
@@ -537,44 +611,35 @@ function AchievementPage() {
         ))}
       </div>
 
-      {/* 网格：宽屏 4~5 列，一眼能看到"还差几格" */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-5 gap-3">
-        {achievements.map(a => {
-          const on = got.has(a.id)
-          const Icon = a.icon
-          return (
-            <div
-              key={a.id}
-              data-testid={`achievement-${a.id}`}
-              data-earned={on ? '1' : '0'}
-              className={`relative rounded-sm p-3.5 border overflow-hidden transition-colors
-                ${on ? 'border-gold-600/55 bg-gold-700/12' : 'border-gold-700/20 bg-black/20'}`}
-            >
-              {/* 已获得：左缘一道金竖条（"盖了章"）。未获得一个亮元素都不留。 */}
-              {on && (
-                <span
-                  aria-hidden="true"
-                  className="absolute left-0 top-0 bottom-0 w-[3px]"
-                  style={{
-                    background:
-                      'linear-gradient(180deg, rgba(240,216,138,0) 0%, rgba(240,216,138,0.95) 26%, rgba(240,216,138,0.95) 74%, rgba(240,216,138,0) 100%)',
-                  }}
-                />
-              )}
-              <div className={`flex items-center justify-between ${on ? 'text-gold-300' : 'text-gold-700'}`}>
-                <Icon size={18} />
-                {on
-                  ? <span className="text-xs tracking-wider text-gold-500">已得</span>
-                  : <Lock size={12} className="text-gold-700" />}
-              </div>
-              <h3 className={`mt-2.5 font-serif text-sm ${on ? 'text-gold-200' : 'text-gold-600'}`}>{a.title}</h3>
-              <p className={`mt-1 text-xs font-serif leading-relaxed ${on ? 'text-gold-500' : 'text-gold-700'}`}>
-                {a.description}
-              </p>
+      {/*
+        【三面墙】17 枚勋章平铺成一片网格时，玩家只看得见"还差 11 个"，
+        看不出还差**哪一类** —— 是生意没做大，还是海没走远，还是见闻太少。
+        分组之后每面墙自己带进度；三个数加起来必须等于 17（单测里对账）。
+        分组与顺序都从 ACHIEVEMENT_GROUPS 来，不在这里写死中文。
+      */}
+      {ACHIEVEMENT_GROUPS.map(g => {
+        const list = achievements.filter(a => a.group === g.key)
+        const on = list.filter(a => got.has(a.id)).length
+        return (
+          <section key={g.key} data-testid={`ach-group-${g.key}`} className="space-y-2.5">
+            <div className="flex items-baseline gap-2 border-b border-gold-700/30 pb-1">
+              <h3 className="font-serif text-[13px] tracking-wide text-gold-300">{g.label}</h3>
+              <span className="text-xs font-serif tracking-[0.18em] text-gold-600">{g.en}</span>
+              <span
+                data-testid={`ach-group-count-${g.key}`}
+                className="ml-auto text-[12px] font-serif tabular-nums text-gold-500"
+              >
+                {on} / {list.length}
+              </span>
             </div>
-          )
-        })}
-      </div>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
+              {list.map(a => (
+                <AchievementCard key={a.id} a={a} earned={got.has(a.id)} />
+              ))}
+            </div>
+          </section>
+        )
+      })}
     </div>
   )
 }

@@ -71,9 +71,17 @@ export interface Achievement {
   description: string
   /** 图标组件（lucide）。原先存 emoji，会渲染成彩色，与界面材质冲突 */
   icon: LucideIcon
+  /**
+   * 归在哪一面墙。册子的成就页按它分组上墙 ——
+   * 17 枚勋章平铺成一片网格，玩家看不出"我还差哪一类"。
+   */
+  group: AchievementGroup
   /** 达成判定；传入完整 GameState */
   check: (state: GameState) => boolean
 }
+
+/** 成就的三个门类（顺序即册子里上墙的顺序，见 data/achievements 的 ACHIEVEMENT_GROUPS） */
+export type AchievementGroup = 'trade' | 'voyage' | 'lore'
 
 export interface CargoItem {
   goodId: number
