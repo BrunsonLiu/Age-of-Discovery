@@ -455,6 +455,14 @@ export default function HarborView() {
     : []
   // 整屏背景取全景图，不拿面板缩略图放大（见 data/portImages.ts 的 harborBackdrop）
   const backdrop = port ? harborBackdrop(port) : undefined
+  /*
+   * 城里能去的地方：只列本港**真有**的设施（`needs` 为空的永远在，
+   * 商行/酒馆/航海日志这类不需要设施）。
+   * 桌面（码头门牌带）与手机（城里那块板）共用这一份，不各写一遍过滤。
+   */
+  const serviceEntries = SERVICES.filter(
+    s => s.needs === null || (port && hasAnyService(port.services, s.needs)),
+  )
   const reduced = prefersReducedMotion()
   const enterStyle: React.CSSProperties = reduced
     ? { opacity: 1 }
@@ -728,15 +736,34 @@ export default function HarborView() {
               <span className="text-gold-500">/</span>
               <span className="text-gold-400">已靠岸</span>
             </div>
-            <button
-              onClick={backToChart}
-              data-testid="harbor-back-to-chart"
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded text-[13px] font-serif
-                text-gold-100 border border-gold-600/55 bg-black/45 hover:bg-gold-700/35 press transition-colors"
-            >
-              <ArrowLeft size={14} aria-hidden="true" />
-              回海图 · 准备出航
-            </button>
+            <div className="flex items-center gap-2">
+              {/*
+                【从码头走上船】岸上是画出来的景（素材就是 1600×900 的油画），
+                但"船"的那一头是**真的 3D**。与其把岸也做成立体模型（那批港口
+                素材本身就是远景），不如把两个空间接起来：从这里一步跨到甲板上，
+                空间感就由"船"来承担。
+                桌面放在这一行（和"回海图"同一类动作：都是离开岸上）；
+                手机上走底栏的空间开关，这里不重复给。
+              */}
+              <button
+                onClick={() => { setViewMode('chart'); setDeckView(true) }}
+                data-testid="harbor-go-deck"
+                className="hidden md:inline-flex items-center gap-1.5 px-3 py-1.5 rounded text-[13px] font-serif
+                  text-gold-100 border border-gold-600/45 bg-black/60 hover:bg-gold-700/40 press transition-colors"
+              >
+                <Anchor size={14} aria-hidden="true" />
+                上船看看
+              </button>
+              <button
+                onClick={backToChart}
+                data-testid="harbor-back-to-chart"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded text-[13px] font-serif
+                  text-gold-100 border border-gold-600/55 bg-black/60 hover:bg-gold-700/45 press transition-colors"
+              >
+                <ArrowLeft size={14} aria-hidden="true" />
+                回海图 · 准备出航
+              </button>
+            </div>
           </div>
 
           {/* 两档要分开：
@@ -744,10 +771,10 @@ export default function HarborView() {
                 会缩到内容宽（实测 358px 屏上只占 270px，右边露出一条背景）；
               · 桌面（row）：交叉轴是高度，必须 items-start 才各自按内容取高。
                 之前一律 stretch，见闻板被拉到和服务板等高，凭空多出 100px 空白。 */}
-          <div className="flex flex-col md:flex-row items-stretch md:items-start gap-4 md:gap-6">
+          <div className="flex flex-col items-stretch gap-4 md:gap-6">
             {/* 见闻板：这趟带回的那一页，直接接上航海日志 */}
             <section
-              className="relative rounded-lg p-4 md:p-6 md:w-[54%] shrink-0"
+              className="relative rounded-lg p-4 md:p-6 md:w-[44%] shrink-0"
               style={PLATE_STYLE}
               data-testid="harbor-arrival-plate"
             >
@@ -839,23 +866,25 @@ export default function HarborView() {
               </div>
             </section>
 
-            {/* 服务板：入口按本港真实设施过滤 */}
-            <section
-              className="relative rounded-lg p-4 md:p-5 flex-1"
-              style={PLATE_STYLE}
-              data-testid="harbor-services"
-            >
-              <div
-                className="absolute inset-0 pointer-events-none rounded-lg"
-                style={{ backgroundImage: `url(${UI_ASSETS.parchment})`, backgroundSize: 'cover', opacity: 0.06 }}
-              />
-              <div className="relative">
-                <h2 className="text-gold-300 font-serif text-[14px] mb-1">在城里</h2>
-                <p className="text-gold-500 font-serif text-[12px] mb-3">想去哪儿都可以，也可以直接回船上。</p>
-                <div className="grid grid-cols-2 gap-2">
-                  {SERVICES.filter(s => s.needs === null || (port && hasAnyService(port.services, s.needs))).map(s => {
-                    const Icon = s.icon
-                    return (
+            {/* 服务板：入口按本港真实设施过滤。
+                桌面版不在这里 —— 见下面的「码头门牌带」。 */}
+            {isMobile && (
+              <section
+                className="relative rounded-lg p-4 md:p-5 flex-1"
+                style={PLATE_STYLE}
+                data-testid="harbor-services"
+              >
+                <div
+                  className="absolute inset-0 pointer-events-none rounded-lg"
+                  style={{ backgroundImage: `url(${UI_ASSETS.parchment})`, backgroundSize: 'cover', opacity: 0.06 }}
+                />
+                <div className="relative">
+                  <h2 className="text-gold-300 font-serif text-[14px] mb-1">在城里</h2>
+                  <p className="text-gold-500 font-serif text-[12px] mb-3">想去哪儿都可以，也可以直接回船上。</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {serviceEntries.map(s => {
+                      const Icon = s.icon
+                      return (
                       <button
                         key={s.key}
                         onClick={() => setActivePanel(s.panel)}
@@ -869,37 +898,69 @@ export default function HarborView() {
                         </span>
                         <span className="block text-gold-400 font-serif text-[12px] mt-1 leading-snug">{s.sub}</span>
                       </button>
-                    )
-                  })}
+                      )
+                    })}
+                  </div>
                 </div>
-                {/*
-                  【从码头走上船】岸上是画出来的景（素材就是 1600×900 的油画），
-                  但"船"的那一头是**真的 3D**。与其把岸也做成立体模型（那批港口
-                  素材本身就是远景），不如把两个空间接起来：从这里一步跨到甲板上，
-                  空间感就由"船"来承担。
-                */}
-                <button
-                  onClick={() => { setViewMode('chart'); setDeckView(true) }}
-                  data-testid="harbor-go-deck"
-                  /* 小屏先让位：手机上这张服务板本来就紧，多一块会把最后一个服务入口
-                     顶到底栏底下（实测 5 个入口里有一个点不中）。手机上"回船上"走底栏
-                     的空间开关，桌面再给这块跳板。 */
-                  className="hidden md:block mt-2 w-full text-left rounded border border-gold-600/55 bg-black/30 px-2.5 py-2
-                    hover:bg-gold-700/25 press transition-colors"
-                >
-                  <span className="flex items-center gap-1.5 text-gold-100 font-serif text-[14px]">
-                    <Anchor size={15} aria-hidden="true" />
-                    上船看看
-                  </span>
-                  <span className="block text-gold-400 font-serif text-[12px] mt-1 leading-snug">
-                    踩着跳板回到甲板 · 从水面上看这座港
-                  </span>
-                </button>
-              </div>
-            </section>
+              </section>
+            )}
           </div>
         </div>
       </div>
+
+      {/*
+        ── 桌面：码头门牌带 ──────────────────────────────────────
+        【为什么把服务从右上角挪到这里】原来右侧是一块 370×260 的**近乎不透明**
+        深棕板（PLATE_STYLE 的 alpha 是 0.95~0.97），和左边那块见闻板一起把
+        油画挡掉了六成 —— 岸上这一屏于是变成"两块黑卡贴在画上"，正是这一轮
+        要收拾的那种"浮窗感"。
+
+        现在六家铺子排成一条带子，压在**我们自己画的前景石砌码头上**
+        （那一片本来就只有石板和货箱，没有主角内容），油画的中景 —— 拱廊、
+        人群、帆船 —— 完整地露出来。位置：底栏（52px）之上、水线（82%）之下。
+
+        只按钮可点：带子本身是一条 pointer-events-none 的定位容器。
+      */}
+      {!isMobile && (
+        <div
+          className="absolute inset-x-0 bottom-[56px] z-20 px-4 md:px-10 pointer-events-none"
+          data-testid="harbor-services"
+        >
+          {/*
+            列数跟着"本港真有几家铺子"走：写死 6 列时，只有 5 家设施的港口
+            右边会空出一整格（实测塞维利亚那块带子从 110 排到 890，右边空 80px）。
+          */}
+          <div
+            className="mx-auto max-w-6xl grid gap-2 pointer-events-auto"
+            style={{ gridTemplateColumns: `repeat(${Math.max(serviceEntries.length, 1)}, minmax(0, 1fr))` }}
+          >
+            {serviceEntries.map(s => {
+              const Icon = s.icon
+              return (
+              <button
+                key={s.key}
+                onClick={() => setActivePanel(s.panel)}
+                data-testid={`harbor-service-${s.key}`}
+                className="group text-left rounded border border-gold-600/40 px-2.5 py-2 press transition-colors
+                  hover:border-gold-400/85"
+                style={{
+                  background: 'linear-gradient(180deg, rgba(32,23,13,0.86) 0%, rgba(18,13,7,0.92) 100%)',
+                  boxShadow: '0 6px 18px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,246,214,0.10)',
+                }}
+              >
+                <span className="flex items-center gap-1.5 text-gold-100 font-serif text-[13px]">
+                  <Icon size={14} aria-hidden="true" className="shrink-0 text-gold-300 group-hover:text-gold-200" />
+                  {s.label}
+                </span>
+                <span className="block text-gold-400 font-serif text-[12px] mt-0.5 leading-tight truncate">
+                  {s.sub}
+                </span>
+              </button>
+              )
+            })}
+          </div>
+        </div>
+      )}
 
       {/* ── 前景：码头剪影，压住画面下缘，不接任何点击 ─────────────── */}
       {!isMobile && <HarborForeground lampRef={amb.lampsRef} deckRef={amb.deckRef} reduced={reduced} />}

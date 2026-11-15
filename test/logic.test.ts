@@ -14245,6 +14245,35 @@ console.log('== 岸上的"活"：走动的影子与海鸥的布局 ==')
   assert(/@keyframes quayWalk[\s\S]{0,120}translateX\(var\(--span/.test(css2), '走的动画读 --span 变量（每人距离不同）')
   assert(/\.quay-gull-wing[\s\S]{0,200}animation: gullFlap/.test(css2), '海鸥扇翅用 scaleY（10px 宽的鸟只需要看出在动）')
   assert(!/\.quay-boat\s*\{/.test(css2), '小艇的样式已撤掉（元素看不见就不留死代码）')
+  /*
+   * 【岸上的服务：桌面是"码头门牌带"，手机才是"城里"那块竖板】
+   * 原来右上角是一块 370×260、alpha 0.95~0.97 的**不透明**深棕板，
+   * 和左边见闻板一起把油画挡掉六成 —— 岸上这一屏于是成了"两块黑卡贴在画上"，
+   * 正是"浮窗感"最重的地方。现在六家铺子排成一条带子，
+   * 压在**我们自己画的前景石砌码头**上（那片本来只有石板和货箱）。
+   *
+   * 守五件：
+   *   ① 服务列表只有一个过滤源（桌面与手机共用 serviceEntries，不各写一遍）；
+   *   ② 带子是绝对定位在底栏之上，容器不吃指针（只有按钮可点）；
+   *   ③ 列数跟着铺子数量走（写死 6 列时 5 家设施的港右边会空一整格）；
+   *   ④ 手机仍渲染竖板，且**只渲染一份**（同 testid 出现两次会让命中测试歧义）；
+   *   ⑤ "上船看看"挪到顶部行（和"回海图"同一类动作：都是离开岸上）。
+   */
+  {
+    const filters = (hv.match(/SERVICES\.filter\(/g) || []).length
+    assert(filters === 1, `服务过滤只有一处（实际 ${filters} 处）`)
+    assert(/const serviceEntries = SERVICES\.filter\(/.test(hv), '过滤结果叫 serviceEntries（两处布局共用）')
+    assert(/bottom-\[56px\] z-20/.test(hv), '门牌带贴在底栏之上（56px）')
+    assert(/pointer-events-none[\s\S]{0,120}data-testid="harbor-services"/.test(hv),
+      '带子容器不吃指针（只有按钮可点）')
+    assert(/gridTemplateColumns: `repeat\(\$\{Math\.max\(serviceEntries\.length, 1\)\}/.test(hv),
+      '列数跟着铺子数量走（不是写死 6 列）')
+    assert(/\{isMobile && \(\s*<section[\s\S]{0,200}data-testid="harbor-services"/.test(hv),
+      '手机才渲染"在城里"那块竖板')
+    assert(/hidden md:inline-flex[\s\S]{0,260}harbor-go-deck|harbor-go-deck[\s\S]{0,260}hidden md:inline-flex/.test(hv),
+      '"上船看看"在顶部行（手机隐藏，走底栏开关）')
+    assert(!/md:w-\[54%\]/.test(hv), '见闻板不再按两栏分宽（54% → 44%）')
+  }
 }
 
 console.log('== 事件结算屏：数字是这一屏唯一要读的东西 ==')

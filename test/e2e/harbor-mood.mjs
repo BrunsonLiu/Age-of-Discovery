@@ -233,7 +233,20 @@ check(mStorm.warm === 0 && mStorm.stars === 0, '暴雨：没有暖光、云底�
       return { mean: +(s / (da.length / 4)).toFixed(2), max: +m.toFixed(1) }
     }
     void mean
-    return { 面板内: diff(0.60, 0.15, 0.88, 0.50), 天空带: diff(0.05, 0.05, 0.45, 0.30) }
+    /*
+     * 「面板内」要**从 DOM 拿位置**，不能写死坐标：
+     * 原来这里写的是 0.60~0.88 / 0.15~0.50 —— 那是旧版右上角服务板的位置。
+     * 2026-11-15 把服务挪到底部门牌带之后，那块区域变成纯油画，
+     * 雨当然会改变它（18~23 级），于是这条断言就变成了假红。
+     * 现在改为量"见闻板"的实际矩形（内缩 8px 避开描边）。
+     */
+    const plate = document.querySelector('[data-testid="harbor-arrival-plate"]')
+    const W = innerWidth, H = innerHeight
+    const pr = plate ? plate.getBoundingClientRect() : null
+    const box = pr
+      ? [ (pr.left + 8) / W, (pr.top + 8) / H, (pr.right - 8) / W, (pr.bottom - 8) / H ]
+      : [0.08, 0.10, 0.36, 0.50]
+    return { 面板内: diff(box[0], box[1], box[2], box[3]), 天空带: diff(0.05, 0.05, 0.45, 0.30) }
   }, off, on)
   check(d.面板内.max <= 4, `雨幕在正文之下（面板内最大差 ${d.面板内.max} ≤ 4 级；盖在面板上会是几十级）`)
   check(d.天空带.max >= 8, `雨幕真的看得见（天空带最大差 ${d.天空带.max} ≥ 8 级）`)
