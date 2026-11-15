@@ -12,10 +12,10 @@ import { ScrollText as ScrollIcon, CheckCircle2, Package, Coins } from 'lucide-r
 import VoyageNextCard from '@/components/panels/VoyageNextCard'
 import { useFxStore as useFx } from '@/store/useFxStore'
 import { rivalPortrait } from '@/data/portraits'
-import { Ship } from 'lucide-react'
 import type { Rival, Achievement } from '@/types'
 import type { LucideIcon } from 'lucide-react'
 import { groupJournal } from '@/utils/captainLog'
+import { standings } from '@/utils/rivalRank'
 import { EVENT_TYPE_COLORS, renderEventIcon } from '@/utils/eventTypeStyles'
 import { AtlasView, SightingsView } from '@/components/panels/LogbookViews'
 import ScrollFade from '@/components/ui/ScrollFade'
@@ -646,6 +646,13 @@ function AchievementPage() {
 
 /* ─────────────────────── 同代船长 ─────────────────────── */
 
+/** 座次表一行里，除数字之外要显示的身份：谁、叫什么、是不是你 */
+interface RivalSeat {
+  key: string
+  name: string
+  you: boolean
+}
+
 function RivalPage() {
   const fleet = useGameStore(s => s.fleet)
   const discoveredPorts = useGameStore(s => s.discoveredPorts)
@@ -653,30 +660,109 @@ function RivalPage() {
   const news = useGameStore(s => s.rivalNews)
 
   const myPorts = discoveredPorts.length
-  const bestRivalGold = Math.max(fleet.gold, ...rivals.map(r => r.gold))
-  const bestRivalFame = Math.max(fleet.fame, ...rivals.map(r => r.fame))
-  const bestRivalPorts = Math.max(myPorts, ...rivals.map(r => r.portsFound))
+  /*
+   * 座次表：你 + 三位对手，三项各自算名次（规则见 utils/rivalRank）。
+   *
+   * 【为什么行序是金币】排名本身没法"不排序"—— 排行榜就是给人看顺序的。
+   * 既然一定要有顺序，就把这条规则**写在表头上**（"按金币排"），
+   * 而不是留在代码里让玩家猜。同分按声望、再按探索。
+   */
+  const board = standings<RivalSeat>([
+    { item: { key: 'you', name: '你', you: true }, gold: fleet.gold, fame: fleet.fame, ports: myPorts },
+    ...rivals.map(r => ({
+      item: { key: r.id, name: r.name, you: false },
+      gold: r.gold, fame: r.fame, ports: r.portsFound,
+    })),
+  ])
+  const total = board.length
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-7">
       <p className="text-gold-500 font-serif text-[13px] italic -mt-2">
         酒馆的传闻比海风跑得快——这几个人和你抢着同一片海。
       </p>
 
-      {/* 三位竞争船长：宽屏并排三张，头像保留（脸比数字更快被认出来） */}
+      {/* ── 座次表 ── */}
+      <section data-testid="rival-standings">
+        <div className="flex items-baseline gap-3 mb-2 pb-1.5 border-b border-gold-700/30">
+          <h2 className="font-serif text-[15px] text-gold-300">座次</h2>
+          <span className="text-xs font-serif text-gold-600">按金币排 · 三项各自算名次，同分并列</span>
+          <span className="ml-auto text-xs font-serif text-gold-500 tabular-nums">{total} 位船长</span>
+        </div>
+        <div className="rounded-sm border border-gold-700/25 bg-black/20 overflow-hidden">
+          <div className="grid grid-cols-[minmax(0,1fr)_5.6rem_4.4rem_6.2rem_5rem] gap-2 px-3 py-1.5 border-b border-gold-700/20 text-xs font-serif text-gold-600">
+            <span>船长</span>
+            <span className="text-right">金币</span>
+            <span className="text-right">声望</span>
+            <span className="text-right">探索</span>
+            <span className="text-right">比你</span>
+          </div>
+          {board.map(b => {
+            /*
+             * 「比你」这一列只给金币差：玩家真正要的那个数是"还差多少"，
+             * 不是"他有多少" —— 后者表里已经有，前者要他心算。
+             * 正数 = 他比你多。你自己那一行没有"比你自己"，写一道撇。
+             */
+            const gap = b.gold - fleet.gold
+            return (
+              <div
+                key={b.item.key}
+                data-testid={`standing-${b.item.key}`}
+                data-you={b.item.you ? '1' : '0'}
+                className={`grid grid-cols-[minmax(0,1fr)_5.6rem_4.4rem_6.2rem_5rem] items-center gap-2 px-3 py-1.5 text-[13px] font-serif
+                  ${b.item.you ? 'bg-gold-700/15 border-l-2 border-l-gold-500' : 'border-l-2 border-l-transparent'}`}
+              >
+                <span className={`truncate ${b.item.you ? 'text-gold-100' : 'text-gold-300'}`}>
+                  {b.item.you && <span className="text-gold-500 mr-1">▶</span>}
+                  {b.item.name}
+                </span>
+                <span className="text-right tabular-nums text-gold-200">
+                  {b.gold}
+                  <span className={`ml-1.5 inline-block w-5 text-right text-xs ${b.goldRank === 1 ? 'text-gold-300' : 'text-gold-600'}`}>
+                    #{b.goldRank}
+                  </span>
+                </span>
+                <span className="text-right tabular-nums text-gold-200">
+                  {b.fame}
+                  <span className={`ml-1.5 inline-block w-5 text-right text-xs ${b.fameRank === 1 ? 'text-gold-300' : 'text-gold-600'}`}>
+                    #{b.fameRank}
+                  </span>
+                </span>
+                <span className="text-right tabular-nums text-gold-200">
+                  {b.ports}/{ports.length}
+                  <span className={`ml-1.5 inline-block w-5 text-right text-xs ${b.portsRank === 1 ? 'text-gold-300' : 'text-gold-600'}`}>
+                    #{b.portsRank}
+                  </span>
+                </span>
+                <span className={`text-right tabular-nums text-xs ${b.item.you ? 'text-gold-600' : gap > 0 ? 'text-gold-400' : 'text-gold-600'}`}>
+                  {b.item.you ? '—' : gap === 0 ? '持平' : gap > 0 ? `+${gap}` : `${gap}`}
+                </span>
+              </div>
+            )
+          })}
+        </div>
+      </section>
+
+      {/* ── 三位竞争船长：脸比数字更快被认出来 ── */}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
         {rivals.map(r => {
           const badge = STYLE_BADGE[r.style]
           const portrait = rivalPortrait(r.id)
+          const rk = board.find(x => x.item.key === r.id)
+          const items = [
+            { k: '金', n: rk?.goldRank ?? 0 },
+            { k: '声', n: rk?.fameRank ?? 0 },
+            { k: '探', n: rk?.portsRank ?? 0 },
+          ]
           return (
-            <div key={r.id} className="rounded-sm border border-gold-700/25 bg-black/20 p-3">
+            <div key={r.id} data-testid={`rival-card-${r.id}`} className="rounded-sm border border-gold-700/25 bg-black/20 p-3">
               <div className="flex items-start gap-3">
                 {portrait && (
                   <img
                     src={portrait}
                     alt=""
                     aria-hidden="true"
-                    className="w-12 h-16 object-cover object-top rounded-sm shrink-0"
+                    className="w-14 h-[72px] object-cover object-top rounded-sm shrink-0"
                     style={{
                       // 与港口面板的立绘同一套装裱：1px 金线 + 2px 暗卡纸 + 内侧暗角
                       boxShadow:
@@ -692,85 +778,56 @@ function RivalPage() {
                       {r.title} · {badge.label}
                     </span>
                   </div>
-                  <div className="mt-2 grid grid-cols-3 gap-1 text-center">
-                    <div>
-                      <div className="text-gold-600 text-xs font-serif">金币</div>
-                      <div className={`text-[13px] font-serif tabular-nums ${r.gold >= fleet.gold ? 'text-gold-200' : 'text-gold-500'}`}>
-                        {r.gold}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-gold-600 text-xs font-serif">声望</div>
-                      <div className={`text-[13px] font-serif tabular-nums ${r.fame >= fleet.fame ? 'text-gold-200' : 'text-gold-500'}`}>
-                        {r.fame}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-gold-600 text-xs font-serif">探索</div>
-                      <div className={`text-[13px] font-serif tabular-nums ${r.portsFound >= myPorts ? 'text-gold-200' : 'text-gold-500'}`}>
-                        {/* 分母来自 ports.length：加了广州之后写死 /20 就是错的 */}
-                        {r.portsFound}/{ports.length}
-                      </div>
-                    </div>
+                  {/*
+                    卡里只写**三项各自的座次**，不重复座次表里的数字：
+                    表回答"多少"，卡回答"这人哪项强"。
+                  */}
+                  <div className="mt-2 flex items-center gap-2 text-xs font-serif">
+                    {items.map(it => (
+                      <span
+                        key={it.k}
+                        className={`px-1.5 py-0.5 rounded-sm border tabular-nums
+                          ${it.n === 1
+                            ? 'border-gold-500/60 bg-gold-700/20 text-gold-200'
+                            : 'border-gold-700/30 text-gold-600'}`}
+                      >
+                        {it.k} 第 {it.n}
+                      </span>
+                    ))}
+                    <span className="ml-auto text-gold-700">共 {total}</span>
                   </div>
                 </div>
               </div>
-              <p className="text-gold-500 text-xs font-serif italic mt-2">「{r.lastAction}」</p>
+              <p className="text-gold-500 text-xs font-serif italic mt-2.5 leading-relaxed">「{r.lastAction}」</p>
             </div>
           )
         })}
       </div>
 
-      {/* 你的座次 + 传闻，两栏 */}
-      <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,380px)_minmax(0,1fr)] gap-8">
-        <div className="rounded-sm border border-gold-700/25 bg-black/20 p-3.5">
-          <div className="flex items-center gap-1.5 mb-2">
-            <Ship size={13} className="text-gold-500" />
-            <span className="text-gold-300 font-serif text-[13px]">你的座次</span>
-          </div>
-          <div className="grid grid-cols-3 gap-1 text-center">
-            <div>
-              <div className="text-gold-600 text-xs font-serif">财富</div>
-              <div className="text-gold-200 text-[13px] font-serif tabular-nums">{fleet.gold}<span className="text-gold-700"> / {bestRivalGold}</span></div>
-            </div>
-            <div>
-              <div className="text-gold-600 text-xs font-serif">声望</div>
-              <div className="text-gold-200 text-[13px] font-serif tabular-nums">{fleet.fame}<span className="text-gold-700"> / {bestRivalFame}</span></div>
-            </div>
-            <div>
-              <div className="text-gold-600 text-xs font-serif">探索</div>
-              <div className="text-gold-200 text-[13px] font-serif tabular-nums">{myPorts}<span className="text-gold-700"> / {bestRivalPorts}</span></div>
-            </div>
-          </div>
-          <p className="text-gold-600 text-[12px] font-serif mt-2 leading-relaxed">
-            斜线后为同代最强。落后不可怕——可怕的是停下。
-          </p>
+      {/* ── 酒馆里传的话 ── */}
+      <div>
+        <div className="flex items-baseline gap-3 mb-2 pb-1.5 border-b border-gold-700/25">
+          <h2 className="font-serif text-[15px] text-gold-300">酒馆里传的话</h2>
+          <span className="font-mono text-xs text-gold-600 tabular-nums">{news.length}</span>
         </div>
-
-        <div>
-          <div className="flex items-baseline gap-3 mb-2 pb-1.5 border-b border-gold-700/25">
-            <h2 className="font-serif text-[15px] text-gold-300">酒馆里传的话</h2>
-            <span className="font-mono text-xs text-gold-600 tabular-nums">{news.length}</span>
-          </div>
-          {news.length === 0 ? (
-            <Empty>还没人提起这一代的船长。等几天，传闻自己会飘过来。</Empty>
-          ) : (
-            <div className="space-y-1.5">
-              {[...news].reverse().slice(0, 14).map(n => {
-                const rival = rivals.find(r => r.id === n.rivalId)
-                return (
-                  <div key={n.id} className="rounded-sm border border-gold-700/20 border-l-2 border-l-gold-700/60 bg-black/15 px-3 py-2">
-                    <div className="flex items-center justify-between mb-0.5">
-                      <span className="text-gold-500 text-xs font-serif">{rival?.name ?? '某位船长'}</span>
-                      <span className="text-gold-700 text-xs font-serif tabular-nums">第 {n.day} 天</span>
-                    </div>
-                    <p className="text-gold-400 text-[13px] font-serif leading-snug">{n.text}</p>
+        {news.length === 0 ? (
+          <Empty>还没人提起这一代的船长。等几天，传闻自己会飘过来。</Empty>
+        ) : (
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-1.5">
+            {[...news].reverse().slice(0, 14).map(n => {
+              const rival = rivals.find(r => r.id === n.rivalId)
+              return (
+                <div key={n.id} className="rounded-sm border border-gold-700/20 border-l-2 border-l-gold-700/60 bg-black/15 px-3 py-2">
+                  <div className="flex items-center justify-between mb-0.5">
+                    <span className="text-gold-500 text-xs font-serif">{rival?.name ?? '某位船长'}</span>
+                    <span className="text-gold-600 text-xs font-serif tabular-nums">第 {n.day} 天</span>
                   </div>
-                )
-              })}
-            </div>
-          )}
-        </div>
+                  <p className="text-gold-400 text-[13px] font-serif leading-snug">{n.text}</p>
+                </div>
+              )
+            })}
+          </div>
+        )}
       </div>
     </div>
   )

@@ -6,6 +6,7 @@ import { applyTraitToOutcome, priceMultiplier, traits } from '../src/data/traits
 import { checkAchievements, achievements } from '../src/data/achievements'
 import { GAME_BALANCE } from '../src/data/gameConfig'
 import { RIVALS } from '../src/data/rivals'
+import { rankOf, standings } from '../src/utils/rivalRank'
 import { OFFICERS } from '../src/data/officers'
 import { effectiveFleetSpeed, calculateDailyConsumption, calculateSailingDays, dailyDistanceNm, daysForDistance, haversineNm, routeProgressOf } from '../src/utils/navigation'
 import { WEATHER_INFO, weatherCell, weatherDuration, weatherFavorFactor } from '../src/utils/weather'
@@ -655,8 +656,62 @@ assert(tick.rivals.every(r => r.lastActionDay === 10), '推进后更新行动日
 let rs = RIVALS
 for (let i = 0; i < 50; i++) rs = advanceRivals(rs, i * 2).rivals
 assert(rs.every((r, i) => r.gold > RIVALS[i].gold + 500), '50 次推进后每个 rival 都显著变富')
-assert(rs.every(r => r.portsFound <= 20), '探索数不超上限 20')
+assert(rs.every(r => r.portsFound <= ports.length),
+  `探索数不超港口总数（上限从 ports.length 来，不是写死的 20）`)
+/*
+ * 【这条守的是"上限真的跟着数据走"】曾经这里 Math.min(20, ...) 写死，
+ * 而港口在 2026-11 加到第 21 座（广州）—— 对手永远差最后一座，
+ * 座次表的"探索"列会长期停在 x/21 上差一格。判据不能只看 <= 总数：
+ * 得把对手硬推到超过总数，看它是不是正好停在总数上。
+ */
+{
+  const stuffed = Array.from({ length: 40 }, () => 'x').reduce(
+    (acc) => advanceRivals(acc, 999).rivals,
+    RIVALS.map(r => ({ ...r, portsFound: ports.length })),
+  )
+  assert(stuffed.every(r => r.portsFound === ports.length),
+    `对手探索数封顶在港口总数 ${ports.length}（实际 ${stuffed.map(r => r.portsFound).join('/')}）`)
+}
 assert(new Set(RIVALS.map(r => r.id)).size === 3, 'rival id 不重复')
+
+/*
+ * ---- 座次：三项各自排名，同分并列（utils/rivalRank） ----
+ *
+ * 【为什么不发明综合分】金币 × 0.5 + 声望 × 0.3 这种加权和是最容易写、
+ * 也最容易骗人的：玩家金币第一却排第三时，界面上没有任何地方能回答"凭什么"。
+ * 所以界面上的规则是：三项各自算一项座次，规则摊在表头。这里守的是它算得对。
+ */
+console.log('== 13.5 座次表 ==')
+{
+  // 名次 = 1 + 严格大于它的个数，所以同分并列、名次会跳号（1/1/3/4）
+  assert(rankOf([100, 100, 50, 10], 100) === 1, '并列第一：没人严格大于 100')
+  assert(rankOf([100, 100, 50, 10], 50) === 3, '第三名：两个 100 压在上面（跳过第 2 名）')
+  assert(rankOf([100, 100, 50, 10], 10) === 4, '末位：三个人比你多')
+  assert(rankOf([], 42) === 1, '没有别人时，你就是第一')
+
+  const rows = [
+    { item: 'a', gold: 100, fame: 10, ports: 1 },
+    { item: 'b', gold: 100, fame: 20, ports: 2 },
+    { item: 'c', gold: 50, fame: 30, ports: 3 },
+    { item: 'd', gold: 10, fame: 40, ports: 4 },
+  ]
+  const snapshot = JSON.stringify(rows)
+  const s = standings(rows)
+  assert(JSON.stringify(rows) === snapshot, 'standings 不改入参（界面每次重渲染都要重算）')
+  assert(s.map(r => r.item).join('') === 'bacd',
+    `行序：金币降序，同金币按声望（b 与 a 都是 100，b 声望高排前；实际 ${s.map(r => r.item).join('')}）`)
+  assert(s.map(r => r.goldRank).join(',') === '1,1,3,4',
+    `金币名次并列（实际 ${s.map(r => r.goldRank).join(',')}）`)
+  assert(s.map(r => r.fameRank).join(',') === '3,4,2,1',
+    `声望是反向的（实际 ${s.map(r => r.fameRank).join(',')}）`)
+  assert(s.map(r => r.portsRank).join(',') === '3,4,2,1',
+    `探索名次（实际 ${s.map(r => r.portsRank).join(',')}）`)
+  assert(s.every(r => r.goldRank >= 1 && r.goldRank <= rows.length), '名次永远落在 1..n 之间')
+  assert(standings([]).length === 0, '没人时返回空表（不是抛错）')
+  const one = standings([{ item: 'solo', gold: 0, fame: 0, ports: 0 }])
+  assert(one.length === 1 && one[0].goldRank === 1 && one[0].fameRank === 1 && one[0].portsRank === 1,
+    '只剩一个人时三项都是第一')
+}
 
 console.log(`—— 第一线小结：${passed} 通过 / ${failed} 失败 ——`)
 /* ================================================================
@@ -14809,6 +14864,39 @@ console.log('== 帧率撑不住时，画质预设是最后一道闸 ==')
   assert(/decideQualityDowngrade\(getQuality\(\)/.test(map3d), '3D 板用同一个判定')
   assert(/lastDowngrade > 6/.test(deck) && /lastQualityDropAt > 6000/.test(map3d),
     '两处冷却都是 6 秒（一次误判不许连降两档）')
+}
+
+/*
+ * ---- Tailwind 的颜色透明度：0~100 必须全部合法 ----
+ *
+ * 【踩过的坑】Tailwind 3 默认的 opacity 刻度是 0/5/10/20/25/30/40/50/60/70/75/80/90/95/100。
+ * 写一个不在刻度里的值（`bg-gold-700/12`、`bg-black/92`），整条 `bg-*` 会被
+ * **静默丢弃** —— 不报错、不警告，产物里根本没有这条规则，界面上就是"怎么调都不生效"。
+ * 实测：`/15`、`/45`、`/55` 在 v3.4 里是能打的，`/12` 不能。
+ *
+ * 现在的做法是把它补成 0..100 全整数（tailwind.config 的 theme.extend.opacity），
+ * 这样谁写 `/12` 都不会再消失。这条守的就是"那段扩展还在"。
+ */
+{
+  const cfgPath = join(process.cwd(), 'tailwind.config.js')
+  const cfg = readFileSync(cfgPath, 'utf8')
+  assert(/opacity:\s*Object\.fromEntries/.test(cfg),
+    'tailwind 把 0..100 的整数透明度全部补齐（否则某些 /NN 会静默丢掉整条 bg-*）')
+  assert(/Array\.from\(\{\s*length:\s*101\s*\}/.test(cfg), '补的是 0..100 共 101 档')
+  // 源码里实际用到的透明度值必须落在这个范围内，否则仍然是"写了不生效"
+  const walkSrc = (dir: string): string[] => readdirSync(dir).flatMap((f: string) => {
+    const p = join(dir, f)
+    return statSync(p).isDirectory() ? walkSrc(p) : [p]
+  })
+  const bad: string[] = []
+  for (const f of walkSrc(join(process.cwd(), 'src')).filter((p: string) => /\.(tsx|ts)$/.test(p))) {
+    const src = readFileSync(f, 'utf8')
+    for (const m of src.matchAll(/(?:bg|border|text|from|via|to)-[a-z]+-\d+\/(\d{1,3})\b/g)) {
+      const v = Number(m[1])
+      if (v > 100) bad.push(`${f}:${m[0]}`)
+    }
+  }
+  assert(bad.length === 0, `没有超过 100 的透明度（${bad.slice(0, 3).join(', ')}）`)
 }
 
 console.log(`\n最终结果：${passed} 通过 / ${failed} 失败`)

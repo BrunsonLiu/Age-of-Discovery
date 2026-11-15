@@ -12,7 +12,9 @@ catch { puppeteer = (await import('file:///C:/Users/Brunson/.workbuddy/binaries/
 
 import { mkdirSync } from 'node:fs'
 const EDGE = 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'
-const BASE = 'http://localhost:5174/Age-of-Discovery/'
+// AOD_BASE 可指向 preview（5180）或别的端口：改 tailwind.config 之类的东西要重启 dev 才生效，
+// 这时直接拿 build 产物验更省事。
+const BASE = process.env.AOD_BASE || 'http://localhost:5174/Age-of-Discovery/'
 const SHOTS = '.workbuddy/shots'
 mkdirSync(SHOTS, { recursive: true })
 
@@ -124,7 +126,22 @@ check(medals.on.path && medals.off.path, '两枚勋章都有绶带（path）')
 check(Number(medals.on.width) > Number(medals.off.width),
   `已得的环更粗（${medals.on.width} vs ${medals.off.width}）`)
 
-/* ── 四、未得卡的文字真的读得清 ── */
+/* ── 四、已得卡的底真的画出来了（Tailwind 会静默丢掉不合法的透明度） ── */
+{
+  const bg = await page.evaluate(() => {
+    const parse = (s) => (s.match(/[\d.]+/g) || []).slice(0, 4).map(Number)
+    const on = document.querySelector('[data-testid="achievement-first_trade"]')
+    const off = document.querySelector('[data-testid="achievement-merchant_5000"]')
+    return {
+      on: parse(getComputedStyle(on).backgroundColor),
+      off: parse(getComputedStyle(off).backgroundColor),
+    }
+  })
+  check(bg.on.join(',') !== bg.off.join(','),
+    `已得卡与未得卡的底色不同（${bg.on.join(',')} vs ${bg.off.join(',')}）`)
+}
+
+/* ── 五、未得卡的文字真的读得清 ── */
 console.log('=== 对比度 ===')
 const contrast = await page.evaluate(() => {
   const lum = (rgb) => {

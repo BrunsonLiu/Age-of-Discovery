@@ -198,7 +198,12 @@ await page.screenshot({ path: `${SHOTS}/logbook-screen-task.png` })
 
 /* ───────────────── 每页都有内容（不是空壳） ───────────────── */
 console.log('=== 五个页签都有内容 ===')
-for (const [tab, marker] of [['task', '眼下能接'], ['journal', '记事'], ['atlas', '已点亮'], ['achievement', '已得'], ['rival', '你的座次']]) {
+/*
+ * 每页的"这不是空壳"标记。
+ * 船长页原来写的是「你的座次」，2026-11-15 改成了整张座次表（你 + 三位对手、
+ * 三项各自算名次），那一块标题就叫「座次」—— 断言跟着改，别留一条永远红的。
+ */
+for (const [tab, marker] of [['task', '眼下能接'], ['journal', '记事'], ['atlas', '已点亮'], ['achievement', '已得'], ['rival', '座次']]) {
   await page.evaluate((t) => window.__mapStore.getState().setLogTab(t), tab)
   await sleep(350)
   const n = await page.evaluate(() => (document.querySelector('[data-testid^="logbook-page-"]')?.textContent || '').replace(/\s+/g, '').length)

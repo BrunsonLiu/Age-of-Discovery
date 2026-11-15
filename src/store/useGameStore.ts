@@ -804,7 +804,13 @@ export function advanceRivals(rivals: Rival[], day: number): { rivals: Rival[]; 
       ...r,
       gold: r.gold + Math.round(goldGain),
       fame: r.fame + fameGain,
-      portsFound: Math.min(20, r.portsFound + portGain),
+      /*
+       * 探索数上限 = ports.length。
+       * 【为什么不能写 20】港口加到第 21 座（大明广州）之后，这里还写着 20 ——
+       * 对手永远差最后一座，座次表上"探索"那一列会永久停在 x/21 的倒数第一格。
+       * 玩家看到的是"这些人怎么都到不了"，实际是我们把上限钉死了。
+       */
+      portsFound: Math.min(ports.length, r.portsFound + portGain),
       lastAction: action,
       lastActionDay: day,
     }
