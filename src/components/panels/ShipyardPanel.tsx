@@ -45,9 +45,10 @@ function Stat({ icon: Icon, label, value, delta, unit }: {
   /*
    * 色阶要挑亮一档：safe-400 (#5f9440) 在深棕底上是 4.51（刚好卡线），
    * danger-400 (#b8432e) 只有 **3.02** —— 12px 的差值读不清。
-   * safe-300 是 6.69、danger-300 是 4.66，都过 AA。
+   * 实测（截图像素直方图，底色是 inlay 的 rgb(51,39,24) 而不是面板底）：
+   * safe-300 = 7.72 过，但 danger-300 只有 **4.15** —— 再提一档到 danger-200。
    */
-  const tone = flat ? 'text-gold-500' : delta > 0 ? 'text-safe-300' : 'text-danger-300'
+  const tone = flat ? 'text-gold-500' : delta > 0 ? 'text-safe-300' : 'text-danger-200'
   return (
     <span className="flex items-baseline gap-1 text-[13px] font-serif text-gold-400 whitespace-nowrap">
       <Icon size={10} className="shrink-0 self-center" aria-hidden="true" />

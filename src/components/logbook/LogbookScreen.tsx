@@ -92,7 +92,7 @@ export default function LogbookScreen() {
       <header className="relative shrink-0 flex items-end justify-between px-6 md:px-10 pt-5 pb-3 border-b border-gold-700/30">
         <div className="flex items-end gap-3">
           <h1 className="pirate-title text-2xl md:text-[28px] text-gold-300 leading-none">航海志</h1>
-          <span className="hidden md:block text-xs tracking-[0.32em] text-gold-600/80 font-serif mb-0.5">LOG OF THE VOYAGE</span>
+          <span className="hidden md:block text-xs tracking-[0.32em] text-gold-600 font-serif mb-0.5">LOG OF THE VOYAGE</span>
         </div>
         <div className="flex items-center gap-4">
           <span className="hidden sm:block text-xs font-serif text-gold-500">
@@ -144,12 +144,12 @@ export default function LogbookScreen() {
                   <span className="flex items-baseline gap-2 min-w-0">
                     <span className="font-serif text-sm whitespace-nowrap">{t.label}</span>
                     {counts[t.key] && (
-                      <span className={`ml-auto shrink-0 text-xs font-mono tabular-nums ${on ? 'text-gold-400' : 'text-gold-700'}`}>
+                      <span className={`ml-auto shrink-0 text-xs font-mono tabular-nums ${on ? 'text-gold-400' : 'text-gold-600'}`}>
                         {counts[t.key]}
                       </span>
                     )}
                   </span>
-                  <span className="hidden md:block text-xs tracking-[0.14em] text-gold-700/70 truncate mt-0.5">{t.en}</span>
+                  <span className="hidden md:block text-xs tracking-[0.14em] text-gold-600 truncate mt-0.5">{t.en}</span>
                 </span>
               </button>
             )
@@ -313,7 +313,7 @@ function TaskPage() {
                     ✓ 交付领赏
                   </button>
                 ) : (
-                  <span className="shrink-0 text-xs font-serif text-gold-700 whitespace-nowrap">到港再交付</span>
+                  <span className="shrink-0 text-xs font-serif text-gold-600 whitespace-nowrap">到港再交付</span>
                 )}
               </Row>
             )
@@ -329,7 +329,7 @@ function TaskPage() {
                     <Tag>{TYPE_LABEL[t.type] ?? t.type}</Tag>
                     <h3 className="font-serif text-[15px] text-gold-500 truncate">{t.title}</h3>
                   </div>
-                  <p className="text-[12px] font-serif text-gold-700 mt-1">
+                  <p className="text-[12px] font-serif text-gold-600 mt-1">
                     {t.minDay !== undefined && fleet.day < t.minDay ? `第 ${t.minDay} 天才有人提起这单` : ''}
                     {t.portId != null && fleet.currentPortId !== t.portId ? `在${ports.find(p => p.id === t.portId)?.nameCn ?? '别处'}接` : ''}
                   </p>
@@ -610,7 +610,7 @@ function AchievementMedal({ icon: Icon, earned }: { icon: LucideIcon; earned: bo
         />
       </svg>
       <span className="absolute inset-x-0 top-0 grid h-[52px] place-items-center">
-        <Icon size={24} className={earned ? 'text-gold-100' : 'text-gold-700'} />
+        <Icon size={24} className={earned ? 'text-gold-100' : 'text-gold-600'} />
       </span>
     </span>
   )
@@ -664,7 +664,7 @@ function AchievementPage() {
           <div className="flex items-baseline gap-3">
             <h2 className="font-serif text-lg text-gold-300">
               已得 <span className="font-mono text-gold-100">{earned.length}</span>
-              <span className="text-gold-700"> / {achievements.length}</span>
+              <span className="text-gold-600"> / {achievements.length}</span>
             </h2>
             <span className="text-xs font-serif text-gold-600">生涯里程碑，判定都在你做过的事上</span>
           </div>
@@ -874,7 +874,7 @@ function RivalPage() {
                         {it.k} 第 {it.n}
                       </span>
                     ))}
-                    <span className="ml-auto text-gold-700">共 {total}</span>
+                    <span className="ml-auto text-gold-600">共 {total}</span>
                   </div>
                 </div>
               </div>
@@ -923,7 +923,7 @@ function Section({ title, count, hint, children }: {
       <div className="flex items-baseline gap-3 mb-3">
         <h2 className="font-serif text-lg text-gold-300">{title}</h2>
         {count !== undefined && <span className="font-mono text-xs text-gold-600 tabular-nums">{count}</span>}
-        {hint && <span className="text-xs font-serif text-gold-700 truncate">{hint}</span>}
+        {hint && <span className="text-xs font-serif text-gold-600 truncate">{hint}</span>}
         <span className="flex-1 h-px bg-gold-700/25" />
       </div>
       <div className="space-y-2">{children}</div>
@@ -958,5 +958,5 @@ function Reward({ gold, fame }: { gold: number; fame?: number }) {
 }
 
 function Empty({ children }: { children: React.ReactNode }) {
-  return <p className="text-xs font-serif text-gold-700 py-4 leading-relaxed">{children}</p>
+  return <p className="text-xs font-serif text-gold-600 py-4 leading-relaxed">{children}</p>
 }

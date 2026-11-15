@@ -28,6 +28,13 @@ const VW = Number(argOf('vw') ?? 1440)
 const VH = Number(argOf('vh') ?? 900)
 /** 可选：先打开某个面板再审计（--panel=port） */
 const PANEL = argOf('panel')
+/**
+ * 可选：打开航海志的某一页再审计（--book=atlas）。
+ * 册子走的是 openLogbook(tab)，不是侧栏 data-tut，所以 --panel 点不到它；
+ * 五页各有自己的深色底 + 小字（勋章说明、座次表角标、日志时间轴），
+ * 必须逐页单独量 —— 主界面的结论不能代替。
+ */
+const BOOK = argOf('book')
 /** 可选：切到岸上视角再审计（--harbor）。岸上是整屏深褐 + 半透明板，
  *  不能用主界面的结论代替，必须单独跑一遍像素直方图。 */
 const HARBOR = process.argv.includes('--harbor')
@@ -118,12 +125,25 @@ if (HARBOR) {
     window.__gameStore.getState().setActivePanel('event')
   })
   await sleep(900)
+} else if (BOOK) {
+  /*
+   * 航海志走的是 openLogbook(tab)，不是侧栏的 data-tut —— 用 --panel 点不到它。
+   * 五页各有自己的深色底与小字（勋章说明、座次表角标、日志时间轴、见闻板），
+   * 必须逐页单独量：主界面的结论不能代替册子。
+   */
+  await page.evaluate((t) => {
+    const d = window.__dialogueStore
+    for (let i = 0; i < 12 && d?.getState?.().scriptId; i++) d.getState().skip()
+    window.__gameStore.setState({ showHelp: false, activePanel: null })
+    window.__mapStore.getState().openLogbook(t)
+  }, BOOK)
+  await sleep(1100)
 } else if (PANEL) {
   await page.evaluate((t) => document.querySelector(`[data-tut="${t}"]`)?.click(), PANEL)
   await sleep(900)
 }
 
-const shotPath = `.workbuddy/shots/contrast-${HARBOR ? 'harbor' : (PANEL ?? 'map')}.png`
+const shotPath = `.workbuddy/shots/contrast-${HARBOR ? 'harbor' : (BOOK ? 'book-' + BOOK : (PANEL ?? 'map'))}.png`
 await page.screenshot({ path: shotPath })
 
 // ---- 收集所有可见文字节点 ----
@@ -406,7 +426,7 @@ const graded = measured.filter(m => m.contrast != null).map((m) => {
 })
 const fails = graded.filter(m => !m.pass).sort((a, b) => a.contrast - b.contrast)
 
-console.log(`\n视口 ${VW}×${VH}${HARBOR ? ' · 岸上视角' : PANEL ? ` · 面板 ${PANEL}` : ''}${MODE === 'visitor' ? ' · 参观模式' : ''} · 可见文字 ${graded.length} 段`)
+console.log(`\n视口 ${VW}×${VH}${HARBOR ? ' · 岸上视角' : BOOK ? ` · 航海志 ${BOOK}` : PANEL ? ` · 面板 ${PANEL}` : ''}${MODE === 'visitor' ? ' · 参观模式' : ''} · 可见文字 ${graded.length} 段`)
 console.log(`  未达标 ${fails.length} 段（AA：正文 4.5 / 大字 3.0）`)
 /*
  * 靠描边通过的要单独报：这类元素"字 vs 底色"是不达标的（奶油字压浅色陆地 2.81），

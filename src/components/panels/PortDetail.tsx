@@ -185,7 +185,7 @@ export default function PortDetail() {
               <Map size={14} aria-hidden="true" />
               上岸走走
             </span>
-            <span className="block text-gold-400 font-serif text-[12px] mt-0.5 pl-5">
+            <span className="block text-gold-300 font-serif text-[12px] mt-0.5 pl-5">
               收起海图，走进这座城
             </span>
           </button>

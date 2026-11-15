@@ -14301,6 +14301,31 @@ console.log('== 岸上的"活"：走动的影子与海鸥的布局 ==')
   }
 }
 
+/*
+ * ---- 册子里的暗金小字：一律不许用 gold-700 ----
+ *
+ * `gold-700` (#8a6c2a) 在册子的深底上只有 **3.4~3.7:1**，带 70% 透明度时更低到
+ * **2.1:1** —— 12px 小字要 4.5。这不是"看着暗一点"，是读不出来。
+ *
+ * 实测（`contrast-audit.mjs --book=...`，按截图像素直方图取真实底色）：
+ *   修之前 任务 19 段 / 日志 10 / 图鉴 9 / 成就 9 / 船长 14 段未达标，
+ *   最差的就是左侧目录的英文标签（COMMISSIONS / JOURNAL / ATLAS …）2.11:1。
+ *   全部提到 gold-600（6.19:1）之后 —— 五页都是 0 段。
+ *
+ * 守两条：
+ *   ① 册子里不出现 `text-gold-700`（它只该做描边，不该做文字）；
+ *   ② 不许用 `text-gold-600/80` 这种"带透明度的安全色" —— 0.8 会把它打回 4.07。
+ */
+{
+  const bookSrc = readFileSync(join(process.cwd(), 'src', 'components', 'logbook', 'LogbookScreen.tsx'), 'utf8')
+  const dark = bookSrc.match(/text-gold-700/g) || []
+  assert(dark.length === 0,
+    `册子里没有 text-gold-700 文字（实际 ${dark.length} 处；在深底上只有 3.4:1，读不出来）`)
+  const faded = bookSrc.match(/text-gold-[456]00\/\d+/g) || []
+  assert(faded.length === 0,
+    `册子里没有带透明度的金色文字（实际 ${faded.join(',')}；/80 会把 6.19 打回 4.07）`)
+}
+
 console.log('== 事件结算屏：数字是这一屏唯一要读的东西 ==')
 {
   /*

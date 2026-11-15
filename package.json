@@ -46,6 +46,7 @@
     "test:e2e:harborlife": "node test/e2e/harbor-life.mjs",
     "test:e2e:harborbackdrop": "node test/e2e/harbor-backdrop.mjs",
     "test:e2e:contrast:harbor": "node test/e2e/contrast-audit.mjs --harbor",
+    "test:e2e:contrast:book": "node test/e2e/contrast-audit.mjs --book=task && node test/e2e/contrast-audit.mjs --book=journal && node test/e2e/contrast-audit.mjs --book=atlas && node test/e2e/contrast-audit.mjs --book=achievement && node test/e2e/contrast-audit.mjs --book=rival",
     "test:e2e:occlusion": "node test/e2e/verify-occlusion.mjs",
     "test:e2e:intel": "node test/e2e/intel-price.mjs",
     "test:e2e:faction": "node test/e2e/faction-perks.mjs",
