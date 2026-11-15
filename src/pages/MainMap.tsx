@@ -813,7 +813,7 @@ export default function MainMap() {
              * 港口 / 造船厂没有这个密度，维持 320。
              */
             className={`absolute right-[5.75rem] top-12 bottom-12 ${
-              activeRightPanel === 'trade' ? 'w-[26rem]' : 'w-80'
+              activeRightPanel === 'port' ? 'w-80' : 'w-[26rem]'
             }`}
             style={{ zIndex: Z.PANEL }}
           >

@@ -8163,8 +8163,8 @@ console.log('\n== 天数口径守卫 ==')
   {
     const mainMap = readFileSync(join(process.cwd(), 'src', 'pages', 'MainMap.tsx'), 'utf8')
     const card = readFileSync(join(process.cwd(), 'src', 'components', 'ui', 'ParchmentCard.tsx'), 'utf8')
-    assert(/activeRightPanel === 'trade' \? 'w-\[26rem\]' : 'w-80'/.test(mainMap),
-      '贸易面板有独立宽度（26rem），港口/造船厂仍是 320')
+    assert(/activeRightPanel === 'port' \? 'w-80' : 'w-\[26rem\]'/.test(mainMap),
+      '贸易与造船厂都用 26rem，港口仍是 320')
     assert(/md:w-\[26rem\]/.test(trade), '贸易面板自身宽度也跟着改成 26rem')
     assert(!/<ScrollFade/.test(trade), '贸易面板里不再套内层滚动容器（两层滚动条会让滚轮失灵）')
     assert(/bodyClassName=/.test(trade), '贸易面板把正文区高度传给容器')

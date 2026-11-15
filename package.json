@@ -41,6 +41,7 @@
     "test:e2e:tribute": "node test/e2e/tribute.mjs",
     "test:e2e:harbor": "node test/e2e/harbor-view.mjs",
     "test:e2e:harbordock": "node test/e2e/harbor-dock.mjs",
+    "test:e2e:shipyardcompare": "node test/e2e/shipyard-compare.mjs",
     "test:e2e:harbormood": "node test/e2e/harbor-mood.mjs",
     "test:e2e:harborlife": "node test/e2e/harbor-life.mjs",
     "test:e2e:harborbackdrop": "node test/e2e/harbor-backdrop.mjs",
