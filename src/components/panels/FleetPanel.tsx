@@ -112,8 +112,17 @@ export default function FleetPanel() {
   }
 
   return (
-    <div className="w-full md:w-80 animate-slide-in-left">
-      <ParchmentCard title="舰队状态" onClose={() => setActivePanel(null)}>
+    <div className="w-full md:w-80 animate-slide-in-left" data-testid="fleet-panel">
+      <ParchmentCard
+        title="舰队状态"
+        /*
+         * 正文区放到 76vh：内容（总览 + 船卡 + 四方态度 + 资源条 + 航线）在 900 高下
+         * 是 849px，默认 60vh 的 540 会把「船卡」整段推到折叠线以下 ——
+         * 玩家点开「舰队」第一眼看到的是声望和资源，看不到自己的船。
+         */
+        bodyClassName="max-h-[68dvh] md:max-h-[76vh] overflow-y-auto scroll-parchment"
+        onClose={() => setActivePanel(null)}
+      >
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <span className="font-pirate text-gold-300">{fleet.name}</span>
@@ -164,56 +173,6 @@ export default function FleetPanel() {
             )}
           </div>
 
-          {/* 派系态度：世界上有人记得你做过什么 */}
-          <div className="rounded p-2 inlay border border-gold-700/20 space-y-1">
-            <div className="flex items-center justify-between text-[13px] font-serif">
-              <span className="text-gold-500 flex items-center gap-1"><Globe size={11} aria-hidden="true" />四方态度</span>
-              <span className="text-gold-400 text-xs">同一行为，两副面孔</span>
-            </div>
-            {FACTIONS.map(f => {
-              const rep = factionRep[f.id] ?? 0
-              const att = factionAttitude(rep)
-              /*
-               * 声望涨了能换到什么 —— 原来只显示星级与数字，玩家知道"友善"，
-               * 却不知道友善有什么用：factions.ts 里写好的三档特权一条都没进界面，
-               * nextPerk() 这个 helper 写完就一直没人调用（死代码）。
-               *
-               * 只显示**真的实现了的**那几条（perks 里只剩实装的，设计稿在注释里）。
-               * 已达成 → 打勾；还没到 → 写清还差几点。这条信息对玩家永远有用，
-               * 也不需要点击展开：声望是长期线，玩家不会天天点开看。
-               */
-              const next = nextPerk(f, rep)
-              const owned = [...f.perks].reverse().find(pk => rep >= pk.at)
-              return (
-                <div key={f.id} className="text-[13px] font-serif pt-1 first:pt-0">
-                  <div className="flex items-center justify-between">
-                    <span className="text-gold-400 flex items-center gap-1.5">
-                      <Badge kind="faction" id={f.id} fallback={f.icon} size={15} />
-                      {f.name}
-                    </span>
-                    <span className={`flex items-center gap-1 ${
-                      att.tone === 'good' ? 'text-safe-400' : att.tone === 'bad' ? 'text-danger-400' : 'text-gold-500'
-                    }`}>
-                      <span aria-hidden>{'★'.repeat(att.level)}{'☆'.repeat(Math.max(0, 3 - att.level + 1))}</span>
-                      {att.label} <span className="font-mono text-xs">({rep > 0 ? '+' : ''}{rep})</span>
-                    </span>
-                  </div>
-                  {/* 已生效的档位与下一档**都要显示**：只写"再 +5 点 → 3%"会让已是 30 档的玩家
-                      以为现在没有任何优惠。两行都是短的，320px 面板放得下。 */}
-                  {owned && (
-                    <div className="text-safe-400/85 text-xs leading-snug pl-[21px] mt-0.5" data-testid={`faction-owned-${f.id}`}>
-                      ✓ {owned.text}
-                    </div>
-                  )}
-                  {next && (
-                    <div className="text-gold-600 text-xs leading-snug pl-[21px] mt-0.5" data-testid={`faction-next-${f.id}`}>
-                      再 +{Math.ceil(next.at - rep)} 点 → {next.text}
-                    </div>
-                  )}
-                </div>
-              )
-            })}
-          </div>
 
           {/* 军官栏：按日支薪的团队成员 */}
           {officers.length > 0 && (
@@ -365,6 +324,57 @@ export default function FleetPanel() {
                 )}
               </div>
             )})}
+          </div>
+
+          {/* 派系态度：世界上有人记得你做过什么 */}
+          <div className="rounded p-2 inlay border border-gold-700/20 space-y-1">
+            <div className="flex items-center justify-between text-[13px] font-serif">
+              <span className="text-gold-500 flex items-center gap-1"><Globe size={11} aria-hidden="true" />四方态度</span>
+              <span className="text-gold-400 text-xs">同一行为，两副面孔</span>
+            </div>
+            {FACTIONS.map(f => {
+              const rep = factionRep[f.id] ?? 0
+              const att = factionAttitude(rep)
+              /*
+               * 声望涨了能换到什么 —— 原来只显示星级与数字，玩家知道"友善"，
+               * 却不知道友善有什么用：factions.ts 里写好的三档特权一条都没进界面，
+               * nextPerk() 这个 helper 写完就一直没人调用（死代码）。
+               *
+               * 只显示**真的实现了的**那几条（perks 里只剩实装的，设计稿在注释里）。
+               * 已达成 → 打勾；还没到 → 写清还差几点。这条信息对玩家永远有用，
+               * 也不需要点击展开：声望是长期线，玩家不会天天点开看。
+               */
+              const next = nextPerk(f, rep)
+              const owned = [...f.perks].reverse().find(pk => rep >= pk.at)
+              return (
+                <div key={f.id} className="text-[13px] font-serif pt-1 first:pt-0">
+                  <div className="flex items-center justify-between">
+                    <span className="text-gold-400 flex items-center gap-1.5">
+                      <Badge kind="faction" id={f.id} fallback={f.icon} size={15} />
+                      {f.name}
+                    </span>
+                    <span className={`flex items-center gap-1 ${
+                      att.tone === 'good' ? 'text-safe-400' : att.tone === 'bad' ? 'text-danger-400' : 'text-gold-500'
+                    }`}>
+                      <span aria-hidden>{'★'.repeat(att.level)}{'☆'.repeat(Math.max(0, 3 - att.level + 1))}</span>
+                      {att.label} <span className="font-mono text-xs">({rep > 0 ? '+' : ''}{rep})</span>
+                    </span>
+                  </div>
+                  {/* 已生效的档位与下一档**都要显示**：只写"再 +5 点 → 3%"会让已是 30 档的玩家
+                      以为现在没有任何优惠。两行都是短的，320px 面板放得下。 */}
+                  {owned && (
+                    <div className="text-safe-400/85 text-xs leading-snug pl-[21px] mt-0.5" data-testid={`faction-owned-${f.id}`}>
+                      ✓ {owned.text}
+                    </div>
+                  )}
+                  {next && (
+                    <div className="text-gold-600 text-xs leading-snug pl-[21px] mt-0.5" data-testid={`faction-next-${f.id}`}>
+                      再 +{Math.ceil(next.at - rep)} 点 → {next.text}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
           </div>
 
           {fleet.currentPortId && !currentRoute && (

@@ -178,6 +178,50 @@ check(rBrethrenOther != null && rBrethrenOther <= 0.012,
 
 
 check(errors.length === 0, `无页面错误（${errors.slice(0, 2).join(' | ') || '0'}）`)
+
+/*
+ * ---- 打开「舰队」第一眼要看见船 ----
+ * 内容顺序原来是 总览 → 声望 → 四方态度（190px）→ 军官 → 资源 → 船卡，
+ * 900 高下内容 849px 而正文区 60vh=540 —— 船卡整段在折叠线以下。
+ * 这里量的是"船卡是否落在面板可视区内"，不是查源码顺序。
+ */
+{
+  const shipView = await page.evaluate(() => {
+    const panel = document.querySelector('[data-testid="fleet-panel"]')
+    if (!panel) return null
+    // 船卡 = 含「耐久」那条 ResourceBar 的最小容器
+    const bars = [...panel.querySelectorAll('*')].filter(el =>
+      /耐久/.test(el.textContent || '') && el.children.length && el.textContent.length < 80)
+    const card = bars.length ? bars[bars.length - 1].closest('div[class*="rounded"]') : null
+    const pr = panel.getBoundingClientRect()
+    const cr = card?.getBoundingClientRect()
+    // 滚动容器的可视下缘
+    const sc = [...panel.querySelectorAll('*')].find(el => {
+      const cs = getComputedStyle(el)
+      return /(auto|scroll)/.test(cs.overflowY) && el.scrollHeight > el.clientHeight + 4
+    })
+    const sr = sc?.getBoundingClientRect()
+    return {
+      found: !!card,
+      cardTop: cr ? Math.round(cr.top) : null,
+      cardBottom: cr ? Math.round(cr.bottom) : null,
+      viewBottom: sr ? Math.round(sr.bottom) : Math.round(pr.bottom),
+      hasPanel: true,
+    }
+  })
+  check(!!shipView && shipView.hasPanel, '舰队面板有 fleet-panel 锚点')
+  check(!!shipView && shipView.found, '找到船卡（含「耐久」那一块）')
+  check(!!shipView && shipView.cardTop !== null && shipView.cardTop < shipView.viewBottom,
+    `船卡的开头在可视区内（卡顶 ${shipView?.cardTop} < 可视下缘 ${shipView?.viewBottom}）`)
+  // 不要求整张卡都在里面（多船时会滚），但"开头可见"是底线
+  const factionBelow = await page.evaluate(() => {
+    const panel = document.querySelector('[data-testid="fleet-panel"]')
+    const t = panel?.innerText || ''
+    return t.indexOf('耐久') < t.indexOf('四方态度')
+  })
+  check(factionBelow, '船卡排在「四方态度」之前')
+}
+
 console.log(`\n最终结果：${pass} 通过 / ${fail} 失败`)
 await browser.close()
 process.exit(fail ? 1 : 0)

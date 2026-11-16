@@ -902,6 +902,24 @@ assert(FACTION_LIST.every(f => f.perks > 0),
 // 面板必须真的把 perks 渲染出来（否则又是"数据有、界面没有"）
 const fleetSrc = readFileSync(join(process.cwd(), 'src', 'components', 'panels', 'FleetPanel.tsx'), 'utf8')
 assert(/nextPerk\(/.test(fleetSrc), '舰队面板调用 nextPerk 显示下一档特权')
+/*
+ * ---- 打开「舰队」第一眼要看见**船** ----
+ *
+ * 原来内容顺序是：总览 → 声望 → 四方态度（4 势力 × 3 行 = 190px）→ 军官团
+ * → 资源条 → 船卡 → 航线。900 高下内容 849px，而正文区默认 60vh = 540 ——
+ * 船卡整段落在折叠线以下：玩家点开「舰队」，看到的是声望和资源，看不到自己的船。
+ *
+ * 两处修：① 四方态度挪到船卡**之后**（它是"偶尔查一次"的外交信息）；
+ * ② 正文区放到 76vh（与港口/贸易/造船厂同一档）。
+ */
+{
+  const shipIdx = fleetSrc.indexOf('{fleet.ships.map(ship => {')
+  const factionIdx = fleetSrc.indexOf('{/* 派系态度：世界上有人记得你做过什么 */}')
+  assert(shipIdx > 0 && factionIdx > 0, '船卡段与四方态度段都还在')
+  assert(shipIdx < factionIdx, '船卡排在四方态度**之前**（点开舰队先看到船）')
+  assert(/data-testid="fleet-panel"/.test(fleetSrc), '舰队面板有 fleet-panel 锚点')
+  assert(/bodyClassName="max-h-\[68dvh\] md:max-h-\[76vh\]/.test(fleetSrc), '正文区 76vh（540 会把船卡推到折叠线以下）')
+}
 const factionSrc = readFileSync(join(process.cwd(), 'src', 'data', 'factions.ts'), 'utf8')
 // 面板文案只留一行能读完的短句（320px 宽），"不叠加"这条语义由上面 intelCost 的断言钉住
 assert(/text: '航线情报半价'/.test(factionSrc), '学者 30 档文案 = 航线情报半价')
