@@ -173,7 +173,32 @@ console.log('=== 圈内 vs 圈外 的进度速率 ===')
 // 分组在页面里算：现象数据是同一个模块（dev server 直接转 TS），
 // 不在 node 侧另打一份 —— 否则量的是"另一份数据"，判据就没了意义。
 const stats = await page.evaluate(async (pts) => {
-  const m = await import('/Age-of-Discovery/src/data/seaPhenomena.ts')
+  /*
+   * 【判据的数据来源】
+   * dev 下直接 import 项目模块（与生产同一份数据）。
+   * 线上（github.io）没有 /src，import 会失败 —— 回退到内置常量，
+   * 值抄自 data/seaPhenomena.ts 的 sargasso_calm（27,-55,r6.5°,0.6）。
+   * 之所以留着这个回退：线上到底有没有真的按位置减速，只能靠实测，
+   * 而"grep 压缩后的产物"永远说不清（函数名被压缩、模块跨 chunk 引用）。
+   */
+  let kAt
+  let phenomNames = []
+  try {
+    const m = await import('/Age-of-Discovery/src/data/seaPhenomena.ts')
+    kAt = (lat, lng, day) => m.phenomenonSpeedAt(lat, lng, day)
+    phenomNames = m.activePhenomena(35).map(p => `${p.name}(${p.speedMul})`)
+  } catch {
+    // 大圆距离（海里）：R=3440.065 nm
+    const R = 3440.065
+    const hav = (la1, lo1, la2, lo2) => {
+      const r = Math.PI / 180
+      const dLa = (la2 - la1) * r, dLo = (lo2 - lo1) * r
+      const a = Math.sin(dLa / 2) ** 2 + Math.cos(la1 * r) * Math.cos(la2 * r) * Math.sin(dLo / 2) ** 2
+      return 2 * R * Math.asin(Math.min(1, Math.sqrt(a)))
+    }
+    kAt = (lat, lng) => (hav(lat, lng, 27, -55) <= 6.5 * 60 ? 0.6 : 1)
+    phenomNames = ['马尾藻的无风带(0.6) · 内置常量（线上无 /src）']
+  }
   const inPts = [], outPts = []
   let skippedPause = 0
   for (let i = 1; i < pts.length; i++) {
@@ -193,7 +218,7 @@ const stats = await page.evaluate(async (pts) => {
     // 基准必须一致：天气与方针任何一项变了，"快慢"就不只是现象造成的
     if (a.w !== 'clear' || b.w !== 'clear') { skippedPause++; continue }
     if (dp <= 0) continue
-    const k = m.phenomenonSpeedAt((a.lat + b.lat) / 2, (a.lng + b.lng) / 2, b.day)
+    const k = kAt((a.lat + b.lat) / 2, (a.lng + b.lng) / 2, b.day)
     if (k < 0.999) inPts.push({ k, dp, dt }); else outPts.push({ k, dp, dt })
   }
   /*
@@ -215,7 +240,7 @@ const stats = await page.evaluate(async (pts) => {
     inNmRatio: dpAll > 0 ? dpIn / dpAll : 0,
     rateIn: speed(inPts), rateOut: speed(outPts),
     kMin: inPts.length ? Math.min(...inPts.map(x => x.k)) : null,
-    phenom: m.activePhenomena(35).map(p => `${p.name}(${p.speedMul})`),
+    phenom: phenomNames,
   }
 }, samples)
 
