@@ -16,6 +16,7 @@ import type { Rival, Achievement } from '@/types'
 import type { LucideIcon } from 'lucide-react'
 import { groupJournal, heaviestEntry } from '@/utils/captainLog'
 import { standings } from '@/utils/rivalRank'
+import { TITLES, currentTitle, dominantAxis } from '@/data/titles'
 import { sceneImage } from '@/data/sceneImages'
 import { EVENT_TYPE_COLORS, renderEventIcon } from '@/utils/eventTypeStyles'
 import { AtlasView, SightingsView } from '@/components/panels/LogbookViews'
@@ -158,7 +159,14 @@ export default function LogbookScreen() {
 
         {/* 内容区：一张大纸。max-w 限制的是**阅读行宽**，不是"窄卡片" */}
         <div className="flex-1 min-h-0 relative">
-          <ScrollFade className="h-full">
+          {/*
+            内容区必须自己滚（wrapperClassName="contents" 让 ScrollFade 那层不生成盒子，
+            滚动区直接是 flex-1 的子元素，h-full 才有确定高度）。
+            在这里踩过两次：内层 `h-full` 若相对 `height:auto` 的 wrapper，等于没设，
+            内容按自身高度（实测 1054px）铺开、滚到底会露出根节点的 #0d1116 ——
+            视觉上就是"页面下半截突然变蓝"。
+          */}
+          <ScrollFade wrapperClassName="contents" className="h-full overflow-y-auto">
             <div className="max-w-[1080px] mx-auto px-5 md:px-10 py-6 md:py-8" data-testid={`logbook-page-${tab}`}>
               {tab === 'task' && <TaskPage />}
               {tab === 'journal' && <JournalPage />}
@@ -738,6 +746,7 @@ function RivalPage() {
   const discoveredPorts = useGameStore(s => s.discoveredPorts)
   const rivals = useGameStore(s => s.rivals)
   const news = useGameStore(s => s.rivalNews)
+  const notoriety = useGameStore(s => s.notoriety)
 
   const myPorts = discoveredPorts.length
   /*
@@ -755,6 +764,9 @@ function RivalPage() {
     })),
   ])
   const total = board.length
+  /* 取向：主导轴只用来点亮一格「正在成为」，不给玩家编一个加权总分 */
+  const lead = dominantAxis(notoriety)
+  const leadTitle = currentTitle(notoriety)
 
   return (
     <div className="space-y-7">
@@ -909,6 +921,80 @@ function RivalPage() {
           </div>
         )}
       </div>
+
+      {/*
+        ── 你会被记成哪种船长 ──
+        【为什么这一页需要有它】取向值（`notoriety`）从第 29 轮起就在累积：
+        每个两难选项都会往某一轴加 1（events.ts 里 30 多处 `notoriety:{...}`）。
+        但玩家只在**舰队面板**上看到最终的称号 —— 中途是完全看不见的，
+        于是"我这一路选了什么"没有回看的地方，称号也像是凭空掉下来的。
+
+        这里给五条并排的路，每条走到头就是那个称号（`TITLES.threshold`）。
+        三条规则：
+        · 只说"再走一格"，不写"好结局概率+4%"那种没实现的承诺（titles.ts 的教训）；
+        · 主导轴（`dominantAxis`）只标一个「正在成为」，不替他算加权；
+        · 一格都没走时明说"还没定"——不编造一个默认性格。
+      */}
+      <section data-testid="captain-leanings" className="pt-2">
+        <div className="flex items-baseline gap-3 mb-1 pb-1.5 border-b border-gold-700/25">
+          <h2 className="font-serif text-[15px] text-gold-300">你会被记成哪种船长</h2>
+          <span className="text-xs font-serif text-gold-600">每个两难选择往某一栏里加一格</span>
+          <span className="ml-auto text-xs font-serif text-gold-600 tabular-nums">
+            {leadTitle ? `正在成为 · ${leadTitle.name}` : '还没定'}
+          </span>
+        </div>
+        <p className="text-gold-500 font-serif text-[12px] italic mb-3">
+          后世的记载只留一条。你还能改。
+        </p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-2">
+          {TITLES.map(t => {
+            const v = notoriety[t.axis] ?? 0
+            const done = v >= t.threshold
+            const isLead = lead?.axis === t.axis && lead.value > 0
+            return (
+              <div
+                key={t.id}
+                data-testid={`leaning-${t.axis}`}
+                data-done={done ? '1' : '0'}
+                data-lead={isLead ? '1' : '0'}
+                data-value={v}
+                className={`rounded-sm border px-3 py-2.5 transition-colors ${
+                  done
+                    ? 'border-gold-600/60 bg-gold-700/15'
+                    : isLead
+                      ? 'border-gold-600/40 bg-black/20'
+                      : 'border-gold-700/20 bg-black/15'
+                }`}
+              >
+                <div className="flex items-baseline justify-between gap-1">
+                  <span className={`font-serif text-[13px] truncate ${done ? 'text-gold-200' : 'text-gold-400'}`}>
+                    {t.name}
+                  </span>
+                  <span className={`shrink-0 text-xs font-serif tabular-nums ${done ? 'text-gold-300' : 'text-gold-600'}`}>
+                    {done ? '已成' : `${v}/${t.threshold}`}
+                  </span>
+                </div>
+                {/* 点阵：一格 = 一次选择。满格即授称号，比"还差 2"更快读。 */}
+                <div className="flex gap-1 mt-1.5" aria-hidden="true">
+                  {Array.from({ length: t.threshold }).map((_, i) => (
+                    <span
+                      key={i}
+                      className={`h-1.5 flex-1 rounded-full ${
+                        i < v
+                          ? done ? 'bg-gold-300' : 'bg-gold-500'
+                          : 'bg-black/45 ring-1 ring-inset ring-gold-700/40'
+                      }`}
+                    />
+                  ))}
+                </div>
+                <p className={`mt-1.5 text-[12px] font-serif leading-snug ${done ? 'text-gold-500' : 'text-gold-600'}`}>
+                  {t.effect}
+                </p>
+              </div>
+            )
+          })}
+        </div>
+      </section>
     </div>
   )
 }

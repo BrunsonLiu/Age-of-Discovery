@@ -827,6 +827,32 @@ assert(currentTitle({ cruel: 0, mercy: 0, greed: 3, bold: 0, secret: 0 })?.id ==
 assert(currentTitle({ cruel: 2, mercy: 3, greed: 0, bold: 0, secret: 0 })?.id === 'mercyful', '仁慈 ≥3 授予慈悲心')
 assert(currentTitle({ cruel: 0, mercy: 0, greed: 2, bold: 3, secret: 0 })?.id === 'gambler', '并列时取累积更高者')
 assert(dominantAxis({ cruel: 1, mercy: 4, greed: 0, bold: 0, secret: 0 })?.axis === 'mercy', '主导取向 = 仁慈')
+assert(dominantAxis({ cruel: 0, mercy: 0, greed: 0, bold: 0, secret: 0 }) === null,
+  '一格都没走时没有主导取向（不许编一个默认性格）')
+
+/*
+ * 取向五轴要"上桌"：`notoriety` 从第 29 轮起就在累积，但玩家只在舰队面板
+ * 看到最终称号 —— 中途完全看不见，称号像凭空掉下来的。
+ * 2026-11-16 在册子「船长」页加了五条并排的路（走到头就是那个称号）。
+ *
+ * 这里守两件事：
+ *   ① `effect` 会原样渲染给玩家 —— 不许出现"实装/占位"这类开发者词
+ *      （真的发生过：「贸易毛利 +4%（唯一实装的称号加成）」被印在卡片上）；
+ *   ② 册子那一页真的在读 notoriety 与 dominantAxis，不是写死的五个方块。
+ */
+{
+  const DEV = /实装|占位|TODO|FIXME|待接|mock|placeholder/i
+  for (const t of TITLES) {
+    assert(!DEV.test(t.effect), `${t.name} 的 effect 是玩家语言（实际「${t.effect}」）`)
+    assert(!DEV.test(t.epithet), `${t.name} 的 epitaph 是玩家语言`)
+  }
+  assert(new Set(TITLES.map(t => t.axis)).size === TITLES.length, '五个称号各占一条取向轴')
+  const lbSrc = readFileSync(join(process.cwd(), 'src', 'components', 'logbook', 'LogbookScreen.tsx'), 'utf8')
+  assert(/data-testid="captain-leanings"/.test(lbSrc), '船长页有「你会被记成哪种船长」区块')
+  assert(/TITLES\.map\(t =>/.test(lbSrc), '五条取向逐条渲染（不是写死几个方块）')
+  assert(/dominantAxis\(notoriety\)/.test(lbSrc), '主导取向由 dominantAxis 算（不是各自取最大值）')
+  assert(/i < v/.test(lbSrc), '点阵按实际累积值点亮（不是只看阈值）')
+}
 // 抉择事件必须带 notoriety
 const reckoningEvents = events.filter(e => e.type === 'reckoning')
 assert(reckoningEvents.length === 4, `抉择事件共 4 个（实际 ${reckoningEvents.length}）`)
@@ -1149,6 +1175,22 @@ console.log('== 17f. 航海志：记录类面板只有一个来源 ==')
   assert(/stats\.bestDeal/.test(lb), '成就页保留生涯统计（最大单笔等六项）')
   assert(/groupJournal\(/.test(lb), '日志页按天分组（不是把条目摊成一长条）')
   assert(/historicalNote/.test(lb), '日志页保留历史注脚')
+  /*
+   * 【三层滚动区的同一条坑，踩过三次】
+   * `ScrollFade` 的 DOM 是「定位容器 > 滚动区 > 渐隐」。给内层写 `h-full`、
+   * 而外层容器 height 是 auto 时，`h-full` 被解析成 auto —— 滚动区按内容撑开，
+   * 整块溢出父级：
+   *   · ParchmentCard：卡片 2737px 溢出 804 的容器，底部按钮被底栏吃掉；
+   *   · 册子内容区：1054px 溢出 flex-1 给的高度，滚到底露出根节点 #0d1116
+   *     （截图上看就是"页面下半截突然变蓝"）；
+   *   · 另有一处 absolute inset-0 与固定 relative 抢同一属性。
+   * 唯一稳的写法：给它 `wrapperClassName="contents"`，让那层不生成盒子，
+   * 滚动区直接是父级的子元素。
+   */
+  assert(/wrapperClassName="contents"/.test(lb),
+    '册子内容区用 display:contents（否则 h-full 相对 auto 的 wrapper，长页滚到底会露出根底色）')
+  assert(/className="h-full overflow-y-auto"/.test(lb),
+    '册子内容区自己滚（h-full 有了确定高度之后必须配 overflow-y-auto）')
   /*
    * 【日志页：时间轴 + 展开当天的场景图】
    * 原来是一列卡片、卡片自己写"第 63 天"——整屏之后只是"一堆卡"，看不出日子在走。
