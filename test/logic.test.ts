@@ -17,7 +17,7 @@ import {
 } from '../src/utils/voyage'
 import {
   SEA_PHENOMENA, activePhenomena, phenomenonAt, phenomenonRing,
-  routePhenomenonFactor, phenomenonEventBias, inPhenomenon,
+  routePhenomenonFactor, phenomenonEventBias, inPhenomenon, phenomenonSpeedAt,
 } from '../src/data/seaPhenomena'
 import {
   adjustedOutcomes, crewLossChance, expectedDeltas, outcomeHarm, riskGrade, summarizeChoice,
@@ -9245,6 +9245,8 @@ console.log('\n== 天数口径守卫 ==')
     const daysAt = (day: number) => voyageDays({
       distanceNm: nm,
       windFavor: windFavorForRoute(A, B, day, geom.points),
+      // 现象是独立一项（不再并进 windFavor，见 RouteFacts.phenomenonFactor）
+      phenomenonFactor: routePhenomenonFactor(geom.points, day),
       fleet: fleet2, officers: [], weather: clear,
     })
     const SPRING = 5, SUMMER = 35
@@ -9287,6 +9289,134 @@ console.log('\n== 天数口径守卫 ==')
     const badge = readFileSync(join(process.cwd(), 'src', 'components', 'ui', 'WeatherBadge.tsx'), 'utf8')
     assert(/const phenomenon = fleet\.isSailing && lat != null && lng != null\s*\?\s*phenomenonAt\(lat, lng, fleet\.day\)/.test(badge),
       '船在这片水里时天气面板要说出来，且只在航行中（港内拿港口坐标判会谎报"航速 -22%"）')
+  }
+}
+
+
+// ---------------- 现象的口径：逐段积分 = 面板天数，且船在带内是真的慢 ----------------
+//
+// 2026-11-16：查出来一件事 —— 设置里「航速 -22%」那行是装饰。
+// 现象乘数当时只按**长度加权平均**折进 windFavor，于是：
+//   · 里斯本→开普敦（秋）621 个采样点里只有 19 个在风暴带内，整条只降 1%；
+//   · 徽章却按圈内的 speedMul 报「航速 -22%」。
+// 屏幕上写 -22%、实际慢 1%，这是本项目最不能留的一类数（数字不等于变化）。
+//
+// 现在的做法：船速按**位置**乘 k（进带真的慢），同时用一个调和加权的
+// k_等效 把 windFavor 里已含的那一份除回去 —— 于是总时长不变（预览=实际），
+// 而"此刻"变成了真的。这一组就是这两件事的判据。
+{
+  const mkFleet = (speed: number) => ({
+    ships: [{ id: 1, name: 'x', type: 'caravel', capacity: 60, usedCapacity: 0, durability: 100, crew: 40, speed, maxCrew: 40 }],
+    officers: [], morale: 80, fame: 0, gold: 500, day: 1, food: 100, water: 100,
+    trait: null, currentPortId: 6, isSailing: false,
+  }) as unknown as Parameters<typeof voyageDays>[0]['fleet']
+  const wanther = { kind: 'clear' } as unknown as Parameters<typeof voyageDays>[0]['weather']
+  const fleetT = mkFleet(6)
+
+  const lis = ports.find(p => p.nameCn === '里斯本')!
+  const cape = ports.find(p => p.nameCn === '开普敦')!
+  const sju = ports.find(p => p.nameCn === '圣胡安')!
+  const AUTUMN = 300   // 好望角风暴带当季
+  const SUMMER2 = 35   // 马尾藻无风带当季（这条航线实测 21.6% 在圈内）
+
+  /*
+   * 逐段积分：把航线切成小段，每段用**中场点**的现象乘数算这一段要几天。
+   * 这就是船真正走一趟会花的时间（速度场 ∫ds/v 的数值近似）。
+   */
+  const integrateDays = (
+    pts: { lat: number; lng: number }[], day: number, windFavor: number, kAvg: number,
+  ) => {
+    // 不含风与现象的日航程（与 SailingController 的 baseNmPerDay 同一口径）
+    const baseNmPerDay = dailyDistanceNm(
+      fleetT, [], 1, 1,
+      WEATHER_INFO[wanther.kind].sailMul * weatherFavorFactor(wanther.kind),
+    )
+    let days = 0
+    for (let i = 1; i < pts.length; i++) {
+      const a = pts[i - 1], b = pts[i]
+      const seg = haversineNm(a.lat, a.lng, b.lat, b.lng)
+      if (seg <= 0) continue
+      const midLat = (a.lat + b.lat) / 2, midLng = (a.lng + b.lng) / 2
+      const k = phenomenonSpeedAt(midLat, midLng, day)
+      // SailingController 的公式：v = base × (windFavor / k_等效) × k(位置)
+      const nmPerDay = baseNmPerDay * (windFavor / kAvg) * k
+      days += seg / nmPerDay
+    }
+    return days
+  }
+
+  for (const [name, A, B, day] of [
+    ['里斯本→开普敦', lis, cape, AUTUMN],
+    ['里斯本→圣胡安', lis, sju, SUMMER2],
+  ] as const) {
+    const fA: [number, number] = [A.latitude, A.longitude]
+    const fB: [number, number] = [B.latitude, B.longitude]
+    // 与生产同一条几何：routeFacts / 面板 / 船走的那条线都来自 getRouteGeometry
+    const geom2 = buildRouteGeometry(fA, fB)
+    const nm2 = Math.round(geom2.totalNm)
+    const wf = windFavorForRoute(fA, fB, day, geom2.points)
+    const kAvg = routePhenomenonFactor(geom2.points, day)
+
+    // ① 面板报的天数（voyageDays）与逐段积分必须相等。
+    //    面板对天数**向上取整**（forecastSegment 的 days），所以积分值落在
+    //    (panel-1, panel] 区间才算同口径；不能拿连续值直接比 0.6%。
+    const panelDays = voyageDays({
+      distanceNm: nm2, windFavor: wf, fleet: fleetT, officers: [], weather: wanther,
+    })
+    const integralDays = integrateDays(geom2.points, day, wf, kAvg)
+    const gapDays = panelDays - integralDays
+    assert(gapDays >= -0.05 && gapDays < 1.0001,
+      `${name}：逐段积分 ${integralDays.toFixed(3)} 天 落在面板 ${panelDays} 天的取整区间内（差 ${gapDays.toFixed(3)}；<0 或 ≥1 就是"预览≠实际"）`)
+
+    // ② 整条等效乘数把现象按长度摊薄了，但**局部**必须还是真的慢（这就是"此刻"）
+    assert(kAvg < 1 && kAvg > 0.8,
+      `${name}：整条等效乘数 ${kAvg}（现象只占航程一段，摊薄后仍明显 <1）`)
+    let slowest = 1
+    for (const pt of geom2.points) {
+      slowest = Math.min(slowest, phenomenonSpeedAt(pt.lat, pt.lng, day))
+    }
+    assert(slowest <= 0.86,
+      `${name}：航线上最慢那段 ${slowest}（船开到这里速度真的掉下来；徽章那行数与它同源）`)
+    assert(slowest < kAvg - 0.05,
+      `${name}：局部 ${slowest} 必须明显低于整条 ${kAvg}（否则"此刻"没有意义 —— 会退回成装饰）`)
+  }
+
+  // ③ 调和加权与长度加权算术平均**不是同一个数**（判据的区分力）
+  {
+    const geom3 = buildRouteGeometry([lis.latitude, lis.longitude], [cape.latitude, cape.longitude])
+    const harmonic = routePhenomenonFactor(geom3.points, AUTUMN)
+    // 复算旧口径：Σ(L·k)/L
+    let total = 0, weighted = 0
+    for (let i = 1; i < geom3.points.length; i++) {
+      const a = geom3.points[i - 1], b = geom3.points[i]
+      const seg = haversineNm(a.lat, a.lng, b.lat, b.lng)
+      if (seg <= 0) continue
+      total += seg
+      weighted += seg * phenomenonSpeedAt((a.lat + b.lat) / 2, (a.lng + b.lng) / 2, AUTUMN)
+    }
+    const arithmetic = weighted / total
+    assert(harmonic < arithmetic - 1e-4,
+      `调和 ${harmonic} 必须略低于算术 ${arithmetic.toFixed(4)}（慢海按"时间"占分量，不是按"长度"）`)
+    assert(Math.abs(harmonic - arithmetic) < 0.01,
+      `两种口径量级接近（差 ${Math.abs(harmonic - arithmetic).toFixed(4)}，不是换了个游戏）`)
+  }
+
+  // ④ 源码守卫：推进层必须按位置算，且现象**不能**再混进 windFavor
+  {
+    const sc = readFileSync(join(process.cwd(), 'src', 'components', 'map', 'SailingController.tsx'), 'utf8')
+    assert(/phenomenonSpeedAt\(state\.shipPosition\[0\], state\.shipPosition\[1\], day\)/.test(sc),
+      '每帧按船位算现象乘数（不是整条平均，也不是出航时算一次）')
+    assert(/baseNmPerDay \* windFavor \* kNow/.test(sc),
+      '公式是 base × windFavor × k(位置) —— 三个乘数各就各位，没有互相补偿')
+    assert(!/routePhenomenonFactor/.test(sc),
+      '推进层不再碰整条等效乘数（那是面板算天数用的；碰到就说明又在除回去补偿）')
+    const voy = readFileSync(join(process.cwd(), 'src', 'utils', 'voyage.ts'), 'utf8')
+    assert(!/return base \* routePhenomenonFactor/.test(voy),
+      'windFavorForRoute 不再乘现象（否则带外会以 1/kAvg 倍速飙船）')
+    assert(/phenomenonFactor: routePhenomenonFactor\(geom\.points/.test(voy),
+      'routeFacts 把现象作为独立字段报出来')
+    assert(!/dailyDistanceNm\([^)]*windFavor[^)]*\)\s*\*\s*NM_PER_SEC_PER_DAY\s*\*\s*simSpeed/.test(sc),
+      '不再有"一次性算出整条速度再用到底"的旧写法')
   }
 }
 

@@ -59,7 +59,7 @@ import { advanceDebris } from '@/utils/seaDebris'
 import { debrisGain, DEBRIS_INFO, type DebrisSpot } from '@/data/debris'
 import { findRelic, relicDistanceNm, relicInSeason, RELIC_PICKUP_NM } from '@/data/relics'
 import { nationById, legendPending, nextChapter, tributeState, DEFAULT_NATION } from '@/data/nations'
-import { phenomenonAt, phenomenonEventBias, SEA_PHENOMENA } from '@/data/seaPhenomena'
+import { phenomenonAt, phenomenonEventBias, SEA_PHENOMENA, routePhenomenonFactor } from '@/data/seaPhenomena'
 import { newlyReached } from '@/data/voyageMilestones'
 import { appendLogbook, findClueFor, makeArrivalEntry, makeDonationEntry, makeEchoEntry, makeLegendEntry, makeTitleEntry, makeTributeEntry, markAllRead } from '@/data/logbook'
 import { SAVE_KEY, SAVE_VERSION } from '@/utils/saveFile'
@@ -991,7 +991,7 @@ export const useGameStore = create<GameStore>()(
         // 弧长与风向统一走 utils/voyage.routeFacts：主屏常驻的「下一站」
         // 指引报的就是这个数，两处各算一遍必然对不上（实测塞维利亚→埃尔米纳
         // 大圆 1956 海里 / 实际 2917 海里，差 49%）。
-        const { distanceNm, windFavor } = routeFacts(
+        const { distanceNm, windFavor, phenomenonFactor } = routeFacts(
           [originLat, originLng],
           [waypoint.latitude, waypoint.longitude],
           // 带当前游戏日：印度洋的风半年反向，这一趟顺不顺要看季风
@@ -1008,6 +1008,7 @@ export const useGameStore = create<GameStore>()(
           distance: distanceNm,
           dangerLevel,
           windFavor,
+          phenomenonFactor,
         }
 
         // 只生成计划——真正起航前玩家要评估补给、选航速、（可选）买情报
@@ -1336,11 +1337,12 @@ export const useGameStore = create<GameStore>()(
         )
         const distanceNm = geom.totalNm
         const dangerLevel = dangerLevelFromDistance(distanceNm)
-        // 含季节性海上现象（风暴带/无风带…）：与 routeFacts 同一个函数
+        // 风 × 洋流（不含现象）
         const windFavor = windFavorForRoute(
           [currentPos[0], currentPos[1]], [waypoint.latitude, waypoint.longitude], state.fleet.day, geom.points,
-          state.knownPassages,
         )
+        // 季节现象单独一项：改道是一条新航线，"这一季这片水"要重新算
+        const phenomenonFactor = routePhenomenonFactor(geom.points, state.fleet.day, state.knownPassages)
 
         const customRoute: Route = {
           id: -(Date.now()),
@@ -1349,6 +1351,7 @@ export const useGameStore = create<GameStore>()(
           distance: Math.round(distanceNm),
           dangerLevel,
           windFavor,
+          phenomenonFactor,
         }
 
         return {
@@ -1448,7 +1451,7 @@ export const useGameStore = create<GameStore>()(
         const toPort = ports.find(p => p.id === actualRoute.toPortId)
         // 预定义航线也走真实风带计算，保证预估与实际一致
         const windFavor = fromPort && toPort
-          ? windFavorForRoute([fromPort.latitude, fromPort.longitude], [toPort.latitude, toPort.longitude], state.fleet.day, undefined, state.knownPassages)
+          ? windFavorForRoute([fromPort.latitude, fromPort.longitude], [toPort.latitude, toPort.longitude], state.fleet.day)
           : actualRoute.windFavor
         return {
           currentRoute: { ...actualRoute, windFavor },
@@ -3378,7 +3381,7 @@ export function selectBestDeal(state: GameState): BrokerDeal | null {
   // 真实航程 + 真实风向系数（与 sailToWaypoint / confirmDeparture 同一套）
   const geom = getRouteGeometry([fromPort.latitude, fromPort.longitude], [toPort.latitude, toPort.longitude])
   const nm = Math.round(geom.totalNm)
-  const windFavor = windFavorForRoute([fromPort.latitude, fromPort.longitude], [toPort.latitude, toPort.longitude], state.fleet.day, geom.points, state.knownPassages)
+  const windFavor = windFavorForRoute([fromPort.latitude, fromPort.longitude], [toPort.latitude, toPort.longitude], state.fleet.day, geom.points)
   const route: Route = {
     id: -1, fromPortId, toPortId: toPort.id, distance: nm, dangerLevel: 2, windFavor,
   }
@@ -3408,6 +3411,7 @@ export function selectBestDeal(state: GameState): BrokerDeal | null {
     days: voyageDays({
       distanceNm: nm,
       windFavor,
+      phenomenonFactor: routePhenomenonFactor(geom.points, state.fleet.day, state.knownPassages),
       fleet: state.fleet,
       officers: state.officers,
       weather: state.weather,
@@ -3511,11 +3515,12 @@ export function selectReturnLeg(state: GameState): ReturnLeg | null {
 
   const geom = getRouteGeometry([a.latitude, a.longitude], [b.latitude, b.longitude])
   const nm = Math.round(geom.totalNm)
-  const windFavor = windFavorForRoute([a.latitude, a.longitude], [b.latitude, b.longitude], state.fleet.day, geom.points, state.knownPassages)
+  const windFavor = windFavorForRoute([a.latitude, a.longitude], [b.latitude, b.longitude], state.fleet.day, geom.points)
   // 与出航计划面板同口径（含天候）——回程提示的「N 天」和点开后的面板必须一样
   const days = voyageDays({
     distanceNm: nm,
     windFavor,
+    phenomenonFactor: routePhenomenonFactor(geom.points, state.fleet.day, state.knownPassages),
     fleet: state.fleet,
     officers: state.officers,
     weather: state.weather,

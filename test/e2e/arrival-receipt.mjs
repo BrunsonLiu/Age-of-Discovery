@@ -217,12 +217,22 @@ const afterClick = await page.evaluate(() => {
   const s = window.__gameStore.getState()
   return {
     panel: s.activePanel,
+    recordsOpen: window.__mapStore.getState().recordsOpen,
+    logTab: window.__mapStore.getState().logTab,
     unread: s.logbook.filter(e => !e.read).length,
     sailing: s.fleet.isSailing, route: s.currentRoute,
     panelText: (document.body.innerText || '').replace(/\s+/g, ' ').slice(0, 400),
   }
 })
-check(afterClick.panel === 'event', `点回执打开的是航海日志面板（activePanel=${afterClick.panel}）`)
+/*
+ * 【2026-11-16 修】这条断言过期了：日志早已从侧栏 `activePanel='event'`
+ * 搬到整屏的「航海志」（mapStore.openLogbook）。点回执现在开的是整屏浮层，
+ * activePanel 本来就该是 null —— 旧判据永远红，而它盯的界面已经不存在了。
+ */
+check(afterClick.recordsOpen === true,
+  `点回执打开航海志整屏（recordsOpen=${afterClick.recordsOpen}，activePanel=${afterClick.panel}）`)
+check(afterClick.logTab === 'journal',
+  `落在「见闻」页（logTab=${afterClick.logTab}）`)
 check(/新的一页在最上面|靠岸 ·/.test(afterClick.panelText), '日志的见闻页真的显示了这一页')
 check(afterClick.unread === 0, `翻开后未读归零（${afterClick.unread}）`)
 check(afterClick.sailing === beforeClick.sailing && afterClick.route === null,

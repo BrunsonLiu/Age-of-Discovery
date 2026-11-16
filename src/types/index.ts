@@ -128,7 +128,16 @@ export interface Route {
   toPortId: number
   distance: number
   dangerLevel: 1 | 2 | 3 | 4 | 5
+  /** 风 × 洋流（**不含**季节现象，见 utils/voyage.RouteFacts） */
   windFavor: number
+  /**
+   * 季节现象的整条等效乘数（≤1）。
+   *
+   * 为什么放在 Route 上而不是每次现算：出航时算过一次，之后玩家在面板里
+   * 来回看天数不该再算一遍（航线没变，现象只按航季变）。
+   * 可选是为了兼容 data/routes.ts 那批静态演示航线；建航线时必须填。
+   */
+  phenomenonFactor?: number
 }
 
 /** 天候种类：晴 / 阴 / 雨 / 暴风雨 / 浓雾（见 utils/weather.ts 属性表） */

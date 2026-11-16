@@ -196,7 +196,12 @@ export default function SegmentDecision() {
     if (!pending) return []
     const consumption = calculateDailyConsumption(fleet)
       const weatherMul = WEATHER_INFO[weather.kind].sailMul * weatherFavorFactor(weather.kind)
-    const baseNmPerDay = dailyDistanceNm(fleet, officers, currentRoute?.windFavor ?? 1, 1, weatherMul)
+    const baseNmPerDay = dailyDistanceNm(
+      fleet, officers,
+      // 现象与风同一条链：本段的天数账与推进层同一口径
+      (currentRoute?.windFavor ?? 1) * (currentRoute?.phenomenonFactor ?? 1),
+      1, weatherMul,
+    )
     const dailyEventProb = 0.25 * WEATHER_INFO[weather.kind].eventBias
     return stanceLedgers({
       distanceNm: pending.segmentNm,

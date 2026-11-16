@@ -61,6 +61,7 @@ export default function FleetPanel() {
         fleet,
         officers,
         windFavor: currentRoute.windFavor,
+        phenomenonFactor: currentRoute.phenomenonFactor,
         stance,
         weather,
       })
@@ -404,7 +405,13 @@ export default function FleetPanel() {
                        * "此刻按当前方针出发要几天"。
                        */
                       const weatherMul = WEATHER_INFO[weather.kind].sailMul * weatherFavorFactor(weather.kind)
-                      const nmPerDay = dailyDistanceNm(fleet, officers, route.windFavor, STANCES[stance].speedMul, weatherMul)
+                      // 现象与风乘在同一条链上：少乘这一下，列表会写「顺风 2 天」，
+                      // 而船要横穿无风带，实际走 3 天。
+                      const nmPerDay = dailyDistanceNm(
+                        fleet, officers,
+                        route.windFavor * (route.phenomenonFactor ?? 1),
+                        STANCES[stance].speedMul, weatherMul,
+                      )
                       const days = daysForDistance(route.distance, nmPerDay)
                       const isSelected = selectedRouteId === route.id
                       return (

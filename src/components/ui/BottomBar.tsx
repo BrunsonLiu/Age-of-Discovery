@@ -112,6 +112,7 @@ export default function BottomBar() {
         fleet,
         officers,
         windFavor: currentRoute.windFavor,
+        phenomenonFactor: currentRoute.phenomenonFactor,
         stance,
         weather,
       })

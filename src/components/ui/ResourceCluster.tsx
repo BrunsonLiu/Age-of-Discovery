@@ -240,6 +240,7 @@ export default function ResourceCluster() {
         fleet,
         officers,
         windFavor: currentRoute.windFavor,
+        phenomenonFactor: currentRoute.phenomenonFactor,
         stance,
         weather,
       })

@@ -9,6 +9,7 @@ import { useFxStore as useFx } from '@/store/useFxStore'
 import { echoAt } from '@/data/logbook'
 import { STANCES } from '@/utils/segment'
 import { WEATHER_INFO, weatherFavorFactor } from '@/utils/weather'
+import { phenomenonSpeedAt } from '@/data/seaPhenomena'
 import {
   getRouteGeometry,
   positionAtNm,
@@ -106,13 +107,22 @@ export default function SailingController() {
     }
 
     const stanceMul = STANCES[stance].speedMul
-    // 每日航程用**唯一权威口径**（navigation.dailyDistanceNm）：
-    // 船速 × 风向 × 天候 × 方针航速倍率 × 24。
-    const nmPerDay = dailyDistanceNm(useGameStore.getState().fleet, useGameStore.getState().officers, windFavor, stanceMul, weatherSailMul)
-    // 地图移动速度由每日航程换算而来：
-    // 一天 = 24 小时 = 一整天真实时间（模拟速度另算），
-    // 于是「地图上跑得快」和「天数扣得快」永远是同一件事。
-    const nmPerSec = nmPerDay * NM_PER_SEC_PER_DAY * simSpeed
+    /*
+     * 每日航程拆成「基础」与「乘数」两半：
+     *   基础 = 船速（船员/领航员已计入）× 方针 × 天候 × 24
+     *   乘数 = windFavor / k_等效 × k(船此刻的位置)
+     *
+     * 【为什么不再一次性算出 nmPerDay】
+     * 原来这里算一次就用到帧循环结束，等于假设"整条航线同一片水"。
+     * 于是风暴带那行「航速 -22%」只体现在总天数上（还被按长度摊薄成 1%），
+     * 船穿过带子时速度一点没变 —— 屏幕上写着 -22%，实际慢 1%，这就是数字在骗人。
+     * 现在 k(位置) 每帧按船所在处算：进带真的慢、出带真的恢复。
+     *
+     * 传 1 给 windFavor 让 dailyDistanceNm 内部那层 Math.max(0.5, …) 空转，
+     * 钳位改由上面的 windFavor 统一负责（它已经 max 过 0.5）——
+     * 否则现象把速度压到 0.5 以下时会被二次钳住，实际比预览快。
+     */
+    const baseNmPerDay = dailyDistanceNm(useGameStore.getState().fleet, useGameStore.getState().officers, 1, stanceMul, weatherSailMul)
 
     const animate = (timestamp: number) => {
       if (lastTimeRef.current === 0) {
@@ -201,6 +211,27 @@ export default function SailingController() {
         arrive(state)
         return
       }
+
+      /*
+       * 这一刻能走多快 —— **按船所在的位置**算，不是整条航线的平均值。
+       *
+       * 三个乘数：
+       *   baseNmPerDay  船速 × 方针 × 天候 × 24（effect 里算好）
+       *   windFavor     风 × 洋流（出航时算好；**不含**季节现象）
+       *   kNow          此刻这片水的现象乘数（每帧读船位）
+       *
+       * 季节现象为什么单独一项：整条等效乘数（RouteFacts.phenomenonFactor）
+       * 只用来算面板天数；船自己走的时候按位置乘，两边积分出来是同一个总时长
+       * （见 voyage.RouteFacts 的注释），而带外速度**恰好**等于无现象时的速度 ——
+       * 不是"把慢掉的时间追回来"那种补偿加速。
+       */
+      const day = state.fleet.day
+      const kNow = phenomenonSpeedAt(state.shipPosition[0], state.shipPosition[1], day)
+      const nmPerDay = baseNmPerDay * windFavor * kNow
+      // 地图移动速度由每日航程换算而来：
+      // 一天 = 24 小时 = 一整天真实时间（模拟速度另算），
+      // 于是「地图上跑得快」和「天数扣得快」永远是同一件事。
+      const nmPerSec = nmPerDay * NM_PER_SEC_PER_DAY * simSpeed
 
       // 本帧总位移（海里），拆成若干子步逐步推进。
       const totalMoveNm = Math.min(nmPerSec * dt, remainingNm)

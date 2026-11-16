@@ -90,6 +90,7 @@ export function useVoyageNext(): VoyageNextInfo {
     return voyageDays({
       distanceNm: route.distanceNm,
       windFavor: route.windFavor,
+      phenomenonFactor: route.phenomenonFactor,
       fleet,
       officers,
       weather,

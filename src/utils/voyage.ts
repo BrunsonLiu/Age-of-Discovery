@@ -73,8 +73,10 @@ export interface VoyageInput {
   progress: number
   fleet: Fleet
   officers: OfficerId[]
-  /** 航线的风力偏好（0.5~1.5） */
+  /** 航线的风力偏好（0.5~1.5）——**只含风与洋流** */
   windFavor: number
+  /** 季节现象的整条等效乘数（RouteFacts.phenomenonFactor）；缺省 1 */
+  phenomenonFactor?: number
   stance: StanceId
   weather: WeatherState
 }
@@ -99,8 +101,24 @@ export interface VoyageInput {
 export interface RouteFacts {
   /** 实际航线弧长（海里，避陆后）——玩家看到的「航程」 */
   distanceNm: number
-  /** 这条航线的风力偏好（0.5~1.5） */
+  /** 这条航线的风力偏好（0.5~1.5）——**只含风与洋流** */
   windFavor: number
+  /**
+   * 季节性海上现象的整条等效乘数（调和加权，≤1）。
+   *
+   * 【为什么它不能像以前那样并进 windFavor】
+   * 并进去只能得到"整条的等效乘数"，而船是**按位置**走的。要让船在带内
+   * 真的慢，推进层得按位置乘 k；可 windFavor 里已经含了整条的一份，
+   * 于是必须除回去 —— 而"除回去"会让带外跑到 1/kAvg 倍速。
+   * 实测马尾藻（占航程 21.6%，kAvg 0.7）：出圈那半段比无现象时**快 43%**。
+   * 总时长是对的，但玩家会看到"出了雾反而飙船"，那是补偿，不是风。
+   *
+   * 拆开之后两边都不用互相补偿：
+   *   预览：T = L / (v₀ · windFavor · kAvg)
+   *   实际：v(s) = v₀ · windFavor · k(s)  →  ∫ds/v = L/(v₀·windFavor·kAvg) ✓
+   * 同一个 T，且带外**恰好**是 v₀·windFavor（不多不少）。
+   */
+  phenomenonFactor: number
 }
 
 /**
@@ -133,16 +151,17 @@ export function routeFacts(
   const geom = getRouteGeometry(from, to)
   return {
     distanceNm: Math.round(geom.totalNm),
-    windFavor: windFavorForRoute(from, to, day, geom.points, knownPassages),
+    windFavor: windFavorForRoute(from, to, day, geom.points),
+    phenomenonFactor: routePhenomenonFactor(geom.points, day, knownPassages),
   }
 }
 
 /**
- * 一条航线的风力系数 —— **含季节性海上现象**。
+ * 一条航线的风力系数 —— **只含风与洋流**。
  *
  * 【为什么单独开一个函数，而不是在 computeWindFavor 里算】
  * `computeWindFavor` 只知道两个点，不知道船**实际走哪条弧线**。
- * 季节现象是海上一片一片的区域（见 data/seaPhenomena），
+ * 洋流与季节现象都是"沿着这条弧线"才说得清的东西，
  * 而绕好望角的航线与那条直线大圆根本不是同一条线——
  * 拿直线去判"有没有穿过风暴带"会得出相反的结论
  * （好望角那条真正的航线贴着海岸走，直线却从南大西洋正中穿过）。
@@ -151,10 +170,11 @@ export function routeFacts(
  * 默认值会让"某个调用方忘了传"变成**静默失效**：季节现象不生效，
  * 而界面上一切正常。宁可编译报错。
  *
- * 【为什么这个乘数要乘进 windFavor，而不是另开一个字段】
- * 天数只有一条链：`windFavor → dailyDistanceNm → daysForDistance`。
- * 多一个字段就要在"预估天数"与"船每天实际推进"两处各乘一次，
- * 而这正是本项目最忌讳的分叉（界面报 6 天、船走了 9 天）。
+ * 【季节现象为什么**不**乘在这里了（2026-11-16 拆出）】
+ * 见 `RouteFacts.phenomenonFactor` 的注释：并进来只能拿到"整条等效值"，
+ * 而船是按位置走的，除回去会让带外飙船 43%。现象现在是独立字段，
+ * 由 `voyageDays` 乘进同一条链（预览）与推进层的 `k(位置)`（实际），
+ * 两者数学上严格相等。
  */
 export function windFavorForRoute(
   from: [number, number],
@@ -162,18 +182,11 @@ export function windFavorForRoute(
   day: number,
   /** 已经算好的航线点（不给就自己取，走缓存） */
   points?: { lat: number; lng: number }[],
-  /** 已识得的航路——传进来就按"知道怎么走"算 */
-  knownPassages: readonly string[] = [],
 ): number {
   const base = computeWindFavor(from[0], from[1], to[0], to[1], day)
   const pts = points ?? getRouteGeometry(from, to).points
-  /*
-   * 两个乘数叠在同一条链上：
-   *   · 季节现象（风暴带/无风带…）：这一季这片水不好走；
-   *   · 洋流：顺流推你一把、逆流顶你回来。
-   * 两者都乘进 windFavor，所以面板报的天数与船每天的实际推进仍然同源。
-   */
-  return base * routePhenomenonFactor(pts, day, knownPassages) * routeCurrentFactor(pts, day)
+  // 洋流：顺流推你一把、逆流顶你回来
+  return base * routeCurrentFactor(pts, day)
 }
 
 /**
@@ -195,19 +208,32 @@ export function windFavorForRoute(
 export function voyageDays(input: {
   /** 航线弧长（海里）——来自 routeFacts，不要用大圆距离 */
   distanceNm: number
-  /** 航线的风力偏好 */
+  /** 航线的风力偏好（**不含**季节现象） */
   windFavor: number
+  /**
+   * 季节现象的整条等效乘数（RouteFacts.phenomenonFactor）。
+   *
+   * 【为什么要有默认值 1】见 nextStationDays 一类的旧调用点：
+   * 它们手上只有 windFavor。默认 1 的后果是"那处天数偏乐观 1~20%"，
+   * 所以真正报给玩家的地方必须显式传（单测守着"哪几处在传"）。
+   */
+  phenomenonFactor?: number
   fleet: Fleet
   officers: OfficerId[]
   weather: WeatherState
 }): number {
   const weatherMul = WEATHER_INFO[input.weather.kind].sailMul * weatherFavorFactor(input.weather.kind)
-  // 方针固定 ×1（按部就班）：与出航计划面板的 steady 一份总账同口径
-  const baseNmPerDay = dailyDistanceNm(input.fleet, input.officers, input.windFavor, 1, weatherMul)
+  // 方针固定 ×1（按部就班）：与出航计划面板的 steady 一份总账同口径。
+  // 现象与风乘在同一条链上（两个都是"每天能走多远"的乘数，不是两笔账）。
+  const nmPerDay = dailyDistanceNm(
+    input.fleet, input.officers,
+    input.windFavor * (input.phenomenonFactor ?? 1),
+    1, weatherMul,
+  )
   // 走 forecastSegment 而不是自己写 ceil：天数取整规则只留这一份实现
   return forecastSegment({
     segmentDistanceNm: input.distanceNm,
-    nmPerDay: baseNmPerDay,
+    nmPerDay,
     dailyFood: 0,
     dailyWater: 0,
     dailyEventRate: 0,
@@ -234,7 +260,8 @@ export function daysToDestination(input: VoyageInput): number {
   const nmPerDay = dailyDistanceNm(
     input.fleet,
     input.officers,
-    input.windFavor,
+    // 现象与风乘在同一条链上：两者都是"每天能走多远"的乘数，不是两笔账
+    input.windFavor * (input.phenomenonFactor ?? 1),
     stanceMul,
     weatherMul,
   )

@@ -210,6 +210,7 @@ export default function VoyagePlanModal() {
   const steadyDays = voyageDays({
     distanceNm: route.distance,
     windFavor: route.windFavor,
+    phenomenonFactor: route.phenomenonFactor ?? 1,
     fleet,
     officers,
     weather,

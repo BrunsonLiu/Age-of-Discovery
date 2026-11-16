@@ -165,11 +165,30 @@ export function phenomenonEventBias(lat: number, lng: number, day: number): numb
 }
 
 /**
- * 一条航线被现象拖慢后的整体乘数。
+ * 一条航线被现象拖慢后的**等效乘数**。
  *
- * 按**航段长度加权**：在风暴带里走 300 海里与擦过 20 海里，
- * 平均下来当然不一样。几何点本身就是等距加密过的（routePath 的 densify），
- * 所以直接把每段的长度加起来即可，不用再插值。
+ * 【为什么是调和加权，不是长度加权算术平均】
+ * 船穿过一片水，慢的是**那一段花的时间**，不是"走了多少海里"。
+ * 用算术平均与用积分算天数，结果不等：
+ *
+ *   · 算术（旧版）：k = Σ(Lᵢ·kᵢ) / L        —— 慢海的"长度占比"大就慢
+ *   · 积分（真相）：T = Σ(Lᵢ/(v₀·kᵢ))      —— 慢海盖住了更多**时间**
+ *
+ * 一段 0.6 倍速的水，走同样的长度要花 1.67 倍时间，所以时间上它比长度上
+ * 更占分量。要一个"匀速走完同一条线、总时间相等"的等效乘数，只能取调和：
+ *
+ *   k_eq = L / Σ(Lᵢ / kᵢ)
+ *
+ * 【为什么这件事必须精确到数学，而不是"差不多"】
+ * 本项目的铁律是「预览天数 = 实际推进」。实际推进现在按**位置**乘 k（见
+ * SailingController：船在带内真的慢、出带真的恢复），它的总时间就是上面那个
+ * 积分 T。如果这里的等效乘数用算术平均，两者会差出零点几个百分比 ——
+ * 界面报 12 天、船走了 12 天零 40 分钟。差得不大，但它**每一趟都在**，
+ * 而且永远只有同一个方向（预览偏乐观），玩家迟早会发现"这游戏的天数不太准"。
+ *
+ * 实测（里斯本→开普敦，秋季，621 个采样点里 19 个在风暴带内）：
+ * 算术 0.9935 / 调和 0.9916 —— 差 0.19%，换成 22 天的航程是 1 小时。
+ * 数字小，但它是**系统性偏差**，所以按定义算，不按省事算。
  *
  * 没有任何现象时返回 1——调用方不必自己判断。
  */
@@ -191,7 +210,8 @@ export function routePhenomenonFactor(
     : all
   if (act.length === 0 || points.length < 2) return 1
   let totalNm = 0
-  let slowedNm = 0
+  /** Σ(Lᵢ / kᵢ)：每段"走完要花相当于多长的时间"，单位仍是海里 */
+  let costNm = 0
   for (let i = 1; i < points.length; i++) {
     const a = points[i - 1]
     const b = points[i]
@@ -201,15 +221,20 @@ export function routePhenomenonFactor(
     // 取航段中点判定：段长已经密到 8 海里以内，端点判定与中点判定不会差出结论
     const midLat = (a.lat + b.lat) / 2
     const midLng = (a.lng + b.lng) / 2
+    let k = 1
     for (const p of act) {
       if (inPhenomenon(p, midLat, midLng)) {
-        slowedNm += seg * (1 - p.speedMul)
+        k = p.speedMul
         break
       }
     }
+    costNm += seg / k
   }
   if (totalNm <= 0) return 1
-  return +(1 - slowedNm / totalNm).toFixed(4)
+  // 调和加权：等效匀速乘数 = 总长 ÷ 总"时间长度"
+  const eq = totalNm / costNm
+  // 与旧实现的输出保持同一精度（4 位），免得 UI 与单测看到浮点尾巴
+  return +eq.toFixed(4)
 }
 
 /**
