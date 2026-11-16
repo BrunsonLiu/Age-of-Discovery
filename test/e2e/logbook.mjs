@@ -119,7 +119,9 @@ await page.evaluate(() => {
 check(await until(() => !!document.querySelector('[data-testid="logbook-unread-dot"]')), '靠岸后侧栏「日志」出现未读小圆点')
 await page.click('button[aria-label="日志"]')
 check(await until(() => document.body.innerText.includes('靠岸 · 哈瓦那')), '日志页左栏出现这一趟带回的那一页')
-check((await text()).includes('不催'), '线索明说没有期限')
+// 两种线索都"不设期限"：叙述类写「不催」，行情类写「去不去随你」
+// （行情优先，所以这里不能只认「不催」——2026-11-16 接入 marketTips 时假红过一次）
+check(/不催|去不去随你/.test(await text()), '线索明说没有期限')
 check(await until(() => [...document.querySelectorAll('button')].some(b => b.textContent.includes('在地图上看看'))),
   '线索给了一个可点的「在地图上看看」')
 await page.evaluate(() => [...document.querySelectorAll('button')].find(b => b.textContent.includes('在地图上看看'))?.click())

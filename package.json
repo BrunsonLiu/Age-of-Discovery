@@ -45,6 +45,7 @@
     "test:e2e:shipyardcompare": "node test/e2e/shipyard-compare.mjs",
     "test:e2e:phenomspeed": "node test/e2e/phenomenon-speed.mjs",
     "test:e2e:panelclick": "node test/e2e/panel-clickable.mjs",
+    "test:e2e:marketrumor": "node test/e2e/market-rumor.mjs",
     "test:e2e:harbormood": "node test/e2e/harbor-mood.mjs",
     "test:e2e:harborlife": "node test/e2e/harbor-life.mjs",
     "test:e2e:harborbackdrop": "node test/e2e/harbor-backdrop.mjs",

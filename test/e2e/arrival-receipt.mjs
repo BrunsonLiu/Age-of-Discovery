@@ -141,8 +141,20 @@ check(!!r1 && r1.visible, '到港后主屏出现回执条（不依赖点开任�
 check(!!r1 && /刚带回 ·/.test(r1.text), `主行写「刚带回 · …」（${r1?.text.slice(0, 40) ?? '无'}）`)
 check(!!r1 && r1.unreadAttr === r1.realUnread && r1.realUnread > 0,
   `未读数与 logbook 实际未读页一致（显示 ${r1?.unreadAttr} / 实际 ${r1?.realUnread}）`)
-// 同源：主屏这句必须来自册子最新一页的 hint，不是另写一套文案
-const rumorName = r1 ? (r1.latestHint.match(/酒馆里有人提起([^—]+)/) || [])[1] : ''
+/*
+ * 同源：主屏这句必须来自册子最新一页的 hint，不是另写一套文案。
+ *
+ * 2026-11-16 起线索有两种文案：
+ *   · 行情（优先）：「酒馆里有人说，加的斯正缺蔗糖——这边买得便宜。」
+ *   · 叙述（没有可兑现行情时）：「酒馆里有人提起蒙巴萨——东非…」
+ * 两种都要认，否则这条断言会在行情分支上假红（实测：册子「无」）。
+ */
+const rumorOf = (hint) => hint
+  ? ((hint.match(/酒馆里有人提起([^—]+)/) || [])[1]
+     || (hint.match(/酒馆里有人说，([^正]+?)正缺/) || [])[1]
+     || '')
+  : ''
+const rumorName = r1 ? rumorOf(r1.latestHint) : ''
 check(!!rumorName && !!r1 && r1.text.includes(rumorName),
   `主屏港名与册子线索同源（册子「${rumorName || '无'}」/ 屏幕「${r1?.text ?? ''}」）`)
 const realPortName = await page.evaluate(async (pid) => {
@@ -258,7 +270,7 @@ check(!!r2 && r2.visible, '下一趟又带回一条回执（不是一次性提�
  */
 check(!!r1 && !!r2 && r2.latestId !== r1.latestId && r2.latestDay > r1.latestDay,
   `第二趟确实写了新的一页（${r1?.latestId} → ${r2?.latestId}）`)
-const rumorName2 = r2 ? (r2.latestHint.match(/酒馆里有人提起([^—]+)/) || [])[1] : ''
+const rumorName2 = r2 ? rumorOf(r2.latestHint) : ''
 check(!!rumorName2 && !!r2 && r2.text.includes(rumorName2) && r2.latestHint.includes(rumorName2),
   `第二趟主屏仍与自己那页线索同源，不是写死一句话（${rumorName2 || '无'}）`)
 check(!!r2 && r2.unreadAttr === r2.realUnread, `第 2 趟未读数仍与实际一致（${r2?.unreadAttr}/${r2?.realUnread}）`)

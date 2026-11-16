@@ -212,7 +212,7 @@ import {
 } from '../src/utils/miniGame'
 import type { OfficerId } from '../src/types'
 import { emitUiCommand, onUiCommand } from '../src/utils/uiBus'
-import { localDemands, ports, portGoods } from '../src/data/ports'
+import { localDemands, localSpecialties, marketTips, ports, portGoods } from '../src/data/ports'
 import { goods } from '../src/data/goods'
 import {
   TUTORIAL_STEPS,
@@ -7303,9 +7303,51 @@ console.log('\n== 天数口径守卫 ==')
   const page = makeArrivalEntry(1, 3, [6])!
   assert(page.id === 'arrival-3-1' && page.read === false, '到港生成一页未读见闻')
   assert(page.targetPortId !== 1 && page.targetPortId != null, '线索不指向脚下这座港')
-  assert(page.hint !== null && page.hint.includes('不催'), '线索不设期限、明说没有催')
+  assert(page.hint !== null && (page.hint.includes('不催') || page.hint.includes('缺')),
+    '线索要么是行情（说那边缺什么）要么是叙述（明说没有催），都不设期限')
   assert(makeArrivalEntry(1, 3, [6])?.id === page.id, '同一天同港 id 稳定（可去重）')
   assert(makeArrivalEntry(1, 4, [6])?.id !== page.id, '不同天是不同的一页')
+
+  /*
+   * 行情线索：`marketTips` 从"配好但没人引用"接到传闻上。
+   *
+   * 远洋航路长期不划算（probe:economy 实测 0.56×），但数值不该被抬 ——
+   * 缺的是"玩家不知道哪条远洋值得跑"。这一组守三件事：
+   *   ① 说出去的那句话必须**可兑现**（本港确实特产、目标港确实渴求）；
+   *   ② 目标必须**还没去过**（去过的港玩家自己知道价，传闻就不该提）；
+   *   ③ 同一 (discovered, day, portId) 结果稳定，且没有组合时退回叙述。
+   */
+  {
+    const havana = 1
+    // 与实现同口径：传闻说的是"这边买得不贵"（<1），不是贸易面板的特产（≤0.75）
+    const sp = portGoods.filter(pg => pg.portId === havana && pg.priceModifier < 1).map(pg => pg.goodId)
+    assert(sp.length > 0, `哈瓦那有便宜货（${sp.map(g => goods.find(x => x.id === g)?.nameCn).join('、')}）`)
+    const rumor = pickRumor([havana], 12, havana)!
+    assert(rumor && rumor.id !== havana, '行情线索不指向脚下这座港')
+    assert(![havana].includes(rumor.id), '行情线索指向的港还没去过')
+    const tip = marketTips.find(t => t.portId === rumor.id && sp.includes(t.goodId))
+    assert(!!tip,
+      `线索里那座港确实缺本港的特产（${ports.find(p => p.id === rumor.id)?.nameCn} / ` +
+      `${tip ? goods.find(g => g.id === tip.goodId)?.nameCn : '?'}）`)
+    const pg = portGoods.find(p => p.portId === rumor.id && p.goodId === tip!.goodId)!
+    assert(pg.priceModifier >= 1.3,
+      `那句话里的"缺"是真的（渴求度 ${pg.priceModifier} ≥ 1.3）`)
+    assert(rumor.text.includes('正缺') && rumor.text.includes('买得便宜'),
+      `文案说的是"哪缺什么 + 这边便宜"（实际：${rumor.text}）`)
+    assert(!/\d/.test(rumor.text),
+      '文案里不许出现数字（不逼玩家算术；差价去贸易面板自己看）')
+    assert(pickRumor([havana], 12, havana)!.text === rumor.text, '同一个 day/port 结果稳定（刷新不跳）')
+
+    // 反向：把"渴求本港特产"的港全部标成去过 → 退回叙述类线索
+    const demanders = new Set(
+      marketTips.filter(t => sp.includes(t.goodId)).map(t => t.portId),
+    )
+    const keep = ports.find(p => p.id !== havana && !demanders.has(p.id))!
+    const narr = pickRumor([havana, ...demanders, ...ports.filter(p => p.id !== keep.id && p.id !== havana).map(p => p.id)], 12, havana)
+    assert(!!narr, '还有没去过的港时仍给一条线索')
+    assert(narr!.text.includes('提起') || narr!.text.includes('不催'),
+      `没有可兑现的行情时退回叙述（实际：${narr!.text}）`)
+  }
 
   // --- 封顶淘汰：称号页是最早写的，不能因为长局被挤掉 ---
   const titlePage = makeTitleEntry({ key: 't', name: '甲', desc: '乙' }, 1)

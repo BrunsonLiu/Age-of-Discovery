@@ -1,4 +1,5 @@
-import { ports } from './ports'
+import { ports, marketTips, portGoods } from './ports'
+import { goods } from './goods'
 import type { LogbookEntry, VictoryClaim } from '@/types'
 import type { NationLegend } from '@/data/nations'
 
@@ -65,11 +66,87 @@ export function appendLogbook(list: readonly LogbookEntry[], entry: LogbookEntry
 }
 
 /**
+ * 一条**能兑现的行情**：这边便宜、那边缺，而且那地方你还没去过。
+ *
+ * 【为什么传闻要优先说货，而不是只说"那座城长什么样"】
+ * 游戏的设计前提是"卖的是航路"，而远洋航路长期不划算（`npm run probe:economy`
+ * 实测远洋中位数只有近海的 0.56×）。但数值不该为此被抬 —— 真正缺的是
+ * **玩家根本不知道哪条远洋值得跑**：掮客只推从本港出发的最优单子，贸易面板
+ * 只写本港的渴求，外港缺什么全靠玩家自己撞。
+ *
+ * `marketTips`（`data/ports`）早就配好了这层数据 53 条、21 港全覆盖，
+ * 却一次都没被引用过 —— 这里把它接上，让"留个没讲完的尾巴"变成
+ * "留一条能跑的航路"。
+ *
+ * 【三条约束照旧】不写差价、不写天数、不承诺奖励。
+ * 只写"那儿缺什么"和"这边买得便宜"—— 算不算得过账，是玩家自己的事。
+ */
+function demandRumor(
+  discovered: readonly number[],
+  day: number,
+  portId: number,
+): { id: number; text: string } | null {
+  const got = new Set(discovered)
+  /*
+   * 口径取「比基准便宜」（<1），不是贸易面板的 localSpecialties(≤0.75)。
+   * 后者是"这港的特产"，而传闻要的是"这边买得不贵" —— 塞维利亚全港最便宜的
+   * 货是 0.85，用 0.75 去筛会让整个西班牙开局都收不到一条行情。
+   */
+  const sp = new Set(
+    portGoods.filter(pg => pg.portId === portId && pg.priceModifier < 1).map(pg => pg.goodId),
+  )
+  if (sp.size === 0) return null
+  // 只从"还没去过的港"里挑：去过的港玩家自己知道价，不需要传闻
+  const cands = marketTips
+    .filter(t => !got.has(t.portId) && t.portId !== portId && sp.has(t.goodId))
+    .map(t => {
+      const pg = portGoods.find(p => p.portId === t.portId && p.goodId === t.goodId)
+      const g = goods.find(x => x.id === t.goodId)
+      const to = ports.find(p => p.id === t.portId)
+      return pg && g && to ? { to, good: g, modifier: pg.priceModifier } : null
+    })
+    .filter((x): x is { to: typeof ports[number]; good: typeof goods[number]; modifier: number } => !!x)
+  if (cands.length === 0) return null
+  /*
+   * 排序完全确定（渴求度降序 → 港名）：不用 Math.random，
+   * 刷新页面不会换掉刚看过的那一句，单测也能直接断言指向谁。
+   *
+   * 取模范围是**前三条**而不是"同等渴求的那几条"：只按最高档轮换时，
+   * 所有港都会指向同一个"最缺的地方"（实测哈瓦那、马六甲、广州全提哈瓦那）。
+   * 前三名之间换着说，商人才像在不同港口听来的话。
+   */
+  cands.sort((a, b) => b.modifier - a.modifier || a.to.nameCn.localeCompare(b.to.nameCn))
+  const top = cands.slice(0, Math.min(3, cands.length))
+  /*
+   * 轮换种子用**港名的字符和**，不是 portId。
+   *
+   * 【为什么不能只按 id 取模】港 id 恰好一堆是三的倍数（塞维利亚 6、
+   * 马六甲 12、广州 21…），`(day*31 + portId*k) % 3` 在这些港上永远同余 ——
+   * 实测塞维利亚与马六甲都提"哈瓦那缺丝绸"，读起来像文案写死了。
+   * 名字的字符和对 id 没有这种整除关系，且仍然完全确定（刷新不跳）。
+   */
+  const me = ports.find(p => p.id === portId)
+  const nameSeed = me ? [...me.nameCn].reduce((n, ch) => n + ch.charCodeAt(0), 0) : portId
+  const pick = top[(day * 31 + nameSeed) % top.length]
+  return {
+    id: pick.to.id,
+    /*
+     * 不写"跑一趟不亏"：那是**承诺收益**，而这几条线索的立身之本是不承诺
+     * （见文件头三条硬约束）。跑一趟要 8 天还是 60 天、值不值，去贸易面板看。
+     */
+    text: `酒馆里有人说，${pick.to.nameCn}正缺${pick.good.nameCn}——这边买得便宜，去不去随你。`,
+  }
+}
+
+/**
  * 从**尚未发现**的港口里挑一个当线索。
  *
  * 用 (day, portId) 的确定性取模而不是 Math.random：
  * · 同一趟刷新页面不会换掉刚看过的线索（存档读回来还是那一句）；
  * · 单测能断言"指向的一定是没去过的港"，不需要固定随机数种子。
+ *
+ * 优先给"能兑现的行情"（见 demandRumor）；本港没有哪种特产被未发现港渴求时，
+ * 退回"那座城长什么样"——叙述类的线索本来就是这套册子的基线，不能被行情挤掉。
  */
 export function pickRumor(
   discovered: readonly number[],
@@ -79,6 +156,8 @@ export function pickRumor(
   const got = new Set(discovered)
   const pool = ports.filter(p => !got.has(p.id))
   if (pool.length === 0) return null
+  const deal = demandRumor(discovered, day, portId)
+  if (deal) return deal
   const target = pool[(day * 31 + portId * 17) % pool.length]
   // 风土志常常很长（逗号后还有半句），截到第一个逗号为止，别把册子撑成说明文
   const gist = target.description.split('，')[0].slice(0, 24)
