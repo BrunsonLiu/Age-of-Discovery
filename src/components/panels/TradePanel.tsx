@@ -231,7 +231,7 @@ export default function TradePanel() {
   }
 
   return (
-    <div className="w-full md:w-[26rem] animate-slide-in-right" data-testid="trade-panel">
+    <div className="w-full md:w-[26rem] h-full animate-slide-in-right" data-testid="trade-panel">
       <ParchmentCard
         title="商品交易"
         /*
@@ -239,7 +239,6 @@ export default function TradePanel() {
          * 默认的 60vh（900 高下 = 540 扣掉标题只剩 470）会把最后一行裁一半。
          * 一屏看全，玩家才不用一边滚一边记价。
          */
-        bodyClassName="max-h-[68dvh] md:max-h-[76vh] overflow-y-auto scroll-parchment"
         onClose={() => setActivePanel(null)}
       >
         <div className="space-y-3">

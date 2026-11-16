@@ -27,7 +27,19 @@ interface ParchmentCardProps {
 export default function ParchmentCard({ title, subtitle, children, footer, className = '', bodyClassName, onClose }: ParchmentCardProps) {
   return (
     <div
-      className={`relative rounded-lg overflow-hidden ${className}`}
+      /*
+       * 【为什么是 flex + max-h-full，而不是给正文写 vh】
+       * 这个卡片有两种落位：定高容器里（右侧三块面板都是
+       * absolute top-12 bottom-12，高 804）与不定高的弹层里（帮助、事件卡）。
+       * 正文原先用 `max-h-[76vh]` 这种"相对视口"的上限 —— 视口 900 时它算出
+       * 684，可父容器只给了 804-头部≈700，加上页脚就溢出：面板底部的按钮
+       * 落到容器外、被底栏(849 起)吃掉一半。实测（panel-clickable 巡检）
+       * 港口面板的「60」与舰队面板的航线行都被底栏命中。
+       * 写死 vh 永远是"某个视口高度下刚好"。现在让卡片填满父容器
+       * （max-h-full），正文 flex-1 + min-h-0 自己滚；父容器不定高时
+       * max-h-full 无效果，行为与旧版一致。
+       */
+      className={`relative rounded-lg overflow-hidden flex flex-col max-h-full ${className}`}
       style={{
         /*
          * 【底色为什么要再压暗一档】
@@ -84,7 +96,7 @@ export default function ParchmentCard({ title, subtitle, children, footer, class
       <div className="absolute bottom-0 left-0 w-4 h-4 border-b-2 border-l-2 border-gold-300/75 rounded-bl-lg" />
       <div className="absolute bottom-0 right-0 w-4 h-4 border-b-2 border-r-2 border-gold-300/75 rounded-br-lg" />
 
-      <div className="relative p-4">
+      <div className="relative p-4 flex flex-col min-h-0 flex-1">
         <div className="flex items-center justify-between mb-2">
           {title && (
             <h3 className="font-pirate text-lg text-gold-300 tracking-wide flex items-center gap-2">
@@ -125,13 +137,21 @@ export default function ParchmentCard({ title, subtitle, children, footer, class
             用 ScrollFade 而不是裸 div：面板内容长起来（港口面板的服务+军官+
             船员+任务）会在这里被裁掉，玩家看到最后一行断在半截却没有提示，
             和之前 7 个内层列表是同一个毛病。渐隐色就是本卡片的底色 #30241a。 */}
-        {/* 有常驻页脚时给正文让出高度，否则两层加起来会顶出屏幕。
-            没有 footer 的 11 个面板仍是原来的 68dvh / 60vh，不受影响。 */}
-        <ScrollFade className={bodyClassName ?? (
-          footer
-            ? 'max-h-[40dvh] md:max-h-[38vh] overflow-y-auto scroll-parchment'
-            : 'max-h-[68dvh] md:max-h-[60vh] overflow-y-auto scroll-parchment'
-        )}>
+        {/*
+         * 【为什么用 display:contents，而不是再包一层"填满父级"的 div】
+         * ScrollFade 的 DOM 是「定位容器 > 滚动区 > 渐隐」。中间再包一层
+         * 会多一级 flex，而两种填满方式各有各的坑：
+         *   · `h-full` 在 flex item 内被解析成 auto（父的 used height 不算 definite）；
+         *   · `absolute inset-0` 要求那层自己有定位，而 `relative` 与 `absolute`
+         *     同属性、谁赢看 Tailwind 输出顺序（实测 relative 赢）。
+         * 两次实测：滚动区先是一直 2652px 溢出 804 的卡片，后来变 height:0。
+         * `contents` 让那层不生成盒子 —— 滚动区**直接是 p-4 的 flex 子项**，
+         * flex-1 + min-h-0 一次到位。
+         */}
+        <ScrollFade
+          wrapperClassName="contents"
+          className={bodyClassName ?? 'min-h-0 flex-1 overflow-y-auto scroll-parchment'}
+        >
           {children}
         </ScrollFade>
         {footer}

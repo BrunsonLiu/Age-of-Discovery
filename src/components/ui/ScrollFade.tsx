@@ -20,12 +20,23 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
  */
 export default function ScrollFade({
   className = '',
+  wrapperClassName = '',
   fadeColor = '#30241a',
   fadeHeight = 28,
   children,
 }: {
   /** 滚动容器自己的类（max-h / overflow-y-auto / padding 都写这里） */
   className?: string
+  /**
+   * 最外层那个 `relative` 的类。
+   *
+   * 【为什么需要它】内部结构是 `relative`(定位渐隐) > 滚动 div > 渐隐层。
+   * 当调用方想让滚动区**填满父容器**时，写在这层的 `h-full` 必须相对
+   * `relative` 那一层算 —— 而它默认高度是 auto，`h-full` 会被解析成
+   * `height: auto`，滚动区于是照内容撑高、整块溢出父级并被裁掉。
+   * 实测：港口面板的卡片高 804 而滚动区 2652，底部服务按钮玩家永远看不到。
+   */
+  wrapperClassName?: string
   fadeColor?: string
   fadeHeight?: number
   children: ReactNode
@@ -71,7 +82,13 @@ export default function ScrollFade({
   const showFade = scrollable && !atBottom
 
   return (
-    <div className="relative">
+    /*
+     * 传了 wrapperClassName 就由它完全接管定位。
+     * 不能写成 `relative ${wrapperClassName}`：`relative` 与 `absolute`
+     * 是同一属性，谁赢取决于 Tailwind 输出顺序 —— 实测 relative 赢，
+     * absolute inset-0 被吃掉，滚动区又按内容撑高（2652px 溢出 804 的卡片）。
+     */
+    <div className={wrapperClassName || 'relative'}>
       <div ref={ref} className={className}>{children}</div>
       <div
         aria-hidden="true"

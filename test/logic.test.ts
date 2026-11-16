@@ -910,7 +910,8 @@ assert(/nextPerk\(/.test(fleetSrc), '舰队面板调用 nextPerk 显示下一档
  * 船卡整段落在折叠线以下：玩家点开「舰队」，看到的是声望和资源，看不到自己的船。
  *
  * 两处修：① 四方态度挪到船卡**之后**（它是"偶尔查一次"的外交信息）；
- * ② 正文区放到 76vh（与港口/贸易/造船厂同一档）。
+ * ② 正文区交给容器填满（2026-11-16：不再写 vh —— 76vh 在 900 高下溢出，
+ *    面板底部按钮被底栏吃掉；见 ParchmentCard 的守卫）。
  */
 {
   const shipIdx = fleetSrc.indexOf('{fleet.ships.map(ship => {')
@@ -918,7 +919,8 @@ assert(/nextPerk\(/.test(fleetSrc), '舰队面板调用 nextPerk 显示下一档
   assert(shipIdx > 0 && factionIdx > 0, '船卡段与四方态度段都还在')
   assert(shipIdx < factionIdx, '船卡排在四方态度**之前**（点开舰队先看到船）')
   assert(/data-testid="fleet-panel"/.test(fleetSrc), '舰队面板有 fleet-panel 锚点')
-  assert(/bodyClassName="max-h-\[68dvh\] md:max-h-\[76vh\]/.test(fleetSrc), '正文区 76vh（540 会把船卡推到折叠线以下）')
+  assert(!/bodyClassName=/.test(fleetSrc), '舰队面板不自己写正文高度（交给容器填满）')
+  assert(/h-full/.test(fleetSrc), '舰队面板根节点 h-full（max-h-full 的百分比要靠它才成立）')
 }
 const factionSrc = readFileSync(join(process.cwd(), 'src', 'data', 'factions.ts'), 'utf8')
 // 面板文案只留一行能读完的短句（320px 宽），"不叠加"这条语义由上面 intelCost 的断言钉住
@@ -7981,9 +7983,8 @@ console.log('\n== 天数口径守卫 ==')
   assert(card.includes('footer?: ReactNode') && card.includes('{footer}'),
     'ParchmentCard 提供可选常驻页脚')
   // 用正则：源码是 CRLF，写死 '\n' 会在 Windows 上假失败
-  assert(/footer\s*\?\s*'max-h-\[40dvh\]/.test(card)
-    && card.includes(": 'max-h-[68dvh] md:max-h-[60vh]"),
-    '有常驻页脚时正文滚动区让出高度，其余面板沿用旧高度')
+  assert(/bodyClassName \?\?/.test(card) && /wrapperClassName="contents"/.test(card),
+    '正文区由容器填满（bodyClassName 兜底 + display:contents 让 flex-1 直达滚动区）')
 
   assert(mg.includes('useState(false)') && mg.includes('data-testid="minigame-fine-print-toggle"'),
     '小游戏开场细则默认收起')
@@ -8169,14 +8170,17 @@ console.log('\n== 天数口径守卫 ==')
    * 320px 时每行挤成两截（名字+库存一行、价格+三档按钮一行），列表还套着
    * max-h-60 的内滚动区，而 ParchmentCard 自己又是滚动容器 —— **两层滚动条**：
    * 滚轮到一半发现滚的是内层，外面永远不动（这个毛病在项目里反复出现过）。
-   * 现在：面板 26rem（416px）、去掉内层 ScrollFade、正文区放到 76vh，
+   * 现在：面板 26rem（416px）、去掉内层 ScrollFade、正文区由容器填满，
    * 900 高下一屏能看全 5 个商品行。
    *
-   * 守四件：
+   * 守五件：
    *   ① MainMap 给 trade 单独一个宽度（港口/造船厂仍是 320，它们没这个密度）；
    *   ② TradePanel 里不再有内层 ScrollFade；
-   *   ③ 它把 bodyClassName 传给 ParchmentCard（正文区高度）；
-   *   ④ ParchmentCard 对 bodyClassName 用 `??` 兜底，不传时行为不变。
+   *   ③ 面板自己不写正文高度（统一交给 ParchmentCard 填满父容器）；
+   *   ④ ParchmentCard 对 bodyClassName 用 `??` 兜底，不传时行为不变；
+   *   ⑤ 正文区**不许**按视口高度（vh）写死 —— 2026-11-16 实测：
+   *      `max-h-[76vh]` 在 900 高视口算出 684，父容器只有 804-头部≈700，
+   *      加页脚就溢出，港口面板的「60」与舰队面板的航线行被底栏(849 起)命中。
    */
   {
     const mainMap = readFileSync(join(process.cwd(), 'src', 'pages', 'MainMap.tsx'), 'utf8')
@@ -8185,8 +8189,16 @@ console.log('\n== 天数口径守卫 ==')
       '贸易与造船厂都用 26rem，港口仍是 320')
     assert(/md:w-\[26rem\]/.test(trade), '贸易面板自身宽度也跟着改成 26rem')
     assert(!/<ScrollFade/.test(trade), '贸易面板里不再套内层滚动容器（两层滚动条会让滚轮失灵）')
-    assert(/bodyClassName=/.test(trade), '贸易面板把正文区高度传给容器')
-    assert(/bodyClassName \?\? \(/.test(card), 'ParchmentCard 对 bodyClassName 兜底（不传时与旧行为一致）')
+    assert(!/bodyClassName=/.test(trade),
+      '贸易面板不再自己写正文高度（四块面板统一交给容器填满）')
+    assert(/bodyClassName \?\?/.test(card), 'ParchmentCard 对 bodyClassName 兜底（不传时与旧行为一致）')
+    assert(/flex flex-col max-h-full/.test(card),
+      '卡片填满父容器（不按内容撑高，否则 2737px 的面板溢出 804 的容器）')
+    assert(/wrapperClassName="contents"/.test(card),
+      'ScrollFade 那层不生成盒子（display:contents，否则 flex-1 传不到滚动区）')
+    const vhInBody = card.replace(/\/\*[\s\S]*?\*\//g, '').match(/max-h-\[\d+(\.\d+)?(d)?vh\]/g)
+    assert(!vhInBody,
+      `正文区不许按视口高度写死（实际 ${vhInBody?.join(',') || '无'}；vh 永远只对某一个视口高度刚好）`)
   }
 }
 
@@ -14487,7 +14499,7 @@ console.log('== 岸上的"活"：走动的影子与海鸥的布局 ==')
   const pd = readFileSync(join(process.cwd(), 'src', 'components', 'panels', 'PortDetail.tsx'), 'utf8')
   assert(/data-testid="port-panel"/.test(pd), '港口卡有 port-panel 锚点（另两块面板都有，就它漏了）')
   assert(/aspect-\[16\/9\] overflow-hidden rounded-sm/.test(pd), '港口缩略图是 16:9（不是 3:1 的 h-24）')
-  assert(/bodyClassName="max-h-\[68dvh\] md:max-h-\[76vh\]/.test(pd), '正文区放到 76vh（给多出来的 66px 让位）')
+  assert(!/bodyClassName=/.test(pd), '港口面板不自己写正文高度（交给容器填满）')
   assert(!/mb-2 h-24 overflow-hidden/.test(pd), '旧的 h-24 已经撤掉')
 }
 

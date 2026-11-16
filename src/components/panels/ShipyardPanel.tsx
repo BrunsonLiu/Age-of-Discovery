@@ -83,11 +83,10 @@ export default function ShipyardPanel() {
   const fleetSpeed = effectiveFleetSpeed(fleet)
 
   return (
-    <div className="w-full md:w-[26rem] animate-slide-in-right" data-testid="shipyard-panel">
+    <div className="w-full md:w-[26rem] h-full animate-slide-in-right" data-testid="shipyard-panel">
       <ParchmentCard
         title="造船厂"
-        /* 三个船型卡各 ~110px，加卖船区与头部 —— 默认 60vh 扣掉标题只剩 470，会把最后一张裁掉一半 */
-        bodyClassName="max-h-[68dvh] md:max-h-[76vh] overflow-y-auto scroll-parchment"
+        /* 三个船型卡各 ~110px，加卖船区与头部 —— 默认 60vh 扣掉标题只剩 470，会把最后一张裁掉一半 */
         onClose={() => setActivePanel(null)}
       >
         <div className="space-y-3">

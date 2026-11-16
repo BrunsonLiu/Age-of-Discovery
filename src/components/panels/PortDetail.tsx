@@ -137,7 +137,7 @@ export default function PortDetail() {
   }
 
   return (
-    <div className="w-full md:w-80 animate-slide-in-right" data-testid="port-panel">
+    <div className="w-full md:w-80 h-full animate-slide-in-right" data-testid="port-panel">
       <ParchmentCard
         title={port.nameCn}
         /*
@@ -145,7 +145,6 @@ export default function PortDetail() {
          * 会把「港口服务」那一排切掉一半 —— 修理/补给看得见，招募/贸易/造船厂
          * 藏在裁切线以下，玩家以为这港只有两样服务。
          */
-        bodyClassName="max-h-[68dvh] md:max-h-[76vh] overflow-y-auto scroll-parchment"
         onClose={() => setActivePanel(null)}
       >
         {/* 港口场景插图（C 组）：到港第一眼——按区域/建筑风格选图 */}

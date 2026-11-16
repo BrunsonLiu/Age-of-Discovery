@@ -545,10 +545,20 @@ export default function MainMap() {
           onClick={() => setDeckView(true)}
           data-testid="deck-view-toggle"
           title="船上视角（V）：贴着海面看自己的船"
-          className="absolute right-[7.4rem] top-14 z-[900] flex items-center gap-1.5 rounded border
+          /*
+           * 【为什么 z 是 SIDE_BUTTONS(20) 而不是 900】
+           * 这个按钮与 3D 切换是并排的两个"地图动作"，容易顺手写成 z-[900]。
+           * 但它在 chart-layer 之外，z-900 会直接参与根层叠 —— 于是它压住了
+           * 面板(30)右上角的关闭按钮。实测（panel-clickable 巡检）：
+           * 港口/贸易/造船厂三个面板的关闭按钮中心都被它命中，
+           * 玩家点叉会切到甲板。地图动作只要压过地图(0)与侧栏(20)即可；
+           * 它也不与顶栏(48, top-0)重叠（本按钮在 top-56）。
+           */
+          className="absolute right-[7.4rem] top-14 flex items-center gap-1.5 rounded border
                      border-[#8b6f3e]/70 bg-[#1b1408]/95 px-3 py-1.5 text-xs font-serif text-[#e8d4a8]
                      shadow-[0_2px_8px_rgba(0,0,0,0.55)] transition-colors
                      hover:bg-[#2a1f0c] active:scale-95"
+          style={{ zIndex: Z.SIDE_BUTTONS }}
         >
           <Anchor size={14} aria-hidden="true" />
           船上

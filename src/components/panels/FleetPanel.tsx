@@ -113,7 +113,7 @@ export default function FleetPanel() {
   }
 
   return (
-    <div className="w-full md:w-80 animate-slide-in-left" data-testid="fleet-panel">
+    <div className="w-full md:w-80 h-full animate-slide-in-left" data-testid="fleet-panel">
       <ParchmentCard
         title="舰队状态"
         /*
@@ -121,7 +121,6 @@ export default function FleetPanel() {
          * 是 849px，默认 60vh 的 540 会把「船卡」整段推到折叠线以下 ——
          * 玩家点开「舰队」第一眼看到的是声望和资源，看不到自己的船。
          */
-        bodyClassName="max-h-[68dvh] md:max-h-[76vh] overflow-y-auto scroll-parchment"
         onClose={() => setActivePanel(null)}
       >
         <div className="space-y-3">
