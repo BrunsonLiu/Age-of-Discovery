@@ -12,6 +12,14 @@ export interface Faction {
   name: string
   /** 代表人物/旗帜描述 */
   motto: string
+  /**
+   * 兜底字符（**不再是 emoji**）。
+   *
+   * 界面一律通过 `<Badge kind="faction" id={...} fallback={icon}>` 渲染，
+   * 正常路径用的是 `assets` 里的矢量徽记，这个字段只在素材缺失时显示。
+   * 原来存的是 👑⚖️📜🏴‍☠️ —— 一旦素材缺一张，玩家就会看到一枚彩色 emoji
+   * 混在线性图标里（翻船屏就是这么露出来的）。换成单字：即使回退，风格也不跳。
+   */
   icon: string
   desc: string
   /** 正面效果（按阈值递进） */
@@ -41,7 +49,7 @@ export const FACTIONS: Faction[] = [
     id: 'crown',
     name: '王室',
     motto: '奉王命而行，持王之特许',
-    icon: '👑',
+    icon: '王',
     desc: '西班牙与葡萄牙的王室。他们掌握特许状、王家合约与珍宝舰队的护航权——也掌握绞索。',
     perks: [
       /*
@@ -64,7 +72,7 @@ export const FACTIONS: Faction[] = [
     id: 'guild',
     name: '商人商会',
     motto: '信用即通货，合约即海图',
-    icon: '⚖️',
+    icon: '商',
     desc: '阿姆斯特丹与伦敦的行商联合会。他们控制大宗商品的定价权与信贷——商会的朋友从不缺买主。',
     perks: [
       // 30 档没有"大宗 ≥50 件"条件：代码是 m -= 0.01，没有件数判定（见下方说明）
@@ -88,7 +96,7 @@ export const FACTIONS: Faction[] = [
     id: 'scholars',
     name: '学者公会',
     motto: '未知的海角，比已知的黄金更珍贵',
-    icon: '📜',
+    icon: '学',
     desc: '里斯本与塞维利亚的制图师、博物学者与星算家。他们用羊皮纸和星盘换你带回的每一份新见闻。',
     perks: [
       // 实现在 utils/crewPerks.intelCost：显示价与结算价同源
@@ -124,7 +132,7 @@ export const FACTIONS: Faction[] = [
     id: 'brethren',
     name: '海盗兄弟会',
     motto: '陆地上没有我们的位置',
-    icon: '🏴‍☠️',
+    icon: '盗',
     desc: '皇家港、拿骚与托尔图加的法外之徒。他们不问你的旗帜只问你的胆子——黑旗向导能让追兵变成顺风。',
     perks: [
       /*

@@ -971,6 +971,18 @@ assert(!/大宗货物（≥50 件）/.test(factionSrc), '未实现的"大宗≥5
   // 真会显示：舰队面板 rep < 0 时渲染，否则又变回死数据
   assert(/data-testid=\{`faction-hostility-\$\{f\.id\}`\}/.test(fleetSrc),
     '敌对文案在舰队面板真的会显示（不是只躺在数据表里）')
+
+  /*
+   * icon 只是 Badge 的兜底字符，不许再是彩色 emoji。
+   * 原来存 👑⚖️📜🏴‍☠️ —— 界面上走的是矢量徽记，可一旦素材缺一张，
+   * 玩家就会看到一枚彩色 emoji 混在线性图标里（翻船屏就是这么露出来的）。
+   */
+  const iconLines = factionSrc.split('\n').filter(l => /^\s*icon:\s*'/.test(l))
+  assert(iconLines.length === 4, `四个派系都有兜底字符（实际 ${iconLines.length}）`)
+  for (const l of iconLines) {
+    assert(!/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u.test(l),
+      `派系兜底字符不许是 emoji：${l.trim()}`)
+  }
 }
 
 /*
