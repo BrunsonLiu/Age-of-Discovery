@@ -953,15 +953,24 @@ const factionSrc = readFileSync(join(process.cwd(), 'src', 'data', 'factions.ts'
 assert(/text: '航线情报半价'/.test(factionSrc), '学者 30 档文案 = 航线情报半价')
 assert(!/大宗货物（≥50 件）/.test(factionSrc), '未实现的"大宗≥50 件"承诺不许留在 perks 里')
 /*
- * hostility 目前不显示在界面上，但数据也不能先撒谎 —— 将来一接界面就成空承诺。
- * 允许出现的只有"折扣失效"（真实现），其余一律带"尚未实装"。
+ * hostility 以前不显示在界面上（死数据），所以允许用「（尚未实装）」兜底。
+ * 2026-11-16 起它在舰队面板真的显示了（rep < 0 时）—— 口径反过来：
+ * **没实现的东西一律不写**，"尚未实装"从豁免变成禁止项。
+ * 只留下"该派系的折扣/特权失效"这类真的会发生的事。
  */
 {
-  const badHostility = factionSrc.split('\n')
-    // 只查带字符串的赋值行（interface 里的 `hostility: string` 不算）
-    .filter(l => /hostility:\s*'/.test(l) && !/折扣失效/.test(l) && !/尚未实装/.test(l))
-  assert(badHostility.length === 0,
-    `敌对代价里出现了没实现的承诺：${badHostility[0]?.trim().slice(0, 30) ?? ''}`)
+  const hostLines = factionSrc.split('\n').filter(l => /hostility:\s*'/.test(l))
+  assert(hostLines.length === 4, `四个派系都写了敌对文案（实际 ${hostLines.length}）`)
+  for (const l of hostLines) {
+    assert(/失效/.test(l), `敌对文案只说真的失效了什么：${l.trim().slice(0, 46)}`)
+    assert(!/尚未实装|未实装|TODO|FIXME/.test(l),
+      `玩家文案里不许出现开发进度：${l.trim().slice(0, 46)}`)
+    assert(!/\d+\s*%/.test(l),
+      `敌对文案里不许有量化承诺（"遭遇率 +20%"那类都还没实现）：${l.trim().slice(0, 46)}`)
+  }
+  // 真会显示：舰队面板 rep < 0 时渲染，否则又变回死数据
+  assert(/data-testid=\{`faction-hostility-\$\{f\.id\}`\}/.test(fleetSrc),
+    '敌对文案在舰队面板真的会显示（不是只躺在数据表里）')
 }
 
 /*

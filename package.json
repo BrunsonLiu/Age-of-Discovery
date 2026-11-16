@@ -47,6 +47,7 @@
     "test:e2e:panelclick": "node test/e2e/panel-clickable.mjs",
     "test:e2e:marketrumor": "node test/e2e/market-rumor.mjs",
     "test:e2e:captainlean": "node test/e2e/captain-leanings.mjs",
+    "test:e2e:factionhostility": "node test/e2e/faction-hostility.mjs",
     "test:e2e:harbormood": "node test/e2e/harbor-mood.mjs",
     "test:e2e:harborlife": "node test/e2e/harbor-life.mjs",
     "test:e2e:harborbackdrop": "node test/e2e/harbor-backdrop.mjs",

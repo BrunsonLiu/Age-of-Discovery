@@ -372,6 +372,18 @@ export default function FleetPanel() {
                       再 +{Math.ceil(next.at - rep)} 点 → {next.text}
                     </div>
                   )}
+                  {/*
+                    敌对状态（rep < 0）：`factions.ts` 里那四条 `hostility` 从写下起
+                    就没进过界面（死数据）。可玩家**能感觉到代价**却找不到原因 ——
+                    声望跌成负数、自家港口折扣突然没了、学者公会情报不再半价。
+                    不写清"为什么"，那看起来就像 bug。
+                    文案里只留真的失效了什么（"尚未实装"那半句已删，见 data/factions）。
+                  */}
+                  {rep < 0 && f.hostility && (
+                    <div className="text-danger-200 text-xs leading-snug pl-[21px] mt-0.5" data-testid={`faction-hostility-${f.id}`}>
+                      ⚠ {f.hostility}
+                    </div>
+                  )}
                 </div>
               )
             })}
