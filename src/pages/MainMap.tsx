@@ -1,5 +1,5 @@
 import { useEffect, lazy, Suspense } from 'react'
-import { Ship, Anchor, Scroll, Flag, Package, HelpCircle, Trophy, Newspaper, Hammer } from 'lucide-react'
+import { Ship, Anchor, Scroll, Flag, Package, HelpCircle, Trophy, Newspaper, Hammer, Skull, Tag } from 'lucide-react'
 import { useGameStore, isRecordPanel } from '@/store/useGameStore'
 import { useMapStore } from '@/store/useMapStore'
 import HarborInvite from '@/components/harbor/HarborInvite'
@@ -12,6 +12,7 @@ import VoyageControls from '@/components/map/VoyageControls'
 import VoyageNextHint from '@/components/map/VoyageNextHint'
 import Compass from '@/components/ui/Compass'
 import WeatherBadge from '@/components/ui/WeatherBadge'
+import Badge from '@/components/ui/Badge'
 import TimelineBar from '@/components/ui/TimelineBar'
 import NotificationToast from '@/components/ui/NotificationToast'
 import MobileTabBar from '@/components/ui/MobileTabBar'
@@ -177,6 +178,16 @@ const Z = {
   /** 航海志整屏：压过侧栏与底栏（它有自己的一整套页签与关闭），让位给事件卡 */
   LOGBOOK: 66,
   OVERLAY: 70,
+  /**
+   * 翻船屏（终局）。
+   *
+   * 【为什么单开一档，不复用 OVERLAY(70)】原来它用 70，而对白是 75、
+   * 事件卡与出航计划是 80、操舵/段决策是 85 —— 全部压在它上面。
+   * 实测（gameover-screen.mjs，390 宽）按钮中心命中的是 `dlg-float`
+   * 那张对白立绘：终局屏明明"开着"，玩家的点击全被一张立绘吃掉了。
+   * 终局是这一局最后一次交互，它必须盖住一切（只让位给开局 9999 / 教学 9999）。
+   */
+  GAMEOVER: 95,
 }
 
 /*
@@ -967,7 +978,17 @@ export default function MainMap() {
       )}
 
       {gamePhase === 'gameover' && (
-        <div className="fixed inset-0 flex items-center justify-center bg-black/80 backdrop-blur-md overflow-y-auto py-8" style={{ zIndex: Z.OVERLAY }}>
+        <div
+          data-testid="gameover-screen"
+          /*
+           * `items-start` + 内层 `my-auto`，不是 `items-center`。
+           * flex 交叉轴居中碰上溢出，上下会**各裁一半**、且 scrollTop 永远到不了负值 ——
+           * 实测 900 高下内容 873+64padding=937，骷髅图标被切掉 18px 且滚不回来。
+           * `margin:auto` 在空间够时居中、不够时归零，两种情形都对。
+           */
+          className="fixed inset-0 flex items-start justify-center bg-black/80 backdrop-blur-md overflow-y-auto py-8"
+          style={{ zIndex: Z.GAMEOVER }}
+        >
           {/*
             三条胜利阈值已经改成"写进日志的一页称号"，达标不再停机。
             所以这块全屏层现在**只**由翻船触发，不用再判是胜是败——
@@ -980,9 +1001,18 @@ export default function MainMap() {
             aria-hidden="true"
             className="absolute inset-0 w-full h-full object-cover opacity-85"
           />
-          <div className="text-center space-y-6 max-w-md px-6 relative">
-            <div className="text-5xl mb-4">🏴‍☠️</div>
-            <h1 className="pirate-title text-4xl text-danger-400">航行终结</h1>
+          {/*
+             * space-y-4 而不是 6：这一屏有 9 个区块，24px 间距 ×8 就是 192px，
+             * 在 1440×900 下把「接着看海 / 重新起航」挤出首屏（实测 937 > 900）。
+             * 终局的唯一出路不该需要玩家滚一下才看得见。
+             */}
+            <div className="text-center space-y-4 max-w-md px-6 relative my-auto">
+            {/* 原来这里是 48px 的彩色 emoji 🏴‍☠️ —— 全项目已系统性清过一遍彩色 emoji
+                （首屏的 ⛵ 换罗盘、登船的 🏴‍☠️ 换 Skull、逃生游戏的 🧍 换线性图标、
+                小游戏评级的 🌟/🌀/⚔️ 换图标），只有这块翻船屏漏了。
+                骷髅是"航行终结"最直接的形，与登船小游戏用的是同一个字形。 */}
+            <Skull size={44} strokeWidth={1.3} className="mx-auto mb-1 text-gold-600/75" aria-hidden="true" />
+            <h1 className="pirate-title text-4xl text-danger-300">航行终结</h1>
             <p className="text-gold-400 font-serif text-lg">
               你的舰队在第{fleet.day}天走向了终结
             </p>
@@ -997,7 +1027,7 @@ export default function MainMap() {
             </div>
 
             {/* 生涯总结 */}
-            <div className="bg-ocean-800/50 border border-gold-700/30 rounded-lg p-3 text-left">
+            <div className="bg-black/70 border border-gold-700/30 rounded-lg p-3 text-left">
               <h3 className="font-pirate text-gold-400 text-sm mb-2 text-center">—— 航海生涯总结 ——</h3>
               <div className="grid grid-cols-2 gap-y-1 gap-x-4 text-xs font-serif">
                 <span className="text-gold-600">海上航行</span><span className="text-gold-300 text-right">{stats.daysSailed} 天</span>
@@ -1010,8 +1040,14 @@ export default function MainMap() {
             </div>
 
             {/* 同代船长排名 */}
-            <div className="bg-ocean-800/50 border border-gold-700/30 rounded-lg p-3 text-left">
-              <h3 className="font-pirate text-gold-400 text-sm mb-2 text-center">—— 同代船长座次 ——</h3>
+            <div className="bg-black/70 border border-gold-700/30 rounded-lg p-3 text-left">
+              {/*
+               * 排序规则必须写在界面上：`finalRanking` 是**金币降序、同分看声望**，
+               * 而玩家看不见的排序规则就等于 bug（金币一样多却排在别人下面，只会
+               * 被读成"这表算错了"）。册子的船长页早就写了表头，这里一直没写。
+               */}
+              <h3 className="font-pirate text-gold-400 text-sm text-center">—— 同代船长座次 ——</h3>
+              <p className="text-center text-gold-600 text-xs font-serif mb-2">按金币排 · 同分看声望</p>
               <div className="space-y-1">
                 {finalRanking.map((r, i) => (
                   <div
@@ -1020,31 +1056,56 @@ export default function MainMap() {
                       r.isPlayer ? 'bg-gold-700/30 text-gold-200' : 'text-gold-500'
                     }`}
                   >
-                    <span>
-                      {i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : '  '} {r.name}
+                    <span className="flex items-center gap-1.5">
+                      {/*
+                       * 原来是 🥇🥈🥉 三个彩色奖牌 emoji。换成序号：
+                       * 名次本身是数字，"第几"比"哪个牌子"更直接；而且彩色 emoji
+                       * 在深色木纹底上是一块突兀的高饱和色，与整块材质不同源。
+                       */}
+                      <span
+                        className={`w-4 shrink-0 text-center tabular-nums ${
+                          i === 0 ? 'text-gold-300 font-semibold' : 'text-gold-600'
+                        }`}
+                      >
+                        {i + 1}
+                      </span>
+                      {r.name}
                     </span>
-                    <span>{r.gold} 金币 · 声望 {r.fame} · 探索 {r.ports}/20</span>
+                    {/* 分母来自 ports.length：加了大明广州之后写死 /20 就是错的
+                        （同一个文件上面「探索港口」那条已经踩过一模一样的坑）。 */}
+                    <span className="tabular-nums">{r.gold} 金币 · 声望 {r.fame} · 探索 {r.ports}/{ports.length}</span>
                   </div>
                 ))}
               </div>
             </div>
 
             {/* 第二条线：后世如何记载你 */}
-            <div className="bg-ocean-800/50 border border-gold-700/30 rounded-lg p-3 text-left">
+            <div className="bg-black/70 border border-gold-700/30 rounded-lg p-3 text-left">
               <h3 className="font-pirate text-gold-400 text-sm mb-2 text-center">—— 后世如何记载你 ——</h3>
               <div className="space-y-1.5 text-xs font-serif">
                 {captainTitle && (
-                  <p className="text-gold-200">
-                    🏷️ 海上人称你「<span className="text-gold-300">{captainTitle.name}</span>」——{captainTitle.epithet}
+                  <p className="text-gold-200 flex items-baseline gap-1.5">
+                    {/* 🏷️ 也是彩色 emoji（同一个屏上的第三处）。称号是一枚"标签"，用线性 Tag。 */}
+                    <Tag size={12} className="shrink-0 self-center text-gold-500" aria-hidden="true" />
+                    <span>海上人称你「<span className="text-gold-300">{captainTitle.name}</span>」——{captainTitle.epithet}</span>
                   </p>
                 )}
                 <div className="flex flex-wrap gap-x-3 gap-y-1">
                   {FACTIONS.map(f => {
                     const rep = factionRep[f.id] ?? 0
-                    const tone = rep >= 30 ? 'text-safe-400' : rep <= -30 ? 'text-danger-400' : 'text-gold-600'
+                    // 12px 小字：danger-400 在翻船屏卡片底上只有 3.50（要 ≥4.5），
+                    // danger-300 是 5.41。safe-400 是 5.23，达标，保持不动。
+                    const tone = rep >= 30 ? 'text-safe-400' : rep <= -30 ? 'text-danger-300' : 'text-gold-600'
                     return (
-                      <span key={f.id} className={tone}>
-                        {f.icon} {f.name} {rep > 0 ? '+' : ''}{rep}
+                      <span key={f.id} className={`inline-flex items-center gap-1 ${tone}`} data-testid={`gameover-faction-${f.id}`}>
+                        {/*
+                         * 原来直接写 {f.icon} —— 那是彩色 emoji（👑⚖️📜🏴‍☠️）。
+                         * 全站另外三处（事件结算/舰队面板/港口卡）早就改成
+                         * <Badge kind="faction"> 了，用的是 assets 里的矢量徽记，
+                         * emoji 只是徽记缺失时的 fallback。就这块漏了。
+                         */}
+                        <Badge kind="faction" id={f.id} fallback={f.icon} size={12} />
+                        <span>{f.name} {rep > 0 ? '+' : ''}{rep}</span>
                       </span>
                     )
                   })}
@@ -1060,7 +1121,7 @@ export default function MainMap() {
               </div>
             </div>
 
-            <p className="text-gold-400 font-serif text-sm italic">
+            <p className="text-gold-300 font-serif text-sm italic drop-shadow-[0_1px_4px_rgba(0,0,0,0.95)]">
               大海收回了它的租金。海图还在，日志也还在——不重来，也能接着往外看。
             </p>
             {/*

@@ -1116,6 +1116,48 @@ assert(!/尚未实装/.test(stripComments(helpSrc)),
   '帮助里不再声明"尚未实装"（12 条特权已全部落地）')
 assert(/十二档势力特权现在都有实现/.test(helpSrc),
   '帮助里说清"面板上出现的就是能用的"')
+
+/*
+ * 【翻船屏：终局那一屏的五条硬约束】
+ *
+ * 这一屏是条件渲染的一块，不在任何面板里，所以 panel-clickable / contrast-audit
+ * / 册子五页全都扫不到它 —— 它也因此攒下了四处只在它身上存在的毛病：
+ * 彩色 emoji（🏴‍☠️ / 🥇🥈🥉 / 🏷️）、写死的「探索 x/20」、被对白盖住的层级、
+ * 以及 flex 居中溢出裁掉顶部图标。合成一条源码守卫，掺一条都红。
+ */
+{
+  const mm = readFileSync(join(process.cwd(), 'src', 'pages', 'MainMap.tsx'), 'utf8')
+  // 这块是文件里最后一个条件渲染块，从这里切到末尾即可（不用猜括号）
+  const at = mm.indexOf("gamePhase === 'gameover' &&")
+  assert(at > 0, 'MainMap 里找得到翻船屏那一块')
+  const block = stripComments(mm.slice(at))
+
+  const emoji = block.match(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu) || []
+  assert(emoji.length === 0,
+    `翻船屏不许有彩色 emoji（实际 ${[...new Set(emoji)].join('')}；全项目只剩这一处漏着）`)
+
+  assert(!/\/\s*20\b/.test(block.replace(/\/\$\{ports\.length\}/g, '')),
+    '探索分母不许写死 20（加了大明广州之后这里会显示 21/20）')
+  assert(/\{ports\.length\}/.test(block), '探索分母来自 ports.length')
+
+  assert(/按金币排/.test(block), '座次表写明排序规则（玩家看不见的排序 = 看起来像 bug）')
+
+  // 只看**外层那个固定层**的 className：块内其它行（座次表行、派系小标）用
+  // items-center 做垂直居中是合法的，整块扫会全部误伤。
+  const shell = block.slice(block.indexOf('data-testid="gameover-screen"'), block.indexOf('data-testid="gameover-screen"') + 400)
+  assert(!/\bitems-center\b/.test(shell) && /\bitems-start\b/.test(shell),
+    '外层用 items-start + my-auto（items-center 碰上溢出会把顶部图标裁掉且滚不回来）')
+
+  assert(/zIndex: Z\.GAMEOVER/.test(block), '翻船屏用自己的 Z.GAMEOVER 档')
+  const zGo = Number((mm.match(/GAMEOVER:\s*(\d+)/) || [])[1])
+  const zLayers = [...mm.matchAll(/(?:EVENT|HELM|SEGMENT|DIALOGUE)?[A-Z_]*:\s*\d+/g)]
+  assert(zGo > 85, `Z.GAMEOVER(${zGo}) 必须压过操舵/段决策（85）—— 终局屏被立绘吃掉点击实测过`)
+  assert(zGo < 9999, `Z.GAMEOVER(${zGo}) 仍让位给开局与教学（9999）`)
+
+  // 派系图标走 Badge（矢量徽记），不是 {f.icon} 那个 emoji 字段
+  assert(/<Badge kind="faction"/.test(block), '派系图标走 Badge 矢量徽记（与另外三处同源）')
+}
+
 /* "生涯回顾"这个界面从来没做过：帮助指了三处，玩家会去找一个不存在的屏 */
 assert(!/生涯回顾/.test(stripComments(helpSrc)), '帮助里不再指向不存在的「生涯回顾」界面')
 
