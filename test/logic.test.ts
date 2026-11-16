@@ -1057,6 +1057,48 @@ const helpSrc = readFileSync(join(process.cwd(), 'src', 'components', 'intro', '
     .filter(l => /王家合约/.test(l) && !/尚未实装/.test(l))
   assert(badLines.length === 0,
     `帮助里不许把未实现的势力特权当成真的写：${badLines[0]?.trim().slice(0, 40) ?? ''}`)
+
+  /*
+   * 【文案里的入口名必须是真入口】2026-11-16 实测发现帮助写着
+   * 「左侧：舰队 / 任务 / 日志 / 成就 / 见闻」—— 第五个按钮早就叫「船长」，
+   * "见闻"只是册子里的一栏；而右侧三个入口（港口/贸易/造船）一个字没提。
+   * 新手照着这一段找，必然在左边找不到贸易、在右边找不到"见闻"。
+   */
+  {
+    const mainSrc = readFileSync(join(process.cwd(), 'src', 'pages', 'MainMap.tsx'), 'utf8')
+    const labels = [...mainSrc.matchAll(/label: '([^']+)', side: '(left|right)'/g)].map(m => m[1])
+    assert(labels.length >= 8, `侧栏入口共 ${labels.length} 个（左 5 + 右 3）`)
+    const help = stripComments(helpSrc)
+    for (const name of labels) {
+      assert(help.includes(name), `帮助面板提到的侧栏入口「${name}」在 MainMap 里真的存在（反之亦然）`)
+    }
+    assert(!/左侧一列按钮：舰队 \/ 任务 \/ 日志 \/ 成就 \/ 见闻/.test(help),
+      '不再把「见闻」写成侧栏按钮（它是册子里的一栏，按钮叫船长）')
+    // 入口的**文字**也要对：实际标签是「上岸走走 / 回海图」，不是「海图 ↔ 岸上」
+    assert(/上岸走走/.test(help) && !/「海图 ↔ 岸上」开关/.test(help),
+      '上岸入口按按钮上的实际文字写（上岸走走 / 回海图）')
+    // 册子五页：帮助里写的页名要能对上 LogbookScreen 的 TABS
+    const lbSrc = readFileSync(join(process.cwd(), 'src', 'components', 'logbook', 'LogbookScreen.tsx'), 'utf8')
+    const tabKeys = [...lbSrc.matchAll(/key: '(task|journal|atlas|achievement|rival)'/g)].map(m => m[1])
+    assert(new Set(tabKeys).size === 5, `册子五页（实际 ${[...new Set(tabKeys)].join('/')}）`)
+    for (const zh of ['任务', '日志', '图鉴', '成就', '船长']) {
+      assert(help.includes(zh), `帮助里的册子页名「${zh}」是真实存在的一页`)
+    }
+  }
+
+  /*
+   * 【文案里的秒数必须等于常量】帮助写「到港会有一条 9 秒自动收起的小提示」。
+   * 数字写死在文案里，改常量的那天文案就开始撒谎 —— 这类漂移在项目里
+   * 已经发生过（"每段必有操舵"就是一条过期规则）。这里把两处钉在一起。
+   */
+  {
+    const invite = readFileSync(join(process.cwd(), 'src', 'components', 'harbor', 'HarborInvite.tsx'), 'utf8')
+    const ms = Number((invite.match(/AUTO_HIDE_MS\s*=\s*(\d+)/) || [])[1])
+    const sec = Math.round(ms / 1000)
+    assert(ms > 0, `HarborInvite 的自动收起时长读得到（${ms}ms）`)
+    assert(new RegExp(`${sec} 秒`).test(stripComments(helpSrc)),
+      `帮助里写的秒数与 AUTO_HIDE_MS(${ms}ms=${sec}s) 一致`)
+  }
   // 帮助里提到的"已实装"必须真在数据里（改文案不算实现）
   const facSrcH = readFileSync(join(process.cwd(), 'src', 'data', 'factions.ts'), 'utf8')
   assert(/黑市：武器与奢侈品卖价/.test(facSrcH), '帮助提到"黑市"，数据里就得有这条特权')

@@ -373,13 +373,16 @@ export default function FleetPanel() {
                     </div>
                   )}
                   {/*
-                    敌对状态（rep < 0）：`factions.ts` 里那四条 `hostility` 从写下起
+                    「被记恨」状态：`factions.ts` 里那四条 `hostility` 从写下起
                     就没进过界面（死数据）。可玩家**能感觉到代价**却找不到原因 ——
-                    声望跌成负数、自家港口折扣突然没了、学者公会情报不再半价。
+                    声望掉下去、自家港口折扣突然没了、学者公会情报不再半价。
                     不写清"为什么"，那看起来就像 bug。
-                    文案里只留真的失效了什么（"尚未实装"那半句已删，见 data/factions）。
+
+                    判据绑在 `factionAttitude` 的分级上（tone === 'bad'，即 rep < -30），
+                    不写死数字：分级表是"冷淡/敌对"的唯一来源，写 `rep < 0` 会与
+                    帮助面板的「≤-30」打架（第一版就是这么错的）。
                   */}
-                  {rep < 0 && f.hostility && (
+                  {att.tone === 'bad' && f.hostility && (
                     <div className="text-danger-200 text-xs leading-snug pl-[21px] mt-0.5" data-testid={`faction-hostility-${f.id}`}>
                       ⚠ {f.hostility}
                     </div>
