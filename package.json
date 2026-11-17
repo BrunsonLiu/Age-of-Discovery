@@ -66,6 +66,7 @@
     "test:e2e:save": "node test/e2e/save-migrate.mjs",
     "test:e2e:eventresult": "node test/e2e/event-result.mjs",
     "test:e2e:firstrun": "node test/e2e/first-run.mjs",
+    "test:e2e:firstrunmobile": "node test/e2e/first-run.mjs --mobile",
     "test:e2e:nation": "node test/e2e/nation-start.mjs",
     "test:e2e:visitor": "node test/e2e/visitor-mode.mjs",
     "test:e2e:font": "node test/e2e/font-coverage.mjs",

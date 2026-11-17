@@ -29,7 +29,18 @@ const page = await browser.newPage()
 const errors = []
 page.on('pageerror', e => errors.push('PAGEERROR: ' + e.message))
 page.on('console', m => { if (m.type() === 'error') errors.push('CONSOLE: ' + m.text().slice(0, 160)) })
-await page.setViewport({ width: 1440, height: 900 })
+/*
+ * 默认 1440×900。`MOBILE=1` 换成真触屏 390×844 ——
+ * 手机是主要场景之一（底部标签栏、抽屉都是为它做的），但"第一分钟"只在桌面上验过。
+ * 真触屏要用 isMobile + hasTouch：只改宽度的话 (pointer: coarse) 不命中，
+ * 走的是桌面分支，等于什么都没测（操舵那轮踩过）。
+ */
+// 参数与 env 都认：Windows 的 npm script 走 cmd.exe，`MOBILE=1 node` 那种前置赋值不生效
+const MOBILE = process.argv.includes('--mobile') || process.env.MOBILE === '1'
+await page.setViewport(
+  MOBILE ? { width: 390, height: 844, isMobile: true, hasTouch: true }
+         : { width: 1440, height: 900 },
+)
 
 let pass = 0, fail = 0
 const check = (ok, msg) => {
@@ -97,7 +108,12 @@ for (let i = 0; i < 12; i++) {
   if (!(await dialogue())) break
   const hit = await findButton(['继续'])
   if (hit) await clickReal(hit)
-  else await page.mouse.click(720, 700)   // 打字中点画面跳字
+  else {
+    // 打字中点画面跳字。坐标必须按视口算：720,700 在 390×844 上是屏幕外，
+    // 点了等于没点 —— 循环会白跑 12 次然后判"致辞没关掉"
+    const vp = page.viewport()
+    await page.mouse.click(vp.width / 2, Math.round(vp.height * 0.8))
+  }
   await sleep(450)
 }
 check(await dialogue() === null, '致辞能一路点完并关闭')
