@@ -38,3 +38,6 @@ unused-assets/
 .workbuddy/
 # WorkBuddy 发布标记文件（.wbapp_*.genie）：由发布工具生成，不该进代码仓库
 .wbapp_*.genie
+
+# 提交信息临时文件（含引号会被截断，用 git commit -F 读它）
+msg.txt
