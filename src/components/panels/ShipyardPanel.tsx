@@ -5,7 +5,7 @@ import { shipTemplates, shipResaleValue } from '@/data/ships'
 import { shipSprite } from '@/data/shipSprites'
 import { ports } from '@/data/ports'
 import { effectiveFleetSpeed } from '@/utils/navigation'
-import ParchmentCard from '@/components/ui/ParchmentCard'
+import FullScreenPanel from '@/components/ui/FullScreenPanel'
 import ActionButton from '@/components/ui/ActionButton'
 import { useFxStore as useFx } from '@/store/useFxStore'
 
@@ -83,9 +83,10 @@ export default function ShipyardPanel() {
   const fleetSpeed = effectiveFleetSpeed(fleet)
 
   return (
-    <div className="w-full md:w-[26rem] h-full animate-slide-in-right" data-testid="shipyard-panel">
-      <ParchmentCard
+    <FullScreenPanel
+      testId="shipyard-panel"
         title="造船厂"
+        subtitle={`${port.nameCn} · 第 ${fleet.day} 天`}
         /* 三个船型卡各 ~110px，加卖船区与头部 —— 默认 60vh 扣掉标题只剩 470，会把最后一张裁掉一半 */
         onClose={() => setActivePanel(null)}
       >
@@ -190,7 +191,6 @@ export default function ShipyardPanel() {
             </div>
           </div>
         </div>
-      </ParchmentCard>
-    </div>
+      </FullScreenPanel>
   )
 }

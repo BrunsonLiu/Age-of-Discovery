@@ -242,12 +242,17 @@ console.log('\n=== 移动端布局（390×844）===')
   check(!!tradeTab, '标签栏里有「贸易」入口')
   if (tradeTab) {
     /*
-     * 抽屉是 React.lazy 的 TradePanel，接在其他 4 个脚本后面跑时（机器负载高）
-     * 600ms 常常不够；单个跑则 37/0。所以点完轮询 6s，等不到就用真实鼠标再点一次
-     * （elementHandle.click 不走命中测试，坐标过期时不会报错，只会静默点空）。
+     * 【2026-11-17 口径重写】四块面板从"底部抽屉"改成整屏
+     * （与航海志同一种形态，见 components/ui/FullScreenPanel）。
+     * 原来这一整段验的是"抽屉升起 / 遮罩 / 把手条"，现在该验的是：
+     * 点标签 → 整屏铺满 → 回海图能关。
+     *
+     * 面板是 React.lazy 的，接在其他脚本后面跑时机器负载高，
+     * 600ms 常常不够 —— 轮询 6s，等不到就用真实鼠标再点一次
+     * （elementHandle.click 不走命中测试，坐标过期时只静默点空）。
      */
-    let drawer = null
-    for (let attempt = 0; attempt < 2 && !drawer; attempt++) {
+    let panel = null
+    for (let attempt = 0; attempt < 2 && !panel; attempt++) {
       if (attempt === 0) await tradeTab.click()
       else {
         const pt = await page.evaluate(() => {
@@ -259,45 +264,35 @@ console.log('\n=== 移动端布局（390×844）===')
         if (pt) await page.mouse.click(pt[0], pt[1])
       }
       for (let w = 0; w < 6000; w += 200) {
-        drawer = await page.$('[data-testid="mobile-drawer"]')
-        if (drawer) break
+        panel = await page.$('[data-testid="trade-panel"]')
+        if (panel) break
         await sleep(200)
       }
     }
-    check(!!drawer, '点标签 → 底部抽屉升起')
-    if (drawer) {
-      const box = await drawer.boundingBox()
-      check(!!box && box.width <= VW + 1, `抽屉宽度 ${box ? Math.round(box.width) : '?'} ≤ 视口 ${VW}`)
-      check(!!box && box.y + box.height <= VH + 2, '抽屉完整落在屏幕内')
+    check(!!panel, '点标签 → 整屏面板出现')
+    if (panel) {
+      const box = await panel.boundingBox()
+      check(!!box && box.width >= VW - 2, `面板铺满屏宽（${box ? Math.round(box.width) : '?'} / ${VW}）`)
+      check(!!box && box.width <= VW + 1 && box.y >= -1, '面板不越界')
       const ov = await overflowElements()
-      check(ov.length === 0, `抽屉打开时仍无横向溢出（${ov.length} 个${ov.length ? '：' + JSON.stringify(ov) : ''}）`)
-      // 面板自身的宽度不能顶破抽屉
-      const panelW = await page.evaluate(() => {
-        const card = document.querySelector('[data-testid="trade-panel"]')
-        return card ? Math.round(card.getBoundingClientRect().width) : -1
+      check(ov.length === 0, `面板打开时仍无横向溢出（${ov.length} 个${ov.length ? '：' + JSON.stringify(ov) : ''}）`)
+      await page.screenshot({ path: `${SHOTS}/mobile-panel-trade.png` })
+
+      // 关闭：只有一条路（右上「回海图」），但它必须真的能点
+      const closeInfo = await page.evaluate(() => {
+        const b = document.querySelector('[data-testid="trade-panel-close"]')
+        if (!b) return null
+        const r = b.getBoundingClientRect()
+        const hit = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2)
+        return { hitSelf: !!(hit && (hit === b || b.contains(hit))), x: r.x + r.width / 2, y: r.y + r.height / 2 }
       })
-      check(panelW > 0 && panelW <= VW, `面板宽度 ${panelW} ≤ 视口 ${VW}`)
-      await page.screenshot({ path: `${SHOTS}/mobile-drawer-trade.png` })
-    }
-    // 关闭：两条路都要通
-    // ① 点顶部露出的遮罩（抽屉最高 82dvh，顶部一定留有一条可点的暗区）
-    const backdrop = await page.$('[data-testid="mobile-drawer-backdrop"]')
-    check(!!backdrop, '抽屉有遮罩')
-    if (backdrop) {
-      await page.mouse.click(12, 12)
-      await sleep(500)
-      let still = await page.$('[data-testid="mobile-drawer"]')
-      check(!still, '点遮罩 → 抽屉关闭')
-    }
-    // ② 点把手条（不划屏幕的人也得有路可走）
-    if (await page.$('[data-testid="mobile-drawer"]')) {
-      const handle = await page.$('[data-testid="mobile-drawer-handle"]')
-      check(!!handle, '抽屉有把手条')
-      if (handle) {
-        await handle.click()
-        await sleep(400)
-        const still = await page.$('[data-testid="mobile-drawer"]')
-        check(!still, '点把手条 → 抽屉关闭')
+      check(!!closeInfo, '整屏面板有「回海图」')
+      check(!!closeInfo && closeInfo.hitSelf, '「回海图」中心命中自己')
+      if (closeInfo?.hitSelf) {
+        await page.mouse.click(closeInfo.x, closeInfo.y)
+        await sleep(500)
+        const still = await page.$('[data-testid="trade-panel"]')
+        check(!still, '点「回海图」→ 面板关闭')
       }
     }
   }

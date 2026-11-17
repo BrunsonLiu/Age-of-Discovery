@@ -17,7 +17,7 @@ import { donatableRelics, donateFame, DONATE_DOUBLE_REP, DONATE_FAME } from '@/u
 import Badge from '@/components/ui/Badge'
 import { UI_ASSETS } from '@/data/uiAssets'
 import { prefersReducedMotion } from '@/utils/motion'
-import ParchmentCard from '@/components/ui/ParchmentCard'
+import FullScreenPanel from '@/components/ui/FullScreenPanel'
 import ActionButton from '@/components/ui/ActionButton'
 
 const regionNames: Record<string, string> = {
@@ -137,14 +137,10 @@ export default function PortDetail() {
   }
 
   return (
-    <div className="w-full md:w-80 h-full animate-slide-in-right" data-testid="port-panel">
-      <ParchmentCard
+    <FullScreenPanel
+      testId="port-panel"
         title={port.nameCn}
-        /*
-         * 正文区放到 76vh：缩略图从 3:1 改成 16:9 之后多占 66px，默认 60vh
-         * 会把「港口服务」那一排切掉一半 —— 修理/补给看得见，招募/贸易/造船厂
-         * 藏在裁切线以下，玩家以为这港只有两样服务。
-         */
+        subtitle={`第 ${fleet.day} 天 · 已靠岸`}
         onClose={() => setActivePanel(null)}
       >
         {/* 港口场景插图（C 组）：到港第一眼——按区域/建筑风格选图 */}
@@ -157,8 +153,15 @@ export default function PortDetail() {
            * 画框 = 外 1px 金线 + 内 3px 暗色卡纸 + 内侧暗角（inset 18px 阴影）。
            * 内侧暗角同时压住四个角，画面边缘才不会和面板底色抢。
            */
+          /*
+           * 【整屏下必须限宽】侧板时代这块是 288×162，改成整屏之后
+           * `aspect-[16/9]` 会把它撑成 **768×432** —— 半屏都是这张画，
+           * 「港口服务 / 军官 / 船员」全被推到折叠线以下（实测服务按钮的
+           * rect.y 都超出 900，port-services 的 elementFromPoint 判成被挡）。
+           * 这张图的作用是"认路"，不是主角：448×252 足够，再大就是喧宾夺主。
+           */
           <div
-            className="relative -mx-1 mb-2 aspect-[16/9] overflow-hidden rounded-sm"
+            className="relative mx-auto mb-3 aspect-[16/9] w-full max-w-md overflow-hidden rounded-sm"
             style={{
               boxShadow:
                 'inset 0 0 0 1px rgba(206,172,108,0.62), inset 0 0 0 3px rgba(18,12,5,0.9), inset 0 0 18px rgba(0,0,0,0.5), 0 2px 7px rgba(0,0,0,0.55)',
@@ -640,7 +643,6 @@ export default function PortDetail() {
             </div>
           )}
         </div>
-      </ParchmentCard>
-    </div>
+      </FullScreenPanel>
   )
 }

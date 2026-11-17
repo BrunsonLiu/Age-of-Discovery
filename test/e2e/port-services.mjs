@@ -40,7 +40,20 @@ await page.evaluate(() => {
   window.__gameStore.setState({ activePanel: 'port' })
   window.__dialogueStore?.getState?.().skip?.()
 })
-await sleep(1500)
+/*
+ * 等面板**真的挂上**再往下走，不要赌 1.5 秒。
+ *
+ * 面板是 React.lazy 的，dev 下首次要现编 chunk。原来固定 sleep(1500)：
+ * 机器慢一点、chunk 还没编译完，`ensureClickable` 第一次就探到 'no-button'，
+ * 于是它执行兜底清场 —— **按 Esc** —— 而 Esc 的退路正是"关掉面板"。
+ * 结果面板被脚本自己关掉，后面 5 个服务按钮全部找不到（实测 0 个）。
+ * 顺带说明为什么不能只看"有没有 button"：面板没挂上时它也不在。
+ */
+await page.waitForFunction(
+  () => !!document.querySelector('[data-testid="port-panel"]'),
+  { timeout: 15000, polling: 100 },
+).catch(() => { /* 真没挂上就让下面的断言红在"5 个按钮"那条上 */ })
+await sleep(400)
 
 /**
  * 前置清场：新手引导会留一层 `absolute inset-0 bg-black/45` 压暗层，
@@ -208,6 +221,11 @@ const head = await page.evaluate(() => {
     services: services.length,
     visible: visible.length,
     panelW: Math.round(pr?.width || 0),
+    vw: innerWidth,
+    contentW: (() => {
+      const c = panel?.querySelector('.max-w-3xl')
+      return c ? Math.round(c.getBoundingClientRect().width) : null
+    })(),
   }
 })
 if (head.services > 0) {
@@ -215,7 +233,16 @@ if (head.services > 0) {
     `港口缩略图是 16:9 全幅（实际 ${head.imgRatio}，h-24 时是 3.0）`)
   check(head.visible === head.services,
     `五个服务全在视口内（${head.visible}/${head.services}）—— 不许有半截藏在裁切线外`)
-  check(head.panelW <= 340, `港口面板仍是 320 宽的"读一段+点入口"（实际 ${head.panelW}）`)
+  /*
+   * 【2026-11-17 口径反转】原来是 `panelW <= 340`（守 320 侧板）。
+   * 港口面板改成了整屏（与航海志同一种形态），该守的变成两件事：
+   *   ① 面板铺满视口（不再是个角落里的浮窗）；
+   *   ② **正文限宽** —— 否则港口图会被撑成 768×432 吃半屏，
+   *      服务按钮掉到折叠线以下（实测 rect.y > 900，elementFromPoint 判被挡）。
+   */
+  check(head.panelW >= head.vw - 2, `港口面板是整屏（${head.panelW} / 视口 ${head.vw}）`)
+  check(head.contentW !== null && head.contentW <= 800,
+    `正文限宽 max-w-3xl（实际 ${head.contentW}）—— 图不会被撑成半屏`)
 }
 
 console.log(`\n结果：${pass} 通过 / ${fail} 失败`)

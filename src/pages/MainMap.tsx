@@ -177,6 +177,17 @@ const Z = {
   DRAWER: 65,
   /** 航海志整屏：压过侧栏与底栏（它有自己的一整套页签与关闭），让位给事件卡 */
   LOGBOOK: 66,
+  /**
+   * 整屏操作面板（港口 / 贸易 / 造船 / 舰队）。
+   *
+   * 【为什么和航海志同级，而不是沿用 PANEL=30】
+   * 它们原来是右侧 320~416px 的窄浮窗，压在海图角落，z 只要高过侧栏就够。
+   * 2026-11-17 起改成整屏（理由见 components/ui/FullScreenPanel 的文件头）：
+   * 侧栏五个按钮里四个进整屏、只剩它们在弹小窗，玩家读作"有些按钮只弹个窗"。
+   * 整屏就必须压过侧栏与底栏 —— 和航海志同一个道理。
+   * 两者互斥（一次只开一个），所以同档不会打架。
+   */
+  PANEL_FULL: 66,
   OVERLAY: 70,
   /**
    * 翻船屏（终局）。
@@ -797,52 +808,29 @@ export default function MainMap() {
       {/* 面板组件都是懒加载块：整块包一层 Suspense，fallback 用 null
           —— 面板平时没打开时这里本来就是空的，不会闪白。 */}
       <Suspense fallback={null}>
+      {/*
+       * 只剩「舰队」这一块走左侧。另外四个记录类早就是航海志整屏。
+       * 2026-11-17：舰队也从窄浮窗改成整屏，与另外四块同一种形态 ——
+       * 不再区分桌面浮窗 / 手机抽屉（两套实现出过不一致）。
+       */}
       {activeLeftPanel && (
-        isMobile ? (
-          drawer(
-            <FleetPanel />,
-            () => setActivePanel(null),
-          )
-        ) : (
-          <div
-            className="absolute left-[5.75rem] top-12 bottom-12 w-80"
-            style={{ zIndex: Z.PANEL }}
-          >
-            {/* 只剩「舰队」：另外四个记录类面板已经不是侧板，而是航海志整屏
-                （路由见 gameStore.setActivePanel）。这里留着分支就等于留了第二套实现。 */}
-            <FleetPanel />
-          </div>
-        )
+        <div className="absolute inset-0" style={{ zIndex: Z.PANEL_FULL }}>
+          <FleetPanel />
+        </div>
       )}
       </Suspense>
 
       <Suspense fallback={null}>
+      {/*
+       * 港口 / 贸易 / 造船：整屏（与舰队、航海志同一种形态）。
+       * 宽度不再按面板区分 —— 整屏里由 FullScreenPanel 的 max-w-3xl 统一限宽居中。
+       */}
       {activeRightPanel && (
-        isMobile ? (
-          drawer(
-            activeRightPanel === 'port' ? <PortDetail />
-              : activeRightPanel === 'trade' ? <TradePanel />
-              : <ShipyardPanel />,
-            () => setActivePanel(null),
-          )
-        ) : (
-          <div
-            /*
-             * 贸易面板比另外两个宽 100px：它是**核心玩法**，一屏要同时放下
-             * 5~8 个商品行（名字 + 价格 + 库存 + 三档数量按钮）。
-             * 320px 时每行挤成两截、列表只看得到 3 行 —— 玩家得一边滚一边记价。
-             * 港口 / 造船厂没有这个密度，维持 320。
-             */
-            className={`absolute right-[5.75rem] top-12 bottom-12 ${
-              activeRightPanel === 'port' ? 'w-80' : 'w-[26rem]'
-            }`}
-            style={{ zIndex: Z.PANEL }}
-          >
-            {activeRightPanel === 'port' && <PortDetail />}
-            {activeRightPanel === 'trade' && <TradePanel />}
-            {activeRightPanel === 'shipyard' && <ShipyardPanel />}
-          </div>
-        )
+        <div className="absolute inset-0" style={{ zIndex: Z.PANEL_FULL }}>
+          {activeRightPanel === 'port' && <PortDetail />}
+          {activeRightPanel === 'trade' && <TradePanel />}
+          {activeRightPanel === 'shipyard' && <ShipyardPanel />}
+        </div>
       )}
       </Suspense>
 

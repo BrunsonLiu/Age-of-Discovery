@@ -2,9 +2,9 @@ import { useState } from 'react'
 import { Coins, Package, TrendingUp, TrendingDown, Sprout, HandCoins } from 'lucide-react'
 import { useGameStore, selectBuyPrice, selectSellPrice, selectPriceTone, selectBestDeal } from '@/store/useGameStore'
 import { useMapStore } from '@/store/useMapStore'
-import { portGoods, localSpecialties, localDemands } from '@/data/ports'
+import { ports, portGoods, localSpecialties, localDemands } from '@/data/ports'
 import { goods } from '@/data/goods'
-import ParchmentCard from '@/components/ui/ParchmentCard'
+import FullScreenPanel from '@/components/ui/FullScreenPanel'
 import ActionButton from '@/components/ui/ActionButton'
 import { useFxStore as useFx } from '@/store/useFxStore'
 
@@ -231,14 +231,10 @@ export default function TradePanel() {
   }
 
   return (
-    <div className="w-full md:w-[26rem] h-full animate-slide-in-right" data-testid="trade-panel">
-      <ParchmentCard
+    <FullScreenPanel
+      testId="trade-panel"
         title="商品交易"
-        /*
-         * 正文区放到 76vh：本港 5 个商品行各 72px，加头部 160px 一共 520px，
-         * 默认的 60vh（900 高下 = 540 扣掉标题只剩 470）会把最后一行裁一半。
-         * 一屏看全，玩家才不用一边滚一边记价。
-         */
+        subtitle={`${ports.find(p => p.id === portId)?.nameCn ?? ''} · 第 ${fleet.day} 天`}
         onClose={() => setActivePanel(null)}
       >
         <div className="space-y-3">
@@ -317,10 +313,16 @@ export default function TradePanel() {
           </div>
 
           {tab === 'buy' && (
-            /* 不再套一层内滚动：ParchmentCard 的内容区已经是滚动容器，
-                在它里面再放一条更矮的滚动区就是两层滚动条 —— 玩家滚轮滚到一半
-                 发现滚的是内层，外层永远不动。让列表自然铺开，交给外层统一滚。 */
-            <div className="space-y-1.5">
+            /* 不再套一层内滚动：FullScreenPanel 的正文区已经是滚动容器，
+               在它里面再放一条更矮的滚动区就是两层滚动条 —— 玩家滚轮滚到一半
+               发现滚的是内层，外层永远不动。让列表自然铺开，交给外层统一滚。 */
+            /*
+             * 整屏之后改成两列（原来自动换行的那一列，在 768px 里会拉成
+             * 「名字……价格……按钮」三段，中间空 300px，眼睛要横着跑）。
+             * 两列下每列 ~370px，正好是原来 416 浮窗的密度；
+             * 手机（390）自然退回一列。
+             */
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
               {currentPortGoods.map(pg => (
                 <BuyRow
                   key={pg.goodId}
@@ -337,9 +339,9 @@ export default function TradePanel() {
           )}
 
           {tab === 'sell' && (
-            /* 不再套一层内滚动：ParchmentCard 的内容区已经是滚动容器，
-                在它里面再放一条更矮的滚动区就是两层滚动条 —— 玩家滚轮滚到一半
-                 发现滚的是内层，外层永远不动。让列表自然铺开，交给外层统一滚。 */
+            /* 不再套一层内滚动：FullScreenPanel 的正文区已经是滚动容器，
+               在它里面再放一条更矮的滚动区就是两层滚动条 —— 玩家滚轮滚到一半
+               发现滚的是内层，外层永远不动。让列表自然铺开，交给外层统一滚。 */
             <div className="space-y-1.5">
               {fleet.cargo.length === 0 ? (
                 <p className="text-gold-400 text-[13px] font-serif text-center py-4">货舱空空如也</p>
@@ -351,7 +353,6 @@ export default function TradePanel() {
             </div>
           )}
         </div>
-      </ParchmentCard>
-    </div>
+      </FullScreenPanel>
   )
 }

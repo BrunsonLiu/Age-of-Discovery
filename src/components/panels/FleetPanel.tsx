@@ -16,7 +16,7 @@ import { dailyDistanceNm, daysForDistance, effectiveFleetSpeed } from '@/utils/n
 import { STANCES } from '@/utils/segment'
 import { WEATHER_INFO, weatherFavorFactor } from '@/utils/weather'
 import { LOW_MORALE, dailyRates, daysToDestination, formatSupplyDays, supplyDaysRemaining, supplyLevel } from '@/utils/voyage'
-import ParchmentCard from '@/components/ui/ParchmentCard'
+import FullScreenPanel from '@/components/ui/FullScreenPanel'
 import ResourceBar from '@/components/ui/ResourceBar'
 import Badge from '@/components/ui/Badge'
 import Ship3DView from '@/components/three/Ship3DView'
@@ -113,14 +113,10 @@ export default function FleetPanel() {
   }
 
   return (
-    <div className="w-full md:w-80 h-full animate-slide-in-left" data-testid="fleet-panel">
-      <ParchmentCard
+    <FullScreenPanel
+      testId="fleet-panel"
         title="舰队状态"
-        /*
-         * 正文区放到 76vh：内容（总览 + 船卡 + 四方态度 + 资源条 + 航线）在 900 高下
-         * 是 849px，默认 60vh 的 540 会把「船卡」整段推到折叠线以下 ——
-         * 玩家点开「舰队」第一眼看到的是声望和资源，看不到自己的船。
-         */
+        subtitle={`${fleet.name} · 第 ${fleet.day} 天 · ${fleet.ships.length} 艘`}
         onClose={() => setActivePanel(null)}
       >
         <div className="space-y-3">
@@ -515,7 +511,6 @@ export default function FleetPanel() {
             </div>
           )}
         </div>
-      </ParchmentCard>
-    </div>
+      </FullScreenPanel>
   )
 }

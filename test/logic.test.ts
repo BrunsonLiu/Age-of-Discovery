@@ -944,7 +944,7 @@ assert(/nextPerk\(/.test(fleetSrc), '舰队面板调用 nextPerk 显示下一档
   const factionIdx = fleetSrc.indexOf('{/* 派系态度：世界上有人记得你做过什么 */}')
   assert(shipIdx > 0 && factionIdx > 0, '船卡段与四方态度段都还在')
   assert(shipIdx < factionIdx, '船卡排在四方态度**之前**（点开舰队先看到船）')
-  assert(/data-testid="fleet-panel"/.test(fleetSrc), '舰队面板有 fleet-panel 锚点')
+  assert(/testId="fleet-panel"/.test(fleetSrc), '舰队面板有 fleet-panel 锚点（走 FullScreenPanel 的 testId）')
   assert(!/bodyClassName=/.test(fleetSrc), '舰队面板不自己写正文高度（交给容器填满）')
   assert(/h-full/.test(fleetSrc), '舰队面板根节点 h-full（max-h-full 的百分比要靠它才成立）')
 }
@@ -8426,9 +8426,27 @@ console.log('\n== 天数口径守卫 ==')
   {
     const mainMap = readFileSync(join(process.cwd(), 'src', 'pages', 'MainMap.tsx'), 'utf8')
     const card = readFileSync(join(process.cwd(), 'src', 'components', 'ui', 'ParchmentCard.tsx'), 'utf8')
-    assert(/activeRightPanel === 'port' \? 'w-80' : 'w-\[26rem\]'/.test(mainMap),
-      '贸易与造船厂都用 26rem，港口仍是 320')
-    assert(/md:w-\[26rem\]/.test(trade), '贸易面板自身宽度也跟着改成 26rem')
+    /*
+     * 【2026-11-17：宽度这一档断言整体作废，换成"四条挂载都走整屏"】
+     * 原来四块面板按内容密度分宽（港口 320 / 贸易与造船 416），现在它们全是整屏，
+     * 宽度由 FullScreenPanel 的 `max-w-3xl` 统一限宽居中 —— 再守 26rem 就是守旧实现。
+     */
+    /*
+     * 只看挂载段本身。**不能往前多看**：紧挨着它上面就是帮助面板的容器
+     * （`absolute right-[5.75rem] ... w-80`），那是 320 侧板、应该保留，
+     * 窗口开到 -400 就会把它算进来（第一版就是这么假红的）。
+     */
+    const at = mainMap.indexOf('activeRightPanel &&')
+    // 终点取"下一个块"（帮助面板）的起点，而不是拍一个字符数 —— 700 字符恰好越界到它
+    const end = mainMap.indexOf('showHelp &&', at)
+    const mountBlock = mainMap.slice(at, end > at ? end : at + 700)
+    assert(!/w-80|w-\[26rem\]/.test(mountBlock), '四块面板的挂载处不再写宽度（整屏不需要分宽）')
+    assert(/zIndex: Z\.PANEL_FULL/.test(mainMap), '面板走整屏档 Z.PANEL_FULL（与航海志同级）')
+    for (const comp of ['FleetPanel', 'PortDetail', 'TradePanel', 'ShipyardPanel']) {
+      const src2 = readFileSync(join(process.cwd(), 'src', 'components', 'panels', `${comp}.tsx`), 'utf8')
+      assert(/<FullScreenPanel/.test(src2), `${comp} 用整屏外壳（不再是自己包一层窄浮窗）`)
+      assert(!/ParchmentCard/.test(src2), `${comp} 不再用 ParchmentCard（那是"一张纸"的形态）`)
+    }
     assert(!/<ScrollFade/.test(trade), '贸易面板里不再套内层滚动容器（两层滚动条会让滚轮失灵）')
     assert(!/bodyClassName=/.test(trade),
       '贸易面板不再自己写正文高度（四块面板统一交给容器填满）')
@@ -8665,7 +8683,7 @@ console.log('\n== 天数口径守卫 ==')
     assert(new RegExp(`data-service-anchor="${k}"`).test(pd), `${k} 分区有跳转锚点`)
   }
   assert(/aria-label=/.test(pd), '服务按钮有 aria-label（图标按钮不能只靠画认）')
-  assert(/data-testid="shipyard-panel"/.test(sy), '造船厂面板有稳定锚点')
+  assert(/testId="shipyard-panel"/.test(sy), '造船厂面板有稳定锚点（走 FullScreenPanel 的 testId）')
 
   const pkg = JSON.parse(readFileSync(join(process.cwd(), 'package.json'), 'utf8'))
   assert(pkg.scripts['test:e2e:portsvc']?.includes('port-services.mjs'), '服务按钮有独立巡检命令')
@@ -14778,8 +14796,13 @@ console.log('== 岸上的"活"：走动的影子与海鸥的布局 ==')
  */
 {
   const pd = readFileSync(join(process.cwd(), 'src', 'components', 'panels', 'PortDetail.tsx'), 'utf8')
-  assert(/data-testid="port-panel"/.test(pd), '港口卡有 port-panel 锚点（另两块面板都有，就它漏了）')
-  assert(/aspect-\[16\/9\] overflow-hidden rounded-sm/.test(pd), '港口缩略图是 16:9（不是 3:1 的 h-24）')
+  assert(/testId="port-panel"/.test(pd), '港口卡有 port-panel 锚点（走 FullScreenPanel 的 testId）')
+  assert(/aspect-\[16\/9\]/.test(pd), '港口缩略图是 16:9（不是 3:1 的 h-24）')
+  /*
+   * 整屏之后必须**限宽**：`aspect-[16/9]` 在 768px 正文里会撑成 768×432，
+   * 半屏都是那张画，港口服务被推到折叠线以下（实测服务按钮 rect.y > 900）。
+   */
+  assert(/max-w-md/.test(pd), '港口缩略图限宽 max-w-md（448×252 够认路，再大就是喧宾夺主）')
   assert(!/bodyClassName=/.test(pd), '港口面板不自己写正文高度（交给容器填满）')
   assert(!/mb-2 h-24 overflow-hidden/.test(pd), '旧的 h-24 已经撤掉')
 }
