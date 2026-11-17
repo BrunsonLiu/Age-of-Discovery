@@ -1311,6 +1311,19 @@ console.log('== 17f. 航海志：记录类面板只有一个来源 ==')
   assert(/stats\.bestDeal/.test(lb), '成就页保留生涯统计（最大单笔等六项）')
   assert(/groupJournal\(/.test(lb), '日志页按天分组（不是把条目摊成一长条）')
   assert(/historicalNote/.test(lb), '日志页保留历史注脚')
+
+  /*
+   * 【手机上的册子页签：五等分，不横滚】
+   * 原来是"横排 + overflow-x-auto"。实测总宽 577 / 视口 390：
+   * 「成就 0/17」被切一半、「船长」rect.x=487 整个在屏幕外，
+   * 而横滚没有任何视觉提示 —— 手机上玩家不知道还有第五页。
+   * 入口看不见就等于没有（底部标签栏当初就是同样的理由改成两行）。
+   */
+  // 剥注释：那段注释正在解释"原来是 overflow-x-auto"，直接 indexOf 会命中说明文字
+  const navBlock = stripComments(lb.slice(lb.indexOf('aria-label="航海志页签"') - 700, lb.indexOf('aria-label="航海志页签"')))
+  assert(/grid grid-cols-5/.test(navBlock), '手机端页签五等分（grid-cols-5）')
+  assert(/md:flex md:flex-col/.test(navBlock), '桌面端仍是竖排列表')
+  assert(!/overflow-x-auto/.test(navBlock), '页签栏不再横向滚动（滚出去的那两页等于不存在）')
   /*
    * 【三层滚动区的同一条坑，踩过三次】
    * `ScrollFade` 的 DOM 是「定位容器 > 滚动区 > 渐隐」。给内层写 `h-full`、

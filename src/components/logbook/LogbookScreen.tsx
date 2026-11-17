@@ -112,11 +112,21 @@ export default function LogbookScreen() {
 
       {/* ── 主体：左标签 + 右内容 ─────────────────────────────── */}
       <div className="relative flex-1 min-h-0 flex flex-col md:flex-row">
-        {/* 标签列：桌面竖排，移动端横排可横滚 */}
+        {/*
+         * 标签列：桌面竖排（w-56），移动端**等分五列**。
+         *
+         * 原来移动端是"横排 + overflow-x-auto"，实测总宽 **577px / 视口 390**：
+         * 「成就 0/17」被切掉一半，「船长」整个在屏幕外（rect.x=487）。
+         * 而横滚没有任何视觉提示 —— 手机上玩家根本不知道还有第五页。
+         * 入口看不见就等于没有（底部标签栏当初就是因为同样的理由改成两行）。
+         *
+         * 等分五列 = 每列 ~74px，放得下「图标 + 两个字」；计数与英文在
+         * 手机上收起（点进去就看得到，而且竖排没地方放）。
+         */}
         <nav
-          className="shrink-0 flex md:flex-col gap-1 px-3 md:px-4 py-2 md:py-4
-            overflow-x-auto md:overflow-visible border-b md:border-b-0 md:border-r border-gold-700/25
-            md:w-56 scrollbar-none"
+          className="shrink-0 grid grid-cols-5 gap-0.5 px-2 py-2
+            md:flex md:flex-col md:gap-1 md:px-4 md:py-4 md:w-56
+            border-b md:border-b-0 md:border-r border-gold-700/25"
           aria-label="航海志页签"
           role="tablist"
         >
@@ -129,23 +139,27 @@ export default function LogbookScreen() {
                 data-testid={`logbook-tab-${t.key}`}
                 role="tab"
                 aria-selected={on}
-                className={`group shrink-0 md:w-full flex items-center gap-2.5 px-3 py-2.5 rounded-sm text-left transition-colors
+                className={`group flex flex-col md:flex-row items-center md:items-start gap-1 md:gap-2.5
+                  px-1 md:px-3 py-1.5 md:py-2.5 rounded-sm text-center md:text-left transition-colors
+                  md:w-full
                   ${on
-                    ? 'bg-gold-700/20 text-gold-200 shadow-[inset_2px_0_0_0_rgba(212,168,56,0.9)]'
+                    ? 'bg-gold-700/20 text-gold-200 md:shadow-[inset_2px_0_0_0_rgba(212,168,56,0.9)]'
                     : 'text-gold-600 hover:text-gold-400 hover:bg-gold-700/10'}`}
               >
-                <span className="shrink-0 self-start mt-0.5">{t.icon}</span>
+                <span className="shrink-0 md:self-start md:mt-0.5">{t.icon}</span>
                 {/*
                   两行：第一行中文 + 计数，第二行英文。
                   原来三者挤在一行，208px 宽的导航里「COMMISSIONS」与「12 在办」
                   互相压字（实测截图上 "COMMIS2 在办 SIONS"）——
                   页签是这本册子的目录，读不清就不像目录了。
                 */}
-                <span className="flex-1 min-w-0 leading-tight">
-                  <span className="flex items-baseline gap-2 min-w-0">
-                    <span className="font-serif text-sm whitespace-nowrap">{t.label}</span>
+                <span className="min-w-0 leading-tight md:flex-1">
+                  <span className="flex items-baseline justify-center md:justify-start gap-2 min-w-0">
+                    <span className="font-serif text-xs md:text-sm whitespace-nowrap">{t.label}</span>
+                    {/* 计数只在桌面上显示：手机五等分每列 ~74px，塞不下「0 在办 / 1/21」，
+                        而且点进去第一行就是它 */}
                     {counts[t.key] && (
-                      <span className={`ml-auto shrink-0 text-xs font-mono tabular-nums ${on ? 'text-gold-400' : 'text-gold-600'}`}>
+                      <span className={`hidden md:inline ml-auto shrink-0 text-xs font-mono tabular-nums ${on ? 'text-gold-400' : 'text-gold-600'}`}>
                         {counts[t.key]}
                       </span>
                     )}

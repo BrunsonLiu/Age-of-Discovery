@@ -264,15 +264,32 @@ await sleep(700)
     const r = nav?.getBoundingClientRect()
     return {
       count: tabs.length,
-      horizontal: nav ? getComputedStyle(nav).flexDirection === 'row' : false,
+      // 2026-11-17 起移动端是 grid-cols-5 等分（不再是 flex + 横滚）
+      grid: nav ? getComputedStyle(nav).display === 'grid' : false,
+      cols: nav ? getComputedStyle(nav).gridTemplateColumns.split(' ').length : 0,
       width: r ? Math.round(r.width) : 0,
       overflow: nav ? nav.scrollWidth > nav.clientWidth + 1 : false,
+      // 每个页签的右边界都必须在视口内
+      rects: tabs.map(t => {
+        const b = t.getBoundingClientRect()
+        return { label: (t.textContent || '').trim().slice(0, 4), right: Math.round(b.right), w: Math.round(b.width) }
+      }),
     }
   })
   check(nav.count === 5, '移动端五个页签都在')
-  check(nav.horizontal, '页签横排（竖排会把正文挤没）')
+  check(nav.grid && nav.cols === 5, `五等分（display=${nav.grid ? 'grid' : '?'} / ${nav.cols} 列）`)
   check(nav.width >= 380, `页签栏铺满屏宽（${nav.width}px）`)
-  check(nav.overflow, '放不下时可横滚（scrollWidth > clientWidth）')
+  /*
+   * 【这条断言在 2026-11-17 反过来了】
+   * 原来守的是"放不下时可横滚"。实测横滚的代价是：
+   * 五个页签总宽 577 > 视口 390，「成就 0/17」被切一半、「船长」rect.x=487
+   * 整个在屏幕外，而横滚没有任何视觉提示 —— 手机上玩家不知道还有第五页。
+   * 改成五等分之后要守的是**不溢出**：每个页签的右边界都在视口内。
+   */
+  check(!nav.overflow, `不横向溢出（scrollWidth=clientWidth）`)
+  const outside = nav.rects.filter(r => r.right > 390 + 1)
+  check(outside.length === 0,
+    `五个页签全部在视口内（越界：${outside.map(o => o.label).join(',') || '无'}）`)
 }
 {
   const body = await m.evaluate(() => {
