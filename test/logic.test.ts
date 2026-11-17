@@ -9134,6 +9134,46 @@ console.log('\n== 天数口径守卫 ==')
     '掮客浮条的共用按钮样式（btnClass）也带 pointer-events-auto')
 }
 
+/*
+ * 【行情速报是"赚钱机会"，不是警告】
+ *
+ * 它原来挂在 `type: 'warning'` 上：红框 + 三角警告图标 + 标题前一个 📜。
+ * 三条信息全在说"出事了"，而实际内容是"某港高价收购香料，运来最划算"。
+ * 现在走 `market`（金铜色 + Coins 图标），标题里的 emoji 也删了 ——
+ * 通知左边本来就有 18px 的线性图标，再挂一个彩色 emoji 是两套图标并排。
+ */
+{
+  const store = readFileSync(join(process.cwd(), 'src', 'store', 'useGameStore.ts'), 'utf8')
+  const toast = readFileSync(join(process.cwd(), 'src', 'components', 'ui', 'NotificationToast.tsx'), 'utf8')
+
+  // 生成处：类型与标题
+  const m = store.match(/title: '行情速报'/)
+  assert(!!m, '行情速报的标题还是「行情速报」')
+  assert(/type: 'market' as const,/.test(store), '行情速报用 market 类型（不是 warning）')
+  // 注释里会提到"原来挂的是 📜"，所以先剥注释再取上下文
+  const storeBare = stripComments(store)
+  const titleArea = storeBare.slice(storeBare.indexOf("title: '行情速报'") - 200, storeBare.indexOf("title: '行情速报'"))
+  assert(!/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u.test(titleArea),
+    '行情速报的标题里没有 emoji（左侧已有 Coins 图标）')
+
+  // 渲染处：四张表都要有 market，且不许用红色
+  for (const table of ['iconMap', 'colorMap', 'iconColorMap']) {
+    const seg = toast.slice(toast.indexOf(`const ${table}`), toast.indexOf('}', toast.indexOf(`const ${table}`)))
+    assert(/market:/.test(seg), `${table} 里有 market 一档`)
+  }
+  const colorSeg = toast.slice(toast.indexOf('const colorMap'), toast.indexOf('}', toast.indexOf('const colorMap')))
+  assert(!/market: '[^']*red/.test(colorSeg), 'market 不用红色边框（它不是警告）')
+  assert(/market: Coins/.test(toast), 'market 用 Coins 图标（钱，不是三角警告）')
+
+  // 类型联合里必须有 market，否则 store 与 toast 会各说各话
+  const types = readFileSync(join(process.cwd(), 'src', 'types', 'index.ts'), 'utf8')
+  const kindLine = types.match(/export type NotificationKind = ([^\n]+)/)
+  assert(kindLine && /'market'/.test(kindLine[1]),
+    `NotificationKind 含 market（实际 ${kindLine?.[1]?.trim() ?? '未定义'}）`)
+  assert(/Record<NotificationKind,/.test(toast),
+    '三张表都用 Record<NotificationKind, …>（以后加类型时漏填会编译报错，而不是静默无样式）')
+}
+
 
 // ---------------- 航季与季风（季节必须改变航行，而不只是换个颜色） ----------------
 //

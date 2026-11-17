@@ -115,6 +115,15 @@ export interface PortGood {
   priceModifier: number
 }
 
+/**
+ * 右上角通知的四类语义。
+ *
+ * `market` 是 2026-11-16 加的：行情速报（"某港高价收购某商品"）原来挂在
+ * `warning` 上，玩家看到的是红框 + 三角警告图标 —— 一条纯赚钱机会被渲染成
+ * 出事了的样子。坏消息才用 warning。
+ */
+export type NotificationKind = 'discovery' | 'history' | 'achievement' | 'market' | 'warning'
+
 /** 玩家视角的港口行情速报：某港正高价收购某商品 */
 export interface MarketTip {
   portId: number

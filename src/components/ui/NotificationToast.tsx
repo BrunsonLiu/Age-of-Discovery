@@ -1,32 +1,38 @@
 import { useGameStore } from '@/store/useGameStore'
-import { Compass, Scroll, Trophy, AlertTriangle, X } from 'lucide-react'
+import { Compass, Scroll, Trophy, AlertTriangle, Coins, X } from 'lucide-react'
+import type { NotificationKind } from '@/types'
 import { useEffect, useRef, useState } from 'react'
 import { useIsMobile } from '@/hooks/useIsMobile'
 
-const iconMap = {
+/** 四类语义各一个线性图标：发现 / 史事 / 成就 / 赚钱机会（warning 留给真坏消息） */
+const iconMap: Record<NotificationKind, typeof Compass> = {
   discovery: Compass,
   history: Scroll,
   achievement: Trophy,
+  market: Coins,
   warning: AlertTriangle,
 }
 
-const colorMap = {
+const colorMap: Record<NotificationKind, string> = {
   discovery: 'border-blue-400/60 bg-slate-900/95',
   history: 'border-gold-400/60 bg-slate-900/95',
   achievement: 'border-amber-400/60 bg-slate-900/95',
+  // 行情用金铜色（钱），不用红色 —— 它不是警告
+  market: 'border-gold-500/70 bg-slate-900/95',
   warning: 'border-red-400/60 bg-slate-900/95',
 }
 
-const iconColorMap = {
+const iconColorMap: Record<NotificationKind, string> = {
   discovery: 'text-blue-400',
   history: 'text-gold-400',
   achievement: 'text-amber-400',
+  market: 'text-gold-300',
   warning: 'text-red-400',
 }
 
 interface VisibleNotification {
   id: string
-  type: 'discovery' | 'history' | 'achievement' | 'warning'
+  type: NotificationKind
   title: string
   message: string
   timestamp: number
@@ -114,7 +120,9 @@ export default function NotificationToast() {
       className={`absolute flex flex-col gap-2 pointer-events-none ${
         isMobile
           ? 'top-11 left-2 right-2 max-w-none'
-          : 'top-14 right-4 max-w-[320px]'
+          /* 固定 320 宽，不是 max-w：两条通知同时在场时，`max-w` 会让短标题那条
+             缩成一小块，看起来像没对齐（实测"行情速报"比"发现新港口"窄一截）。 */
+          : 'top-14 right-4 w-[320px]'
       }`}
       style={{
         transform: shifted ? 'translateX(calc(-100% - 1rem))' : 'translateX(0)',

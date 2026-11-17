@@ -4,7 +4,7 @@ import type {
   Fleet, Ship, GameState, GameEvent, EventOutcome, EventLogEntry,
   Route, PanelType, CargoItem, Waypoint, GameStats, RouteIntel, OfficerId, Rival, RivalNews,
   FactionId, CrewCharId, CrewMember, NotorietyAxis, StanceId, GameMode,
-  VictoryClaim, NationId,
+  VictoryClaim, NationId, NotificationKind,
 } from '@/types'
 import { ports, portGoods, localDemands } from '@/data/ports'
 import { events } from '@/data/events'
@@ -309,7 +309,7 @@ interface GameStore extends GameState {
   activePanel: PanelType
   tutorialStep: number
   showHelp: boolean
-  notifications: Array<{ id: string; type: 'discovery' | 'history' | 'achievement' | 'warning'; title: string; message: string; timestamp: number }>
+  notifications: Array<{ id: string; type: NotificationKind; title: string; message: string; timestamp: number }>
   seenHistoricalEvents: number[]
   simSpeed: number
   shipPosition: [number, number] | null
@@ -2391,8 +2391,15 @@ export const useGameStore = create<GameStore>()(
         const marketNotif = (!hasSeenTip && demands.length > 0)
           ? [{
               id: `market-${portId}-${Date.now()}`,
-              type: 'warning' as const,
-              title: '📜 行情速报',
+              /*
+               * 用 'market' 而不是 'warning'：这是**赚钱机会**，不是警告。
+               * 之前挂在 warning 上，玩家看到的是红框 + 三角警告图标 +
+               * 一个 📜 —— 三条信息都在说"出事了"，而实际内容是"某港高价收货"。
+               * 标题里的 📜 也删掉：通知左边本来就有 18px 图标（一套 lucide），
+               * 再挂一个彩色 emoji 是两套图标并排。
+               */
+              type: 'market' as const,
+              title: '行情速报',
               message: `${port.nameCn}正高价收购：${demands.slice(0, 2).map(id => goods.find(g => g.id === id)?.nameCn ?? '').filter(Boolean).join('、')}——运来此处出手最划算。`,
               timestamp: Date.now(),
             }]
