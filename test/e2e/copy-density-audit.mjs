@@ -146,8 +146,14 @@ for (const t of heads) {
   readBack += delta
 }
 check(emptySections === 0, `每节点开都有正文（空白节 ${emptySections} 个）`)
-check(readBack >= 2500 && readBack <= 2700,
-  `逐节点开共读回 ${readBack} 字，与改前正文约 2593 字相当（信息没被删）`)
+/*
+ * 下界守"信息没被删"，上界守"别又堆回长文"。
+ * 2026-11-17 更正了四条过期描述（侧栏构成 / 册子五页 / 操舵挑战 / 上岸入口），
+ * 正文从 2593 → 2770：那四条是新手照着玩会走错路的错话，加字是对的。
+ * 上界放到 2900，再高就得问是不是又把说明摊开了。
+ */
+check(readBack >= 2500 && readBack <= 2900,
+  `逐节点开共读回 ${readBack} 字（下界 2500 守"没删信息"，上界 2900 守"没堆回长文"）`)
 const openBodies = await page.$$eval('[data-testid="help-section-body"]', els => els.length)
 check(openBodies === 1, `一次只展开一节（当前 ${openBodies} 节）`)
 check((await bodyText()).includes('把这本日志带走'), '存档区仍在面板固定位置，折叠没把它挤掉')
@@ -292,8 +298,16 @@ const mm = await mob.evaluate(() => {
     const h = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)
     return !!(h && (h === el || el.contains(h)))
   }
+  const drawer = panel.closest('.drawer-panel')
+  const dr = drawer?.getBoundingClientRect()
   return {
     panelBottom: Math.round(panel.getBoundingClientRect().bottom),
+    // 抽屉自身（固定 82dvh 的那块）才是"必须在屏内"的东西；
+    // help-panel 是抽屉**内容**，比抽屉高是正常的（它要在抽屉里滚）。
+    drawerBox: dr ? { top: Math.round(dr.top), bottom: Math.round(dr.bottom) } : null,
+    drawerScrollTop: drawer?.scrollTop ?? 0,
+    drawerScrollH: drawer?.scrollHeight ?? 0,
+    drawerClientH: drawer?.clientHeight ?? 0,
     vh: innerHeight,
     scrollers: panel.querySelectorAll('.scroll-parchment').length,
     heads: document.querySelectorAll('[data-testid^="help-section-"]').length,
@@ -304,10 +318,45 @@ const mm = await mob.evaluate(() => {
   }
 })
 check(mm.error == null, '移动端帮助抽屉确实渲染了（不是空页面假绿）')
-check(mm.panelBottom <= mm.vh, `抽屉完整在屏内（底边 ${mm.panelBottom} ≤ ${mm.vh}）`)
+/*
+ * 【口径更正】原句是「抽屉完整在屏内（panelBottom ≤ vh）」。
+ * 但 help-panel 是抽屉**内容**（高 1049），抽屉是固定 `max-h-[82dvh]`（692）
+ * 且自己 `overflow-y:auto` —— 内容比抽屉高是设计，不是缺陷。
+ * 该守的是：① 抽屉自身在屏内；② 抽屉真的能滚。
+ * 「导出按钮在屏内」那条同理（见下）。
+ */
+check(!!mm.drawerBox && mm.drawerBox.bottom <= mm.vh + 1,
+  `抽屉自身在屏内（底边 ${mm.drawerBox?.bottom} ≤ ${mm.vh}）`)
+check(mm.drawerScrollH > mm.drawerClientH,
+  `抽屉内容可滚（${mm.drawerScrollH} > ${mm.drawerClientH}）`)
 check(mm.scrollers === 1 && mm.heads === 19, `移动端同样单层滚动、19 节目录齐全（${mm.scrollers} 层 / ${mm.heads} 节）`)
-check(mm.exportOnScreen && mm.importOnScreen && mm.exportHit && mm.importHit,
-  '移动端导出/导入按钮都在屏内且真能命中')
+/*
+ * 导出/导入在**内容末尾**，不滚到底永远量到 y>vh（实测 1080）。
+ * 判据改成：把抽屉滚到底，两个按钮都要进视口且中心点命中自己。
+ */
+const mmScrolled = await mob.evaluate(() => {
+  const panel = document.querySelector('[data-testid="help-panel"]')
+  const drawer = panel.closest('.drawer-panel')
+  if (drawer) drawer.scrollTop = drawer.scrollHeight
+  return new Promise(res => setTimeout(() => {
+    const ok = id => {
+      const el = document.querySelector(`[data-testid="${id}"]`)
+      if (!el) return { inView: false, hit: false }
+      const r = el.getBoundingClientRect()
+      const h = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)
+      return {
+        inView: r.top >= 0 && r.bottom <= innerHeight,
+        hit: !!(h && (h === el || el.contains(h))),
+        y: Math.round(r.top),
+      }
+    }
+    res({ export: ok('save-export'), import: ok('save-import') })
+  }, 400))
+})
+check(mmScrolled.export.inView && mmScrolled.export.hit,
+  `滚到底后「导出」在视口内且真能命中（y=${mmScrolled.export.y}）`)
+check(mmScrolled.import.inView && mmScrolled.import.hit,
+  `滚到底后「导入」在视口内且真能命中（y=${mmScrolled.import.y}）`)
 check(mm.bodyScrollW <= 390, `移动端无横向溢出（scrollWidth ${mm.bodyScrollW} ≤ 390）`)
 await mob.close()
 

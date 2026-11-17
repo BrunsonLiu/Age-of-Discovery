@@ -309,7 +309,18 @@ export default function HelpPanel() {
   }
 
   return (
-    <div className="w-full md:w-80 animate-slide-in-right" data-testid="help-panel">
+    /*
+     * 这里的 `h-full` 不是装饰。
+     *
+     * ParchmentCard 的外层是 `flex flex-col max-h-full`、正文 `flex-1 min-h-0` ——
+     * `max-h-full` 的百分比要成立，**父级必须有确定高度**。桌面容器是
+     * `absolute top-12 bottom-12`（804），四块面板都补了 `h-full`，唯独帮助面板漏了：
+     * 实测面板高 1049 / 视口 900，「导出存档 / 导入存档」落在 y=959 且
+     * **全组件没有一层滚动区**（scrollers 为空）—— 存档按钮在桌面上点不到。
+     * 手机端不受影响：那里挂在底部抽屉里（抽屉自己滚，父级高度是内容决定，
+     * `h-full` 解析失败退回 auto）。
+     */
+    <div className="w-full md:w-80 h-full animate-slide-in-right" data-testid="help-panel">
       <ParchmentCard
         title="航海指南"
         onClose={() => setShowHelp(false)}

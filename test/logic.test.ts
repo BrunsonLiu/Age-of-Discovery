@@ -8230,8 +8230,16 @@ console.log('\n== 天数口径守卫 ==')
   assert(audit.includes('elementFromPoint'), '存档按钮做的是真实命中测试，不读 innerText 自证')
   assert(audit.includes('layout.scrollers === 1'), '巡检守「只有一层滚动区」')
   assert(audit.includes('reveal.visibleBody >= 90'), '巡检守「展开后正文真的看得见」')
-  assert(audit.includes('width: 390, height: 844') && audit.includes('mm.exportHit'),
-    '巡检覆盖移动端抽屉：页脚在屏内且导出/导入真能命中')
+  /*
+   * 移动端那三条断言在 2026-11-17 换了口径：
+   * 帮助面板是抽屉**内容**（高 1049），抽屉固定 82dvh 自己滚 ——
+   * 原来要求"面板整体在屏内"是把设计当成缺陷。
+   * 现在是：抽屉自身在屏内 + 抽屉可滚 + **滚到底**后导出/导入都真能命中。
+   */
+  assert(audit.includes('width: 390, height: 844'), '巡检覆盖移动端抽屉')
+  assert(audit.includes('mm.drawerScrollH > mm.drawerClientH'), '巡检守「抽屉内容可滚」')
+  assert(audit.includes("ok('save-export')") && audit.includes("ok('save-import')"),
+    '导出/导入都在滚到底之后做真实命中测试（不滚永远量到 y>vh）')
 }
 
 // ---------------- 历史时间轴刻线：不许画到屏幕外 ----------------

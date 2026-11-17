@@ -98,9 +98,13 @@ check(after.pages.length === 1 && after.pages[0].kind === 'tribute',
 check(/交勘合 · 第 1 次/.test(after.pages[0]?.title ?? ''), `页题带次数（${after.pages[0]?.title}）`)
 check(after.pages[0]?.portId === 21, '这一页挂广州（朝贡真的发生在市舶司，配得上那张画）')
 
-await page.evaluate(() => window.__gameStore.getState().setActivePanel('event'))
-check(await until("document.querySelectorAll('[role=tab]').length === 3"), '日志面板打开')
-await page.evaluate(() => [...document.querySelectorAll('[role=tab]')].find(t => t.textContent.includes('见闻'))?.click())
+/*
+ * 【2026-11-17 口径更正】日志早就不在侧板上了：
+ * 原来是 `activePanel='event'` + 三个 role=tab（见闻/图鉴/记事）；
+ * 现在整屏「航海志」五页，日志页本身是"左见闻 + 右记事"两栏，没有单独的「见闻」tab。
+ */
+await page.evaluate(() => window.__mapStore.getState().openLogbook('journal'))
+check(await until("document.querySelectorAll('[role=tab]').length === 5"), '航海志打开（五页）')
 check(await until('document.querySelector(\'[data-testid="tribute-entry"]\')'), '「见闻」里能看到这一页')
 {
   const dom = await page.evaluate(() => {

@@ -14,7 +14,7 @@ import { mkdirSync } from 'node:fs'
 const EDGE = 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'
 // AOD_BASE 可指向 preview（5180）或别的端口：改 tailwind.config 之类的东西要重启 dev 才生效，
 // 这时直接拿 build 产物验更省事。
-const BASE = process.env.AOD_BASE || 'http://localhost:5174/Age-of-Discovery/'
+const BASE = (process.env.GAME_URL || process.env.AOD_BASE) ?? 'http://localhost:5174/Age-of-Discovery/'
 const SHOTS = '.workbuddy/shots'
 mkdirSync(SHOTS, { recursive: true })
 

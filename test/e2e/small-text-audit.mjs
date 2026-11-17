@@ -120,13 +120,15 @@ await grab('常态主界面', '点击地图出航')
 /*
  * 任务 / 日志 / 成就 / 同代船长已经搬进「航海志」整屏（浮层，不是侧板）。
  * setState 直接改 activePanel 会绕过 store 里的路由，所以这四个走 openLogbook。
- * 特征是**页内独有**的文案（冒险进度 / 记事 / 最大单笔 / 你的座次），
+ * 特征是**页内独有**的文案（冒险进度 / 记事 / 最大单笔 / 同代船长座次），
  * 侧栏按钮上不会出现，避免"面板没开也判绿"。
  */
 const RECORD_TAB = { task: 'task', event: 'journal', achievement: 'achievement', rival: 'rival' }
 for (const [p, marker] of [
   ['fleet', '总货舱'], ['task', '冒险进度'], ['event', '记事'], ['achievement', '最大单笔'],
-  ['rival', '你的座次'], ['port', '甲板盛宴'], ['trade', '商品交易'], ['shipyard', '造船厂才有售'],
+  // 「你的座次」是旧版船长页的标题。2026-11-16 改成座次表后，页内独有的是
+  // 表头那句「按金币排 · 三项各自算名次，同分并列」（标题只叫「座次」，太短不独特）
+  ['rival', '按金币排'], ['port', '甲板盛宴'], ['trade', '商品交易'], ['shipyard', '造船厂才有售'],
 ]) {
   await page.evaluate(({ v, tab }) => {
     if (tab) window.__mapStore.getState().openLogbook(tab)

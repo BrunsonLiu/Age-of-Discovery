@@ -93,7 +93,18 @@ check(toggled.hitsSelf, `切换按钮真的能被点到（未被遮挡）——�
 
 // 等 canvas 出现
 await page.waitForSelector('canvas', { timeout: 30000 })
-await sleep(3500)
+/*
+ * 【别赌固定 sleep，要轮询真条件】
+ * 3D 视角首次要编译 98 个着色器程序（真实核显实测 1.3~2 秒，慢机器更久），
+ * 而提示是 `phase === 'ready'` 才渲染的。原来固定等 3500ms：
+ * 机器快时够、慢时不够 —— 于是"操作提示不存在"会**偶发红**（全量跑那次就红了三条）。
+ * 改成等"提示真的挂上 DOM"，超时 25 秒。
+ */
+await page.waitForFunction(
+  () => [...document.querySelectorAll('div')].some(d => /转视角/.test(d.textContent || '') && d.children.length === 0),
+  { timeout: 25000 },
+).catch(() => { /* 真的没有就让它红在下一条断言上，别在这里抛 */ })
+await sleep(300)
 
 // ------------------------------------------------------------------
 // 3D 操作提示：必须看得见。
