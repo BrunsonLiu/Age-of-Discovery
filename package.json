@@ -11,6 +11,7 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "check": "tsc -b --noEmit",
+    "sim:economy": "esbuild scripts/sim_economy.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/sim-economy.mjs --log-level=warning && node node_modules/.cache/sim-economy.mjs",
     "probe:economy": "esbuild scripts/probe_economy.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/probe-economy.mjs --log-level=warning && node node_modules/.cache/probe-economy.mjs",
     "test": "esbuild test/logic.test.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/logic.test.mjs --log-level=warning && node node_modules/.cache/logic.test.mjs",
     "test:e2e": "node test/e2e/voyage-smoke.mjs",
