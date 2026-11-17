@@ -496,8 +496,22 @@ export default function HelmModal() {
             </div>
 
             <div className="flex items-center justify-between text-xs font-serif text-gold-600">
-              <span>A/D 转向 · W/S 帆缆</span>
-              <span>Enter 收舵</span>
+              {/*
+               * 触屏上不显示键盘提示：下面就是 ◀▲▶▼ 四个虚拟键 + 收舵按钮，
+               * 再写一行「A/D 转向 · W/S 帆缆 · Enter 收舵」是**指路指到不存在的东西** ——
+               * 手机玩家会低头在屏幕上找 A/D 键。
+               */}
+              {isTouch ? (
+                <>
+                  <span>按住 ◀ ▶ 转舵 · ▲ ▼ 收放帆</span>
+                  <span>点下方按钮收舵</span>
+                </>
+              ) : (
+                <>
+                  <span>A/D 转向 · W/S 帆缆</span>
+                  <span>Enter 收舵</span>
+                </>
+              )}
             </div>
             {hint && <p className="text-danger-400 text-xs font-serif text-center">{hint}</p>}
 
@@ -520,7 +534,7 @@ export default function HelmModal() {
                   className="w-full flex items-center justify-center gap-1.5 py-2 text-xs font-serif text-gold-300 border border-gold-700/30 rounded-lg press transition-all"
                 >
                   <Sailboat size={12} aria-hidden="true" />
-                  收舵（Enter）
+                  收舵
                 </button>
               </div>
             )}

@@ -1130,6 +1130,37 @@ assert(/十二档势力特权现在都有实现/.test(helpSrc),
   '帮助里说清"面板上出现的就是能用的"')
 
 /*
+ * 【触屏虚拟键：按住语义不能靠 onPointerLeave 收尾】
+ *
+ * 操舵是"按住转舵"，而玩家拇指按住时几乎必然有一两像素的滑动。
+ * 原来用 `onPointerLeave` 松手 —— 一滑出按钮边缘转舵就断（而且没有报错，
+ * 玩家只会觉得"这游戏手感很差"）。正确做法是 pointerdown 时捕获指针。
+ *
+ * 另一条更隐蔽：`setPointerCapture` 在没有活动指针时抛 NotFoundError
+ * （合成事件 / 指针已释放 / 部分浏览器）。它必须写在 `press()` **之后**，
+ * 否则异常会把按键一起吃掉 —— 按钮看着在，按下去全哑。
+ * 实测就是这样红的：e2e dispatch 合成 pointerdown 直接报
+ * "No active pointer with the given id is found"，四个键全部失效。
+ */
+{
+  const pad = readFileSync(join(process.cwd(), 'src', 'components', 'ui', 'TouchKeyPad.tsx'), 'utf8')
+  assert(/onPointerDown=/.test(pad), '虚拟键有 pointerdown 处理')
+  assert(!/onPointerLeave=\{/.test(pad),
+    '不许用 onPointerLeave 松手（按住转舵一滑就断）')
+  assert(/setPointerCapture/.test(pad), '用指针捕获把"按住"绑在按下它的那根手指上')
+
+  // 注释里也提到了 setPointerCapture（讲为什么要捕获），所以先剥注释再判顺序
+  const downBlock = stripComments(pad.slice(pad.indexOf('onPointerDown='), pad.indexOf('onPointerUp=')))
+  const iPress = downBlock.indexOf('press(k.key, true)')
+  const iCap = downBlock.indexOf('setPointerCapture')
+  assert(iPress > 0 && iCap > 0, '按下处理里既有 press 也有 setPointerCapture')
+  assert(iPress < iCap,
+    'press 必须在 setPointerCapture **之前**（capture 抛异常时按键还要生效）')
+  assert(/try\s*\{[\s\S]{0,200}setPointerCapture[\s\S]{0,200}catch/.test(downBlock),
+    'setPointerCapture 包在 try/catch 里（没有活动指针时它抛 NotFoundError）')
+}
+
+/*
  * 【翻船屏：终局那一屏的五条硬约束】
  *
  * 这一屏是条件渲染的一块，不在任何面板里，所以 panel-clickable / contrast-audit

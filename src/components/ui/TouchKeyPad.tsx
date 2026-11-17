@@ -61,14 +61,37 @@ export default function TouchKeyPad({ keys, layout = 'row', className = '' }: To
           aria-label={k.label}
           onPointerDown={(e) => {
             e.preventDefault()
+            /*
+             * 捕获指针：这一根手指从此归这个按钮，直到抬起。
+             *
+             * 原来没有捕获、而是靠 `onPointerLeave` 松手 —— 对"按住转舵"是致命的：
+             * 手指稍微滑出按钮边缘就触发 leave（转舵直接断），
+             * 而玩家拇指按住时几乎必然会有一两像素的滑动。
+             * 捕获之后，滑到哪里都还算按着它，抬起才松。
+             */
+            /*
+             * 先派发按下，再捕获指针 —— 顺序不能反。
+             *
+             * `setPointerCapture` 在没有活动指针时会抛 NotFoundError
+             * （合成事件、指针已被释放、部分浏览器的边界情况）。它抛异常时，
+             * 后面那句 `press()` 就**不会执行** —— 按钮看起来在、按下去没反应。
+             * 实测：e2e 里 dispatch 合成 pointerdown 直接报
+             * "No active pointer with the given id is found"，按键全哑。
+             */
             press(k.key, true)
+            try {
+              e.currentTarget.setPointerCapture?.(e.pointerId)
+            } catch {
+              /* 拿不到捕获只是"滑出边缘会松手"，不该让整个按键失效 */
+            }
           }}
           onPointerUp={(e) => {
             e.preventDefault()
             press(k.key, false)
           }}
           onPointerCancel={() => press(k.key, false)}
-          onPointerLeave={() => press(k.key, false)}
+          /* 不再监听 onPointerLeave：有了指针捕获它不会触发，
+             而没捕获时它会把"按住"变成"一滑就断"。 */
           onContextMenu={(e) => e.preventDefault()}
           className={`${grid ? 'py-3' : 'px-3 py-2'} rounded-lg border font-serif transition-all
             active:scale-95 active:bg-gold-700/50 ${
