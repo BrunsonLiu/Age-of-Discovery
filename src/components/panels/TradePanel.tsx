@@ -387,17 +387,20 @@ export default function TradePanel() {
               className="flex-1 min-w-0 rounded-sm border border-gold-600/35 bg-gold-700/10 px-3 py-1.5"
               data-testid="trade-recommend"
             >
-              <p className="text-gold-300 text-[13px] font-serif flex items-start gap-1 leading-snug">
-                <HandCoins size={12} className="mt-0.5 shrink-0" />
+              {/*
+                一行说完。原来是两行（建议 + 价差），在 1440 下这块比左边的
+                页签高 10px，两者顶对齐时底部差一条边 —— 一排放两个控件，
+                高度不一致就永远是"两个按钮没对齐"。
+                价差不能删（它决定玩家在哪个港买），并到句尾用 · 断开。
+              */}
+              <p className="text-gold-300 text-[13px] font-serif flex items-center gap-1 leading-none">
+                <HandCoins size={12} className="shrink-0" />
                 <span className="min-w-0">
                   掮客说：买 <span className="text-gold-100">{deal.goodName}</span> {deal.qty} 件，运到{' '}
                   <span className="text-gold-100">{deal.toPortName}</span> 卖
+                  <span className="text-gold-500 mx-1.5">·</span>
+                  <span className="text-gold-500 tabular-nums">本港 {deal.buy} / 那边 {deal.sell}</span>
                 </span>
-              </p>
-              {/* 不再 truncate：390 宽下「运到 加的斯」会被截成「运到 加…」，
-                  而目的地正是这一句话里最不能省的字。宁可折两行。 */}
-              <p className="text-gold-500 text-[12px] font-serif pl-4 tabular-nums">
-                本港 {deal.buy} 金，那边 {deal.sell} 金
               </p>
             </div>
           )}
