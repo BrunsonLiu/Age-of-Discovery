@@ -191,6 +191,23 @@ export default function LogbookScreen() {
           </ScrollFade>
         </div>
       </div>
+
+      {/*
+        脚注条：与另外六块整屏面板（FullScreenPanel）同一位置、同一高度。
+        册子原来到这里就直接结束了，屏幕最下方是一条空底 —— 因为它的内容
+        本来就不满（新开一局时「日志」只有一句「还没写下第一页」）。
+        一条固定的底边让"空"读作留白，而不是"这页没渲染完"。
+      */}
+      <div className="relative shrink-0 h-9 md:h-10 flex items-center justify-between gap-3 px-6 md:px-10 border-t border-gold-700/25 bg-black/25">
+        <span className="text-[12px] font-serif text-gold-600 truncate">
+          每靠一次岸，这册子就多一页
+        </span>
+        <span className="hidden md:flex items-center gap-3 text-[12px] font-serif text-gold-600 tabular-nums shrink-0">
+          <span>1–8 换面板</span>
+          <span className="text-gold-600">·</span>
+          <span>Esc 回海图</span>
+        </span>
+      </div>
     </div>
   )
 }

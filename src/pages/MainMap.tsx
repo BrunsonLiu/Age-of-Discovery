@@ -469,44 +469,15 @@ export default function MainMap() {
     setActivePanel(activePanel === panel ? null : panel)
   }
 
-  /**
-   * 移动端底部抽屉。
-   *
-   * 结构刻意做得像手机上的模态面板：
-   *   · 遮罩 + 从底部升起的面板 + 顶部一条把手
-   *   · 点遮罩关闭（手指最容易够到的关闭方式）
-   *   · 面板自身滚动，overscroll-contain 防止滚到底后把地图一起滚走
-   *
-   * 高度用 dvh（动态视口高度）而不是 vh：手机浏览器地址栏收放时
-   * vh 不会变，抽屉会顶出屏幕或留一条缝。
+  /*
+   * 【移动端底部抽屉已经删除】
+   * 它曾经是手机上面板的统一形态（遮罩 + 从下升起 + 把手）。
+   * 2026-11-17 四块操作面板、然后帮助面板，全部改成整屏 ——
+   * 抽屉在桌面上一次也不会被用到，留着就是一段没人走的分支：
+   * 里面的 `max-h-[82dvh]`、把手条、遮罩关闭都要跟着改，
+   * 而它们已经不在任何玩家的路径上。整屏面板自己会滚、自己有「回海图」按钮，
+   * 手机上靠 Esc 不行，但关闭按钮就在顶栏右上角（44px 命中区）。
    */
-  const drawer = (content: React.ReactNode, onClose: () => void) => (
-    <div className="fixed inset-0" style={{ zIndex: Z.DRAWER }} data-testid="mobile-drawer">
-      <div
-        className="absolute inset-0 bg-black/65"
-        onClick={onClose}
-        data-testid="mobile-drawer-backdrop"
-      />
-      <div
-        className="drawer-panel absolute bottom-0 left-0 right-0 max-h-[82dvh] overflow-y-auto
-          overscroll-contain rounded-t-2xl border-t border-gold-700/40 bg-ocean-900/85
-          backdrop-blur-sm"
-        style={{ paddingBottom: 'max(10px, env(safe-area-inset-bottom))' }}
-      >
-        {/* 把手条：做成按钮，手机上"往下一划就关"是肌肉记忆，
-            但不会划的人也得有条能点的路——所以把条本身做成关闭按钮。 */}
-        <button
-          onClick={onClose}
-          aria-label="关闭面板"
-          data-testid="mobile-drawer-handle"
-          className="block w-full pt-2 pb-1 cursor-pointer"
-        >
-          <span className="block mx-auto h-1 w-10 rounded-full bg-gold-700/60" />
-        </button>
-        {content}
-      </div>
-    </div>
-  )
 
   const activeLeftPanel = activePanel && LEFT_PANELS.includes(activePanel) ? activePanel : null
   const activeRightPanel = activePanel && RIGHT_PANELS.includes(activePanel) ? activePanel : null
@@ -695,7 +666,7 @@ export default function MainMap() {
             容器只负责布局，点击交给按钮自己。（记忆里那条"浮层必须
             pointer-events-none"的同一条原则。） */}
         <div
-          className="absolute left-0 flex flex-col justify-center gap-1.5 px-1.5 pointer-events-none"
+          className="absolute left-0 flex flex-col justify-center gap-1.5 px-3 pointer-events-none"
           style={{ zIndex: Z.SIDE_BUTTONS, top: '60px', bottom: '52px' }}
         >
           {panelButtons.filter(b => b.side === 'left').map(btn => (
@@ -703,7 +674,15 @@ export default function MainMap() {
               key={btn.type}
               onClick={() => togglePanel(btn.type)}
               data-tut={btn.type}
-              className={`side-plate pointer-events-auto flex items-center gap-2 pl-2.5 pr-3 py-2.5 rounded-sm ${
+              /*
+               * 【定宽 + 居中，不许让文字撑宽】原来是 pl-2.5 pr-3 + 内容自适应：
+               * 左侧「舰队/任务/日志/成就/船长」五个两个字的按钮约 74px 宽，
+               * 右侧「上岸走走/港口/贸易/造船/帮助」里有一个四个字的约 102px ——
+               * 两组各自贴边、各自的左边界随机，整列读起来像没对齐的标签。
+               * 6.5rem(=104px) 是"上岸走走 + 图标 + 内边距"刚好放得下的宽度，
+               * 所有按钮统一到它，两侧就各自有一条整齐的内外边界。
+               */
+              className={`side-plate pointer-events-auto w-[6.5rem] justify-center flex items-center gap-2 py-2.5 rounded-sm ${
                 activePanel === btn.type ? 'side-plate--active' : ''
               }`}
               title={btn.label}
@@ -724,7 +703,7 @@ export default function MainMap() {
         </div>
 
         <div
-          className="absolute right-0 flex flex-col justify-center gap-1.5 px-1.5 pointer-events-none"
+          className="absolute right-0 flex flex-col justify-center gap-1.5 px-3 pointer-events-none"
           style={{ zIndex: Z.SIDE_BUTTONS, top: '60px', bottom: '52px' }}
         >
           {/* 空间切换不是「第九个面板」：金边更亮、带一道分隔，和下面三块
@@ -749,7 +728,7 @@ export default function MainMap() {
              * 换成一节冷色：它换的是**空间**、不是开面板，要能一眼分开，
              * 但材质（铆钉 + 顶棱受光 + 底棱背光）必须和下面四块一致。
              */
-            className={`side-plate side-plate--space pointer-events-auto flex items-center gap-2 pl-3 pr-2.5 py-2.5 rounded-sm
+            className={`side-plate side-plate--space pointer-events-auto w-[6.5rem] justify-center flex items-center gap-2 py-2.5 rounded-sm
               font-serif text-sm whitespace-nowrap leading-none press
               disabled:opacity-40 disabled:cursor-not-allowed`}
           >
@@ -764,7 +743,7 @@ export default function MainMap() {
               key={btn.type}
               onClick={() => togglePanel(btn.type)}
               data-tut={btn.type}
-              className={`side-plate pointer-events-auto flex items-center gap-2 pl-3 pr-2.5 py-2.5 rounded-sm ${
+              className={`side-plate pointer-events-auto w-[6.5rem] justify-center flex items-center gap-2 py-2.5 rounded-sm ${
                 activePanel === btn.type ? 'side-plate--active' : ''
               }`}
               title={btn.label}
@@ -780,7 +759,7 @@ export default function MainMap() {
               if (activePanel) setActivePanel(null)
               setShowHelp(!showHelp)
             }}
-            className={`side-plate pointer-events-auto flex items-center gap-2 pl-3 pr-2.5 py-2.5 rounded-sm ${
+            className={`side-plate pointer-events-auto w-[6.5rem] justify-center flex items-center gap-2 py-2.5 rounded-sm ${
               showHelp ? 'side-plate--active' : ''
             }`}
             title="帮助"
@@ -835,16 +814,14 @@ export default function MainMap() {
       </Suspense>
 
       {showHelp && (
-        isMobile ? (
-          drawer(<HelpPanel />, () => setShowHelp(false))
-        ) : (
-          <div
-            className="absolute right-[5.75rem] top-12 bottom-12 w-80"
-            style={{ zIndex: Z.PANEL }}
-          >
-            <HelpPanel />
-          </div>
-        )
+        /*
+         * 帮助也走整屏（2026-11-17）。原来桌面是 `right-[5.75rem] w-80` 的侧板、
+         * 手机是底部抽屉 —— 侧栏那一列按钮里它是最后一个还在弹窄窗的。
+         * 现在与其他五块同一种形态，`Z.PANEL_FULL` 与它们同级（互斥）。
+         */
+        <div className="absolute inset-0" style={{ zIndex: Z.PANEL_FULL }}>
+          <HelpPanel />
+        </div>
       )}
 
       {/*

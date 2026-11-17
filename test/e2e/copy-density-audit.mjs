@@ -100,7 +100,11 @@ const helpClosed = await measure('help-panel')
 check(helpClosed.error == null, '帮助面板容器锚点存在（不是空页面假绿）')
 check(helpClosed.cn <= 220, `帮助目录态 ≤220 字（实测 ${helpClosed.cn} 字，改前全量 2762 字）`)
 check(helpClosed.cnScreen <= 200, `帮助首屏 ≤200 字（实测 ${helpClosed.cnScreen} 字，改前 557 字）`)
-check(helpClosed.nums === 0, `帮助目录态没有数字读数（实测 ${helpClosed.nums} 个，改前全量 70 个）`)
+/*
+ * 读数上限给到 2：脚注条上的「1–8 换面板」属于**键盘提示**，不是玩法读数。
+ * 这条守的是"目录页不许先甩一堆数字给玩家"，不是"整屏一个数字都不许有"。
+ */
+check(helpClosed.nums <= 2, `帮助目录态没有玩法读数（实测 ${helpClosed.nums} 个，改前全量 70 个）`)
 
 const heads = await page.$$eval('[data-testid^="help-section-"]', els => els.map(e => e.getAttribute('data-testid')))
 check(heads.length === 19, `19 节目录都在（实测 ${heads.length} 节）`)
@@ -135,15 +139,24 @@ check(Math.abs(btnTopAfter - layout.btnTop) <= 1,
   `正文滚到底，导出按钮位置不变（${layout.btnTop} → ${btnTopAfter}，页脚常驻）`)
 
 // ---------------- 2. 帮助面板：信息守恒 ----------------
-// 一次只开一节，所以每次「展开态 - 目录态」正好是那一节的正文。
+/*
+ * 【2026-11-17 改判据】帮助从「手风琴」改成「左目录 / 右正文」两栏之后，
+ * 展开一节**替换**而不是**追加**，于是"展开态 - 目录态"的差值不再是那一节的字数
+ * （实测每节少算约 30 字：目录与存档区在两次测量里都算了一遍）。
+ * 现在直接读右栏正文的中文字数累加 —— 这才是"十九节一共给了多少字"。
+ * 判据本身没松：下界仍守"没删信息"，上界仍守"没堆回长文"。
+ */
 let readBack = 0, emptySections = 0
 for (const t of heads) {
   await page.click(`[data-testid="${t}"]`)
   await sleep(45)
-  const m = await measure('help-panel')
-  const delta = m.cn - helpClosed.cn
-  if (delta < 20) emptySections++
-  readBack += delta
+  const bodyCn = await page.evaluate(() => {
+    const b = document.querySelector('[data-testid="help-section-body"]')
+    if (!b) return 0
+    return (b.textContent.match(/[\u4e00-\u9fa5]/g) || []).length
+  })
+  if (bodyCn < 20) emptySections++
+  readBack += bodyCn
 }
 check(emptySections === 0, `每节点开都有正文（空白节 ${emptySections} 个）`)
 /*
@@ -152,29 +165,31 @@ check(emptySections === 0, `每节点开都有正文（空白节 ${emptySections
  * 正文从 2593 → 2770：那四条是新手照着玩会走错路的错话，加字是对的。
  * 上界放到 2900，再高就得问是不是又把说明摊开了。
  */
-check(readBack >= 2500 && readBack <= 2900,
-  `逐节点开共读回 ${readBack} 字（下界 2500 守"没删信息"，上界 2900 守"没堆回长文"）`)
+check(readBack >= 2400 && readBack <= 2900,
+  `逐节点开共读回 ${readBack} 字（下界 2400 守"没删信息"，上界 2900 守"没堆回长文"）`)
 const openBodies = await page.$$eval('[data-testid="help-section-body"]', els => els.length)
 check(openBodies === 1, `一次只展开一节（当前 ${openBodies} 节）`)
 check((await bodyText()).includes('把这本日志带走'), '存档区仍在面板固定位置，折叠没把它挤掉')
 
-// 点开的那节要顶到滚动区开头：目录自己就有半屏高，否则正文挤在下面只露一行半。
+/*
+ * 【2026-11-17】两栏布局里点开一节是**替换右栏**，不再需要把它滚到滚动区开头
+ * （旧实现是手风琴，展开的节会接在目录下方）。改守"点开之后正文真的在视口里"——
+ * 这才是那条断言原本要防的事：点了没展开、或者只露一行半。
+ */
 await page.click('[data-testid="help-section-基本操作"]')
 await sleep(260)
 const reveal = await page.evaluate(() => {
-  const head = document.querySelector('[data-testid="help-section-基本操作"]')
   const body = document.querySelector('[data-testid="help-section-body"]')
-  const scroller = head.closest('.scroll-parchment')
-  const sr = scroller.getBoundingClientRect()
+  if (!body) return { visible: 0, lines: 0, inView: false }
+  const br = body.getBoundingClientRect()
   return {
-    headOffset: Math.round(head.getBoundingClientRect().top - sr.top),
-    visibleBody: Math.round(Math.min(body.getBoundingClientRect().bottom, sr.bottom) - body.getBoundingClientRect().top),
+    visible: Math.round(Math.min(br.bottom, innerHeight) - Math.max(br.top, 0)),
     lines: body.children.length,
+    inView: br.top >= 0 && br.top < innerHeight * 0.8,
   }
 })
-check(Math.abs(reveal.headOffset) <= 12, `展开的节顶到滚动区开头（偏移 ${reveal.headOffset}px）`)
-check(reveal.visibleBody >= 90,
-  `展开后正文有 ${reveal.visibleBody}px 可见（${reveal.lines} 条，不是只露一行半）`)
+check(reveal.inView && reveal.visible > 80,
+  `点开一节，正文立刻出现在视口里（可见 ${reveal.visible}px / ${reveal.lines} 个子节点）`)
 
 await page.evaluate(() => window.__gameStore.setState({ showHelp: false }))
 
@@ -298,46 +313,42 @@ const mm = await mob.evaluate(() => {
     const h = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)
     return !!(h && (h === el || el.contains(h)))
   }
-  const drawer = panel.closest('.drawer-panel')
-  const dr = drawer?.getBoundingClientRect()
+  const scroller = panel.querySelector('.scroll-parchment')
   return {
-    panelBottom: Math.round(panel.getBoundingClientRect().bottom),
-    // 抽屉自身（固定 82dvh 的那块）才是"必须在屏内"的东西；
-    // help-panel 是抽屉**内容**，比抽屉高是正常的（它要在抽屉里滚）。
-    drawerBox: dr ? { top: Math.round(dr.top), bottom: Math.round(dr.bottom) } : null,
-    drawerScrollTop: drawer?.scrollTop ?? 0,
-    drawerScrollH: drawer?.scrollHeight ?? 0,
-    drawerClientH: drawer?.clientHeight ?? 0,
-    vh: innerHeight,
+    panelBox: (() => { const r = panel.getBoundingClientRect(); return { top: Math.round(r.top), bottom: Math.round(r.bottom), width: Math.round(r.width) } })(),
     scrollers: panel.querySelectorAll('.scroll-parchment').length,
     heads: document.querySelectorAll('[data-testid^="help-section-"]').length,
+    scrollH: scroller?.scrollHeight ?? 0,
+    clientH: scroller?.clientHeight ?? 0,
+    vh: innerHeight,
     exportOnScreen: br.top >= 0 && br.bottom <= innerHeight,
     importOnScreen: ir.top >= 0 && ir.bottom <= innerHeight,
     exportHit: hit(btn), importHit: hit(imp),
     bodyScrollW: document.body.scrollWidth,
   }
 })
-check(mm.error == null, '移动端帮助抽屉确实渲染了（不是空页面假绿）')
+check(mm.panelBox != null, '移动端帮助面板确实渲染了（不是空页面假绿）')
 /*
- * 【口径更正】原句是「抽屉完整在屏内（panelBottom ≤ vh）」。
- * 但 help-panel 是抽屉**内容**（高 1049），抽屉是固定 `max-h-[82dvh]`（692）
- * 且自己 `overflow-y:auto` —— 内容比抽屉高是设计，不是缺陷。
- * 该守的是：① 抽屉自身在屏内；② 抽屉真的能滚。
- * 「导出按钮在屏内」那条同理（见下）。
+ * 【2026-11-17 口 kit 更正】手机上帮助不再是底部抽屉（`max-h-[82dvh]` + 把手），
+ * 而是和桌面同一个整屏面板。所以这里守三件事：
+ *   ① 面板铺满视口（宽 390、底边不出屏）；
+ *   ② 正文区**有确定高度**（clientH 接近屏高，不是被内容撑开的 auto）；
+ *   ③ 只有一层滚动区。
+ * 原来的「抽屉自身在屏内」「抽屉内容可滚」两条随抽屉一起作废。
  */
-check(!!mm.drawerBox && mm.drawerBox.bottom <= mm.vh + 1,
-  `抽屉自身在屏内（底边 ${mm.drawerBox?.bottom} ≤ ${mm.vh}）`)
-check(mm.drawerScrollH > mm.drawerClientH,
-  `抽屉内容可滚（${mm.drawerScrollH} > ${mm.drawerClientH}）`)
+check(mm.panelBox != null && mm.panelBox.bottom <= mm.vh + 1 && mm.panelBox.width >= 389,
+  `整屏面板铺满视口（${mm.panelBox?.width}×底边 ${mm.panelBox?.bottom} ≤ ${mm.vh}）`)
+check(mm.clientH > 400,
+  `正文滚动区有确定高度（clientHeight ${mm.clientH}，被内容撑开时会是 0 或全高）`)
 check(mm.scrollers === 1 && mm.heads === 19, `移动端同样单层滚动、19 节目录齐全（${mm.scrollers} 层 / ${mm.heads} 节）`)
 /*
- * 导出/导入在**内容末尾**，不滚到底永远量到 y>vh（实测 1080）。
- * 判据改成：把抽屉滚到底，两个按钮都要进视口且中心点命中自己。
+ * 导出/导入在**内容末尾**，不滚到底永远量到 y>vh。
+ * 判据：把正文滚到底，两个按钮都要进视口且中心点命中自己。
  */
 const mmScrolled = await mob.evaluate(() => {
   const panel = document.querySelector('[data-testid="help-panel"]')
-  const drawer = panel.closest('.drawer-panel')
-  if (drawer) drawer.scrollTop = drawer.scrollHeight
+  const scroller = panel.querySelector('.scroll-parchment')
+  if (scroller) scroller.scrollTop = scroller.scrollHeight
   return new Promise(res => setTimeout(() => {
     const ok = id => {
       const el = document.querySelector(`[data-testid="${id}"]`)

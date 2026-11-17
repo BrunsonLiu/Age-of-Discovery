@@ -115,31 +115,46 @@ export default function FleetPanel() {
   return (
     <FullScreenPanel
       testId="fleet-panel"
-        title="舰队状态"
-        subtitle={`${fleet.name} · 第 ${fleet.day} 天 · ${fleet.ships.length} 艘`}
-        onClose={() => setActivePanel(null)}
-      >
+      title="舰队状态"
+      subtitle={`${fleet.name} · 第 ${fleet.day} 天 · ${fleet.ships.length} 艘`}
+      footer="点地图上的港口立航线；点海面任意位置就是目的地"
+      onClose={() => setActivePanel(null)}
+    >
         <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <span className="font-pirate text-gold-300">{fleet.name}</span>
-            <span className="flex items-center gap-1 text-gold-400 text-sm font-serif">
-              <Coins size={14} /> {fleet.gold}
-            </span>
-          </div>
-
-          {/* 舰队总览 */}
-          <div className="grid grid-cols-3 gap-1 text-center inlay--flat rounded p-1.5">
-            <div>
-              <div className="text-gold-500 text-xs font-serif">船只</div>
-              <div className="text-gold-200 text-[13px] font-serif">{fleet.ships.length} 艘</div>
+          {/*
+            【四格仪表条】原来这里是"舰队名 + 金币"一行，紧跟一块三格总览
+            （船只/均速/总货舱）—— 舰队名在顶栏副标题里已经有了，重复一遍
+            只是多占一行；金币则被缩成 13px 挂在右边。四格等分之后，
+            "这条船队现在什么状态"四个数字在第一眼就能读完。
+          */}
+          <div className="grid grid-cols-4 rounded-sm border border-gold-700/25 bg-black/25 overflow-hidden
+            divide-x divide-gold-700/25">
+            <div className="px-3 py-2.5 min-w-0">
+              <div className="text-[12px] tracking-[0.1em] text-gold-600 font-serif">金币</div>
+              <div className="flex items-baseline gap-1 mt-0.5">
+                <span className="text-gold-200 text-[17px] md:text-[20px] font-serif tabular-nums leading-none">{fleet.gold}</span>
+                <Coins size={11} className="text-gold-500" />
+              </div>
             </div>
-            <div>
-              <div className="text-gold-500 text-xs font-serif">均速</div>
-              <div className="text-gold-200 text-[13px] font-serif">{avgSpeed.toFixed(1)} 节</div>
+            <div className="px-3 py-2.5 min-w-0">
+              <div className="text-[12px] tracking-[0.1em] text-gold-600 font-serif">船只</div>
+              <div className="mt-0.5">
+                <span className="text-gold-200 text-[17px] md:text-[20px] font-serif tabular-nums leading-none">{fleet.ships.length}</span>
+                <span className="text-gold-500 text-[12px] font-serif ml-1">艘</span>
+              </div>
             </div>
-            <div>
-              <div className="text-gold-500 text-xs font-serif">总货舱</div>
-              <div className="text-gold-200 text-[13px] font-serif">{totalCapacity}</div>
+            <div className="px-3 py-2.5 min-w-0">
+              <div className="text-[12px] tracking-[0.1em] text-gold-600 font-serif">均速</div>
+              <div className="mt-0.5">
+                <span className="text-gold-200 text-[17px] md:text-[20px] font-serif tabular-nums leading-none">{avgSpeed.toFixed(1)}</span>
+                <span className="text-gold-500 text-[12px] font-serif ml-1">节</span>
+              </div>
+            </div>
+            <div className="px-3 py-2.5 min-w-0">
+              <div className="text-[12px] tracking-[0.1em] text-gold-600 font-serif">总货舱</div>
+              <div className="mt-0.5">
+                <span className="text-gold-200 text-[17px] md:text-[20px] font-serif tabular-nums leading-none">{totalCapacity}</span>
+              </div>
             </div>
           </div>
 
@@ -267,10 +282,17 @@ export default function FleetPanel() {
               warnBelow={60}
               criticalBelow={LOW_MORALE}
             />
-            <div className="flex justify-between text-[13px] text-gold-500 px-0.5">
-              <span>总船员</span>
-              <span>{totalCrew}/{maxCrew}</span>
-            </div>
+            {/*
+              总船员也走同一条：原先它只有一行「总船员 20/20」的裸文字，
+              和上面三条进度条不是一套东西，读起来像"还有一条没画完"。
+              满员时条是全色，一样能一眼看出还剩多少位置。
+            */}
+            <ResourceBar
+              value={totalCrew}
+              maxValue={maxCrew}
+              label="船员"
+              icon={<Users size={14} />}
+            />
           </div>
 
           <div className="border-t border-gold-700/30 pt-2 space-y-2">
@@ -390,10 +412,11 @@ export default function FleetPanel() {
 
           {fleet.currentPortId && !currentRoute && (
             <div className="border-t border-gold-700/30 pt-2">
-              <div className="bg-gold-700/15 rounded p-2 mb-2 text-center">
-                <p className="flex items-center justify-center gap-1.5 text-gold-300 font-serif text-sm"><Map size={12} aria-hidden="true" />点击地图上的港口或任意位置开始航行</p>
-                <p className="text-gold-400 text-[13px] mt-1">你可以点击地图上任何位置来设定目的地</p>
-              </div>
+              {/*
+                「点击地图上的港口或任意位置开始航行」两行提示原来横在
+                四方态度和推荐航线之间，把一条操作说明插进了数据区。
+                它现在在面板的脚注条里（见 FullScreenPanel 的 footer）。
+              */}
               {availableRoutes.length > 0 && (
                 <>
                   <h4 className="font-pirate text-gold-500 text-[13px] mb-1.5 flex items-center gap-1">

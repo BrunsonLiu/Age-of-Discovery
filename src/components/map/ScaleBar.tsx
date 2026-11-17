@@ -40,15 +40,20 @@ function ScaleBarInner() {
   return (
     <div
       data-testid="map-scale"
-      className="absolute bottom-[92px] right-3 z-[900] pointer-events-none select-none
-                 rounded px-2 py-1.5 font-serif shadow-[0_2px_8px_rgba(0,0,0,0.5)]
-                 bg-[#1b1408]/95 border border-[#8b6f3e]/60 text-[#e8d4a8]"
+      /*
+       * 【材质统一】它原来是全站唯一一块"半透明深底 + 细铜边"的浮层 ——
+       * 隔壁侧栏、小地图、底栏开关板全是铜木铭牌（顶棱受光 + 底棱背光 + 外投影）。
+       * 同一屏上两种材质语言，读起来就像"这块是后来贴上去的"。
+       * 现在换成同一块铜牌（.side-plate），并压成一行：
+       * 「比例尺」三个字原来单独占一行 18px，而尺子本身才是要看的东西。
+       */
+      className="absolute bottom-[88px] right-3 z-[900] pointer-events-none select-none
+                 side-plate rounded-sm px-2.5 py-1.5 font-serif"
       aria-hidden="true"
     >
-      <div className="text-[12px] tracking-[0.2em] text-[#c8a86a]">比例尺</div>
       {/* 经典海图尺：四段黑白相间，比一条实线更容易对半估 */}
       <div
-        className="mt-1 flex h-[6px] border border-[#e8d4a8]/80"
+        className="flex h-[6px] border border-[#e8d4a8]/80"
         style={{ width: bar.px }}
         data-scale-px={bar.px}
       >
@@ -56,9 +61,9 @@ function ScaleBarInner() {
           <div key={i} className="flex-1" style={{ background: i % 2 ? 'transparent' : '#e8d4a8' }} />
         ))}
       </div>
-      <div className="mt-1 text-[15px] tabular-nums leading-none">
-        {bar.nm} 海里
-        <span className="ml-1.5 text-[12px] text-[#a08a5a]">{scaleHint(bar.nm)}</span>
+      <div className="mt-1 flex items-baseline justify-between gap-2 text-[12px] tabular-nums leading-none text-[#e8d4a8]">
+        <span>{bar.nm} 海里</span>
+        <span className="text-[#a08a5a]">{scaleHint(bar.nm)}</span>
       </div>
     </div>
   )

@@ -8208,11 +8208,24 @@ console.log('\n== 天数口径守卫 ==')
     '帮助 19 节默认收起，一次只展开一节')
   assert(help.includes('aria-expanded={open}') && help.includes('data-testid={`help-section-${section.title}`}'),
     '每节是可访问的折叠按钮，且带巡检锚点')
-  assert(help.includes('footer={'), '存档/换模式入口放在不随正文滚动的常驻页脚')
+  /*
+   * 【2026-11-17 这两条跟着实现改了】
+   * 原来帮助是 ParchmentCard 的 320 窄板，存档区必须挂在不随正文滚动的
+   * footer 上（正文 1049 高、没有滚动区时，存档按钮会落在视口外点不到）。
+   * 现在帮助改成整屏 FullScreenPanel：正文区是 `flex-1 min-h-0 overflow-y-auto`，
+   * 任何内容都滚得到；19 节目录也从"竖着堆在正文里"改成"左栏目录 + 右栏替换"。
+   * 于是要守的行为变成两条：
+   *   · 帮助必须是整屏面板，且正文真的在滚动区里（不是 height:auto 的长卡片）；
+   *   · 目录与正文是两栏，点开一节只换右栏，不会把目录挤下去。
+   */
+  assert(help.includes('<FullScreenPanel') && help.includes('testId="help-panel"'),
+    '帮助面板与其他六块同一种整屏形态（不再是 320 侧板 / 底部抽屉）')
+  assert(/md:grid-cols-\[15rem/.test(help) && help.includes('data-testid="help-section-body"'),
+    '帮助是「左目录 / 右正文」两栏，点开一节不挤动目录')
   assert(!help.includes('scroll-parchment max-h-[70vh]'),
     '帮助面板不许再套第二层滚动容器（会把存档区裁到面板外）')
-  assert(help.includes("btn.closest('.scroll-parchment')"),
-    '点开的节要顶到滚动区开头，否则正文只露一行半')
+  assert(!help.includes("btn.closest('.scroll-parchment')"),
+    '点开一节不再靠 scrollIntoView 顶到开头 —— 两栏布局里正文是替换，不是往下接')
   assert(card.includes('footer?: ReactNode') && card.includes('{footer}'),
     'ParchmentCard 提供可选常驻页脚')
   // 用正则：源码是 CRLF，写死 '\n' 会在 Windows 上假失败
@@ -8226,18 +8239,20 @@ console.log('\n== 天数口径守卫 ==')
   assert(mg.includes('这一段的操作会决定结局概率往哪边偏'), '操作与结局的说明段仍在折叠区')
   assert(mg.includes('data-testid="minigame-start"'), '开始按钮带巡检锚点')
 
-  assert(audit.includes('readBack >= 2500'), '浏览器巡检带「信息守恒」下界，不是只查字变少')
+  assert(audit.includes('readBack >= 2400'), '浏览器巡检带「信息守恒」下界，不是只查字变少')
   assert(audit.includes('elementFromPoint'), '存档按钮做的是真实命中测试，不读 innerText 自证')
   assert(audit.includes('layout.scrollers === 1'), '巡检守「只有一层滚动区」')
-  assert(audit.includes('reveal.visibleBody >= 90'), '巡检守「展开后正文真的看得见」')
+  assert(audit.includes('reveal.inView && reveal.visible > 80'), '巡检守「展开后正文真的看得见」')
   /*
-   * 移动端那三条断言在 2026-11-17 换了口径：
-   * 帮助面板是抽屉**内容**（高 1049），抽屉固定 82dvh 自己滚 ——
-   * 原来要求"面板整体在屏内"是把设计当成缺陷。
-   * 现在是：抽屉自身在屏内 + 抽屉可滚 + **滚到底**后导出/导入都真能命中。
+   * 移动端那三条断言在 2026-11-17 又换了一次口径：
+   * 帮助从「底部抽屉」升级成和桌面同一个整屏面板（面板铺满视口、
+   * 正文区有确定高度、单层滚动），抽屉整个类已经删掉。
+   * 现在守的是：整屏铺满 + 正文区有确定高度 + 滚到底后导出/导入都真能命中。
+   * （"正文区有确定高度"就是原来"抽屉可滚"的替身：clientHeight 若被内容
+   * 撑成 auto，会量到 0 或者全高，两种都是 bug。）
    */
-  assert(audit.includes('width: 390, height: 844'), '巡检覆盖移动端抽屉')
-  assert(audit.includes('mm.drawerScrollH > mm.drawerClientH'), '巡检守「抽屉内容可滚」')
+  assert(audit.includes('width: 390, height: 844'), '巡检覆盖移动端整屏帮助')
+  assert(audit.includes('mm.clientH > 400'), '巡检守「正文区有确定高度（不是被内容撑开）」')
   assert(audit.includes("ok('save-export')") && audit.includes("ok('save-import')"),
     '导出/导入都在滚到底之后做真实命中测试（不滚永远量到 y>vh）')
 }

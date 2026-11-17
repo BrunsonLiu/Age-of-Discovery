@@ -133,8 +133,22 @@ for (const w of widths) {
     check(s.textClip.length === 0, `面板 ${p} 无文字被裁${s.textClip.length ? '：' + s.textClip.map(o => `「${o.text}」${o.sw}>${o.cw}`).join(', ') : ''}`)
     noPageOverflow(s, `面板 ${p}`)
     // 关掉
-    await page.evaluate((type) => document.querySelector(`[data-tut="${type}"]`)?.click(), p)
-    await sleep(300)
+    /*
+     * 【不能靠再点一次侧栏按钮】面板改成整屏之后，打开期间 `chartUiVisible`
+     * 为 false —— 侧栏那一列是**卸载**的，第二下点不到任何入口。
+     * 实测后果：测完 task（进的是航海志）之后，后面 event / achievement /
+     * rival / port / trade / shipyard 六块全部打印「入口不存在，跳过」，
+     * 等于六个面板一个都没量，最后还报"全部通过"。
+     * 现在按面板自己的关闭按钮关：航海志是 logbook-close，
+     * 整屏面板是 `${testId}-close`（即 `port-panel-close`）。
+     */
+    await page.evaluate(() => {
+      const lb = document.querySelector('[data-testid="logbook-close"]')
+      if (lb) { lb.click(); return }
+      const c = document.querySelector('[data-testid$="-panel-close"]')
+      if (c) c.click()
+    })
+    await sleep(400)
   }
 }
 console.log(`\n结果：${fails === 0 ? '全部通过' : fails + ' 项异常'}`)

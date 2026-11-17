@@ -139,120 +139,134 @@ export default function PortDetail() {
   return (
     <FullScreenPanel
       testId="port-panel"
-        title={port.nameCn}
-        subtitle={`第 ${fleet.day} 天 · 已靠岸`}
-        onClose={() => setActivePanel(null)}
-      >
-        {/* 港口场景插图（C 组）：到港第一眼——按区域/建筑风格选图 */}
-        {portImg && (
-          /*
-           * 【立绘要"装裱"】
-           * 原来只是一张 96px 高的 img，圆角 + border-gold-700/30。
-           * 立绘本身是写实油画，周围全是手绘羊皮纸与铜件 —— 没有画框时，
-           * 它读作"贴上去的一张图"，而不是"挂在舱壁上的画"。
-           * 画框 = 外 1px 金线 + 内 3px 暗色卡纸 + 内侧暗角（inset 18px 阴影）。
-           * 内侧暗角同时压住四个角，画面边缘才不会和面板底色抢。
-           */
-          /*
-           * 【整屏下必须限宽】侧板时代这块是 288×162，改成整屏之后
-           * `aspect-[16/9]` 会把它撑成 **768×432** —— 半屏都是这张画，
-           * 「港口服务 / 军官 / 船员」全被推到折叠线以下（实测服务按钮的
-           * rect.y 都超出 900，port-services 的 elementFromPoint 判成被挡）。
-           * 这张图的作用是"认路"，不是主角：448×252 足够，再大就是喧宾夺主。
-           */
-          <div
-            className="relative mx-auto mb-3 aspect-[16/9] w-full max-w-md overflow-hidden rounded-sm"
-            style={{
-              boxShadow:
-                'inset 0 0 0 1px rgba(206,172,108,0.62), inset 0 0 0 3px rgba(18,12,5,0.9), inset 0 0 18px rgba(0,0,0,0.5), 0 2px 7px rgba(0,0,0,0.55)',
-            }}
-          >
+      title={port.nameCn}
+      subtitle={`第 ${fleet.day} 天 · ${fleet.isSailing ? '在海上' : '已靠岸'}`}
+      footer="港口服务在下面；修理、补给、招募都是真按钮"
+      onClose={() => setActivePanel(null)}
+    >
+        {/*
+          【顶部改成左右分栏】
+          侧板时代这里是竖着堆的：图（288）→ 上岸按钮（288）→ 旗子 → 文字，
+          一条 288 宽的窄巷子，所以图恰好和按钮同宽。
+          搬进整屏后正文变成 768，图仍是 max-w-md(448)、下面所有块是 768 ——
+          图的左右边和按钮的左右边各差 160px，一眼就是"没对齐"。
+          现在图钉在左列 320，文字在右列：图有它的框，信息有它的栏，
+          两者顶边对齐，右边再也不会空出一条 448 宽的死区。
+        */}
+        <div className="grid gap-4 md:gap-6 md:grid-cols-[minmax(0,20rem)_minmax(0,1fr)] items-start">
+          <div className="min-w-0">
+            {/* 港口场景插图（C 组）：到港第一眼——按区域/建筑风格选图 */}
+            {portImg && (
+              /*
+               * 【立绘要"装裱"】
+               * 原来只是一张 96px 高的 img，圆角 + border-gold-700/30。
+               * 立绘本身是写实油画，周围全是手绘羊皮纸与铜件 —— 没有画框时，
+               * 它读作"贴上去的一张图"，而不是"挂在舱壁上的画"。
+               * 画框 = 外 1px 金线 + 内 3px 暗色卡纸 + 内侧暗角（inset 18px 阴影）。
+               */
+              /*
+               * 【必须限宽】`aspect-[16/9]` 铺满正文会变成 768×432 —— 半屏都是画，
+               * 「港口服务 / 军官 / 船员」全被推到折叠线以下。这张图的作用是"认路"，
+               * 不是主角：448 封顶，再大就是喧宾夺主。
+               */
+              <div
+                className="relative aspect-[16/9] w-full max-w-md overflow-hidden rounded-sm"
+                style={{
+                  boxShadow:
+                    'inset 0 0 0 1px rgba(206,172,108,0.62), inset 0 0 0 3px rgba(18,12,5,0.9), inset 0 0 18px rgba(0,0,0,0.5), 0 2px 7px rgba(0,0,0,0.55)',
+                }}
+              >
+                <img
+                  src={portImg}
+                  alt=""
+                  aria-hidden="true"
+                  className="w-full h-full object-cover object-center"
+                />
+                {/* 底部渐隐，融进卡片 */}
+                <div
+                  className="pointer-events-none absolute inset-x-0 bottom-0 h-1/2"
+                  style={{ background: 'linear-gradient(180deg, rgba(30,22,13,0) 0%, rgba(30,22,13,0.85) 100%)' }}
+                />
+              </div>
+            )}
+            {/* 三角旗串（F5）：港口张灯结彩。跟着图一起放在左列底部 */}
             <img
-              src={portImg}
+              src={UI_ASSETS.pennants}
               alt=""
               aria-hidden="true"
-              className="w-full h-full object-cover object-center"
-            />
-            {/* 底部渐隐，融进卡片 */}
-            <div
-              className="pointer-events-none absolute inset-x-0 bottom-0 h-1/2"
-              style={{ background: 'linear-gradient(180deg, rgba(30,22,13,0) 0%, rgba(30,22,13,0.85) 100%)' }}
+              className="w-[86%] mx-auto h-auto block mt-2.5 opacity-90"
             />
           </div>
-        )}
-        {/*
-          上岸入口：缩略图下面紧跟着"可以放大看"的那一步。
-          只在**人真的在这座港且没在航行**时出现——远处港口的详情卡不该
-          承诺一个走不到的岸。点进去先收起卡片，让岸上视图独占这一层。
-        */}
-        {isAtPort && !fleet.isSailing && (
-          <button
-            onClick={() => { setActivePanel(null); setViewMode('harbor') }}
-            data-testid="harbor-enter"
-            className="w-full mb-2 px-2 py-2 rounded border border-gold-500/60
-              bg-gold-700/25 hover:bg-gold-700/45 press transition-colors text-left"
-          >
-            <span className="flex items-center gap-1.5 text-gold-100 font-serif text-[14px]">
-              <Map size={14} aria-hidden="true" />
-              上岸走走
-            </span>
-            <span className="block text-gold-300 font-serif text-[12px] mt-0.5 pl-5">
-              收起海图，走进这座城
-            </span>
-          </button>
-        )}
-        {/* 三角旗串（F5）：港口张灯结彩 */}
-        <img
-          src={UI_ASSETS.pennants}
-          alt=""
-          aria-hidden="true"
-          className="w-[82%] mx-auto h-auto block mb-2 drop-shadow"
-        />
-        <div className="space-y-3">
-          <div className="flex items-center gap-2">
-            <span className="text-gold-400 font-serif text-sm">{port.name}</span>
-            <span className="text-[13px] bg-black/30 text-gold-300 px-2 py-0.5 rounded font-serif">
-              {regionNames[port.region] || port.region}
-            </span>
-          </div>
 
-          <p className="text-gold-500 text-[13px] font-serif leading-relaxed">{port.description}</p>
-
-          {/* 本港势力态度：第二条线的本地视角 */}
-          {(() => {
-            const fid = portFaction(port.id)
-            const f = FACTIONS.find(x => x.id === fid)
-            if (!f) return null
-            const rep = factionRep[fid] ?? 0
-            const att = factionAttitude(rep)
-            return (
-              <div className="flex items-center justify-between inlay border border-gold-700/20 rounded p-1.5 text-[13px] font-serif">
-                <span className="text-gold-500 flex items-center gap-1.5">
-                  <Badge kind="faction" id={fid} fallback={f.icon} size={15} />
-                  本港由{f.name}话事
-                </span>
-                <span className={
-                  att.tone === 'good' ? 'text-safe-400' : att.tone === 'bad' ? 'text-danger-400' : 'text-gold-500'
-                }>
-                  {att.label}（{rep > 0 ? '+' : ''}{rep}）
-                </span>
-              </div>
-            )
-          })()}
-
-          {!isAtPort && (
-            <div className="flex items-center gap-1.5 inlay border border-gold-700/20 rounded p-2 text-[13px] text-gold-400 font-serif">
-              <Ship size={12} aria-hidden="true" className="shrink-0" />
-              你当前不在此港，点击地图航行前往
+          <div className="min-w-0 space-y-2.5">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-gold-400 font-serif text-sm">{port.name}</span>
+              <span className="text-[12px] bg-black/30 text-gold-300 px-2 py-0.5 rounded font-serif">
+                {regionNames[port.region] || port.region}
+              </span>
             </div>
-          )}
 
-          {isAtPort && (
+            <p className="text-gold-500 text-[13px] font-serif leading-relaxed">{port.description}</p>
+
+            {/* 本港势力态度：第二条线的本地视角 */}
+            {(() => {
+              const fid = portFaction(port.id)
+              const f = FACTIONS.find(x => x.id === fid)
+              if (!f) return null
+              const rep = factionRep[fid] ?? 0
+              const att = factionAttitude(rep)
+              return (
+                <div className="flex items-center justify-between inlay border border-gold-700/20 rounded p-1.5 text-[13px] font-serif">
+                  <span className="text-gold-500 flex items-center gap-1.5">
+                    <Badge kind="faction" id={fid} fallback={f.icon} size={15} />
+                    本港由{f.name}话事
+                  </span>
+                  <span className={
+                    att.tone === 'good' ? 'text-safe-400' : att.tone === 'bad' ? 'text-danger-400' : 'text-gold-500'
+                  }>
+                    {att.label}（{rep > 0 ? '+' : ''}{rep}）
+                  </span>
+                </div>
+              )
+            })()}
+
+            {!isAtPort && (
+              <div className="flex items-center gap-1.5 inlay border border-gold-700/20 rounded p-2 text-[13px] text-gold-400 font-serif">
+                <Ship size={12} aria-hidden="true" className="shrink-0" />
+                你当前不在此港，点击地图航行前往
+              </div>
+            )}
+
+            {/*
+              上岸入口：紧跟在港口信息下面 —— "可以放大看"的那一步。
+              只在**人真的在这座港且没在航行**时出现：远处港口的详情卡不该
+              承诺一个走不到的岸。点进去先收起面板，让岸上视图独占这一层。
+            */}
+            {isAtPort && !fleet.isSailing && (
+              <button
+                onClick={() => { setActivePanel(null); setViewMode('harbor') }}
+                data-testid="harbor-enter"
+                className="w-full px-3 py-2.5 rounded border border-gold-500/60
+                  bg-gold-700/25 hover:bg-gold-700/45 press transition-colors text-left"
+              >
+                <span className="flex items-center gap-1.5 text-gold-100 font-serif text-[14px]">
+                  <Map size={14} aria-hidden="true" />
+                  上岸走走
+                </span>
+                <span className="block text-gold-300 font-serif text-[12px] mt-0.5 pl-5">
+                  收起海图，走进这座城
+                </span>
+              </button>
+            )}
+          </div>
+        </div>
+
+        <div className="space-y-3 mt-4">          {isAtPort && (
             <div className="border-t border-gold-700/30 pt-2">
               <h4 className="text-gold-300 font-serif text-sm mb-2 flex items-center gap-1">
                 <Anchor size={14} /> 港口服务
               </h4>
-              <div className="grid grid-cols-2 gap-1.5">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
                 {port.services.map(svc => (
                   <button
                     key={svc}

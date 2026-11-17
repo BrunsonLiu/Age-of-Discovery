@@ -87,16 +87,40 @@ export default function ShipyardPanel() {
       testId="shipyard-panel"
         title="造船厂"
         subtitle={`${port.nameCn} · 第 ${fleet.day} 天`}
-        /* 三个船型卡各 ~110px，加卖船区与头部 —— 默认 60vh 扣掉标题只剩 470，会把最后一张裁掉一半 */
-        onClose={() => setActivePanel(null)}
+        /* 三个船型卡各 ~110px，加卖船区与头部 —— 默认 60vh 扣掉标题只剩 470，会把最后一张裁掉一半 */
+      footer="差值一栏是拿新船和你的旗舰比；旗舰不能卖"
+      onClose={() => setActivePanel(null)}
       >
         <div className="space-y-3">
-          <div className="flex items-center justify-between text-[13px] text-gold-400 font-serif">
-            <span className="flex items-center gap-1"><Coins size={12} /> {fleet.gold} 金币</span>
-            <span className="flex items-center gap-1"><Package size={12} /> {usedCapacity}/{totalCapacity} 货舱</span>
-            <span className="flex items-center gap-1" data-testid="shipyard-fleet-speed">
-              <Gauge size={12} /> {fleetSpeed.toFixed(1)} 节
-            </span>
+          {/*
+            【三格仪表条】与贸易面板同一套：金币 / 货舱 / 航速。
+            这三个数是"能不能买"的全部约束，原来挤成顶上的一行 13px 小字。
+          */}
+          <div className="grid grid-cols-3 rounded-sm border border-gold-700/25 bg-black/25 overflow-hidden
+            divide-x divide-gold-700/25">
+            <div className="px-3 md:px-4 py-2.5">
+              <div className="text-[12px] tracking-[0.1em] text-gold-600 font-serif">金币</div>
+              <div className="flex items-baseline gap-1.5 mt-0.5">
+                <span className="text-gold-200 text-[18px] md:text-[21px] font-serif tabular-nums leading-none">{fleet.gold}</span>
+                <Coins size={12} className="text-gold-500" />
+              </div>
+            </div>
+            <div className="px-3 md:px-4 py-2.5">
+              <div className="text-[12px] tracking-[0.1em] text-gold-600 font-serif">货舱</div>
+              <div className="flex items-baseline gap-1 mt-0.5">
+                <span className="text-gold-200 text-[18px] md:text-[21px] font-serif tabular-nums leading-none">{usedCapacity}</span>
+                <span className="text-gold-500 text-[13px] font-serif tabular-nums">/ {totalCapacity}</span>
+              </div>
+            </div>
+            <div className="px-3 md:px-4 py-2.5">
+              <div className="text-[12px] tracking-[0.1em] text-gold-600 font-serif">舰队航速</div>
+              <div className="flex items-baseline gap-1 mt-0.5" data-testid="shipyard-fleet-speed">
+                <span className="text-gold-200 text-[18px] md:text-[21px] font-serif tabular-nums leading-none">
+                  {fleetSpeed.toFixed(1)}
+                </span>
+                <span className="text-gold-500 text-[13px] font-serif">节</span>
+              </div>
+            </div>
           </div>
 
           <div className="border-t border-gold-700/30 pt-2">
@@ -132,25 +156,65 @@ export default function ShipyardPanel() {
               <Anchor size={12} /> 购入新船
               <span className="ml-auto text-gold-500 text-[12px]">差值对比旗舰</span>
             </h4>
-            <div className="space-y-1.5">
+            <div className="space-y-2">
               {buyableKeys.map(key => {
                 const template = shipTemplates[key]
                 const canBuyRegion = template.regions.includes(port.region)
                 const affordable = fleet.gold >= template.price
                 const disabled = !canBuyRegion || !affordable
                 return (
-                  <div key={key} className="inlay rounded p-2.5" data-testid={`shipyard-offer-${key}`}>
-                    <div className="flex items-start justify-between gap-2 mb-1.5">
-                      <span className="text-gold-200 text-[14px] font-serif flex items-center gap-2 min-w-0">
-                        <img
-                          src={shipSprite(key)}
-                          alt=""
-                          aria-hidden="true"
-                          className="h-12 w-auto object-contain drop-shadow-md shrink-0"
-                          onError={(e) => { e.currentTarget.style.visibility = 'hidden' }}
-                        />
-                        <span className="truncate">{template.name}</span>
-                      </span>
+                  /*
+                   * 【船卡改成横向三段：剪影 | 名称+四项差值 | 价格】
+                   * 原来是竖着堆的窄卡：名称在左上、价格按钮在右上，其余四行
+                   * 数据贴着左边 —— 768 正文里右半边整整 500px 是空的，
+                   * 三张卡读起来像三个测了一半的表格。
+                   * 横向排之后每一行都填满，四列数值共用列线，可以竖着比船型。
+                   */
+                  <div
+                    key={key}
+                    className="inlay rounded px-3 py-2.5 grid gap-x-4 gap-y-2
+                      sm:grid-cols-[5rem_minmax(0,1fr)_auto] sm:items-center"
+                    data-testid={`shipyard-offer-${key}`}
+                  >
+                    <img
+                      src={shipSprite(key)}
+                      alt=""
+                      aria-hidden="true"
+                      className="h-12 w-auto object-contain drop-shadow-md justify-self-center"
+                      onError={(e) => { e.currentTarget.style.visibility = 'hidden' }}
+                    />
+                    <div className="min-w-0">
+                      <div className="flex items-baseline gap-2 flex-wrap">
+                        <span className="text-gold-100 text-[15px] font-serif">{template.name}</span>
+                        {/*
+                          类型名不再重复显示：`shipTemplates[key].name` 本身就是
+                          「单桅快船」这种中文全名，与 shipTypeNames 完全同字 ——
+                          并排打出来是「单桅快船 单桅快船」，看起来像渲染了两次。
+                          只在两者确实不同的时候才补类型。
+                        */}
+                        {shipTypeNames[key] && shipTypeNames[key] !== template.name && (
+                          <span className="text-gold-500 text-[12px] font-serif">{shipTypeNames[key]}</span>
+                        )}
+                      </div>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-3 gap-y-1 mt-1.5">
+                        <Stat icon={Gauge} label="速度" value={template.speed} delta={template.speed - flag.speed} unit="节" />
+                        <Stat icon={ShipIcon} label="耐久" value={template.maxDurability} delta={template.maxDurability - flag.maxDurability} unit="" />
+                        <Stat icon={Package} label="舱位" value={template.capacity} delta={template.capacity - flag.capacity} unit="" />
+                        <Stat icon={Users} label="船员" value={template.maxCrew} delta={template.maxCrew - flag.maxCrew} unit="" />
+                      </div>
+                      {!canBuyRegion && (
+                        <p className="flex items-start gap-1 text-gold-400 text-[12px] mt-1.5 font-serif leading-snug">
+                          <Anchor size={10} aria-hidden="true" className="mt-0.5 shrink-0" />
+                          <span>此型船只在{template.regions.map(r => r === 'europe' ? '欧洲' : r === 'caribbean' ? '加勒比' : r === 'asia' ? '亚洲' : '非洲').join('、')}造船厂才有售</span>
+                        </p>
+                      )}
+                      {!affordable && canBuyRegion && (
+                        <p className="text-gold-400 text-[12px] mt-1.5 font-serif" data-testid={`shipyard-short-${key}`}>
+                          还差 {template.price - fleet.gold} 金币
+                        </p>
+                      )}
+                    </div>
+                    <div className="justify-self-end sm:justify-self-auto">
                       <ActionButton
                         onClick={() => {
                           const before = useGameStore.getState().fleet.ships.length
@@ -164,27 +228,11 @@ export default function ShipyardPanel() {
                         }}
                         disabled={disabled}
                         variant="secondary"
+                        className="w-24 justify-center"
                       >
                         <Coins size={10} /> {template.price}
                       </ActionButton>
                     </div>
-                    <div className="grid grid-cols-2 gap-x-3 gap-y-1">
-                      <Stat icon={Gauge} label="速度" value={template.speed} delta={template.speed - flag.speed} unit="节" />
-                      <Stat icon={ShipIcon} label="耐久" value={template.maxDurability} delta={template.maxDurability - flag.maxDurability} unit="" />
-                      <Stat icon={Package} label="舱位" value={template.capacity} delta={template.capacity - flag.capacity} unit="" />
-                      <Stat icon={Users} label="船员" value={template.maxCrew} delta={template.maxCrew - flag.maxCrew} unit="" />
-                    </div>
-                    {!canBuyRegion && (
-                      <p className="flex items-start gap-1 text-gold-400 text-[12px] mt-1.5 font-serif leading-snug">
-                        <Anchor size={10} aria-hidden="true" className="mt-0.5 shrink-0" />
-                        <span>此型船只在{template.regions.map(r => r === 'europe' ? '欧洲' : r === 'caribbean' ? '加勒比' : r === 'asia' ? '亚洲' : '非洲').join('、')}造船厂才有售</span>
-                      </p>
-                    )}
-                    {!affordable && canBuyRegion && (
-                      <p className="text-gold-400 text-[12px] mt-1.5 font-serif" data-testid={`shipyard-short-${key}`}>
-                        还差 {template.price - fleet.gold} 金币
-                      </p>
-                    )}
                   </div>
                 )
               })}

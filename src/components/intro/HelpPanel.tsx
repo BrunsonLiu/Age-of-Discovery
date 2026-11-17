@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 import { useGameStore } from '@/store/useGameStore'
-import ParchmentCard from '@/components/ui/ParchmentCard'
+import FullScreenPanel from '@/components/ui/FullScreenPanel'
 import { Anchor, ChevronDown, Coins, RotateCcw, Compass, Download, Droplets, Flame, Globe, Heart, HelpCircle, Keyboard, Moon, Newspaper, Package, Shield, Ship, Sparkles, Tag, Trophy, Upload, Users, Utensils, Wind } from 'lucide-react'
 import { applySaveText, downloadSave, parseSaveText } from '@/utils/saveFile'
 import { achievements } from '@/data/achievements'
@@ -310,37 +310,106 @@ export default function HelpPanel() {
 
   return (
     /*
-     * 这里的 `h-full` 不是装饰。
+     * 【整屏手册，不是侧板】
+     * 这块原来和四个操作面板一样是 320px 的右侧浮窗（手机上是底部抽屉）。
+     * 2026-11-17 四个面板统一成整屏之后，侧栏那一列按钮里就只剩「帮助」
+     * 还会弹一个窄窗 —— 同一列按钮，形态又分了两种。
      *
-     * ParchmentCard 的外层是 `flex flex-col max-h-full`、正文 `flex-1 min-h-0` ——
-     * `max-h-full` 的百分比要成立，**父级必须有确定高度**。桌面容器是
-     * `absolute top-12 bottom-12`（804），四块面板都补了 `h-full`，唯独帮助面板漏了：
-     * 实测面板高 1049 / 视口 900，「导出存档 / 导入存档」落在 y=959 且
-     * **全组件没有一层滚动区**（scrollers 为空）—— 存档按钮在桌面上点不到。
-     * 手机端不受影响：那里挂在底部抽屉里（抽屉自己滚，父级高度是内容决定，
-     * `h-full` 解析失败退回 auto）。
+     * 改成整屏时顺手把结构也换了：19 节折叠目录原来竖着堆在正文里，
+     * 展开一节就把下面的目录全部挤下去；1024 宽下正文被拉成长长的一列。
+     * 现在目录固定在左栏（19 节两行就能排完），正文在右栏替换显示 ——
+     * 它更接近"一本手册"，而不是"一条很长的手风琴"。
      */
-    <div className="w-full md:w-80 h-full animate-slide-in-right" data-testid="help-panel">
-      <ParchmentCard
-        title="航海指南"
-        onClose={() => setShowHelp(false)}
-        footer={
-          <>
+    <FullScreenPanel
+      testId="help-panel"
+      width="lg"
+      title="航海指南"
+      subtitle="十九节 · 点左边任一节展开"
+      footer="存档只在这台设备的浏览器里，不上传、不关联账号"
+      onClose={() => setShowHelp(false)}
+    >
+      <div className="grid gap-5 md:gap-8 md:grid-cols-[15rem_minmax(0,1fr)] items-start">
+        {/* 左栏：目录 */}
+        <nav aria-label="目录" className="min-w-0 md:sticky md:top-0">
+          <div className="grid grid-cols-2 md:grid-cols-1 gap-x-2 gap-y-0.5">
+            {sections.map((section) => {
+              const open = openSection === section.title
+              return (
+                <button
+                  key={section.title}
+                  type="button"
+                  aria-expanded={open}
+                  data-testid={`help-section-${section.title}`}
+                  onClick={() => setOpenSection(open ? null : section.title)}
+                  className={`w-full min-h-[34px] flex items-center justify-between gap-2 px-2 py-1.5 rounded-sm
+                    text-left font-serif text-[13px] press transition-colors ${
+                      open
+                        ? 'side-plate--active text-gold-100'
+                        : 'text-gold-400 hover:text-gold-200 hover:bg-gold-700/15'
+                    }`}
+                >
+                  <span className="flex items-center gap-1.5 min-w-0">
+                    <span className="shrink-0 opacity-80">{section.icon}</span>
+                    <span className="truncate">{section.title}</span>
+                  </span>
+                  <ChevronDown
+                    size={12}
+                    aria-hidden="true"
+                    className={`shrink-0 transition-transform ${open ? 'rotate-180' : ''}`}
+                  />
+                </button>
+              )
+            })}
+          </div>
+        </nav>
+
+        {/* 右栏：展开的那一节 + 存档 + 换模式 */}
+        <div className="min-w-0">
+          {openSection ? (
+            <div data-testid="help-section-body" className="space-y-2">
+              <h3 className="text-gold-200 font-serif text-[15px] flex items-center gap-2 pb-2 border-b border-gold-700/30">
+                {sections.find(s => s.title === openSection)?.icon}
+                {openSection}
+              </h3>
+              <div className="space-y-2">
+                {(sections.find(s => s.title === openSection)?.items ?? []).map((item, i) => {
+                  if (typeof item === 'string') {
+                    return (
+                      <p key={i} className="text-gold-500 text-[13px] font-serif leading-relaxed">
+                        • {inline(item)}
+                      </p>
+                    )
+                  }
+                  return (
+                    <p key={i} className="text-gold-500 text-[13px] font-serif leading-relaxed flex items-start gap-1.5">
+                      <span className="text-gold-400 mt-0.5 shrink-0">{item.icon}</span>
+                      {item.text}
+                    </p>
+                  )
+                })}
+              </div>
+            </div>
+          ) : (
+            <div className="rounded-sm border border-gold-700/25 bg-black/20 px-4 py-6 text-center">
+              <Compass size={20} className="mx-auto text-gold-500 opacity-70" aria-hidden="true" />
+              <p className="text-gold-400 font-serif text-[13px] mt-2">挑一节看看</p>
+            </div>
+          )}
+
           {/*
             存档：零服务端、无账号，进度只在这台设备的浏览器里。
             一旦游戏承诺「日志会一页页变厚」，就得同时给一个能带走它的办法，
             否则清一次缓存，承诺就成了假话。不写"我们不收集任何数据"——
             托管平台本来就会记录访问日志，能说清的只有"存档不上传"。
           */}
-          <div className="mt-3 pt-3 border-t border-gold-700/30">
+          <div className="mt-6 pt-4 border-t border-gold-700/30">
             <h4 className="text-gold-300 font-serif text-[13px] mb-1.5 flex items-center gap-1.5">
               <Download size={13} /> 把这本日志带走
             </h4>
             <p className="text-gold-500 text-[12px] font-serif leading-relaxed">
-              存档只存在这台设备的浏览器里，不上传、不关联账号。清缓存、换设备、无痕模式都会丢，
-              导出的 JSON 文件可以在别的设备读回来。
+              存档只在浏览器里，清缓存或换设备都会丢；导出的 JSON 可读回来。
             </p>
-            <div className="grid grid-cols-2 gap-1.5 mt-2">
+            <div className="grid grid-cols-2 gap-1.5 mt-2 max-w-sm">
               <button
                 type="button"
                 onClick={() => setSaveMsg(downloadSave() ? '已导出一份存档文件，收好它。' : '本机还没有存档可以导出。')}
@@ -372,7 +441,7 @@ export default function HelpPanel() {
               <button
                 type="button"
                 onClick={doImport}
-                className="w-full min-h-[40px] mt-1.5 py-2 text-[12px] font-serif text-danger-300 hover:text-danger-200 border border-danger-500/45 rounded-lg press transition-all"
+                className="w-full max-w-sm min-h-[40px] mt-1.5 py-2 text-[12px] font-serif text-danger-300 hover:text-danger-200 border border-danger-500/45 rounded-lg press transition-all"
                 data-testid="save-import-confirm"
               >
                 确认覆盖当前进度并读入
@@ -384,10 +453,10 @@ export default function HelpPanel() {
           </div>
 
           {/* 换模式：重开一局会清掉当前进度，所以话说在前面 */}
-          <div className="mt-3 pt-3 border-t border-gold-700/30">
+          <div className="mt-4 pt-4 border-t border-gold-700/30 max-w-sm">
             <button
               onClick={() => { setShowHelp(false); resetGame() }}
-              className="w-full py-2 text-xs font-serif text-gold-400 hover:text-gold-200 border border-gold-700/25 rounded-lg press transition-all"
+              className="w-full py-2 text-[12px] font-serif text-gold-400 hover:text-gold-200 border border-gold-700/25 rounded-lg press transition-all"
             >
               <RotateCcw size={11} className="inline -mt-0.5 mr-1" aria-hidden="true" />
               换个玩法（重开一局 · 当前进度会清空）
@@ -396,65 +465,8 @@ export default function HelpPanel() {
               当前：{gameMode === 'visitor' ? '参观模式' : '船长模式'}
             </p>
           </div>
-          </>
-        }
-      >
-        <div className="pr-1">
-          <p className="text-gold-500 text-[12px] font-serif mb-1.5">点开想看的那一节</p>
-          <div>
-            {sections.map((section) => {
-              const open = openSection === section.title
-              return (
-                <div key={section.title} className="border-b border-gold-700/20 last:border-b-0">
-                  <button
-                    type="button"
-                    aria-expanded={open}
-                    data-testid={`help-section-${section.title}`}
-                    onClick={(e) => {
-                      const btn = e.currentTarget
-                      setOpenSection(open ? null : section.title)
-                      if (!open) {
-                        // 目录本身也有半屏高，不把展开的这节顶到滚动区开头，
-                        // 正文会挤在目录下面只剩一行半（底部还有渐隐），等于点了没展开。
-                        requestAnimationFrame(() => {
-                          const scroller = btn.closest('.scroll-parchment')
-                          if (!scroller) return
-                          const delta = btn.getBoundingClientRect().top - scroller.getBoundingClientRect().top
-                          scroller.scrollTop += delta - 4
-                        })
-                      }
-                    }}
-                    className="w-full min-h-[36px] flex items-center justify-between gap-2 py-1.5 text-left text-gold-300 font-serif text-sm hover:text-gold-100 press transition-colors"
-                  >
-                    <span className="flex items-center gap-1.5">{section.icon}{section.title}</span>
-                    <ChevronDown size={13} aria-hidden="true" className={`shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />
-                  </button>
-                  {open && (
-                    <div className="space-y-1.5 pl-5 pb-2.5" data-testid="help-section-body">
-                      {section.items.map((item, i) => {
-                        if (typeof item === 'string') {
-                          return (
-                            <p key={i} className="text-gold-500 text-xs font-serif leading-relaxed">
-                              • {inline(item)}
-                            </p>
-                          )
-                        }
-                        return (
-                          <p key={i} className="text-gold-500 text-xs font-serif leading-relaxed flex items-start gap-1.5">
-                            <span className="text-gold-400 mt-0.5 flex-shrink-0">{item.icon}</span>
-                            {item.text}
-                          </p>
-                        )
-                      })}
-                    </div>
-                  )}
-                </div>
-              )
-            })}
-          </div>
         </div>
-
-      </ParchmentCard>
-    </div>
+      </div>
+    </FullScreenPanel>
   )
 }
