@@ -237,7 +237,7 @@ export default function MiniGameOverlay({ gameId, onFinish, enemyShip }: MiniGam
               <p className="text-gold-400 font-serif text-sm mt-1">{describePerformance(score)}</p>
             </div>
 
-            <div className="grid grid-cols-2 gap-2 text-center bg-ocean-800/40 rounded p-2.5">
+            <div className="grid grid-cols-2 gap-2 text-center bg-black/25 rounded p-2.5">
               <div>
                 <div className="text-gold-500 text-xs font-serif">操作评分</div>
                 <div className="text-gold-200 text-lg font-serif">{score.toFixed(2)}</div>

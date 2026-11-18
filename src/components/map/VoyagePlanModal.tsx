@@ -257,8 +257,14 @@ export default function VoyagePlanModal() {
 
   return (
     <div className="fixed inset-0 flex items-start justify-center bg-black/70 backdrop-blur-sm p-3 md:p-4 overflow-y-auto" style={{ zIndex: 80 }}>
-      <div className="my-auto w-[26rem] max-w-[92vw] bg-ocean-900/95 overflow-hidden animate-slide-in-right"
+      <div className="my-auto w-[27rem] max-w-[92vw] overflow-hidden animate-slide-in-right"
         style={{
+          // 【底色跟其余面板同族】
+          // 原来这里是 bg-ocean-900/95（#0a1219，冷黑蓝）。它和事件卡共用外壳，
+          // 但外壳是"金框"，底色才是材质 —— 结果点地图弹出来的是全站唯一一块
+          // 冷色面板：左边海图暖、上面顶栏暖、这一块发蓝，读作"别的游戏的东西"。
+          // 换成 --panel-bg 同一族之后，它才像"从同一张桌上抽出来的纸"。
+          backgroundColor: '#14100b',
           // 金质九宫格边框（F2 治愈版切片）——与事件卡**同一套外壳**。
           //
           // 【为什么要统一】原来这里是 `border border-gold-700/40 rounded-lg`，
@@ -273,7 +279,7 @@ export default function VoyagePlanModal() {
         }}
       >
         {/* 标题 */}
-        <div className="px-4 py-2.5 border-b border-gold-700/30 bg-ocean-800/50 flex items-center gap-3">
+        <div className="px-4 py-2.5 border-b border-gold-700/30 bg-black/30 flex items-center gap-3">
           <img
             src={shipSprite(fleet.ships.find(s => s.id === fleet.flagshipId)?.type || fleet.ships[0]?.type || 'galleon')}
             alt=""
@@ -302,7 +308,7 @@ export default function VoyagePlanModal() {
           </div>
 
           {/* ② 三个关键数字：航程 / 危险 / 风向 */}
-          <div className="grid grid-cols-3 gap-2 text-center bg-ocean-800/40 rounded px-2 py-1.5">
+          <div className="grid grid-cols-3 gap-2 text-center bg-black/25 rounded px-2 py-1.5">
             <div>
               <div className="text-gold-600 text-xs font-serif">航程</div>
               <div data-testid="voyage-route-distance" className="text-gold-200 text-xs font-serif tabular-nums">{route.distance} 海里</div>
@@ -422,16 +428,19 @@ export default function VoyagePlanModal() {
         </div>
 
         {/* 操作 */}
-        <div className="px-3 py-3.5 border-t border-gold-700/30 bg-ocean-800/50 flex gap-2">
+        <div className="px-3 py-3.5 border-t border-gold-700/30 bg-black/30 flex gap-2">
           <button
             onClick={cancelVoyage}
-            className="flex-1 py-2 text-xs font-serif text-gold-400 bg-ocean-700/50 hover:bg-ocean-600/60 border border-gold-700/20 rounded transition-colors"
+            className="shrink-0 px-4 py-2.5 text-[13px] font-serif text-gold-500 hover:text-gold-300
+              border border-gold-700/30 rounded-sm transition-colors"
           >
             再想想
           </button>
+          {/* 出航是这一屏唯一的主动作：等宽的两个按钮读完不知道哪个是"继续" */}
           <button
             onClick={confirmDeparture}
-            className="flex-1 flex items-center justify-center gap-1.5 py-2 text-xs font-serif text-gold-100 bg-gold-700/70 hover:bg-gold-600/80 rounded transition-colors"
+            className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-[13px] font-serif
+              text-gold-100 bg-gold-700/70 hover:bg-gold-600/80 rounded-sm transition-colors press"
           >
             <Flag size={12} aria-hidden="true" />
             出航

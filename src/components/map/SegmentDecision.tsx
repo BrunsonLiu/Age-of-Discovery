@@ -73,9 +73,9 @@ function StanceCard({
       onClick={() => onPick(id)}
       disabled={disabled}
       className={`relative w-full text-left rounded-lg border ${tone.border} ${tone.glow}
-        bg-ocean-800/70 backdrop-blur-sm px-3 py-2.5 press
+        bg-black/35 backdrop-blur-sm px-3 py-2.5 press
         transition-all duration-[90ms] ease-out
-        hover:bg-ocean-700/70 hover:-translate-y-0.5
+        hover:bg-black/50 hover:-translate-y-0.5
         focus:outline-none focus-visible:ring-2 focus-visible:ring-gold-400/70
         disabled:opacity-45 disabled:hover:translate-y-0 disabled:cursor-not-allowed`}
       style={{ animation: prefersReducedMotion() ? undefined : `fade-in-up 380ms ${EASE_SPRING} both` }}
@@ -83,7 +83,7 @@ function StanceCard({
     >
       <div className="flex items-center gap-3">
         {/* 键盘序号 */}
-        <span className="w-5 h-5 rounded border border-gold-700/40 bg-ocean-900/70
+        <span className="w-5 h-5 rounded border border-gold-700/40 bg-black/40
           text-gold-400 font-mono text-xs flex items-center justify-center shrink-0">
           {index + 1}
         </span>
@@ -223,8 +223,10 @@ export default function SegmentDecision() {
       style={{ zIndex: 85 }}
     >
       <div
-        className="my-auto w-[32rem] max-w-[94vw] bg-ocean-900/95 overflow-hidden"
+        className="my-auto w-[32rem] max-w-[94vw] overflow-hidden"
         style={{
+          // 底色跟其余面板同族（原来是 bg-ocean-900/95 冷黑蓝）
+          backgroundColor: '#14100b',
           // 与事件卡 / 出航计划**同一套金质九宫格外壳**（见 VoyagePlanModal 的说明）。
           // 三个面板放在同一条动线上（出航 → 择方针 → 遇事件），
           // 之前只有事件卡有金框，另外两个是 1px 细线，切换时风格会跳。
