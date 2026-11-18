@@ -405,6 +405,18 @@ export default function MainMap() {
       if (e.key !== 'v' && e.key !== 'V') return
       const st = useMapStore.getState()
       if (st.viewMode === 'harbor') return
+      /*
+       * 【面板打开时不接地图级快捷键】
+       * 原来这里只看"是不是在岸上"。于是开着港口面板按 V，会直接把甲板
+       * 盖在面板上面（两块整屏层层叠），而 Esc 只关最上面那层 ——
+       * 玩家退两次才回到海图，中间还闪过一个他没打算去的甲板。
+       *
+       * 快捷键的优先级应该和 Esc 一致：**有模态层在，地图就不接命令**。
+       * 这一条同样适用于 H（操舵）与 A（上岸），它们在 useKeyboardControls
+       * 里已经有 activePanel 判断，只有这个 V 是单独挂的 window 监听漏了。
+       */
+      if (useGameStore.getState().activePanel !== null || useGameStore.getState().showHelp) return
+      if (useMapStore.getState().recordsOpen) return
       st.setDeckView(!st.deckView)
     }
     window.addEventListener('keydown', onKey)

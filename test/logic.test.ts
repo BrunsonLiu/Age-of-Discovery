@@ -15112,9 +15112,15 @@ console.log('== 冷启动：不该为「一个按钮」下载三个视角 ==')
   assert(/data-testid="deck-view-toggle"/.test(main), '「船上」入口在 MainMap 里')
   assert(!/data-testid="deck-view-toggle"/.test(deck),
     'DeckView 里不许再有同一个 testid 的入口（重复会让 e2e/点击审计抓到两个）')
-  /* V 键：开在 MainMap（DeckView 关闭时不存在，自己处理"开"会按了没反应） */
-  assert(/if \(e\.key !== 'v' && e\.key !== 'V'\) return[\s\S]{0,200}setDeckView/.test(main),
+  /*
+   * V 键：开在 MainMap（DeckView 关闭时不存在，自己处理"开"会按了没反应）。
+   * 2026-11-18 追加后半句：它必须**受模态层约束** —— 开着面板按 V 会把甲板
+   * 盖在面板上面（两块整屏层层叠），而 Esc 只关最上面一层，玩家要退两次。
+   */
+  assert(/if \(e\.key !== 'v' && e\.key !== 'V'\) return/.test(main),
     'V 键开启在 MainMap 处理')
+  assert(/activePanel !== null[\s\S]{0,220}setDeckView/.test(main),
+    'V 键在面板/帮助/航海志打开时不接（与 Esc 的层级顺序一致）')
   assert(/deckView\) \{\s*\n\s*useMapStore\.getState\(\)\.setDeckView\(false\)/.test(deck),
     'DeckView 只负责"关"')
 

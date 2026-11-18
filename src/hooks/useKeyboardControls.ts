@@ -133,6 +133,15 @@ export function useKeyboardControls() {
       }
 
       // 6. 常规操作
+      /*
+       * 【有模态层时，地图级命令一律不接】
+       * 下面这几个分支原本只判 gamePhase：开着贸易面板按「空格」会改航速、
+       * 按「A」会直接切到岸上（面板还在上面盖着，合上时玩家已经在岸上了）。
+       * 数字键（换面板）与 Esc（退一层）与 ? （帮助）要照常，所以守卫放在
+       * 每一个"作用在海面"的分支里，而不是统一提前 return。
+       */
+      const modalOpen = s.activePanel !== null || s.showHelp || useMapStore.getState().recordsOpen
+
       const panelIdx = Number.parseInt(key, 10) - 1
       if (Number.isFinite(panelIdx) && panelIdx >= 0 && panelIdx < PANEL_KEYS.length) {
         e.preventDefault()
@@ -144,6 +153,7 @@ export function useKeyboardControls() {
       switch (key) {
         case ' ': {
           e.preventDefault()
+          if (modalOpen) break   // 面板开着时改航速没有可见回执，等于静默改状态
           // 暂停 / 恢复（恢复回 3x 常规档）
           s.setSimSpeed(s.simSpeed === 0 ? 3 : 0)
           break
@@ -159,6 +169,7 @@ export function useKeyboardControls() {
         }
         case 'a': {
           // 岸上 ⇄ 海图。航行中不许上岸：船不在港，视角不能撒谎。
+          if (modalOpen) break    // 面板盖着时换场景，玩家合上面板会发现"已经在岸上了"
           const m = useMapStore.getState()
           if (m.viewMode === 'harbor') m.setViewMode('chart')
           else if (!s.fleet.isSailing && s.fleet.currentPortId != null) m.setViewMode('harbor')

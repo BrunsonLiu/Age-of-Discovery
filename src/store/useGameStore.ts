@@ -2742,7 +2742,19 @@ export const useGameStore = create<GameStore>()(
       setActivePanel: (panel) => {
         const tab = panel ? RECORD_PANEL_TAB[panel] : undefined
         if (tab) {
-          useMapStore.getState().openLogbook(tab)
+          /*
+           * 【同一个入口按第二次要能关】
+           * 记录类（任务/日志/图鉴/成就/船长）走的是 mapStore 的航海志，
+           * 不设 activePanel。于是侧栏/数字键的"再点一次收起"对它们失效：
+           * 玩家按 2 打开任务，再按 2 还是任务 —— 读作"这个键卡住了"。
+           * 其余面板（港口/贸易/…）在调用方是 toggle 语义，这里补上同样的一手。
+           */
+          const m = useMapStore.getState()
+          if (m.recordsOpen && m.logTab === tab) {
+            m.closeRecords()
+            return
+          }
+          m.openLogbook(tab)
           return
         }
         /*
