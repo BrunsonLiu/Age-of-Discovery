@@ -52,12 +52,21 @@ function Stat({ icon: Icon, label, value, delta, unit }: {
    */
   const tone = flat ? 'text-gold-500' : delta > 0 ? 'text-safe-300' : 'text-danger-200'
   return (
+    /*
+     * 【差值自己占一格，右对齐定宽】
+     * 原来是「图标 标签 数值 差值」一路 inline：差值的起点跟着数值宽度跑，
+     * 实测同一张卡里四个差值的左边缘分别是 428 / 432 / 484 / 508 ——
+     * 而这四列存在的唯一理由就是"竖着比船型"（速度 +4 / 耐久 −20 …）。
+     * 差值挤在数值后面时，比的是"哪行短"，不是"哪个数大"。
+     * 现在 `ml-auto + w-[2.1rem] + 右对齐`，四个差值落在四列等宽的网格里，
+     * 三张卡共用同一套列线，整列往下扫就能看出哪条船更能装。
+     */
     <span className="flex items-baseline gap-1 text-[13px] font-serif text-gold-400 whitespace-nowrap">
       <Icon size={10} className="shrink-0 self-center" aria-hidden="true" />
       <span className="text-gold-500">{label}</span>
       <span className="text-gold-200 tabular-nums">{fmt(value)}{unit}</span>
       <span
-        className={`tabular-nums text-[12px] ${tone}`}
+        className={`ml-auto w-[2.1rem] text-right tabular-nums text-[12px] ${tone}`}
         data-delta={flat ? 0 : delta}
         aria-label={flat ? '与旗舰相同' : `比旗舰${delta > 0 ? '多' : '少'} ${fmt(Math.abs(delta))}`}
       >

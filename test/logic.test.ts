@@ -8859,6 +8859,18 @@ console.log('\n== 天数口径守卫 ==')
   assert(/aria-label=/.test(pd), '服务按钮有 aria-label（图标按钮不能只靠画认）')
   assert(/testId="shipyard-panel"/.test(sy), '造船厂面板有稳定锚点（走 FullScreenPanel 的 testId）')
 
+  /*
+   * 【差值自己占一格：这一列存在的唯一理由是"竖着比"】
+   * 原来是「图标 标签 数值 差值」一路 inline，差值的起点跟着数值宽度跑：
+   * 同一张卡里四个差值的左边缘实测 428 / 432 / 484 / 508 —— 差 80px。
+   * 玩家要做的判断是"哪条船更能装、更快"（速度 +4 / 耐久 −20 …），
+   * 差值挤在数值后面时比的是"哪行短"。改成 `ml-auto w-[2.1rem] text-right` 之后，
+   * 三张卡的四个差值右边缘逐张相等（589 / 706 / 823 / 940）。
+   */
+  assert(/ml-auto w-\[2\.1rem\] text-right tabular-nums/.test(sy),
+    '船只卡的四项差值各占一格、右对齐定宽（四列能竖着比，三张卡共用列线）')
+  assert(/sm:grid-cols-4 gap-x-3/.test(sy), '四项数据是四列网格（差值列才等距）')
+
   const pkg = JSON.parse(readFileSync(join(process.cwd(), 'package.json'), 'utf8'))
   assert(pkg.scripts['test:e2e:portsvc']?.includes('port-services.mjs'), '服务按钮有独立巡检命令')
   assert(pkg.scripts['test:e2e:seg3']?.includes('test:e2e:portsvc'),
