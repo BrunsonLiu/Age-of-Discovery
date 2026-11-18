@@ -144,7 +144,8 @@ export default function ShipyardPanel() {
               <div className="text-[12px] tracking-[0.1em] text-gold-600 font-serif">金币</div>
               <div className="flex items-baseline gap-1.5 mt-0.5">
                 <span className="text-gold-200 text-[18px] md:text-[21px] font-serif tabular-nums leading-none">{fleet.gold}</span>
-                <Coins size={12} className="text-gold-500" />
+                {/* 后缀单位用字不用图标：那枚 12px 金币在 21px 数字后读作 "500 ％" */}
+                <span className="text-gold-500 text-[13px] font-serif">金</span>
               </div>
             </div>
             <div className="px-3 md:px-4 py-2.5">

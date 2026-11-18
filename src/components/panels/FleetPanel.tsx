@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Ship, Coins, Utensils, Droplets, Heart, Anchor, Wind, Skull, Map, ChevronRight, Star, Users, Sailboat, Tag, Globe, Award, Crown } from 'lucide-react'
+import { Ship, Utensils, Droplets, Heart, Anchor, Wind, Skull, Map, ChevronRight, Star, Users, Sailboat, Tag, Globe, Award, Crown } from 'lucide-react'
 import { useGameStore } from '@/store/useGameStore'
 import { useMapStore } from '@/store/useMapStore'
 import { routes } from '@/data/routes'
@@ -138,7 +138,14 @@ export default function FleetPanel() {
               <div className="text-[12px] tracking-[0.1em] text-gold-600 font-serif">金币</div>
               <div className="flex items-baseline gap-1 mt-0.5">
                 <span className="text-gold-200 text-[17px] md:text-[20px] font-serif tabular-nums leading-none">{fleet.gold}</span>
-                <Coins size={11} className="text-gold-500" />
+                {/*
+                  【后缀单位只能是字，不能是图标】
+                  这里原来是一枚 11px 金币图标。它在 20px 数字后面读作 "500 ％"
+                  —— 和贸易账本里那枚被读成 "‰" 的是同一个病。
+                  这一行另外两格写的是「1 艘」「8.0 节」，单位都是字；
+                  金币这一格改成「金」，四格才是同一套写法。
+                */}
+                <span className="text-gold-500 text-[12px] font-serif">金</span>
               </div>
             </div>
             <div className="px-3 py-2.5 min-w-0">
@@ -284,7 +291,16 @@ export default function FleetPanel() {
                 但条的填充仍按 200 份算——若把天数折成百分比，
                 就会出现「条才一半、却已经标红」的错位。
                 士气则必须用游戏的绝对线 45/60，不能用百分比：
-                沿用 30% 会让士气 38 显示成金色，而系统已按低士气处理。 */}
+                沿用 30% 会让士气 38 显示成金色，而系统已按低士气处理。
+
+                【颜色也必须跟着天数走，否则同一行里两种说法打架】
+                2026-11-18 实测：食物 100/200（=50%，被 60% 的默认阈值判成
+                `warn`）条是金色，可右边那句提示写的是「可撑 30+ 天」。
+                危险与否在这里由"还能撑几天 vs 这趟要走几天"决定，
+                不由"还剩几成"决定 —— 所以用 `tone={supplyTone(...)}`
+                把判定权交给同一个函数：条的颜色与它右边的字永远说同一件事。
+                反过来更危险的那个方向也一并堵住：粮水 65% 但差 27 天时，
+                条会跟着变红，而不是绿着骗人。 */}
             <ResourceBar
               value={fleet.food}
               maxValue={200}
@@ -292,6 +308,7 @@ export default function FleetPanel() {
               icon={<Utensils size={14} />}
               hint={supplyHint('food')}
               hintTone={supplyTone('food')}
+              tone={supplyTone('food')}
             />
             <ResourceBar
               value={fleet.water}
@@ -300,6 +317,7 @@ export default function FleetPanel() {
               icon={<Droplets size={14} />}
               hint={supplyHint('water')}
               hintTone={supplyTone('water')}
+              tone={supplyTone('water')}
             />
             <ResourceBar
               value={fleet.morale}

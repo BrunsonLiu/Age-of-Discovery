@@ -4023,6 +4023,46 @@ console.log('== 45. 常驻资源条：界面天数必须等于实际扣的天数
   // 耐久度仍走百分比：100 点耐久打到 25 点才算危险，40 点只是紧张
   assert(getStatusColor(25, 100) === 'bg-danger-400', '耐久 25/100 走百分比 → 危险色')
   assert(getStatusColor(40, 100) === 'bg-gold-400', '耐久 40/100 走百分比 → 紧张色（未被绝对阈值误判）')
+
+  /*
+   * --- 8) 条的**轨道**必须等长，提示列必须常驻 ---
+   *
+   * 2026-11-18 实测：`{hint && …}` 让提示列只在有字时占位，
+   * 于是四条并排时 食物/淡水 轨道 378..976（598px）、士气/船员 378..1046（668px）——
+   * **差 70px**。这一屏让玩家判断的方式恰恰是"比条的长短"，
+   * 轨道右端不在一条线上时，50% 看起来比 75% 还长。
+   * 现在提示列固定 5.5rem、没字也渲染，四条 378..948 逐像素一致。
+   */
+  {
+    const rb = readFileSync(join(process.cwd(), 'src', 'components', 'ui', 'ResourceBar.tsx'), 'utf8')
+    assert(/shrink-0 w-\[5\.5rem\] text-right/.test(rb),
+      '提示列是固定 5.5rem 的常驻列（缺了它四条轨道右端不齐）')
+    assert(!/\{hint && \(/.test(rb),
+      '提示不许再用 `{hint && <span>}` 条件渲染（那会让轨道长度随内容变化）')
+    /*
+     * --- 9) 颜色必须与它右边那句话同源 ---
+     * 食物 100/200 被 60% 默认阈值判成 warn（金色），而提示写着「可撑 30+ 天」：
+     * 同一行两种说法。粮水的危险线是"还能撑几天 vs 这趟要走几天"，
+     * 所以条的颜色要能被 `tone` 覆盖，且舰队面板必须真的传。
+     */
+    assert(/tone\?: 'normal' \| 'warn' \| 'critical'/.test(rb) && /const statusColor = tone \?/.test(rb),
+      'ResourceBar 支持按游戏判定覆盖水位色（tone）')
+    const fp = readFileSync(join(process.cwd(), 'src', 'components', 'panels', 'FleetPanel.tsx'), 'utf8')
+    assert((fp.match(/tone=\{supplyTone\('/g) || []).length === 2,
+      '舰队面板的粮水两条都把 supplyTone 传给条（颜色和提示说同一件事）')
+
+    /*
+     * --- 10) 仪表条的金币格：后缀单位必须是字，不能是图标 ---
+     * 贸易账本里那枚 11px 金币在 15px 数字后被读成 "85 ‰"；
+     * 仪表条里同样一枚挂在 20px 数字后，被读成 "500 ％"。
+     * 同一行另外几格写的是「1 艘」「8.0 节」，单位都是字 —— 金币这格也得是一字。
+     */
+    const sy = readFileSync(join(process.cwd(), 'src', 'components', 'panels', 'ShipyardPanel.tsx'), 'utf8')
+    assert(!/<Coins size=\{1[12]\} className="text-gold-500" \/>/.test(fp) &&
+      !/<Coins size=\{1[12]\} className="text-gold-500" \/>/.test(sy),
+      '仪表条的金币格不再挂金币图标（它会被读成百分号）')
+    assert(/>金<\/span>/.test(fp) && />金<\/span>/.test(sy),
+      '仪表条的金币格写文字单位「金」（与 艘/节 同一套）')  }
 }
 
 /* ============ 第 46 组：事件选项结构化摘要——预览必须等于实际 ============ */
