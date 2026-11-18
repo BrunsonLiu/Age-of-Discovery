@@ -68,6 +68,20 @@ export default function SailingController() {
   const weatherSailMul = WEATHER_INFO[weather.kind].sailMul * weatherFavorFactor(weather.kind)
   const sightRangeNm = SIGHT_RANGE_NM * WEATHER_INFO[weather.kind].visibility
 
+  /*
+   * 【打开面板 = 停船】
+   * 船的主循环原来只看 `isSailing && gamePhase === 'playing' && waypoint`，
+   * 而 `setActivePanel` 只改面板、不动 gamePhase —— 于是「航行中点开贸易面板
+   * 挑一批货」的这几秒里，船还在背后继续开：天数照涨、可能冲进风暴，
+   * 甚至已经越过目的港。玩家合上面板发现船在别处，读作 bug。
+   *
+   * 回合制的正确语义是：**你打开账本时，世界等你**。
+   * 这三样东西只要有一个在，就是"玩家正在看界面，不在海上"。
+   * 注意用 `!== null` 而不是真值判断：activePanel 可能是 'fleet' 等字符串。
+   */
+  const uiOpen = useGameStore(s => s.activePanel !== null || s.showHelp)
+  const recordsOpen = useMapStore(s => s.recordsOpen)
+
   const lastTimeRef = useRef<number>(0)
   const dayAccumRef = useRef<number>(0)
   const rafRef = useRef<number>(0)
@@ -95,7 +109,7 @@ export default function SailingController() {
   const helmTokenRef = useRef<number>(0)
 
   useEffect(() => {
-    const shouldRun = isSailing && gamePhase === 'playing' && !!waypoint
+    const shouldRun = isSailing && gamePhase === 'playing' && !!waypoint && !uiOpen && !recordsOpen
 
     if (!shouldRun) {
       if (rafRef.current) {
@@ -395,7 +409,7 @@ export default function SailingController() {
       }
       lastTimeRef.current = 0
     }
-  }, [isSailing, gamePhase, waypoint, simSpeed, shipSpeedKnots, windFavor, weatherSailMul, sightRangeNm, stance])
+  }, [isSailing, gamePhase, waypoint, simSpeed, shipSpeedKnots, windFavor, weatherSailMul, sightRangeNm, stance, uiOpen, recordsOpen])
 
   return null
 }

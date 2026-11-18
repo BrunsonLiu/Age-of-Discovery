@@ -8265,6 +8265,23 @@ console.log('\n== 天数口径守卫 ==')
     '导出/导入都在滚到底之后做真实命中测试（不滚永远量到 y>vh）')
 }
 
+// ---------------- 打开面板 = 停船 ----------------
+/*
+ * 实测（2026-11-18）：`setActivePanel` 只改面板，不动 gamePhase；
+ * 而船的主循环门控是 `isSailing && gamePhase === 'playing' && waypoint`，
+ * 于是航行中点开贸易面板的几秒里船还在背后开 —— 天数照涨、可能已越过目的港。
+ * 回合制的语义应该是"你打开账本时，世界等你"。
+ */
+{
+  const sail = readFileSync(join(process.cwd(), 'src', 'components', 'map', 'SailingController.tsx'), 'utf8')
+  assert(/shouldRun = [^\n]*!uiOpen[^\n]*!recordsOpen/.test(sail),
+    '航行主循环把「面板/航海志打开」也算作不该跑')
+  assert(/const uiOpen = useGameStore\(s => s\.activePanel !== null \|\| s\.showHelp\)/.test(sail),
+    'uiOpen 用 !== null 判断（activePanel 可能是字符串）')
+  assert(/\[isSailing, gamePhase, waypoint,[^\]]*uiOpen, recordsOpen\]/.test(sail),
+    '依赖数组带上 uiOpen/recordsOpen，否则关面板时不会重启 rAF')
+}
+
 // ---------------- 历史时间轴刻线：不许画到屏幕外 ----------------
 // 实测：1440 视口下 day=200 那根 2px 刻线的 rect 是 [1546,1548]，
 // 把 documentElement.scrollWidth 从 1440 撑成 1548；玩家却永远看不见它。
