@@ -8284,6 +8284,60 @@ console.log('\n== 天数口径守卫 ==')
     '依赖数组带上 uiOpen/recordsOpen，否则关面板时不会重启 rAF')
 }
 
+// ---------------- 界面色只许来自本项目色阶 ----------------
+/*
+ * 项目有一套语义色阶：gold / parchment / ocean / danger / safe，
+ * 外加两个"深色底上的语义文字色" .ink-good / .ink-bad。
+ * Tailwind 的原生色（red/emerald/sky/amber/rose/blue/orange…）不在其中 ——
+ * 它们各自有一套明度与饱和度，"收益"于是能在一屏里出现两种绿、
+ * "损失"出现两种红，敌人一眼就看得出是不同来源的控件。
+ *
+ * 2026-11-18 清过一次（16 处 text-* + 若干 bg-*）。这里把它钉住：
+ * **原生色只允许留在 src/components/minigames/ 里**，那是玩法可见性
+ * （安全窗口、命中带必须一眼看得见），不是界面色。
+ *
+ * 判据只扫 ts/tsx —— utils/miniGame.ts 的说明文案里也嵌着 HTML 片段，
+ * 当年只扫 tsx 就漏了两处。
+ */
+{
+  const RAW = /(?:text|bg|border|from|to|via)-(?:red|emerald|green|sky|blue|indigo|violet|purple|pink|rose|lime|teal|cyan|amber|yellow|orange|fuchsia)-\d{2,3}/
+  const offenders: string[] = []
+  const walk2 = (dir: string): string[] => readdirSync(dir, { withFileTypes: true }).flatMap(e => {
+    const p2 = join(dir, e.name)
+    return e.isDirectory() ? walk2(p2) : (/\.tsx?$/.test(e.name) ? [p2] : [])
+  })
+  for (const f of walk2(join(process.cwd(), 'src'))) {
+    const rel = f.slice(process.cwd().length + 1).replace(/\\/g, '/')
+    if (rel.startsWith('src/components/minigames/')) continue
+    readFileSync(f, 'utf8').split('\n').forEach((ln, i) => {
+      if (RAW.test(ln) && !ln.trim().startsWith('*') && !ln.trim().startsWith('//')) {
+        offenders.push(`${rel}:${i + 1}`)
+      }
+    })
+  }
+  assert(offenders.length === 0,
+    `界面色只许用项目色阶（原生 Tailwind 色残留 ${offenders.length} 处：${offenders.slice(0, 3).join(', ') || '无'}）`)
+
+  // 玩法例外确实还在（守卫不空转）：minigames 里至少还有一处原生色
+  const mgDir = join(process.cwd(), 'src', 'components', 'minigames')
+  const mgHasRaw = readdirSync(mgDir).filter(n => /\.tsx$/.test(n))
+    .some(n => RAW.test(readFileSync(join(mgDir, n), 'utf8')))
+  assert(mgHasRaw, 'minigames 里的玩法可见性例外仍在（否则这条白名单该删掉）')
+}
+
+// ---------------- 座次表：表头与数字共用一条右边界 ----------------
+/*
+ * 每格是「600 #1」—— 数值右边跟着 20px 的名次格（+6px 间距），
+ * 所以数值的右边界比列边界左 26px。表头若贴列边界右对齐，就悬在数字外面。
+ * 依赖关系写死在这里：**改名次格宽或间距，表头的 pr 必须同步改**。
+ */
+{
+  const lb = readFileSync(join(process.cwd(), 'src', 'components', 'logbook', 'LogbookScreen.tsx'), 'utf8')
+  assert(/inline-block w-5 text-right/.test(lb), '名次格是 20px 定宽（w-5）')
+  assert(/text-right pr-\[26px\]/.test(lb),
+    '三个数字列的表头右缩 26px（= 6px 间距 + 20px 名次格），与数字右边界对齐')
+}
+
 // ---------------- 历史时间轴刻线：不许画到屏幕外 ----------------
 // 实测：1440 视口下 day=200 那根 2px 刻线的 rect 是 [1546,1548]，
 // 把 documentElement.scrollWidth 从 1440 撑成 1548；玩家却永远看不见它。

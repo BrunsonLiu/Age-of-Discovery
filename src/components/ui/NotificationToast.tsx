@@ -14,9 +14,9 @@ const iconMap: Record<NotificationKind, typeof Compass> = {
 }
 
 const colorMap: Record<NotificationKind, string> = {
-  discovery: 'border-blue-400/60 bg-slate-900/95',
+  discovery: 'border-ocean-200/60 bg-slate-900/95',
   history: 'border-gold-400/60 bg-slate-900/95',
-  achievement: 'border-amber-400/60 bg-slate-900/95',
+  achievement: 'border-gold-300/60 bg-slate-900/95',
   // 行情用金铜色（钱），不用红色 —— 它不是警告
   market: 'border-gold-500/70 bg-slate-900/95',
   warning: 'border-danger-300/60 bg-slate-900/95',
