@@ -1054,9 +1054,21 @@ export default function MainMap() {
                       </span>
                       {r.name}
                     </span>
-                    {/* 分母来自 ports.length：加了大明广州之后写死 /20 就是错的
-                        （同一个文件上面「探索港口」那条已经踩过一模一样的坑）。 */}
-                    <span className="tabular-nums">{r.gold} 金币 · 声望 {r.fame} · 探索 {r.ports}/{ports.length}</span>
+                    {/*
+                      【三项各占定宽格，数字才能竖着比】
+                      原来整串是自由排版："600 金币 · 声望 10 · 探索 3/21" ——
+                      四个人的数字与后面跟着的"金币/声望/探索"错开落，
+                      扫一眼比不出谁声望高。这是全屏唯一一张"座次表"，
+                      比不了列就只是四行字。
+                      每个数字放进固定宽度的右对齐格（tabular-nums），
+                      名次、金币、声望、探索各自成一列；文案保持原样
+                      （e2e 用 /探索\s+(\d+)\/(\d+)/ 读分母，别让它在两处都改）。
+                    */}
+                    <span className="tabular-nums">
+                      <span className="inline-block w-9 text-right">{r.gold}</span> 金币 ·
+                      声望 <span className="inline-block w-5 text-right">{r.fame}</span> ·
+                      探索 <span className="inline-block w-11 text-right">{r.ports}/{ports.length}</span>
+                    </span>
                   </div>
                 ))}
               </div>
