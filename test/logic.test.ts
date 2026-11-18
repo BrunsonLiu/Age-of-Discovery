@@ -8516,6 +8516,24 @@ console.log('\n== 天数口径守卫 ==')
 
   assert(pkg.scripts['test:e2e:broker']?.includes('broker-parity.mjs'), '掮客对账有独立命令')
   assert(pkg.scripts['test:e2e:seg7']?.includes('test:e2e:broker'), '掮客对账进了 seg7（不许变成孤儿巡检）')
+
+  /*
+   * 【账本的数字列：单位写在表头，数字后面不许挂图标】
+   * 2026-11-18 2x 截图实测：`85` 后面那枚 11px、60% 不透明的金币图标，
+   * 在 15px 数字旁读作 **"85 ‰"** —— 一个金币价被排成了千分数。
+   * 这个项目的铁律是"屏幕上的数字必须等于实际变化"，比少一个单位严重。
+   * 现在：表头 `单价（金）`，两行（买入/卖出）的数字都不带符号，
+   * 于是 6/6 行的最后一个字距离右边缘都是 1083（Range 量的，不是眼睛）。
+   */
+  // 断言落在**表头那段标记**上：源码注释里也写着「单价（金）」，裸 test 会自伤
+  assert(/>单价（金）</.test(trade), '价格列的单位写在表头上（单价（金））')
+  assert(!/buyPrice\}\s*<Coins/.test(trade) && !/sellPrice\}\s*<Coins/.test(trade),
+    '价格数字后面不再挂金币图标（那枚图标会被读成千分号"‰"）')
+  // 买入格是模板串（含 tone 颜色），卖出格是字面量 —— 判据只认共有的那段
+  assert((trade.match(/text-\[15px\] font-serif tabular-nums/g) || []).length >= 2,
+    '买入/卖出两个价格格都是右对齐纯数字（同一列才有共同的右边缘）')
+  assert(!/flex items-center justify-end gap-1 text-\[15px\]/.test(trade),
+    '价格格不再是 flex 行（图标当后缀会把数字挤离右边缘）')
   assert(pkg.scripts['test:e2e:all']?.includes('test:e2e:broker'), 'all 也含掮客对账')
   assert(/voyage-verdict-text/.test(audit) && /voyage-route-distance/.test(audit),
     '掮客对账读的是稳定 DOM 锚点，不是从整屏文本里正则捞')

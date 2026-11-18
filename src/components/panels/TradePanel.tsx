@@ -84,16 +84,24 @@ function BuyRow({ portId, pg, fleet, usedCapacity, totalCapacity, onBuy, recomme
         {stock}
       </span>
 
+      {/*
+        【价格后面不再挂那枚小金币图标 —— 它被读成 "%"】
+        2x 截图放大看：`85` 后面那枚 11px、60% 不透明的金币图标，
+        在账本行里读作 **"85 ‰"**，也就是"八十五个千分号"。
+        而这个项目的铁律是"屏幕上的数字必须等于实际变化"，
+        一个金币价被排成百分数，比少一个单位严重得多。
+        单位交给表头（`单价（金）`）：账本里数字列右对齐、不含任何符号，
+        一列数字才有共同的右边缘，横向比价才成立（这也是账本的惯例）。
+      */}
       <span
-        className={`flex items-center justify-end gap-1 text-[15px] font-serif tabular-nums ${TONE_CLASS[tone]}`}
+        className={`text-right text-[15px] font-serif tabular-nums ${TONE_CLASS[tone]}`}
         data-price={buyPrice}
         data-tone={tone}
         title={TONE_HINT[tone]}
       >
-        {tone === 'cheap' && <TrendingDown size={12} />}
-        {tone === 'expensive' && <TrendingUp size={12} />}
+        {tone === 'cheap' && <TrendingDown size={12} className="inline -mt-0.5 mr-1" aria-hidden="true" />}
+        {tone === 'expensive' && <TrendingUp size={12} className="inline -mt-0.5 mr-1" aria-hidden="true" />}
         {buyPrice}
-        <Coins size={11} className="opacity-60" />
       </span>
 
       <div className="flex gap-1 justify-end">
@@ -171,11 +179,10 @@ function SellRow({ portId, item, onSell }: {
       </span>
 
       <span
-        className="flex items-center justify-end gap-1 text-safe-400 text-[15px] font-serif tabular-nums"
+        className="text-right text-safe-400 text-[15px] font-serif tabular-nums"
         data-price={sellPrice}
       >
         {sellPrice}
-        <Coins size={11} className="opacity-60" />
       </span>
 
       <div className="flex gap-1 justify-end">
@@ -479,7 +486,8 @@ export default function TradePanel() {
             text-[12px] tracking-[0.1em] font-serif text-gold-600">
             <span>货物</span>
             <span className="text-right">{tab === 'buy' ? '库存' : '持有'}</span>
-            <span className="text-right">单价</span>
+            {/* 单位只写在表头上（见 BuyRow 里那段注释）：账本的数字列不带符号 */}
+            <span className="text-right">单价（金）</span>
             {/* 表头必须和它那一列的内容对齐：内容是右对齐的按钮组，
                 表头居中会让人以为"买入"是另一列 */}
             <span className="text-right">{tab === 'buy' ? '买入' : '卖出'}</span>
