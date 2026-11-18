@@ -621,9 +621,17 @@ export default function MainMap() {
 
           {/* 天候徽章：当前天气 + 风速 + 航速影响，点击展开三日预报 */}
           <div
-            /* 徽章永远排在罗盘正下方：移动端罗盘 56+64=120，徽章 124；
-               桌面 56+96=152，徽章 156。两边都留 4px。 */
-            className={isMobile ? 'absolute top-[7.75rem] left-2' : 'absolute top-[9.75rem] left-3'}
+            /*
+              【桌面：徽章挪到「航路条」正下方，不再挂在罗盘底下】
+              原来是三件东西摆成一个 L：罗盘(12~108) 与徽章(12~191) 在左列，
+              航路条(120~469) 在右列。于是 x∈[120,469] / y∈[101,156] 是一块
+              55px 高的**空洞** —— 这块空白两边没有边界，读作"这里少了个东西"。
+              现在徽章归到右列（120, 107）：左列只有罗盘、右列两条读数，
+              两列底边几乎齐平（152 vs 145），左上角从 L 变成一个整齐的两列块。
+              移动端不变（那里没有右列的航路条，徽章仍在罗盘正下方 4px，
+              见 mobile-layout 的重叠断言）。
+            */
+            className={isMobile ? 'absolute top-[7.75rem] left-2' : 'absolute top-[6.7rem] left-[7.5rem]'}
             style={{ zIndex: Z.COMPASS }}
           >
             <WeatherBadge />

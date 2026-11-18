@@ -8172,7 +8172,10 @@ console.log('\n== 天数口径守卫 ==')
 // 中文 12px 下限：全项目不许再出现 <12px 的 Tailwind 字号。
 // 实测取证见 .workbuddy/probe-small-text.mjs：改前 18 个界面共 68 条去重中文小字，
 // 全部藏在浮层里，只巡检「地图上、无浮层」的 typography-audit.mjs 一条也看不见。
-// 只有两个不含中文的纯符号角标例外，白名单本身也要断言命中，防止守卫空转。
+// 只有一个不含中文的纯符号角标例外（小地图上的「N」），白名单本身也要断言
+// 命中，防止守卫空转。
+// 2026-11-18：天候徽章末尾那个 ▾ 原来是 11px，已提到 12px —— 例外就该删掉。
+// 留着它会变成"白名单永远命中 0 处"，守卫自己先红。
 {
   const srcRoot = join(process.cwd(), 'src')
   const walk = (dir: string): string[] => readdirSync(dir, { withFileTypes: true }).flatMap(e => {
@@ -8182,9 +8185,8 @@ console.log('\n== 天数口径守卫 ==')
   const TINY = /text-\[(?:9|10|11)px\]/
   const ALLOW = [
     { name: 'MiniMap.tsx', line: /text-\[10px\].*?>N<\/span>/ },
-    { name: 'WeatherBadge.tsx', line: /text-\[11px\].*?>▾<\/span>/ },
   ]
-  const hitAllow = [0, 0]
+  const hitAllow = [0]
   const bad: string[] = []
   for (const f of walk(srcRoot)) {
     readFileSync(f, 'utf8').split('\n').forEach((ln, i) => {

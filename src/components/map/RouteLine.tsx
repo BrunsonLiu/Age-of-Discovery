@@ -112,10 +112,20 @@ export function RouteLine() {
             <Polyline
               positions={points}
                 pathOptions={{
+                  /*
+                   * 【候选航线必须比"已选的"安静一档】
+                   * 原来两者只差 0.25 不透明度（0.95 vs 0.7）、线宽 3.5 vs 2.5 ——
+                   * 停泊时朝西那条 3800 海里的候选（danger 4，暗红）横穿半个屏幕、
+                   * 从船位旁边划过去，看上去就是"一条莫名其妙的辅助线"，
+                   * 而不是"一条可以选的航路"。
+                   * 候选改成**点线**（2 6）+ 1.6px + 0.45：读作"铅笔打的草稿"；
+                   * 选中仍是实感虚线 3.5px + 0.95 + 描边光晕。
+                   * 层级由此变成：草稿 < 已定 < 船。
+                   */
                   color: isSelected ? '#3d2810' : color,
-                  weight: isSelected ? 3.5 : 2.5,
-                  opacity: isSelected ? 0.95 : 0.7,
-                  dashArray: isSelected ? '10 6' : '6 5',
+                  weight: isSelected ? 3.5 : 1.6,
+                  opacity: isSelected ? 0.95 : 0.45,
+                  dashArray: isSelected ? '10 6' : '2 6',
                   lineCap: 'round',
                   lineJoin: 'round',
                   // route-line 是**稳定选择器**：e2e 要能只挑出候选航线

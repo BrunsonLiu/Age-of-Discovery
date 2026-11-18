@@ -189,9 +189,14 @@ export default function Compass({ windBearing = null, size = 'w-24 h-24' }: Comp
           }}
         >
           <svg viewBox="0 0 40 40" className="w-5 h-5">
+            {/*
+              【箭头不能是浅蓝】#9fc5e8 是一个很干净的"电子蓝"，压在铜金圆牌上像
+              另一个 App 的图标。蓝在这套配色里只表示"海/航行中"，风向是**读数**，
+              归金色那一族（与盘面的方位字母、指针同色系）。
+            */}
             <g style={{ transform: `rotate(${windBearing}deg)`, transformOrigin: '20px 20px' }}>
-              <polygon points="20,5 25,26 20,22 15,26" fill="#9fc5e8" opacity="0.95" />
-              <line x1="20" y1="22" x2="20" y2="33" stroke="#9fc5e8" strokeWidth="1.4" opacity="0.6" />
+              <polygon points="20,5 25,26 20,22 15,26" fill="#efd9a4" opacity="0.98" />
+              <line x1="20" y1="22" x2="20" y2="33" stroke="#c9a96e" strokeWidth="1.4" opacity="0.75" />
             </g>
             <circle cx="20" cy="20" r="2" fill="#c9a96e" opacity="0.7" />
           </svg>

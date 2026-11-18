@@ -57,8 +57,6 @@ export default function WeatherBadge() {
     : null
 
   const speedPct = Math.round((info.sailMul - 1) * 100)
-  // 风向箭头：风吹去的方位 → 旋转角（罗盘 0°=上）
-  const windArrowRotation = weather.windDir
 
   return (
     <div data-testid="weather-badge" className="pointer-events-auto select-none">
@@ -90,14 +88,23 @@ export default function WeatherBadge() {
           <span className="text-gold-200 font-serif text-[12px]">{season.name}</span>
         </span>
         {speedPct !== 0 && (
-          <span className={`font-serif text-xs tabular-nums ${speedPct < 0 ? 'text-red-300' : 'text-emerald-300'}`}>
+          /*
+            红/绿用调色板里的 ink-bad / ink-good，不用 tailwind 的 red-300 /
+            emerald-300 —— 后两个不在本项目的色阶里（safe/danger 才是），
+            同一屏出现两套红绿会读成"不同来源的控件"。
+          */
+          <span className={`font-serif text-xs tabular-nums ${speedPct < 0 ? 'ink-bad' : 'ink-good'}`}>
             航速{speedPct > 0 ? '+' : ''}{speedPct}%
           </span>
         )}
-        <svg width="12" height="12" viewBox="0 0 24 24" style={{ transform: `rotate(${windArrowRotation}deg)` }} className="transition-transform duration-700">
-          <path d="M12 2 L16 14 L12 11.5 L8 14 Z" fill="#d4a838" />
-        </svg>
-        <span className={`text-gold-500 text-[11px] transition-transform ${open ? 'rotate-180' : ''}`}>▾</span>
+        {/*
+          【风向箭头已删】同一个数（风向方位）在这块屏上出现在两处：
+          罗盘右下角那枚风向徽标（它旁边就是 N/S/E/W，位置天然对），
+          和这里一个 12px 的小三角。两处都画的结果是这一行末尾并排两个三角形
+          （风向箭头 + 展开箭头），看起来像两个"下拉"。
+          徽章只留展开箭头。风向要精确值看罗盘徽标的 title。
+        */}
+        <span className={`text-gold-500 text-[12px] transition-transform ${open ? 'rotate-180' : ''}`}>▾</span>
       </button>
 
       {open && (
