@@ -83,6 +83,8 @@ export default function VintageMapOverlay({
       aria-hidden="true"
     >
       <div className="vintage-paper" />
+      {/* 纸颗粒：让海、陆、矢量描边落在同一张纸上（见 index.css 的注释） */}
+      <div className="vintage-grain" />
       {sky && (
         <>
           <div ref={nightRef} className="sky-night" />

@@ -49,7 +49,7 @@ function BuyRow({ portId, pg, fleet, usedCapacity, totalCapacity, onBuy, recomme
    */
   return (
     <div
-      className={`relative grid items-center gap-x-2 gap-y-1 px-3 py-2.5 border-t border-gold-700/15
+      className={`relative grid items-center gap-x-2 gap-y-1 px-3 py-2.5 border-t border-gold-700/25 even:bg-white/[0.014]
         grid-cols-[minmax(0,1fr)_4rem_7.5rem]
         sm:grid-cols-[minmax(0,1fr)_4.5rem_6rem_9.5rem]
         transition-colors ${recommended ? 'bg-gold-700/12' : 'hover:bg-gold-700/8'}`}
@@ -136,7 +136,7 @@ function SellRow({ portId, item, onSell }: {
 
   return (
     <div
-      className="relative grid items-center gap-x-2 gap-y-1 px-3 py-2.5 border-t border-gold-700/15
+      className="relative grid items-center gap-x-2 gap-y-1 px-3 py-2.5 border-t border-gold-700/25 even:bg-white/[0.014]
         grid-cols-[minmax(0,1fr)_4rem_7.5rem]
         sm:grid-cols-[minmax(0,1fr)_4.5rem_6rem_9.5rem]
         transition-colors hover:bg-gold-700/8"

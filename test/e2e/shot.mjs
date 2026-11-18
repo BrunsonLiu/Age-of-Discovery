@@ -54,6 +54,8 @@ const clipMap = {
   side: { x: 0, y: 330, width: 130, height: 250 },
   panelr: { x: VW - 400, y: 50, width: 400, height: VH - 110 },
   panell: { x: 0, y: 50, width: 420, height: VH - 110 },
+  center: { x: 380, y: 150, width: 620, height: 420 },
+  shore: { x: 420, y: 200, width: 360, height: 300 },
 }
 await page.screenshot({ path: OUT, clip: clipMap[CLIP] ?? clipMap.all })
 console.log('saved', OUT)

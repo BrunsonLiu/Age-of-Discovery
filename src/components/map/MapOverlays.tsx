@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import { useMap } from 'react-leaflet'
-import { Polyline, Marker } from 'react-leaflet'
+import { Polyline, Polygon, Marker } from 'react-leaflet'
 import L from 'leaflet'
 import { useMapStore } from '@/store/useMapStore'
 import { useGameStore } from '@/store/useGameStore'
@@ -150,13 +150,30 @@ function CurrentLayer() {
 }
 
 function PirateLayer() {
+  /*
+   * 【海盗区要读作"一片海"，不是"一条线"】
+   * 原来用 `Polyline` + `fill: true`：Leaflet 的 Polyline **根本不填色**
+   * （fill 只有 Polygon 才有），所以屏幕上只剩一条 #a03030 的正红虚线，
+   * 横贯整个屏幕 —— 1440 下它比任何一条航路都显眼，读起来像调试用的辅助线，
+   * 而不是"这一带不安全"。
+   * 现在换成 Polygon：区域有底色（暗赭 6%），边界退到 1.2px / 32%，
+   * 虚线改成 2 6 的点线。区域靠"面"说话，线只是轮廓。
+   */
   return (
     <>
       {PIRATE_ZONES.map((zone, i) => (
-        <Polyline
+        <Polygon
           key={`pirate-${i}`}
           positions={pirateZonePolygon(zone)}
-          pathOptions={{ color: '#a03030', weight: 2, opacity: 0.6, dashArray: '8 6', fill: true, fillColor: '#a03030', fillOpacity: 0.08 }}
+          pathOptions={{
+            color: '#4a2418',
+            weight: 1,
+            opacity: 0.5,
+            dashArray: '2 7',
+            fill: true,
+            fillColor: '#8a3a28',
+            fillOpacity: 0.055,
+          }}
           interactive={false}
         />
       ))}

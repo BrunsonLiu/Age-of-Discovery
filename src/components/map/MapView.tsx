@@ -532,6 +532,22 @@ export default function MapView() {
               }}
               aria-hidden="true"
             />
+            {/*
+              【海面第二层：只做暗角，不做光斑】
+              第一版在这层放了两个大椭圆亮斑（想模拟"光从左上打过来"），
+              截图一看是两团边界可辨的浅色雾 —— 海面上出现"云影"比均匀更假。
+              海面高频做过 4 次都失败（贴图=方格布、正弦=灯芯绒），
+              这一层就只保留**唯一一件确定无害的事**：四周压暗。
+              它给整张图一个"纸放在桌上"的边界，越靠里越亮。
+            */}
+            <div
+              className="absolute inset-0 pointer-events-none"
+              style={{
+                background:
+                  'radial-gradient(ellipse 118% 96% at 50% 46%, transparent 40%, rgba(4,12,20,0.34) 100%)',
+              }}
+              aria-hidden="true"
+            />
             <MapContainer
               center={mapCenter}
               zoom={mapZoom}

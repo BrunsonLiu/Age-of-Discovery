@@ -94,10 +94,22 @@ export default {
          * 是另一条路**，两处都得改 —— 只改一处会留下"标题对了、按钮还是楷体"。
          * 拉丁仍走 Pirata One，汉字落到自托管子集（Noto Serif SC）。
          */
-        pirate: ['"Pirata One"', '"Noto Serif SC"', 'serif'],
+        pirate: ['"Cinzel"', '"Noto Serif SC"', 'serif'],
         // 中文字形不在 Crimson Text 里，必须显式给一个中文衬线，
         // 否则回退到浏览器默认 serif（Windows = 宋体 SimSun，小字发虚）
         serif: ['"Crimson Text"', '"Noto Serif SC"', 'Georgia', 'serif'],
+        /*
+         * 【mono 不再是等宽，而是"衬线 + tabular-nums"】
+         * 全站 30 处 `font-mono` 用的全是数字（金币、天数、耐久、价格、坐标）。
+         * Tailwind 默认 mono 栈在 Windows 上落到 **Consolas** ——
+         * 一个海盗游戏的底栏里横着一排程序员字体，这是"廉价感"最硬的来源之一。
+         *
+         * 等宽这件事并不需要等宽字体：CSS 的 `tabular-nums`（tnum）让每个数字
+         * 占同宽，比 Consolas 更稳，而且保住了衬线的书卷气。
+         * 类名不变（30 处调用一行都不用动），只换字体族；
+         * 再在 index.css 里给 `.font-mono` 补 font-variant-numeric。
+         */
+        mono: ['"Crimson Text"', '"Noto Serif SC"', 'Georgia', 'serif'],
       },
       // 时长与曲线对齐 src/utils/motion.ts 的 DURATION/EASE_* 档位
       // （config 是 JS 无法 import TS，改动需同步）

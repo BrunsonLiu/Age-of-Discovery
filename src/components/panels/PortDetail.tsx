@@ -139,6 +139,7 @@ export default function PortDetail() {
   return (
     <FullScreenPanel
       testId="port-panel"
+      width="wide"
       title={port.nameCn}
       subtitle={`第 ${fleet.day} 天 · ${fleet.isSailing ? '在海上' : '已靠岸'}`}
       footer="港口服务在下面；修理、补给、招募都是真按钮"
@@ -153,7 +154,7 @@ export default function PortDetail() {
           现在图钉在左列 320，文字在右列：图有它的框，信息有它的栏，
           两者顶边对齐，右边再也不会空出一条 448 宽的死区。
         */}
-        <div className="grid gap-4 md:gap-6 md:grid-cols-[minmax(0,20rem)_minmax(0,1fr)] items-start">
+        <div className="grid gap-4 md:gap-6 md:grid-cols-[minmax(0,21rem)_minmax(0,1fr)] items-start">
           <div className="min-w-0">
             {/* 港口场景插图（C 组）：到港第一眼——按区域/建筑风格选图 */}
             {portImg && (
@@ -189,12 +190,17 @@ export default function PortDetail() {
                 />
               </div>
             )}
-            {/* 三角旗串（F5）：港口张灯结彩。跟着图一起放在左列底部 */}
+            {/*
+              三角旗串（F5）：港口张灯结彩。
+              原来是 `w-[86%] mx-auto mt-2.5` —— 比图窄一截、还浮在下面 10px，
+              读作"贴上去的一张彩旗贴纸"。现在与图同宽、紧贴下沿（-mt-px 让
+              两道边重合），读作"这张画底下垂着的一排旗"，是一体的。
+            */}
             <img
               src={UI_ASSETS.pennants}
               alt=""
               aria-hidden="true"
-              className="w-[86%] mx-auto h-auto block mt-2.5 opacity-90"
+              className="w-full h-auto block -mt-px opacity-90"
             />
           </div>
 

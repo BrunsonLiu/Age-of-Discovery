@@ -146,7 +146,7 @@ export default function Compass({ windBearing = null, size = 'w-24 h-24' }: Comp
             读不出"—— 但罗盘在岸上是被 harbor-view 整屏盖住的（elementFromPoint
             命中的是那个容器），那条 1.09:1 是审计的**遮挡盲点**，不是真问题。
             海图上它压在深蓝海面，本来就够。 */}
-        <text x="100" y="24" textAnchor="middle" fill="#d4a838" fontSize="16" fontFamily="'Pirata One', cursive" fontWeight="bold">N</text>
+        <text x="100" y="24" textAnchor="middle" fill="#d4a838" fontSize="16" fontFamily="'Cinzel', 'Noto Serif SC', serif" fontWeight="bold">N</text>
         <text x="100" y="186" textAnchor="middle" fill="#c9a96e" fontSize="13" fontFamily="'Crimson Text', serif">S</text>
         <text x="16" y="105" textAnchor="middle" fill="#c9a96e" fontSize="13" fontFamily="'Crimson Text', serif">W</text>
         <text x="184" y="105" textAnchor="middle" fill="#c9a96e" fontSize="13" fontFamily="'Crimson Text', serif">E</text>

@@ -79,7 +79,7 @@ export default function LogbookScreen() {
       data-testid="logbook-screen"
       role="region"
       aria-label="航海志"
-      style={{ backgroundColor: '#0d1116' }}
+      style={{ backgroundColor: 'var(--panel-bg)' }}
     >
       {/* 底纹：一层极淡的羊皮纸，让整屏不是一块纯色 */}
       <div

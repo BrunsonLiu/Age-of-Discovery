@@ -58,13 +58,13 @@ type Level = SupplyLevel
  * 所有值都在 #2e2212 上验过 ≥5:1。
  */
 const LEVEL_BAR: Record<Level, string> = {
-  ok: '#5f9440',
+  ok: '#7d8a45',
   warn: '#d4a838',
   critical: '#c94a32',
 }
 /** 只在文字上用：对比 5.45 / 8.74 / 5.01 :1 */
 const LEVEL_TEXT: Record<Level, string> = {
-  ok: '#7bb356',
+  ok: '#a3ad6a',
   warn: '#e8bd52',
   critical: '#e0735c',
 }

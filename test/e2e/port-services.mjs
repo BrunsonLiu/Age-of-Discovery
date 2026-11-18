@@ -223,9 +223,10 @@ const head = await page.evaluate(() => {
     panelW: Math.round(pr?.width || 0),
     vw: innerWidth,
     contentW: (() => {
-      const c = panel?.querySelector('.max-w-3xl')
+      const c = panel?.querySelector('[class*="max-w-"]')
       return c ? Math.round(c.getBoundingClientRect().width) : null
     })(),
+    imgW: ir ? Math.round(ir.width) : null,
   }
 })
 if (head.services > 0) {
@@ -241,8 +242,16 @@ if (head.services > 0) {
    *      服务按钮掉到折叠线以下（实测 rect.y > 900，elementFromPoint 判被挡）。
    */
   check(head.panelW >= head.vw - 2, `港口面板是整屏（${head.panelW} / 视口 ${head.vw}）`)
-  check(head.contentW !== null && head.contentW <= 800,
-    `正文限宽 max-w-3xl（实际 ${head.contentW}）—— 图不会被撑成半屏`)
+  /*
+   * 【2026-11-18】正文宽度档从 768 改成 896（`width="wide"`）—— 768 在 1440 下
+   * 左右各空 336，港口图占的比例反而更小。真正要守的行为没变：
+   * **港口图不许被撑成半屏**（它的作用是"认路"，不是主角），
+   * 所以直接量图片宽度（原来靠"正文容器叫 max-w-3xl"间接推）。
+   */
+  check(head.contentW !== null && head.contentW <= 920,
+    `正文限宽（实际 ${head.contentW}）—— 面板不再是一条窄巷`)
+  check(head.imgW !== null && head.imgW <= 480,
+    `港口图不超过 480px（实际 ${head.imgW}）—— 它是认路用的，不许占半屏`)
 }
 
 console.log(`\n结果：${pass} 通过 / ${fail} 失败`)

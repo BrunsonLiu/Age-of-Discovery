@@ -177,8 +177,14 @@ export default function BottomBar() {
             </span>
           </button>
         )}
+        {/*
+          两个圆点（耐久 / 载重）在 1440 下只是两个没有标签的百分比，
+          贴着旗舰名右边，玩家读不出它们是什么 —— 而同一个数字在舰队面板
+          里是有名字的。降到 2xl（1536+）才显示：宽屏有地方就多给一点，
+          普通桌面不拿两个看不懂的圆点占位置。
+        */}
         {flagship && (
-          <span className="hidden xl:flex items-center gap-2.5 shrink-0">
+            <span className="hidden 2xl:flex items-center gap-2.5 shrink-0">
             <ShipVital
               color={durColor}
               pct={durPct}
@@ -239,9 +245,21 @@ export default function BottomBar() {
         {/* 航段方针：唯一的速度/风险旋钮。
             它在航段开始时选定（见 SegmentDecision），此处只读展示——
             展示「现在正以什么姿态航行」比展示一堆可点的按钮更有用。 */}
+        {/*
+          【木梁上不许出现第二套材质】
+          这两块原来是 `bg-ocean-700/50`（#1a2a3a，冷蓝灰）压在木梁 #2a1f12 上 ——
+          1440 底栏放大看，中间一段是蓝的、两头是棕的，整条读作"拼起来的"。
+          全站只有底栏这一条横梁是木，梁上的控件就该是"嵌在木头里的槽"：
+          用底栏开关板同一套配方（黑色半透 + 上缘内投影 + 下缘一条极淡受光）。
+          冷色只留给"海"，不给"木头"。
+        */}
         {fleet.isSailing && (
           <div
-            className="hidden sm:flex items-center gap-1.5 px-2 py-1.5 rounded-md border border-gold-700/30 bg-ocean-700/50"
+            className="hidden sm:flex items-center gap-1.5 px-2 py-1.5 rounded-sm border border-gold-700/25"
+            style={{
+              background: 'rgba(0,0,0,0.22)',
+              boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.55), inset 0 -1px 0 rgba(255,238,186,0.05)',
+            }}
             title={`当前方针：${stanceProfile.name}——${stanceProfile.hint}`}
           >
             <Sailboat size={12} className="text-gold-400 shrink-0" />
@@ -254,7 +272,13 @@ export default function BottomBar() {
         {/* 这里原本还有一枚「🧭 段 N/M · 方针」的蓝色小牌。
             它和左边状态行里的「段N/M」、右边方针 chip 里的方针名**三重重复**，
             又是底栏唯一一块 sky 蓝，已删。 */}
-        <div className="flex items-center bg-ocean-700/60 rounded-md overflow-hidden border border-gold-700/20">
+        <div
+          className="flex items-center rounded-sm overflow-hidden border border-gold-700/25"
+          style={{
+            background: 'rgba(0,0,0,0.26)',
+            boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.6), inset 0 -1px 0 rgba(255,238,186,0.055)',
+          }}
+        >
           {speedOptions.map(opt => (
             <button
               key={opt.value}
@@ -262,7 +286,7 @@ export default function BottomBar() {
               className={`px-2.5 py-1.5 text-[13px] font-serif press transition-all ${
                 simSpeed === opt.value
                   ? 'bg-gold-700/50 text-gold-200'
-                  : 'text-gold-500 hover:text-gold-300 hover:bg-ocean-600/50'
+                  : 'text-gold-500 hover:text-gold-300 hover:bg-gold-700/25'
               }`}
               title={opt.value === 0 ? '暂停' : `${opt.label}速度`}
               aria-label={opt.value === 0 ? '暂停' : `${opt.label}速度`}

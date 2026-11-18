@@ -7760,7 +7760,12 @@ console.log('\n== 天数口径守卫 ==')
     assert(!/fonts\.googleapis\.com|fonts\.gstatic\.com/.test(html),
       'index.html 里没有 Google Fonts 外链（外链样式表会阻塞渲染）')
     const css = readFileSync(join(process.cwd(), 'src', 'index.css'), 'utf8')
-    for (const f of ['pirata-one-400-latin', 'crimson-text-400-latin',
+    /*
+     * 标题字从 Pirata One 换成 Cinzel（2026-11-18，用户："字体有点丑"）。
+     * 这条守卫守的是"标题字必须自托管、必须真有文件、体积合理" ——
+     * 换字体时要连同名字一起换，否则字体丢了测试还是绿的。
+     */
+    for (const f of ['cinzel-400-latin', 'crimson-text-400-latin',
       'crimson-text-400-italic-latin', 'crimson-text-600-latin', 'crimson-text-700-latin']) {
       const p = join(process.cwd(), 'src', 'assets', 'fonts', `${f}.woff2`)
       assert(existsSync(p), `字体 ${f}.woff2 存在`)
@@ -7769,8 +7774,11 @@ console.log('\n== 天数口径守卫 ==')
       assert(kb > 4 && kb <= 120, `字体 ${f} 体积合理（实际 ${kb}KB）`)
     }
     // 标题/正文两族的 @font-face 都要有，缺一个就会静默回退到系统衬线
-    assert(/font-family: 'Pirata One'/.test(css), '@font-face 声明了 Pirata One')
+    assert(/font-family: 'Cinzel'/.test(css), '@font-face 声明了 Cinzel')
     assert(/font-family: 'Crimson Text'/.test(css), '@font-face 声明了 Crimson Text')
+    // 旧标题字不许再出现在运行代码里（残留一处就会退回"缺口的衬线"）
+    assert(!/Pirata One/.test(css.replace(/\/\*[\s\S]*?\*\//g, '')),
+      '运行样式里不再引用 Pirata One（注释里的历史说明不算）')
   }
   /*
    * 【开局 4 屏不许等地图代码】

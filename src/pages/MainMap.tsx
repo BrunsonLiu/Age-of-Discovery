@@ -148,16 +148,16 @@ const DeckView = lazy(() => import('@/components/deck/DeckView'))
 const totalAchievements = achievements.length
 
 const panelButtons: { type: PanelType; icon: React.ReactNode; label: string; side: 'left' | 'right' }[] = [
-  { type: 'fleet', icon: <Ship size={18} />, label: '舰队', side: 'left' },
-  { type: 'task', icon: <Flag size={18} />, label: '任务', side: 'left' },
-  { type: 'event', icon: <Scroll size={18} />, label: '日志', side: 'left' },
-  { type: 'achievement', icon: <Trophy size={18} />, label: '成就', side: 'left' },
-  { type: 'rival', icon: <Newspaper size={18} />, label: '船长', side: 'left' },
-  { type: 'port', icon: <Anchor size={18} />, label: '港口', side: 'right' },
-  { type: 'trade', icon: <Package size={18} />, label: '贸易', side: 'right' },
+  { type: 'fleet', icon: <Ship size={15} strokeWidth={1.5} />, label: '舰队', side: 'left' },
+  { type: 'task', icon: <Flag size={15} strokeWidth={1.5} />, label: '任务', side: 'left' },
+  { type: 'event', icon: <Scroll size={15} strokeWidth={1.5} />, label: '日志', side: 'left' },
+  { type: 'achievement', icon: <Trophy size={15} strokeWidth={1.5} />, label: '成就', side: 'left' },
+  { type: 'rival', icon: <Newspaper size={15} strokeWidth={1.5} />, label: '船长', side: 'left' },
+  { type: 'port', icon: <Anchor size={15} strokeWidth={1.5} />, label: '港口', side: 'right' },
+  { type: 'trade', icon: <Package size={15} strokeWidth={1.5} />, label: '贸易', side: 'right' },
   // 造船厂原来只能按键盘 8 打开，没有任何可见入口——功能存在但玩家发现不了。
   // 既然侧栏现在都带中文标签了，把它一并放进来。
-  { type: 'shipyard', icon: <Hammer size={18} />, label: '造船', side: 'right' },
+  { type: 'shipyard', icon: <Hammer size={15} strokeWidth={1.5} />, label: '造船', side: 'right' },
 ]
 
 const Z = {
@@ -734,7 +734,7 @@ export default function MainMap() {
           >
             <span>{viewLabel}</span>
             <span className="shrink-0 flex items-center justify-center w-5">
-              <Anchor size={18} />
+              <Anchor size={15} strokeWidth={1.5} />
             </span>
           </button>
           <div className="h-px mx-2 bg-gold-700/40" aria-hidden="true" />
@@ -767,7 +767,7 @@ export default function MainMap() {
             aria-pressed={showHelp}
           >
             <span className="font-serif text-sm whitespace-nowrap leading-none">帮助</span>
-            <span className="shrink-0 flex items-center justify-center w-5"><HelpCircle size={18} /></span>
+            <span className="shrink-0 flex items-center justify-center w-5"><HelpCircle size={15} strokeWidth={1.5} /></span>
           </button>
         </div>
         </>

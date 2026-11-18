@@ -142,14 +142,21 @@ export default function TimelineBar() {
                 不需要读懂颜色语义。
               */}
               <div
-                className={`w-[2px] h-[11px] rounded-[1px] transition-all duration-300 ${
+                /*
+                 * 【未到的刻度退到几乎看不见】
+                 * 15 根等高、等距、深金色的 2px 竖线，在 48px 的木梁上
+                 * 读起来是一条"条形码"—— 刻度纸的质感靠的是**已走过的那些**，
+                 * 不是未来那 14 根。现在未到的高度从 11 降到 6、透明度 0.28，
+                 * 它们退成纸面上的一层浅痕；已过/当前仍然是原先的高度与辉光。
+                 */
+                className={`w-[2px] rounded-[1px] transition-all duration-300 ${
                   isCurrent
-                    ? '!w-[3px] !h-[15px] bg-gold-200 shadow-[0_0_9px_2px_rgba(212,175,55,0.7)]'
+                    ? '!w-[3px] h-[15px] bg-gold-200 shadow-[0_0_9px_2px_rgba(212,175,55,0.7)]'
                     : isPast
                       ? isSeen
-                        ? 'bg-gold-600'
-                        : 'bg-gold-300 shadow-[0_0_5px_1px_rgba(212,175,55,0.45)]'
-                      : 'bg-gold-700/85'
+                        ? 'h-[11px] bg-gold-600'
+                        : 'h-[11px] bg-gold-300 shadow-[0_0_5px_1px_rgba(212,175,55,0.45)]'
+                      : 'h-[6px] bg-gold-700/28'
                 }`}
               />
 

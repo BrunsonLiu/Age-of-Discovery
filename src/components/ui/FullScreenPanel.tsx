@@ -17,7 +17,7 @@ interface FullScreenPanelProps {
    * - `'md'`（默认）768：一段一段读的页面（舰队、造船）
    * - `'lg'` 1024：本身就是表格/账本的面板（贸易、港口服务）
    */
-  width?: 'md' | 'lg'
+  width?: 'md' | 'wide' | 'lg'
 }
 
 /**
@@ -53,7 +53,7 @@ export default function FullScreenPanel({
       data-testid={testId}
       role="region"
       aria-label={title}
-      style={{ backgroundColor: '#0d1116' }}
+      style={{ backgroundColor: 'var(--panel-bg)' }}
     >
       {/* 极淡的羊皮纸底纹：和航海志同款，让整屏不是一块死色 */}
       <div
@@ -76,7 +76,7 @@ export default function FullScreenPanel({
         style={{ background: 'linear-gradient(180deg, rgba(0,0,0,0.5) 0%, rgba(0,0,0,0) 100%)' }}
       />
 
-      <header className="relative shrink-0 h-14 md:h-16 flex items-center justify-between gap-4 px-5 md:px-10 border-b border-gold-700/30">
+      <header className="relative shrink-0 h-14 md:h-16 flex items-center justify-between gap-4 px-5 md:px-10">
         <div className="flex items-center gap-3 md:gap-4 min-w-0">
           <h1 className="pirate-title text-xl md:text-[26px] text-gold-300 leading-none truncate">{title}</h1>
           {subtitle && (
@@ -89,14 +89,28 @@ export default function FullScreenPanel({
         <button
           onClick={onClose}
           data-testid={`${testId}-close`}
-          className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-sm border border-gold-700/40
-            text-gold-300 hover:bg-gold-700/15 transition-colors font-serif text-sm press"
+          className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-sm plate-btn
+            text-gold-300 hover:text-gold-100 font-serif text-sm press transition-colors"
           title="回到海图（Esc）"
         >
           <X size={14} />
           <span className="hidden sm:inline">回海图</span>
         </button>
       </header>
+      {/*
+        【分隔线改成渐变】原来是一条 `border-b` 通栏 1px 金线 —— 两端齐头齐尾，
+        在 1440 下就是"网页的头部分割线"。现在两端渐隐，只在中间 70% 可见：
+        它读作"桌面上一道划痕"，而不是"表格的第一条边框"。
+        用独立 div 而不是 border：border 没法做渐变。
+      */}
+      <div
+        aria-hidden="true"
+        className="relative shrink-0 h-px"
+        style={{
+          background:
+            'linear-gradient(90deg, transparent 0%, rgba(201,169,110,0.42) 12%, rgba(201,169,110,0.42) 88%, transparent 100%)',
+        }}
+      />
 
       {/*
        * 正文自己滚。`flex-1 min-h-0` 缺一不可：没有 min-h-0 时 flex 子项
@@ -105,7 +119,7 @@ export default function FullScreenPanel({
       <div className="relative flex-1 min-h-0 overflow-y-auto overscroll-contain scroll-parchment">
         <div
           className={`mx-auto w-full px-5 md:px-10 py-5 md:py-7 ${
-            width === 'lg' ? 'max-w-5xl' : 'max-w-3xl'
+            width === 'lg' ? 'max-w-6xl' : width === 'wide' ? 'max-w-4xl' : 'max-w-3xl'
           }`}
         >
           {children}

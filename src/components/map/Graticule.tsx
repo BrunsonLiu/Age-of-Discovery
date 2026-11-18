@@ -92,7 +92,7 @@ function labelIcon(kind: 'lat' | 'lng', text: string, major: boolean, whole: boo
   const html = `<span style="display:inline-block;transform:${shift};
     font-family:var(--font-serif, Georgia, serif);font-size:12px;line-height:1;
     letter-spacing:0.08em;white-space:nowrap;
-    color:${major ? '#e8dcc0' : '#c3d7e4'};opacity:${major ? 0.95 : whole ? 0.8 : 0.62};
+    color:${major ? '#e8d4a8' : '#c9b183'};opacity:${major ? 0.95 : whole ? 0.8 : 0.62};
     text-shadow:0 0 3px rgba(6,18,26,0.9),0 1px 2px rgba(6,18,26,0.8);
     padding:2px 3px;">${text}</span>`
   return L.divIcon({ html, className: 'grat-label', iconSize: [0, 0], iconAnchor: [0, 0] })
@@ -235,7 +235,7 @@ export function Graticule() {
              * （风带、洋流、海盗区、候选航线），再来一种就只是"又一条虚线"；
              * 实线才是"网格"这个语义。
              */
-            color: g.major ? '#b6d4e6' : '#9dc2d8',
+            color: g.major ? '#c9b183' : '#a98f5e',
             weight: g.major ? 1.5 : 1,
             /*
              * 三档：赤道/本初子午线 0.46、整度 0.28、分刻度 0.15。
