@@ -57,7 +57,7 @@ interface EventSceneProps {
  * 事件插图容器：渲染对应场景，无匹配时回退到默认海景。
  * 外层 div 负责圆角与高度，SVG 自适应填充。
  */
-export default function EventScene({ sceneKey, className = '' }: EventSceneProps) {
+export default function EventScene({ sceneKey, className = '', compact = false }: EventSceneProps & { compact?: boolean }) {
   // 有 GPT 真实插图的场景优先用插图（风暴/海盗/海怪/幽灵船 + 火山/浓雾/庆典/藏宝/塞壬/走私），
   // 其余仍走手绘 SVG；插图加载失败时回退 SVG，两条路都不空。
   const imgSrc = sceneImage(sceneKey)
@@ -77,7 +77,16 @@ export default function EventScene({ sceneKey, className = '' }: EventSceneProps
   const Scene = (sceneKey && SCENE_REGISTRY[sceneKey]) || DefaultScene
   const useImage = shouldUseSceneImage(failedSrc, imgSrc)
   return (
-    <div className={`relative overflow-hidden ${className}`} style={{ aspectRatio: '400 / 140' }}>
+    <div
+      className={`relative overflow-hidden ${className}`}
+      /*
+       * compact：结算态把插图压成一条（400/74 ≈ 500×92）。
+       * 结算屏原来沿用 175px 高的整幅插画 + 131px 的缎带标题 —— 卡片 701 高，
+       * 其中 330px 是"上一秒刚看过的同一张图同一个标题"，而真正要读的
+       * 结果与五项得失只分到下半屏。压成一条横幅，卡片矮 220px。
+       */
+      style={{ aspectRatio: compact ? '400 / 74' : '400 / 140' }}
+    >
       {useImage ? (
         <img
           // key 让场景切换时重建 <img> 节点：否则 React 复用同一节点，
@@ -102,7 +111,8 @@ export default function EventScene({ sceneKey, className = '' }: EventSceneProps
       {/* 底部压暗，让标题文字无论场景明暗都清晰 */}
       <div
         className="pointer-events-none absolute inset-x-0 bottom-0 h-1/2"
-        style={{ background: 'linear-gradient(180deg, rgba(10,18,25,0) 0%, rgba(10,18,25,0.72) 100%)' }}
+        /* 暖褐而不是 navy：这块压暗是**卡片的一部分**，不归"海" */
+        style={{ background: 'linear-gradient(180deg, rgba(20,16,11,0) 0%, rgba(20,16,11,0.72) 100%)' }}
       />
     </div>
   )

@@ -241,7 +241,7 @@ export default function EventCard() {
           }}
         >
           {/* 场景插图：事件被"看见"，而不只是被读到 */}
-          <EventScene sceneKey={currentEvent.sceneKey} />
+          <EventScene sceneKey={currentEvent.sceneKey} compact={!!outcome} />
 
           {/* 边框中央装饰（船徽/贝壳）：从原画框切出后独立叠加，
               绝对定位在边框上，不占据内容空间，因此不会压住选项文字。
@@ -307,7 +307,16 @@ export default function EventCard() {
                   天生探险家 · 这场遭遇只有你会撞上
                 </span>
               )}
-              {bannerFailed ? (
+              {/*
+                结算态不再挂缎带：那面 131px 高的绸带是"事件登场"的仪式，
+                同一次遭遇里第二次出现就只是重复。结算时把标题压成一行小字，
+                让「结果」两个字成为这一屏的主标题（判据：h3 结果 20px > 这行 14px）。
+              */}
+              {outcome ? (
+                <p className="text-center font-serif text-[13px] tracking-[0.08em] text-gold-400">
+                  {currentEvent.title}
+                </p>
+              ) : bannerFailed ? (
                 <h2 className="pirate-title text-2xl text-center">{currentEvent.title}</h2>
               ) : (
                 /* 横幅缎带（F4）托标题：绸带上是深棕墨字，像通缉令/号外 */
