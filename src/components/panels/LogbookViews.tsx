@@ -3,7 +3,7 @@ import { Anchor, Compass, Flag, Lock, MapPin, Package, ScrollText, Sparkles } fr
 import { useGameStore } from '@/store/useGameStore'
 import { useMapStore } from '@/store/useMapStore'
 import { ports } from '@/data/ports'
-import { achievements } from '@/data/achievements'
+import { achievements, ACHIEVEMENT_GROUPS } from '@/data/achievements'
 import { DEBRIS_INFO } from '@/data/debris'
 import { RELICS, relicDistanceNm, relicInSeason } from '@/data/relics'
 import { ALL_SEASONS } from '@/utils/season'
@@ -12,6 +12,7 @@ import { logbookArt } from '@/data/logbookArt'
 import { clueCenter } from '@/utils/harbor'
 import { legendDistanceNm, nationById, storyStep } from '@/data/nations'
 import { portThumb } from '@/data/portImages'
+import { PageHead, PageSection } from '@/components/logbook/PageParts'
 import type { Port } from '@/types'
 import type { DebrisKind } from '@/data/debris'
 
@@ -79,10 +80,11 @@ export function SightingsView() {
         </div>
       ) : (
         <>
-          <div className="flex items-baseline gap-2 pb-1.5 border-b border-gold-700/30">
-            <span className="text-gold-300 text-[13px] font-serif">共 {logbook.length} 页</span>
-            <span className="text-gold-500 text-[12px] font-serif ml-auto">新的一页在最上面</span>
-          </div>
+          <PageSection
+            title="见闻"
+            hint="新的一页在最上面"
+            right={`共 ${logbook.length} 页`}
+          />
 
           <div className="space-y-2">
             {logbook.map((entry, idx) => {
@@ -292,14 +294,32 @@ function PortAtlasCard({ port, onClick }: { port: Port; onClick: () => void }) {
   )
 }
 
-function SectionTitle({ children, right }: { children: React.ReactNode; right?: string }) {
+/*
+ * 这一段原来自己画标题：13px + **没有线**，而成就页同一级的标题是 13px + 底线。
+ * 现在统一走 PageSection（与任务/成就/船长三页同一套）——
+ * 见 logbook/PageParts：全册两级标题只有那两个组件。
+ */
+function SectionTitle({ children, right, className = '!mt-7' }: {
+  children: React.ReactNode
+  right?: string
+  className?: string
+}) {
   return (
-    <div className="flex items-baseline gap-2 pt-1">
-      <h4 className="text-gold-300 text-[13px] font-serif tracking-wide">{children}</h4>
-      {right && <span className="ml-auto text-gold-500 text-[12px] font-serif tabular-nums">{right}</span>}
+    <div className={className}>
+      <PageSection title={children} right={right} />
     </div>
   )
 }
+
+/**
+ * 图鉴的列网格。
+ *
+ * 【为什么只能有一个】实测（DOM）：同一页里航路是 3 列 329px、传说是 2 列 497px、
+ * 其余五段是 4 列 246px —— 一页三套列宽，"格子"这件事就不成立了。
+ * 图鉴的全部意义是"同一批格子，点亮了哪些"，格子必须等大。
+ * 手机上 3 列（246 在 390 屏里太窄，读不出港名），桌面 4 列。
+ */
+const ATLAS_GRID = 'grid grid-cols-3 xl:grid-cols-4 gap-1.5'
 
 export function AtlasView() {
   const discoveredPorts = useGameStore(s => s.discoveredPorts)
@@ -308,7 +328,6 @@ export function AtlasView() {
   const collectedRelics = useGameStore(s => s.collectedRelics)
   const collectedLegends = useGameStore(s => s.collectedLegends)
   const shipPosition = useGameStore(s => s.shipPosition)
-  const stats = useGameStore(s => s.stats)
   const logbook = useGameStore(s => s.logbook)
   const setActivePanel = useGameStore(s => s.setActivePanel)
   const setCenter = useMapStore(s => s.setCenter)
@@ -339,12 +358,12 @@ export function AtlasView() {
   return (
     <div className="space-y-2">
       {/* 只给一个"点亮了多少"的完成感，不做进度考核、不写任何差额计算 */}
-      <div className="flex items-baseline gap-2 pb-1.5 border-b border-gold-700/30">
-        <span className="text-gold-300 text-[13px] font-serif">已点亮</span>
-        <span className="text-gold-100 text-[16px] font-serif tabular-nums">{litCount}</span>
-        <span className="text-gold-500 text-[12px] font-serif">/ {totalCount} 格</span>
-        <span className="ml-auto text-gold-500 text-[12px] font-serif">缺的格子慢慢来</span>
-      </div>
+      {/* 页头：与记事/已得/座次同一个字号、同一条底线、计数同落右端 */}
+      <PageHead
+        title="已点亮"
+        right={`${litCount} / ${totalCount} 格`}
+        note="缺的格子慢慢来"
+      />
 
       {/*
         【航路】三段是**国别故事线**（见 data/nations 的 story）：
@@ -355,7 +374,7 @@ export function AtlasView() {
       {nation && (
         <>
           <SectionTitle right={`${step}/${storyLen}`}>航路</SectionTitle>
-          <div className="grid grid-cols-3 gap-1.5">
+          <div className={ATLAS_GRID}>
             {routesNation.story.map((c, i) => {
               const got = gotStory.has(c.id)
               const port = ports.find(p => p.id === c.portId)
@@ -394,7 +413,7 @@ export function AtlasView() {
       {nation && (
         <>
           <SectionTitle right={gotLegends.has(routesNation.legend.id) ? '已应验' : '未应验'}>传说</SectionTitle>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+          <div className={ATLAS_GRID}>
             <AtlasCell
               label={routesNation.legend.name}
               heard
@@ -437,7 +456,7 @@ export function AtlasView() {
       */}
       <SectionTitle right={`${discoveredPorts.length}/${ports.length}`}>港口</SectionTitle>
       {discoveredPorts.length > 0 && (
-        <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-1.5">
+        <div className={ATLAS_GRID}>
           {ports.filter(p => gotPorts.has(p.id)).map(p => (
             <PortAtlasCard
               key={p.id}
@@ -452,10 +471,10 @@ export function AtlasView() {
       )}
       {ports.some(p => !gotPorts.has(p.id)) && (
         <>
-          <p className="text-gold-500 text-[12px] font-serif pt-1 pb-0.5">
+          <p className="!mt-5 text-gold-600 text-[12px] font-serif">
             还没靠过的岸 · 去了自然就点亮，不去也没关系
           </p>
-          <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-1.5">
+          <div className={ATLAS_GRID}>
             {ports.filter(p => !gotPorts.has(p.id)).map(p => (
               <AtlasCell
                 key={p.id}
@@ -474,14 +493,29 @@ export function AtlasView() {
       )}
 
       <SectionTitle right={`${earned.length}/${achievements.length}`}>成就</SectionTitle>
-      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-1.5">
-        {achievements.map(a => {
+      <div className={ATLAS_GRID}>
+        {/*
+          按墙（group）排序再看：格子的副标题现在是分组名，
+          不排序的话网格里是「商路 / 航速 / 见闻 / 商路」交错 ——
+          同一个标签隔一格就断一次，等于没标。
+          排序只改**陈列顺序**，不改任何判定（成就本身没有先后）。
+        */}
+        {[...achievements]
+          .sort((a, b) => ACHIEVEMENT_GROUPS.findIndex(g => g.key === a.group)
+            - ACHIEVEMENT_GROUPS.findIndex(g => g.key === b.group))
+          .map(a => {
           const Icon = a.icon
           return (
+            /*
+             * 副标题原来写死「成就」—— 17 个格子、17 次同一个词，
+             * 而上面那行段落标题本来就写着「成就」。重复 17 遍的标签不是信息，是噪点。
+             * 换成**它属于哪一面墙**（商路 / 航速 / 见闻）：未点亮的格子也能看出
+             * "这一类我一件都没拿到"，而不是一片一模一样的"？成就"。
+             */
             <AtlasCell
               key={a.id}
               label={a.title}
-              sub="成就"
+              sub={ACHIEVEMENT_GROUPS.find(g => g.key === a.group)?.label ?? '成就'}
               found={gotAchievements.has(a.id)}
               icon={<Icon size={13} />}
               onClick={() => setDetail(gotAchievements.has(a.id) ? a.description : '还没发生的事，册子先空着一格。')}
@@ -491,7 +525,7 @@ export function AtlasView() {
       </div>
 
       <SectionTitle right={`${collected.length}/${debrisKinds.length}`}>海上拾遗</SectionTitle>
-      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-1.5">
+      <div className={ATLAS_GRID}>
         {debrisKinds.map(kind => (
           <AtlasCell
             key={kind}
@@ -510,7 +544,7 @@ export function AtlasView() {
         没拾到的格子只说一句"还没路过那里"，不剧透、也不催促。
       */}
       <SectionTitle right={`${gotRelics.size}/${RELICS.length}`}>海上遗物</SectionTitle>
-      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-1.5">
+      <div className={ATLAS_GRID}>
         {RELICS.map(r => (
           <AtlasCell
             key={r.id}
@@ -559,21 +593,32 @@ export function AtlasView() {
        * 个人纪录只陈列、不比较、不排名：这是从 4399 那套"破自己纪录"借来的钩子，
        * 纯本地、零算术、零服务器，也不制造"明天必须回来"的债务。
        */}
+      {/*
+        【个人纪录是落款，不是又一批格子】
+        它原来是 4 列网格里的 6 张卡 —— 与上面六段"收藏格"长得一模一样，
+        于是读作"还有 6 件东西没收"。可它陈列的是**汇总**（你靠过几座岸、
+        册子里攒了几页），不是可以点亮的东西。收藏页的最后一段用网格，
+        等于把"账本"混进"相册"。
+
+        【只留三样，另三样搬去成就页】
+        原六样里有三样与成就页的生涯统计**是同一个数**（同一个 `stats` 字段）：
+        海上的日子 = 航行天数、最大一笔买卖 = 最大单笔、经历过的风浪 = 经历事件。
+        同一个数字在册子里有两个名字、两处位置 —— 玩家对不上账。
+        生涯统计归成就页（那一页整块就是"你做过什么"），
+        图鉴只留"和看图鉴有关"的：画了多少格、应验几句、册子多厚。
+      */}
       <SectionTitle>个人纪录</SectionTitle>
-      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-1.5">
+      <div className="flex flex-wrap items-baseline gap-x-6 gap-y-1 px-1">
         {[
           { k: '靠过的岸', v: `${discoveredPorts.length} 座` },
-          { k: '海上的日子', v: `${stats.daysSailed} 天` },
-          { k: '最大一笔买卖', v: `${stats.bestDeal} 金` },
-          { k: '经历过的风浪', v: `${stats.eventsSurvived} 回` },
           // 只陈列已经写进册子的事，不设目标、不显示"还差多少"
           { k: '应验的线索', v: `${countEchoes(logbook)} 句` },
           { k: '册子攒下', v: `${logbook.length} 页` },
         ].map(r => (
-          <div key={r.k} className="rounded border border-gold-700/25 px-2 py-1.5">
-            <span className="block text-xs font-serif text-gold-500">{r.k}</span>
-            <span className="block text-gold-200 text-[15px] font-serif tabular-nums mt-0.5">{r.v}</span>
-          </div>
+          <span key={r.k} className="flex items-baseline gap-1.5">
+            <span className="text-xs font-serif text-gold-500">{r.k}</span>
+            <span className="text-gold-200 text-[15px] font-serif tabular-nums">{r.v}</span>
+          </span>
         ))}
       </div>
 

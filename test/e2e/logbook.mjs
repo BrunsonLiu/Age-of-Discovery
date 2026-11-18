@@ -336,7 +336,12 @@ await page.evaluate(() => {
    再点 tab —— 顺序反了就成了"点了一个还不存在的按钮"。 */
 check(await until(() => document.querySelectorAll('[role=tab]').length === 5, 8000), '航海志重新打开（5 个页签）')
 await page.evaluate(() => [...document.querySelectorAll('[role=tab]')].find(b => b.textContent.includes('图鉴'))?.click())
-check(await until((l) => [...document.querySelectorAll('h4')].some((h) => h.textContent.trim() === l), 8000, '传说'),
+/*
+ * 判据只认"有一级标题写着传说"，不认标签名。
+ * 2026-11-18：段头从 h4 统一成 h3（全册两级标题见 logbook/PageParts），
+ * 守着 h4 的断言当场红 —— 它守的从来不是标签，是"这一节在不在"。
+ */
+check(await until((l) => [...document.querySelectorAll('h2,h3,h4')].some((h) => h.textContent.trim() === l), 8000, '传说'),
   '图鉴里有「传说」一节')
 check((await legendCell())?.startsWith('归墟') === true,
   '未应验的传说也写出名字（不是「？」——玩家开局就听说过它）')

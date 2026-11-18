@@ -21,6 +21,7 @@ import { sceneImage } from '@/data/sceneImages'
 import { EVENT_TYPE_COLORS, renderEventIcon } from '@/utils/eventTypeStyles'
 import { AtlasView, SightingsView } from '@/components/panels/LogbookViews'
 import ScrollFade from '@/components/ui/ScrollFade'
+import { PageHead, PageSection } from '@/components/logbook/PageParts'
 
 /**
  * 航海志：任务 / 日志 / 图鉴 / 成就 / 同代船长的**整屏界面**。
@@ -361,19 +362,31 @@ function TaskPage() {
 
         {locked.length > 0 && (
           <Section title="还没到火候" count={locked.length} hint="天数或港口不满足">
+            {/*
+              【不能接的单，不要给它和能接的一样大的卡】
+              原来这一组用与「眼下能接」完全相同的 Row（15px 标题 + 说明占两行、
+              上下各 12px 内距），22 条排下来是 1400px 的一堵暗墙 ——
+              玩家滚三屏都滚不到底，而这三屏里没有一件是他现在能做的事。
+              密度就是层级：**能动手的用大卡、还不能动的用一行**。
+              现在标题与"几时/在哪能接"同排、右对齐，每条 40px，22 条 = 880px。
+            */}
             {locked.map(t => (
-              <Row key={t.id} dim>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <Tag>{TYPE_LABEL[t.type] ?? t.type}</Tag>
-                    <h3 className="font-serif text-[15px] text-gold-500 truncate">{t.title}</h3>
-                  </div>
-                  <p className="text-[12px] font-serif text-gold-600 mt-1">
-                    {t.minDay !== undefined && fleet.day < t.minDay ? `第 ${t.minDay} 天才有人提起这单` : ''}
-                    {t.portId != null && fleet.currentPortId !== t.portId ? `在${ports.find(p => p.id === t.portId)?.nameCn ?? '别处'}接` : ''}
-                  </p>
-                </div>
-              </Row>
+              <div
+                key={t.id}
+                data-testid={`task-locked-${t.id}`}
+                className="flex items-center gap-2.5 rounded-sm border border-gold-700/15 bg-black/10 px-3 py-2"
+              >
+                <span className="shrink-0 rounded-sm border border-gold-700/30 px-1.5 py-px text-[12px] font-serif text-gold-600">
+                  {TYPE_LABEL[t.type] ?? t.type}
+                </span>
+                <h3 className="min-w-0 truncate font-serif text-[13px] text-gold-500">{t.title}</h3>
+                <span className="ml-auto shrink-0 text-[12px] font-serif text-gold-600 tabular-nums">
+                  {t.minDay !== undefined && fleet.day < t.minDay ? `第 ${t.minDay} 天` : ''}
+                  {t.portId != null && fleet.currentPortId !== t.portId
+                    ? `${t.minDay !== undefined && fleet.day < t.minDay ? ' · ' : ''}在${ports.find(p => p.id === t.portId)?.nameCn ?? '别处'}接`
+                    : ''}
+                </span>
+              </div>
             ))}
           </Section>
         )}
@@ -399,9 +412,12 @@ function TaskPage() {
       <aside className="space-y-4 xl:pt-1">
         <VoyageNextCard />
         <div className="rounded-sm border border-gold-700/30 bg-black/20 p-3.5">
-          <div className="flex items-center justify-between text-[13px] font-serif text-gold-400">
+          {/* 两张右栏卡：标题行同字号同色、计数同落右端、下面都有同一条进度槽 */}
+          <div className="flex items-center justify-between text-[13px] font-serif text-gold-200">
             <span className="flex items-center gap-1.5"><CheckCircle2 size={13} /> 冒险进度</span>
-            <span className="font-mono text-gold-200 tabular-nums">{completedTasks.length}/{tasks.length}</span>
+            <span className="text-[12px] font-serif text-gold-500 tabular-nums">
+              {completedTasks.length}/{tasks.length}
+            </span>
           </div>
           <div className="mt-2 h-1 rounded-full bg-gold-700/20 overflow-hidden">
             <div
@@ -462,13 +478,11 @@ function JournalPage() {
 
   const journal = (
     <div className="min-w-0">
-      <div className="flex items-baseline gap-3 mb-3 pb-2 border-b border-gold-700/30">
-        <h2 className="font-serif text-lg text-gold-300">记事</h2>
-        <span className="text-gold-200 text-[13px] font-serif">{fleetName}</span>
-        <span className="ml-auto text-gold-600 text-xs font-serif">
-          {days.length > 0 ? `共 ${days.length} 天有记载` : '还没写下第一页'}
-        </span>
-      </div>
+      <PageHead
+        title="记事"
+        note={<span className="text-gold-500">{fleetName}</span>}
+        right={days.length > 0 ? `共 ${days.length} 天有记载` : '还没写下第一页'}
+      />
 
       {days.length === 0 ? (
         <Empty>出海吧，笔在后面追着你。</Empty>
@@ -585,16 +599,22 @@ function JournalPage() {
       <div className="space-y-8">
         {journal}
         {/*
-          页尾的见闻提示也要穿同一件衣服：不包卡的话，内容到此为止、下面
-          直接露出页面底（比卡片浅一档），看起来像贴了一块蓝板子在页脚。
-          ml-14 与上面的记事行对齐（让出日期那一列）。
+          【这里原来是一个"盒子里装着空态"】
+          外层 border + 标题行 + 里面又是 SightingsView 自己的图标 + 三行字 ——
+          一个空格子套一个空格子，读起来像"这块没加载出来"。
+          现在只有一段标题 + 一句空话，与页面上其它段落同一个规矩（PageSection）：
+          标题在上、底下一道线，内容在下面。
         */}
-        <div className="ml-14 rounded-sm border border-gold-700/20 bg-black/15 px-4 pb-1 pt-3">
-          <div className="flex items-baseline gap-2 pb-2 border-b border-gold-700/20">
-            <h3 className="font-serif text-[13px] text-gold-300">见闻</h3>
-            <span className="text-xs font-serif text-gold-600">靠了岸，才多一页</span>
+        {/*
+          【段头不许缩进】原来整块套了 ml-14（与时间轴的日期列对齐）——
+          于是「见闻」这一行比上面的「记事」右移 56px，看着像缩进错了。
+          缩进只属于**内容**（时间轴上让出日期那一列），标题永远是页边。
+        */}
+        <div>
+          <PageSection title="见闻" hint="靠了岸，才多一页" right={`${logbook.length} 页`} />
+          <div className="ml-14">
+            <SightingsView />
           </div>
-          <SightingsView />
         </div>
       </div>
     )
@@ -685,7 +705,19 @@ function AchievementPage() {
 
   return (
     <div className="space-y-7">
-      {/* 门面 + 总进度 */}
+      {/*
+        门面 + 总进度。
+        标题那一行与其它页的页头**同一条基线**：18px 标题在左、计数在最右端、
+        底下一道 30% 金线（这里那道线由进度条自己担任 —— 它是同一条水平线，
+        不必再加一根）。
+      */}
+      {/*
+        页头那一道线由**进度条自己担任**：其它四页的页头是 30% 金线，
+        这里换成同一条位置的空槽（0% 时就是一根极淡的线），多出来的信息只有"填了多少"。
+        原来线在 y、条在 y-8，两条并排 8px —— 一条是"分隔"、一条是"进度"，
+        同一条水平位置上不该有两条线。
+      */}
+      <div className="pb-3">
       <div className="flex items-center gap-5">
         {/*
           门面那张 ui_medal 是红色缎带勋章，和下面自绘的金色圆盘勋章**不是一套**。
@@ -701,16 +733,29 @@ function AchievementPage() {
         />
         <div className="min-w-0 flex-1">
           <div className="flex items-baseline gap-3">
-            <h2 className="font-serif text-lg text-gold-300">
-              已得 <span className="font-mono text-gold-100">{earned.length}</span>
-              <span className="text-gold-600"> / {achievements.length}</span>
-            </h2>
-            <span className="text-xs font-serif text-gold-600">生涯里程碑，判定都在你做过的事上</span>
-          </div>
-          <div className="mt-2 h-1 rounded-full bg-gold-700/20 overflow-hidden max-w-[420px]">
-            <div className="h-full bg-gold-500/80" style={{ width: `${pct}%` }} />
+            <h2 className="shrink-0 font-serif text-[18px] leading-none text-gold-300">已得</h2>
+            <span className="min-w-0 truncate text-[12px] font-serif text-gold-600">
+              生涯里程碑，判定都在你做过的事上
+            </span>
+            {/* 计数与下面三面墙的「0 / 7」落在同一个右端 */}
+            <span
+              data-testid="ach-head-count"
+              className="ml-auto shrink-0 text-[12px] font-serif tabular-nums text-gold-500"
+            >
+              {earned.length} / {achievements.length}
+            </span>
           </div>
         </div>
+      </div>
+      {/*
+        进度槽放在**整行下方、通栏**：它同时是这一页页头那道分隔线。
+        原来它在右侧文字块里（max-w-420），线从勋章右边才开始 ——
+        别的四页那道线都是从页面左边界拉到右边界，唯独这一页从中途起笔，
+        读作"标题下面划了一道下划线"而不是"这一页从这里开始"。
+      */}
+      <div className="mt-3 h-[2px] rounded-full bg-gold-700/25 overflow-hidden">
+        <div className="h-full bg-gold-500/80" style={{ width: `${pct}%` }} />
+      </div>
       </div>
 
       {/* 生涯统计：原来在侧板里是两列小格，整屏铺成六格正好一行 */}
@@ -741,16 +786,11 @@ function AchievementPage() {
         const on = list.filter(a => got.has(a.id)).length
         return (
           <section key={g.key} data-testid={`ach-group-${g.key}`} className="space-y-2.5">
-            <div className="flex items-baseline gap-2 border-b border-gold-700/30 pb-1">
-              <h3 className="font-serif text-[13px] tracking-wide text-gold-300">{g.label}</h3>
-              <span className="text-xs font-serif tracking-[0.18em] text-gold-600">{g.en}</span>
-              <span
-                data-testid={`ach-group-count-${g.key}`}
-                className="ml-auto text-[12px] font-serif tabular-nums text-gold-500"
-              >
-                {on} / {list.length}
-              </span>
-            </div>
+            <PageSection
+              title={g.label}
+              en={g.en}
+              right={<span data-testid={`ach-group-count-${g.key}`}>{on} / {list.length}</span>}
+            />
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
               {list.map(a => (
                 <AchievementCard key={a.id} a={a} earned={got.has(a.id)} />
@@ -807,11 +847,12 @@ function RivalPage() {
 
       {/* ── 座次表 ── */}
       <section data-testid="rival-standings">
-        <div className="flex items-baseline gap-3 mb-2 pb-1.5 border-b border-gold-700/30">
-          <h2 className="font-serif text-[15px] text-gold-300">座次</h2>
-          <span className="text-xs font-serif text-gold-600">按金币排 · 三项各自算名次，同分并列</span>
-          <span className="ml-auto text-xs font-serif text-gold-500 tabular-nums">{total} 位船长</span>
-        </div>
+        <PageSection
+          title="座次"
+          hint="按金币排 · 三项各自算名次，同分并列"
+          right={`${total} 位船长`}
+        />
+        <div className="mt-2" />
         <div className="rounded-sm border border-gold-700/25 bg-black/20 overflow-hidden">
           <div className="grid grid-cols-[minmax(0,1fr)_5.6rem_4.4rem_6.2rem_5rem] gap-2 px-3 py-1.5 border-b border-gold-700/20 text-xs font-serif text-gold-600">
             <span>船长</span>
@@ -929,10 +970,8 @@ function RivalPage() {
 
       {/* ── 酒馆里传的话 ── */}
       <div>
-        <div className="flex items-baseline gap-3 mb-2 pb-1.5 border-b border-gold-700/25">
-          <h2 className="font-serif text-[15px] text-gold-300">酒馆里传的话</h2>
-          <span className="font-mono text-xs text-gold-600 tabular-nums">{news.length}</span>
-        </div>
+        <PageSection title="酒馆里传的话" right={`${news.length}`} />
+        <div className="mt-2" />
         {news.length === 0 ? (
           <Empty>还没人提起这一代的船长。等几天，传闻自己会飘过来。</Empty>
         ) : (
@@ -967,13 +1006,11 @@ function RivalPage() {
         · 一格都没走时明说"还没定"——不编造一个默认性格。
       */}
       <section data-testid="captain-leanings" className="pt-2">
-        <div className="flex items-baseline gap-3 mb-1 pb-1.5 border-b border-gold-700/25">
-          <h2 className="font-serif text-[15px] text-gold-300">你会被记成哪种船长</h2>
-          <span className="text-xs font-serif text-gold-600">每个两难选择往某一栏里加一格</span>
-          <span className="ml-auto text-xs font-serif text-gold-600 tabular-nums">
-            {leadTitle ? `正在成为 · ${leadTitle.name}` : '还没定'}
-          </span>
-        </div>
+        <PageSection
+          title="你会被记成哪种船长"
+          hint="每个两难选择往某一栏里加一格"
+          right={leadTitle ? `正在成为 · ${leadTitle.name}` : '还没定'}
+        />
         <p className="text-gold-500 font-serif text-[12px] italic mb-3">
           后世的记载只留一条。你还能改。
         </p>
@@ -1032,18 +1069,26 @@ function RivalPage() {
 
 /* ────────────────────────── 小件 ────────────────────────── */
 
+/*
+ * 任务页的三段（眼下能接 / 手上这单 / 还没到火候）。
+ *
+ * 【为什么它不再自己画一套标题】这里是全书唯一还在用 18px 段落标题的地方 ——
+ * 而 18px 在这一册里是**页头**的字号（记事 / 已点亮 / 已得 / 座次）。
+ * 于是"任务"这一页的段落比别的页大一号，翻页时层级会跳。
+ * 现在它只是 PageSection 的薄壳：13px + 底部金线 + 计数在右端。
+ * 卡片里的 15px 委托名才是内容，段落只是标签 —— 标签比内容小是对的。
+ */
 function Section({ title, count, hint, children }: {
   title: string; count?: number; hint?: string; children: React.ReactNode
 }) {
   return (
     <section>
-      <div className="flex items-baseline gap-3 mb-3">
-        <h2 className="font-serif text-lg text-gold-300">{title}</h2>
-        {count !== undefined && <span className="font-mono text-xs text-gold-600 tabular-nums">{count}</span>}
-        {hint && <span className="text-xs font-serif text-gold-600 truncate">{hint}</span>}
-        <span className="flex-1 h-px bg-gold-700/25" />
-      </div>
-      <div className="space-y-2">{children}</div>
+      <PageSection
+        title={title}
+        hint={hint}
+        right={count === undefined ? undefined : `${count}`}
+      />
+      <div className="mt-2.5 space-y-2">{children}</div>
     </section>
   )
 }

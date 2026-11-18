@@ -73,7 +73,15 @@ check(walls.every(w => w.top > 0) && walls[0].top < walls[1].top && walls[1].top
 /* ── 二、每组进度加起来 = 顶部总数 ── */
 console.log('=== 数字对账 ===')
 const nums = await page.evaluate(() => {
-  const head = (document.body.innerText.match(/已得\s*\n?\s*(\d+)\s*\/\s*(\d+)/) || []).slice(1).map(Number)
+  /*
+   * 2026-11-18：页头的计数从"紧跟在「已得」后面"改成"落在右端"（与其它四页的页头一致）。
+   * 原来那条正则要求数字**紧贴**「已得」，改成右对齐后中间隔着一句说明，就再也匹配不上了 ——
+   * 而这条断言守的是"三面墙的已得之和等于总数"，不是"数字写在哪"。
+   * 现在读页头那个计数自己的 data-testid。
+   */
+  const headEl = document.querySelector('[data-testid="ach-head-count"]')
+  const hm = headEl ? (headEl.textContent || '').match(/(\d+)\s*\/\s*(\d+)/) : null
+  const head = hm ? [Number(hm[1]), Number(hm[2])] : []
   const groups = [...document.querySelectorAll('[data-testid^="ach-group-count-"]')].map(el => {
     const m = (el.textContent || '').match(/(\d+)\s*\/\s*(\d+)/)
     return m ? [Number(m[1]), Number(m[2])] : null

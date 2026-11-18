@@ -27,7 +27,7 @@ export default function VoyageNextCard() {
   if (!target) {
     // 全部走完：给一句结束语，而不是留一张空卡
     return (
-      <div data-testid="voyage-next-card" className="rounded border border-gold-600/40 bg-gold-700/15 p-2 mb-2">
+      <div data-testid="voyage-next-card" className="rounded-sm border border-gold-700/30 bg-black/20 p-3.5">
         <div className="flex items-center gap-1.5 text-gold-200 font-serif text-[13px]">
           <Anchor size={13} aria-hidden="true" />
           航路走完了
@@ -41,9 +41,9 @@ export default function VoyageNextCard() {
 
   // 天数口径（船速×风向×方针×天候×24）见 useVoyageNext，这里只负责展示。
   return (
-    <div data-testid="voyage-next-card" className="rounded border border-gold-600/45 bg-gold-700/15 p-2 mb-2">
+    <div data-testid="voyage-next-card" className="rounded-sm border border-gold-700/30 bg-black/20 p-3.5">
       <div className="flex items-center justify-between">
-        <span className="flex items-center gap-1.5 text-gold-200 font-serif text-[13px]">
+        <span className="flex items-center gap-1.5 text-[13px] font-serif text-gold-200">
           <Anchor size={13} aria-hidden="true" />
           航路 · {target.title}
         </span>
@@ -61,7 +61,7 @@ export default function VoyageNextCard() {
             const p = ports.find(x => x.id === suggest.id)
             if (p) setCenter([p.latitude, p.longitude])
           }}
-          className="mt-1.5 w-full flex items-center justify-between gap-2 rounded bg-black/25 px-2 py-1.5 press text-left"
+          className="mt-2 w-full flex items-center justify-between gap-2 rounded-sm border border-gold-700/25 bg-gold-700/12 px-2 py-1.5 press text-left hover:bg-gold-700/25 transition-colors"
           title="在地图上定位这个港口"
         >
           <span className="flex items-center gap-1 text-gold-100 font-serif text-[13px] min-w-0">
