@@ -72,7 +72,7 @@ FIRST_SCREEN_FILES = [
     'src/pages/MainMap.tsx',
     'src/components/intro/IntroScreen.tsx',
     'src/components/ui/BottomBar.tsx',
-    'src/components/ui/TopBar.tsx',
+    'src/components/ui/TimelineBar.tsx',  # 2026-11-18：顶栏并进 TimelineBar + MainMap，TopBar.tsx 已不存在
     'src/components/ui/Compass.tsx',
     'src/components/ui/ShipCard.tsx',
     'src/components/map/ShipAnimation.tsx',

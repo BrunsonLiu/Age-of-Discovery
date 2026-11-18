@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import { useGameStore } from '@/store/useGameStore'
 import FullScreenPanel from '@/components/ui/FullScreenPanel'
-import { Anchor, ChevronDown, Coins, RotateCcw, Compass, Download, Droplets, Flame, Globe, Heart, HelpCircle, Keyboard, Moon, Newspaper, Package, Shield, Ship, Sparkles, Tag, Trophy, Upload, Users, Utensils, Wind } from 'lucide-react'
+import { Anchor, Coins, RotateCcw, Compass, Download, Droplets, Flame, Globe, Heart, HelpCircle, Keyboard, Moon, Newspaper, Package, Shield, Ship, Sparkles, Tag, Trophy, Upload, Users, Utensils, Wind } from 'lucide-react'
 import { applySaveText, downloadSave, parseSaveText } from '@/utils/saveFile'
 import { achievements } from '@/data/achievements'
 
@@ -17,6 +17,32 @@ function inline(text: string): React.ReactNode[] {
       : <span key={i}>{part}</span>,
   )
 }
+
+/**
+ * 一条说明。
+ *
+ * 【为什么不用 `• {文字}` 一行流】
+ * 中文一条说明常有 40-60 字，在 13px 下必然折成两行。原来圆点是**行内字符**，
+ * 第二行就退回行首、正好落在圆点底下 —— 截图里读作「一个圆点孤零零挂在段落外」，
+ * 整节 10 条排下来是一面墙。改成左侧 1rem 定宽栏放标记，文字从同一列开始、
+ * 也回到同一列：折行时第二行与第一行首字对齐，眼睛才有"条目"的边界。
+ * 图标类条目（资源说明）也走同一个栏，于是圆点与图标共用一条竖线。
+ */
+function Row({ marker, children }: { marker: React.ReactNode; children: React.ReactNode }) {
+  return (
+    <li className="flex items-start gap-2.5">
+      <span
+        aria-hidden="true"
+        className="shrink-0 w-4 h-[1.85em] flex items-center justify-center text-gold-600"
+      >
+        {marker}
+      </span>
+      <span className="min-w-0 flex-1 text-gold-500 text-[13px] font-serif leading-[1.85]">{children}</span>
+    </li>
+  )
+}
+
+const DOT = <span className="block w-[3px] h-[3px] rounded-full bg-gold-600/80" />
 
 const sections = [
   {
@@ -215,13 +241,18 @@ const sections = [
     title: '资源说明',
     icon: <Coins size={14} />,
     items: [
-      { icon: <Coins size={12} />, text: '金币：购买商品、修理、补给、招募、购船、发工资' },
-      { icon: <Utensils size={12} />, text: '食物：航行中每日消耗，耗尽后士气下降' },
-      { icon: <Droplets size={12} />, text: '淡水：航行中每日消耗，耗尽后士气下降' },
-      { icon: <Heart size={12} />, text: '士气：低于 45 有哗变风险，降至 0 则游戏结束（参观模式不会结束）' },
-      { icon: <Shield size={12} />, text: '耐久：船只生命值，全部归零则游戏结束（参观模式不会结束）' },
-      { icon: <Users size={12} />, text: '船员：人手不足会掉速，死亡会削弱舰队' },
-      { icon: <Trophy size={12} />, text: '声望：港口交易优惠的源头，也是部分结局的门槛' },
+      /*
+       * 七种资源原来是「图标 + 一整句」，词条名混在句子里（"金币：购买商品…"），
+       * 折行后找不到这一条从哪个词开始。拆成 name/desc 两个字段，名用亮一档的色，
+       * 读起来是**词条**而不是七个句子。
+       */
+      { icon: <Coins size={12} />, name: '金币', desc: '购买商品、修理、补给、招募、购船、发工资' },
+      { icon: <Utensils size={12} />, name: '食物', desc: '航行中每日消耗，耗尽后士气下降' },
+      { icon: <Droplets size={12} />, name: '淡水', desc: '航行中每日消耗，耗尽后士气下降' },
+      { icon: <Heart size={12} />, name: '士气', desc: '低于 45 有哗变风险，降至 0 则游戏结束（参观模式不会结束）' },
+      { icon: <Shield size={12} />, name: '耐久', desc: '船只生命值，全部归零则游戏结束（参观模式不会结束）' },
+      { icon: <Users size={12} />, name: '船员', desc: '人手不足会掉速，死亡会削弱舰队' },
+      { icon: <Trophy size={12} />, name: '声望', desc: '港口交易优惠的源头，也是部分结局的门槛' },
     ],
   },
   {
@@ -329,7 +360,16 @@ export default function HelpPanel() {
      */
     <FullScreenPanel
       testId="help-panel"
-      width="lg"
+      /*
+       * 宽度档从 lg(1024) 降到 md(768) —— 与「舰队」「造船」同一档。
+       * 实测 1440 下：lg 的正文栏 800px、13px 中文一行排 61 个字，读起来是一"面"
+       * 字而不是一条一条；收成 wide(896) 后正文 544（41 字/行）是对的，
+       * 但右侧空出 590px，整屏读作"页面没写完"。md 把内容收成 688 的居中栏：
+       * 目录 240 + 正文 416（32 字/行，等于一本中文书的一栏），
+       * 两侧留白由"没填满"变成"居中的一页纸"——这是 FullScreenPanel 里
+       * 已经写下的分档规则（读文类 768 / 账本类 1024），帮助过去是唯一越档的。
+       */
+      width="md"
       title="航海指南"
       subtitle="十九节 · 点左边任一节展开"
       footer="存档只在这台设备的浏览器里，不上传、不关联账号"
@@ -348,22 +388,21 @@ export default function HelpPanel() {
                   aria-expanded={open}
                   data-testid={`help-section-${section.title}`}
                   onClick={() => setOpenSection(open ? null : section.title)}
-                  className={`w-full min-h-[34px] flex items-center justify-between gap-2 px-2 py-1.5 rounded-sm
+                  className={`w-full min-h-[34px] flex items-center gap-1.5 px-2 py-1.5 rounded-sm
                     text-left font-serif text-[13px] press transition-colors ${
                       open
                         ? 'side-plate--active text-gold-100'
                         : 'text-gold-400 hover:text-gold-200 hover:bg-gold-700/15'
                     }`}
                 >
-                  <span className="flex items-center gap-1.5 min-w-0">
-                    <span className="shrink-0 opacity-80">{section.icon}</span>
-                    <span className="truncate">{section.title}</span>
-                  </span>
-                  <ChevronDown
-                    size={12}
-                    aria-hidden="true"
-                    className={`shrink-0 transition-transform ${open ? 'rotate-180' : ''}`}
-                  />
+                  {/*
+                    这里原来每一行右端都挂一个 ChevronDown（19 个一模一样的 ∨）：
+                    它既不是菜单（不会弹出）、也不是手风琴组（一次只开一节），
+                    19 个箭头只是把目录读成一列下拉框。选中态由左侧金条 +
+                    亮一档的字说明，箭头不再承担任何信息。
+                  */}
+                  <span className="shrink-0 opacity-80" aria-hidden="true">{section.icon}</span>
+                  <span className="truncate min-w-0">{section.title}</span>
                 </button>
               )
             })}
@@ -373,33 +412,47 @@ export default function HelpPanel() {
         {/* 右栏：展开的那一节 + 存档 + 换模式 */}
         <div className="min-w-0">
           {openSection ? (
-            <div data-testid="help-section-body" className="space-y-2">
-              <h3 className="text-gold-200 font-serif text-[15px] flex items-center gap-2 pb-2 border-b border-gold-700/30">
-                {sections.find(s => s.title === openSection)?.icon}
-                {openSection}
+            <div data-testid="help-section-body">
+              {/*
+                节头三件事按关系排：图标与节名是同一件（这一节叫什么），
+                条数是"这一节能读多久"的预告，靠右单独一列。
+                字号从 15 提到 17：原来只比正文大 2px，在 800px 宽的一列里
+                节名与第一条几乎连成一段（截图里"基本操作"像个粗一点的行首）。
+              */}
+              <h3 className="flex items-baseline gap-2 pb-2.5 mb-3.5 border-b border-gold-700/30">
+                <span aria-hidden="true" className="text-gold-500 shrink-0">{sections.find(s => s.title === openSection)?.icon}</span>
+                <span className="text-gold-200 font-serif text-[17px] tracking-[0.02em]">{openSection}</span>
+                <span className="ml-auto shrink-0 text-[12px] font-serif text-gold-600 tabular-nums">
+                  {(sections.find(s => s.title === openSection)?.items ?? []).length} 条
+                </span>
               </h3>
-              <div className="space-y-2">
+              {/* 条目间距 10px：行高提到 1.85 之后，8px 会让两条的末行与首行黏成一段 */}
+              <ul className="space-y-2.5">
                 {(sections.find(s => s.title === openSection)?.items ?? []).map((item, i) => {
                   if (typeof item === 'string') {
-                    return (
-                      <p key={i} className="text-gold-500 text-[13px] font-serif leading-relaxed">
-                        • {inline(item)}
-                      </p>
-                    )
+                    return <Row key={i} marker={DOT}>{inline(item)}</Row>
                   }
                   return (
-                    <p key={i} className="text-gold-500 text-[13px] font-serif leading-relaxed flex items-start gap-1.5">
-                      <span className="text-gold-400 mt-0.5 shrink-0">{item.icon}</span>
-                      {item.text}
-                    </p>
+                    <Row key={i} marker={item.icon}>
+                      <span className="text-gold-300">{item.name}</span>
+                      <span className="text-gold-600">：</span>
+                      {item.desc}
+                    </Row>
                   )
                 })}
-              </div>
+              </ul>
             </div>
           ) : (
-            <div className="rounded-sm border border-gold-700/25 bg-black/20 px-4 py-6 text-center">
-              <Compass size={20} className="mx-auto text-gold-500 opacity-70" aria-hidden="true" />
-              <p className="text-gold-400 font-serif text-[13px] mt-2">挑一节看看</p>
+            /*
+             * 空态原来是一个带边框的小方框（416×90），和下面的存档框长得
+             * 一模一样 —— 两个同材质的框上下叠着，一个"等你挑一节"、
+             * 一个"能点按钮"，读起来像两件事并列。空态不是一块**内容**，
+             * 是这一栏还没翻到某一页：去掉边框与底，只留一个图标和一句话，
+             * 那它就不会跟下面那块真正可操作的区域抢分量。
+             */
+            <div className="py-12 text-center">
+              <Compass size={22} className="mx-auto text-gold-600/60" aria-hidden="true" />
+              <p className="text-gold-400 font-serif text-[13px] mt-2.5">挑一节看看</p>
             </div>
           )}
 
@@ -408,15 +461,24 @@ export default function HelpPanel() {
             一旦游戏承诺「日志会一页页变厚」，就得同时给一个能带走它的办法，
             否则清一次缓存，承诺就成了假话。不写"我们不收集任何数据"——
             托管平台本来就会记录访问日志，能说清的只有"存档不上传"。
+
+            【为什么收进一块凹陷的框里】
+            右栏上面是"手册正文"，下面是"能对这个存档做的事"——两种内容原来
+            只隔一条 1px 线，字一样大、一样色，读起来像是第 20 节。
+            框（inlay：凹底 + 细边、不投影）在这个项目里的语义是"清单/操作区"
+            （舰队面板同款），一眼就能把"读的"与"做的"分开。
           */}
-          <div className="mt-6 pt-4 border-t border-gold-700/30">
+          <section
+            aria-label="存档与开局"
+            className="mt-8 rounded-sm border border-gold-700/25 bg-black/25 px-4 py-3.5"
+          >
             <h4 className="text-gold-300 font-serif text-[13px] mb-1.5 flex items-center gap-1.5">
-              <Download size={13} /> 把这本日志带走
+              <Download size={13} aria-hidden="true" /> 把这本日志带走
             </h4>
             <p className="text-gold-500 text-[12px] font-serif leading-relaxed">
               存档只在浏览器里，清缓存或换设备都会丢；导出的 JSON 可读回来。
             </p>
-            <div className="grid grid-cols-2 gap-1.5 mt-2 max-w-sm">
+            <div className="grid grid-cols-2 gap-1.5 mt-2">
               <button
                 type="button"
                 onClick={() => setSaveMsg(downloadSave() ? '已导出一份存档文件，收好它。' : '本机还没有存档可以导出。')}
@@ -448,7 +510,7 @@ export default function HelpPanel() {
               <button
                 type="button"
                 onClick={doImport}
-                className="w-full max-w-sm min-h-[40px] mt-1.5 py-2 text-[12px] font-serif text-danger-300 hover:text-danger-200 border border-danger-500/45 rounded-lg press transition-all"
+                className="w-full min-h-[40px] mt-1.5 py-2 text-[12px] font-serif text-danger-300 hover:text-danger-200 border border-danger-500/45 rounded-lg press transition-all"
                 data-testid="save-import-confirm"
               >
                 确认覆盖当前进度并读入
@@ -457,21 +519,21 @@ export default function HelpPanel() {
             {saveMsg && (
               <p className="text-gold-300 text-[12px] font-serif mt-1.5 leading-relaxed" role="status">{saveMsg}</p>
             )}
-          </div>
 
-          {/* 换模式：重开一局会清掉当前进度，所以话说在前面 */}
-          <div className="mt-4 pt-4 border-t border-gold-700/30 max-w-sm">
-            <button
-              onClick={() => { setShowHelp(false); resetGame() }}
-              className="w-full py-2 text-[12px] font-serif text-gold-400 hover:text-gold-200 border border-gold-700/25 rounded-lg press transition-all"
-            >
-              <RotateCcw size={11} className="inline -mt-0.5 mr-1" aria-hidden="true" />
-              换个玩法（重开一局 · 当前进度会清空）
-            </button>
-            <p className="text-gold-400 text-[12px] font-serif text-center mt-1">
-              当前：{gameMode === 'visitor' ? '参观模式' : '船长模式'}
-            </p>
-          </div>
+            {/* 换模式：重开一局会清掉当前进度，所以话说在前面 */}
+            <div className="mt-3 pt-3 border-t border-gold-700/25">
+              <button
+                onClick={() => { setShowHelp(false); resetGame() }}
+                className="w-full py-2 text-[12px] font-serif text-gold-400 hover:text-gold-200 border border-gold-700/25 rounded-lg press transition-all"
+              >
+                <RotateCcw size={11} className="inline -mt-0.5 mr-1" aria-hidden="true" />
+                换个玩法（重开一局 · 当前进度会清空）
+              </button>
+              <p className="text-gold-400 text-[12px] font-serif text-center mt-1">
+                当前：{gameMode === 'visitor' ? '参观模式' : '船长模式'}
+              </p>
+            </div>
+          </section>
         </div>
       </div>
     </FullScreenPanel>

@@ -8236,6 +8236,21 @@ console.log('\n== 天数口径守卫 ==')
     '帮助面板不许再套第二层滚动容器（会把存档区裁到面板外）')
   assert(!help.includes("btn.closest('.scroll-parchment')"),
     '点开一节不再靠 scrollIntoView 顶到开头 —— 两栏布局里正文是替换，不是往下接')
+
+  /*
+   * 【排版三条，2026-11-18 第十三轮】
+   * 量出来的病：1440 下帮助正文栏 800px、13px 中文一行 61 个字，
+   * 折行还退回行首（圆点悬空）。这三条把"改回去"挡住：
+   *   ① 宽度档必须是 md —— 读文类 768 是 FullScreenPanel 自己定的规则，帮助曾越档到 lg；
+   *   ② 条目必须走带 1rem 定宽标记栏的 Row（折行回到文字列）；
+   *   ③ 目录不许再挂 19 个 ChevronDown（它不弹出、不折叠组，箭头不带信息）。
+   */
+  assert(/width="md"/.test(help) && !/width="lg"/.test(help),
+    '帮助用读文档 md(768)：正文栏 416px ≈ 30 字/行，不是 lg 的 800px/61 字')
+  assert(/className="shrink-0 w-4 h-\[1\.85em\]/.test(help) && !/• \{inline\(/.test(help),
+    '帮助条目走固定 1rem 标记栏，折行回到文字列（不许再写 `• ` 行内圆点）')
+  // 用注释剥离后的源码：这条注释本身就会提到 ChevronDown，裸 includes 会自伤
+  assert(!/<ChevronDown/.test(stripComments(help)), '帮助目录不再挂 19 个下拉箭头')
   assert(card.includes('footer?: ReactNode') && card.includes('{footer}'),
     'ParchmentCard 提供可选常驻页脚')
   // 用正则：源码是 CRLF，写死 '\n' 会在 Windows 上假失败
