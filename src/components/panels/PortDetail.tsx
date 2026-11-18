@@ -220,7 +220,8 @@ export default function PortDetail() {
               src={UI_ASSETS.pennants}
               alt=""
               aria-hidden="true"
-              className="w-full h-auto block -mt-px opacity-90"
+              className="w-full h-auto block -mt-px opacity-70"
+              style={{ filter: 'saturate(0.4) brightness(0.9)' }}
             />
           </div>
 
@@ -288,11 +289,18 @@ export default function PortDetail() {
         </div>
 
         <div className="space-y-3 mt-4">          {isAtPort && (
-            <div className="border-t border-gold-700/30 pt-2">
-              <h4 className="text-gold-300 font-serif text-sm mb-2 flex items-center gap-1">
+            <div className="border-t border-gold-700/60 pt-3">
+              <h4 className="text-gold-600 font-serif text-[12px] tracking-[0.16em] mb-2 flex items-center gap-1">
                 <Anchor size={14} /> 港口服务
               </h4>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+              {/*
+                【五个按钮，三列，必空一格】
+                原来用固定三列网格：修理 / 补给 / 招募 一行，贸易 / 造船厂
+                一行，右下角空一格 —— 那一格读作"这里还该有个按钮"。
+                改成拉伸填满：第一行三个等宽，第二行两个各占一半。
+                网格不该为了"整齐的列宽"留下一个假空位。
+              */}
+              <div className="flex flex-wrap gap-1.5">
                 {port.services.map(svc => (
                   <button
                     key={svc}
@@ -322,7 +330,9 @@ export default function PortDetail() {
                      * "被按下"的回执；凹陷槽读作"这里是个输入框/展示位"。
                      * 原来用 inlay + 1px 金边，在深棕面板上是一块扁平色块。
                      */
-                    className="flex items-center gap-1.5 plate-btn rounded px-2 py-1.5 text-[13px] text-gold-300 font-serif transition-colors hover:text-gold-200"
+                    className="flex-1 basis-[calc(20%-0.5rem)] min-w-[6.2rem] flex items-center justify-center gap-1.5
+                      plate-btn rounded px-2 py-1.5 text-[13px] text-gold-300 font-serif
+                      transition-colors hover:text-gold-200"
                   >
                     {serviceIcons[svc]}
                     {serviceNames[svc]}
@@ -344,7 +354,9 @@ export default function PortDetail() {
                     }}
                     data-service="tribute"
                     aria-label="跳到交勘合那一栏"
-                    className="flex items-center gap-1.5 plate-btn rounded px-2 py-1.5 text-[13px] text-gold-300 font-serif transition-colors hover:text-gold-200"
+                    className="flex-1 basis-[calc(20%-0.5rem)] min-w-[6.2rem] flex items-center justify-center gap-1.5
+                      plate-btn rounded px-2 py-1.5 text-[13px] text-gold-300 font-serif
+                      transition-colors hover:text-gold-200"
                   >
                     <ScrollText size={14} />
                     {tribute.rule.label}
@@ -370,8 +382,8 @@ export default function PortDetail() {
             没有可报呈的时候这里写清"捞起来才算数"，而不是让按钮灰着让人猜。
           */}
           {isAtPort && !fleet.isSailing && portFaction(port.id) === 'scholars' && (
-            <div data-service-anchor="donate" className="border-t border-gold-700/30 pt-2">
-              <h4 className="text-gold-300 font-serif text-[13px] mb-1.5 flex items-center gap-1">
+            <div data-service-anchor="donate" className="border-t border-gold-700/60 pt-3">
+              <h4 className="text-gold-600 font-serif text-[12px] tracking-[0.16em] mb-2 flex items-center gap-1">
                 <ScrollText size={12} /> 公会登记
               </h4>
               {canDonate.length === 0 ? (
@@ -409,8 +421,8 @@ export default function PortDetail() {
           )}
 
           {isAtPort && tribute && port.id === tribute.rule.portId && (
-            <div data-service-anchor="tribute" className="border-t border-gold-700/30 pt-2">
-              <h4 className="text-gold-300 font-serif text-[13px] mb-1.5 flex items-center gap-1">
+            <div data-service-anchor="tribute" className="border-t border-gold-700/60 pt-3">
+              <h4 className="text-gold-600 font-serif text-[12px] tracking-[0.16em] mb-2 flex items-center gap-1">
                 <ScrollText size={12} /> {tribute.rule.label}
               </h4>
               <div className="space-y-1.5">
@@ -461,8 +473,8 @@ export default function PortDetail() {
           )}
 
           {isAtPort && port.services.includes('repair') && (
-            <div data-service-anchor="repair" className="border-t border-gold-700/30 pt-2">
-              <h4 className="text-gold-300 font-serif text-[13px] mb-1.5 flex items-center gap-1">
+            <div data-service-anchor="repair" className="border-t border-gold-700/60 pt-3">
+              <h4 className="text-gold-600 font-serif text-[12px] tracking-[0.16em] mb-2 flex items-center gap-1">
                 <Shield size={12} /> 修理船只
               </h4>
               {fleet.ships.map(ship => {
@@ -485,22 +497,22 @@ export default function PortDetail() {
           )}
 
           {isAtPort && port.services.includes('supply') && (
-            <div data-service-anchor="supply" className="border-t border-gold-700/30 pt-2">
-              <h4 className="text-gold-300 font-serif text-[13px] mb-1.5 flex items-center gap-1">
+            <div data-service-anchor="supply" className="border-t border-gold-700/60 pt-3">
+              <h4 className="text-gold-600 font-serif text-[12px] tracking-[0.16em] mb-2 flex items-center gap-1">
                 <Package size={12} /> 补给物资
               </h4>
               <div className="flex items-center justify-between text-[13px]">
                 <span className="text-gold-400 font-serif">食物+{supplyGot.food} 淡水+{supplyGot.water}</span>
                 <ActionButton onClick={handleSupply} disabled={fleet.gold < supplyCostNow} variant="secondary">
-                  <Coins size={10} /> {supplyCostNow}
+                  <Coins size={10} /> {supplyCostNow} 金
                 </ActionButton>
               </div>
             </div>
           )}
 
           {isAtPort && (
-            <div className="border-t border-gold-700/30 pt-2">
-              <h4 className="text-gold-300 font-serif text-[13px] mb-1.5 flex items-center gap-1">
+            <div className="border-t border-gold-700/60 pt-3">
+              <h4 className="text-gold-600 font-serif text-[12px] tracking-[0.16em] mb-2 flex items-center gap-1">
                 <Heart size={12} /> 港口休整
               </h4>
               <div className="space-y-1.5">
@@ -521,7 +533,7 @@ export default function PortDetail() {
                     disabled={fleet.gold < GAME_BALANCE.FEAST_COST || fleet.food < GAME_BALANCE.FEAST_FOOD || fleet.water < GAME_BALANCE.FEAST_WATER}
                     variant="secondary"
                   >
-                    <Coins size={10} /> {GAME_BALANCE.FEAST_COST}
+                    <Coins size={10} /> {GAME_BALANCE.FEAST_COST} 金
                   </ActionButton>
                 </div>
                 <p className="text-gold-400 text-xs font-serif">士气低于 45 时，舰队可能爆发哗变——疲惫的船员比风暴更危险。</p>
@@ -530,8 +542,8 @@ export default function PortDetail() {
           )}
 
           {isAtPort && port.services.includes('recruit') && (
-            <div data-service-anchor="recruit" className="border-t border-gold-700/30 pt-2">
-              <h4 className="text-gold-300 font-serif text-[13px] mb-1.5 flex items-center gap-1">
+            <div data-service-anchor="recruit" className="border-t border-gold-700/60 pt-3">
+              <h4 className="text-gold-600 font-serif text-[12px] tracking-[0.16em] mb-2 flex items-center gap-1">
                 <Users size={12} /> 招募船员
               </h4>
               {fleet.ships.map(ship => (
@@ -548,8 +560,8 @@ export default function PortDetail() {
           )}
 
           {isAtPort && (
-            <div className="border-t border-gold-700/30 pt-2">
-              <h4 className="text-gold-300 font-serif text-[13px] mb-1.5 flex items-center gap-1">
+            <div className="border-t border-gold-700/60 pt-3">
+              <h4 className="text-gold-600 font-serif text-[12px] tracking-[0.16em] mb-2 flex items-center gap-1">
                 <Compass size={12} /> 酒馆·招募军官
               </h4>
               <p className="text-gold-400 text-xs font-serif mb-1.5">
@@ -599,8 +611,8 @@ export default function PortDetail() {
           )}
 
           {isAtPort && (
-            <div className="border-t border-gold-700/30 pt-2">
-              <h4 className="text-gold-300 font-serif text-[13px] mb-1.5 flex items-center gap-1">
+            <div className="border-t border-gold-700/60 pt-3">
+              <h4 className="text-gold-600 font-serif text-[12px] tracking-[0.16em] mb-2 flex items-center gap-1">
                 <Users size={12} /> 码头·寻访名船员
               </h4>
               <p className="text-gold-400 text-xs font-serif mb-1.5">
@@ -655,8 +667,8 @@ export default function PortDetail() {
           )}
 
           {isAtPort && portTasks.length > 0 && (
-            <div className="border-t border-gold-700/30 pt-2">
-              <h4 className="text-gold-300 font-serif text-[13px] mb-1.5 flex items-center gap-1">
+            <div className="border-t border-gold-700/60 pt-3">
+              <h4 className="text-gold-600 font-serif text-[12px] tracking-[0.16em] mb-2 flex items-center gap-1">
                 <Heart size={12} /> 可接任务
               </h4>
               {portTasks.slice(0, 3).map(task => (
