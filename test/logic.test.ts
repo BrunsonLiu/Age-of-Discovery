@@ -8897,6 +8897,30 @@ console.log('\n== 天数口径守卫 ==')
     '船只卡的四项差值各占一格、右对齐定宽（四列能竖着比，三张卡共用列线）')
   assert(/sm:grid-cols-4 gap-x-3/.test(sy), '四项数据是四列网格（差值列才等距）')
 
+  /*
+   * ---- 钱只有一种写法：`N 金` ----
+   *
+   * 2026-11-18 在同一块港口面板里同时出现四种：
+   *   补给「🪙 60 金」/ 招募「+10人 🪙 60」/ 盛宴「🪙 150 金」/ 军官「日薪 30 金币」。
+   * 图标当后缀会被读成百分号（贸易账本 "85 ‰"、仪表条 "500 ％" 两次实测），
+   * 而「金」「金币」两种后缀混用会让玩家以为它们不是同一件东西。
+   * 现在：金额一律 `数字 + 金`，图标只在标签位（底栏「金币」、帮助、仪表条的格子标题）。
+   */
+  assert(!/<Coins size=\{10\} \/>\s*\{/.test(stripComments(pd)),
+    '金额按钮不再用「图标 + 裸数字」代替单位（港口面板）')
+  assert(!/<Coins size=\{10\} \/>\s*\{/.test(stripComments(sy)),
+    '金额按钮不再用「图标 + 裸数字」代替单位（造船面板）')
+  assert(!/\} 金币/.test(stripComments(pd)) && !/\} 金币/.test(stripComments(sy)),
+    '金额后缀统一写「金」，不再与「金币」混用（这两个面板里）')
+  assert(/\{RECRUIT_COST\} 金/.test(pd) && /\{o\.hireCost\} 金/.test(pd),
+    '招募费与军官雇佣费都带「金」')
+  /*
+   * 【没有按钮 ≠ 按钮灰着】满员时这一行什么都不渲染，会和「修理→完好」那种
+   * 明确写原因的行不一致：玩家分不清"满员了"还是"这里坏了"。
+   */
+  assert(/ship\.crew < ship\.maxCrew \?/.test(pd) && /满员/.test(pd),
+    '招募行满员时写明「满员」（同一个意思只用一种写法）')
+
   const pkg = JSON.parse(readFileSync(join(process.cwd(), 'package.json'), 'utf8'))
   assert(pkg.scripts['test:e2e:portsvc']?.includes('port-services.mjs'), '服务按钮有独立巡检命令')
   assert(pkg.scripts['test:e2e:seg3']?.includes('test:e2e:portsvc'),

@@ -221,7 +221,7 @@ export default function FleetPanel() {
             <div className="rounded p-2 inlay border border-gold-700/20 space-y-1">
               <div className="flex items-center justify-between text-[13px] font-serif">
                 <span className="flex items-center gap-1 text-gold-500"><Award size={11} aria-hidden="true" />军官团</span>
-                <span className="text-gold-400">日薪合计 {totalWage} 金币</span>
+                <span className="text-gold-400">日薪合计 {totalWage} 金</span>
               </div>
               {officers.map(id => {
                 const o = OFFICER_MAP.get(id)

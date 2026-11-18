@@ -485,7 +485,7 @@ export default function PortDetail() {
                     <span className="text-gold-300 font-serif">{ship.name} ({ship.durability}/{ship.maxDurability})</span>
                     {damage > 0 ? (
                       <ActionButton onClick={() => handleRepair(ship.id)} disabled={fleet.gold < cost} variant="secondary">
-                        <Coins size={10} /> {cost}
+                        {cost} 金
                       </ActionButton>
                     ) : (
                       <span className="ink-good text-[13px]">完好</span>
@@ -504,7 +504,7 @@ export default function PortDetail() {
               <div className="flex items-center justify-between text-[13px]">
                 <span className="text-gold-400 font-serif">食物+{supplyGot.food} 淡水+{supplyGot.water}</span>
                 <ActionButton onClick={handleSupply} disabled={fleet.gold < supplyCostNow} variant="secondary">
-                  <Coins size={10} /> {supplyCostNow} 金
+                  {supplyCostNow} 金
                 </ActionButton>
               </div>
             </div>
@@ -533,7 +533,7 @@ export default function PortDetail() {
                     disabled={fleet.gold < GAME_BALANCE.FEAST_COST || fleet.food < GAME_BALANCE.FEAST_FOOD || fleet.water < GAME_BALANCE.FEAST_WATER}
                     variant="secondary"
                   >
-                    <Coins size={10} /> {GAME_BALANCE.FEAST_COST} 金
+                    {GAME_BALANCE.FEAST_COST} 金
                   </ActionButton>
                 </div>
                 <p className="text-gold-400 text-xs font-serif">士气低于 45 时，舰队可能爆发哗变——疲惫的船员比风暴更危险。</p>
@@ -549,10 +549,18 @@ export default function PortDetail() {
               {fleet.ships.map(ship => (
                 <div key={ship.id} className="flex items-center justify-between text-[13px] mb-1">
                   <span className="text-gold-400 font-serif">{ship.name} ({ship.crew}/{ship.maxCrew})</span>
-                  {ship.crew < ship.maxCrew && (
+                  {ship.crew < ship.maxCrew ? (
                     <ActionButton onClick={() => handleRecruit(ship.id)} disabled={fleet.gold < RECRUIT_COST} variant="secondary">
-                      +{GAME_BALANCE.DEFAULT_RECRUIT_COUNT}人 <Coins size={10} /> {RECRUIT_COST}
+                      +{GAME_BALANCE.DEFAULT_RECRUIT_COUNT}人 · {RECRUIT_COST} 金
                     </ActionButton>
+                  ) : (
+                    /*
+                     * 【"没有按钮"和"按钮灰着"是两回事】
+                     * 这条原来满员时什么都不渲染：同一屏里「修理」那一栏
+                     * 会写「完好」，这一栏却空着 —— 玩家分不清是"满员了"
+                     * 还是"这里坏了"。同一个意思（此刻无需动作）用同一种写法。
+                     */
+                    <span className="ink-good text-[13px]">满员</span>
                   )}
                 </div>
               ))}
@@ -596,12 +604,12 @@ export default function PortDetail() {
                               disabled={fleet.gold < o.hireCost}
                               variant="secondary"
                             >
-                              <Coins size={10} /> {o.hireCost}
+                              {o.hireCost} 金
                             </ActionButton>
                           )}
                         </div>
                         <p className="text-gold-500 text-xs font-serif">{o.effect}</p>
-                        <p className="text-gold-400 text-xs font-serif">日薪 {o.dailyWage} 金币</p>
+                        <p className="text-gold-400 text-xs font-serif">日薪 {o.dailyWage} 金</p>
                       </div>
                     </div>
                   )
@@ -652,7 +660,7 @@ export default function PortDetail() {
                               disabled={fleet.gold < c.hireCost}
                               variant="secondary"
                             >
-                              <Coins size={10} /> {c.hireCost}
+                              {c.hireCost} 金
                             </ActionButton>
                           )}
                         </div>
@@ -683,7 +691,7 @@ export default function PortDetail() {
                     </button>
                   </div>
                   <div className="flex items-center justify-between text-gold-500 text-[13px] mt-0.5">
-                    <span>奖励: <Coins size={10} className="inline" /> {taskGold(task.reward.gold, hasMerchant, escortRewardMul(task.type, factionRep.crown ?? 0))}{task.reward.fame ? ` +${task.reward.fame}声望` : ''}</span>
+                    <span>奖励: {taskGold(task.reward.gold, hasMerchant, escortRewardMul(task.type, factionRep.crown ?? 0))} 金{task.reward.fame ? ` +${task.reward.fame}声望` : ''}</span>
                     {task.targetPortId && (
                       <span className="flex items-center gap-0.5">
                         <Map size={9} /> {ports.find(p => p.id === task.targetPortId)?.nameCn}

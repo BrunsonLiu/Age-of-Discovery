@@ -1,4 +1,4 @@
-import { Ship as ShipIcon, Coins, Users, Package, Gauge, Anchor, Crown } from 'lucide-react'
+import { Ship as ShipIcon, Users, Package, Gauge, Anchor, Crown } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { useGameStore } from '@/store/useGameStore'
 import { shipTemplates, shipResaleValue } from '@/data/ships'
@@ -191,7 +191,7 @@ export default function ShipyardPanel() {
                   </span>
                   {canSell ? (
                     <ActionButton onClick={() => sellShip(ship.id)} variant="secondary">
-                      <Coins size={10} /> {shipResaleValue(ship)}
+                      {shipResaleValue(ship)} 金
                     </ActionButton>
                   ) : (
                     <span className="text-gold-400 text-[13px] shrink-0">
@@ -262,7 +262,7 @@ export default function ShipyardPanel() {
                       )}
                       {!affordable && canBuyRegion && (
                         <p className="text-gold-400 text-[12px] mt-1.5 font-serif" data-testid={`shipyard-short-${key}`}>
-                          还差 {template.price - fleet.gold} 金币
+                          还差 {template.price - fleet.gold} 金
                         </p>
                       )}
                     </div>
@@ -273,7 +273,7 @@ export default function ShipyardPanel() {
                           buyShip(key)
                           if (useGameStore.getState().fleet.ships.length > before) {
                             useFx.getState().fx(
-                              { kind: 'banner', tone: 'gold', text: `${template.name} 入列`, sub: `-${template.price} 金币` },
+                              { kind: 'banner', tone: 'gold', text: `${template.name} 入列`, sub: `-${template.price} 金` },
                               'ship',
                             )
                           }
@@ -282,7 +282,7 @@ export default function ShipyardPanel() {
                         variant="secondary"
                         className="w-24 justify-center"
                       >
-                        <Coins size={10} /> {template.price}
+                        {template.price} 金
                       </ActionButton>
                     </div>
                   </div>

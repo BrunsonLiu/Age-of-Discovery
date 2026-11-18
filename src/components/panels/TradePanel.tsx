@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Coins, TrendingUp, TrendingDown, Sprout, HandCoins } from 'lucide-react'
+import { TrendingUp, TrendingDown, Sprout, HandCoins } from 'lucide-react'
 import { useGameStore, selectBuyPrice, selectSellPrice, selectPriceTone, selectBestDeal } from '@/store/useGameStore'
 import { useMapStore } from '@/store/useMapStore'
 import { ports, portGoods, localSpecialties, localDemands } from '@/data/ports'
@@ -348,7 +348,7 @@ export default function TradePanel() {
               <span className="text-gold-200 text-[18px] md:text-[21px] font-serif tabular-nums leading-none">
                 {fleet.gold}
               </span>
-              <Coins size={12} className="text-gold-500 shrink-0" />
+              <span className="text-gold-500 text-[13px] font-serif">金</span>
             </div>
           </div>
           <div className="px-3 md:px-4 py-2.5 min-w-0">
