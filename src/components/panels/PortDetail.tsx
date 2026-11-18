@@ -19,6 +19,7 @@ import { UI_ASSETS } from '@/data/uiAssets'
 import { prefersReducedMotion } from '@/utils/motion'
 import FullScreenPanel from '@/components/ui/FullScreenPanel'
 import { DOCK_TABS } from '@/components/ui/dockTabs'
+import DockEmpty from '@/components/ui/DockEmpty'
 import ActionButton from '@/components/ui/ActionButton'
 
 const regionNames: Record<string, string> = {
@@ -67,7 +68,22 @@ export default function PortDetail() {
   const portId = fleet.currentPortId || selectedPortId
   const port = ports.find(p => p.id === portId)
 
-  if (!port) return null
+  /*
+   * 既不在港、也没点选过任何港口 —— 这一页没有对象可讲。
+   * 原来 `return null`，点「港口」毫无反应；现在明确说"船在海上"。
+   */
+  if (!port) {
+    return (
+      <DockEmpty
+        testId="port-panel"
+        title="港口"
+        activeTab="port"
+        onTab={setActivePanel}
+        onClose={() => setActivePanel(null)}
+        hint="这一页讲的是你脚下这座港：服务、军官、补给都在岸上。点地图上的港口可以先看简介，靠上去才算到。"
+      />
+    )
+  }
 
   const isAtPort = fleet.currentPortId === port.id
   /*

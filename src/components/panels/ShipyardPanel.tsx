@@ -7,6 +7,7 @@ import { ports } from '@/data/ports'
 import { effectiveFleetSpeed } from '@/utils/navigation'
 import FullScreenPanel from '@/components/ui/FullScreenPanel'
 import { DOCK_TABS } from '@/components/ui/dockTabs'
+import DockEmpty from '@/components/ui/DockEmpty'
 import ActionButton from '@/components/ui/ActionButton'
 import { useFxStore as useFx } from '@/store/useFxStore'
 
@@ -81,7 +82,18 @@ export default function ShipyardPanel() {
    * 而这块面板在没有船坞的港口会直接返回 null —— 玩家点「造船」什么也不会发生，
    * 连"为什么没有"都不说。空态至少交代一句，并保留回海图/切别的页签的路。
    */
-  if (!portId) return null
+  if (!portId) {
+    return (
+      <DockEmpty
+        testId="shipyard-panel"
+        title="造船厂"
+        activeTab="shipyard"
+        onTab={setActivePanel}
+        onClose={() => setActivePanel(null)}
+        hint="买卖船只与整船大修只在带大船坞的港口办得成。"
+      />
+    )
+  }
   if (!port || !hasShipyard) {
     return (
       <FullScreenPanel

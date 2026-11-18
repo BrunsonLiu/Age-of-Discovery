@@ -8430,7 +8430,12 @@ console.log('\n== 天数口径守卫 ==')
    * 时，indexOf 会命中注释那行，于是 hook 明明在前也被判成在后（假红）。
    */
   const hookIdx = trade.search(/const landDataReady = useMapStore\(/)
-  const retIdx = trade.search(/^\s*if \(!portId\) return null/m)
+  /*
+   * 2026-11-18：`return null` 换成了 `return <DockEmpty/>`（海上空态），
+   * 只认「return null」这一种写法会把守卫打成永假。真正要守的是
+   * 「hook 出现在任何以 `if (!portId)` 开头的提前退出之前」。
+   */
+  const retIdx = trade.search(/^\s*if \(!portId\)/m)
   assert(hookIdx >= 0 && retIdx >= 0 && hookIdx < retIdx,
     '交易面板的 useMapStore 必须在提前 return 之前（否则是条件调用，React 会直接抛错）')
   assert(/isSeaMaskLoaded\(\)\) throw new Error/.test(landCheck),

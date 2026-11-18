@@ -6,6 +6,7 @@ import { ports, portGoods, localSpecialties, localDemands } from '@/data/ports'
 import { goods } from '@/data/goods'
 import FullScreenPanel from '@/components/ui/FullScreenPanel'
 import { DOCK_TABS } from '@/components/ui/dockTabs'
+import DockEmpty from '@/components/ui/DockEmpty'
 import ActionButton from '@/components/ui/ActionButton'
 import { useFxStore as useFx } from '@/store/useFxStore'
 
@@ -205,7 +206,23 @@ export default function TradePanel() {
   const landDataReady = useMapStore(s => s.landDataReady)
 
   const portId = fleet.currentPortId
-  if (!portId) return null
+  /*
+   * 航行中 currentPortId 是 null（离港那一刻被清掉）。原来这里 `return null`
+   * —— 侧栏/页签点到「贸易」什么都不发生，读作"按钮坏了"。
+   * 现在给空态：说明船在海上、这一页要靠岸才开。
+   */
+  if (!portId) {
+    return (
+      <DockEmpty
+        testId="trade-panel"
+        title="商品交易"
+        activeTab="trade"
+        onTab={setActivePanel}
+        onClose={() => setActivePanel(null)}
+        hint="行情按港口算：每个港的出产、渴求与库存都不一样，船在海上时这一页没有价格可报。"
+      />
+    )
+  }
 
   /*
    * 掮客这一单：与左下角那张掮客卡**同一个函数**（selectBestDeal），
