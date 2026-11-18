@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { X } from 'lucide-react'
 import type { PanelType } from '@/types'
+import { useGameStore } from '@/store/useGameStore'
 
 interface FullScreenPanelProps {
   /** 顶部大标题，如「商品交易」 */
@@ -57,6 +58,13 @@ export default function FullScreenPanel({
   title, subtitle, children, footer, onClose, testId, width = 'md',
   tabs, activeTab, onTab,
 }: FullScreenPanelProps) {
+  /*
+   * 船在海上时打开面板 = 主循环停了（见 SailingController 的 uiOpen 注释）。
+   * 但**屏幕上没有任何地方说这件事** —— 玩家合上面板才发现船没走，
+   * 或者反过来，以为打开面板的这几分钟船还在跑。
+   * 脚注这一行是全站唯一能挂这句话的地方：它常驻、不滚、每个面板都有。
+   */
+  const sailing = useGameStore(s => s.fleet.isSailing)
   return (
     <div
       className="absolute inset-0 flex flex-col"
@@ -178,7 +186,21 @@ export default function FullScreenPanel({
         下半屏有了边界（不再是纯黑），以及玩家不必记住 1-8 / Esc。
       */}
       <div className="relative shrink-0 h-9 md:h-10 flex items-center justify-between gap-3 px-5 md:px-10 border-t border-gold-700/25 bg-black/25">
-        <span className="text-[12px] font-serif text-gold-600 truncate">{footer}</span>
+        {/*
+          【暂停徽标，不覆盖脚注】
+          第一版把脚注整句换成了"海面已暂停"，结果面板自己的说明被顶掉了 ——
+          玩家既想知道"船停没停"，也想知道"这一屏能做什么"，两句话都留着，
+          用一个小徽标分隔，各占 5 个字的位置。
+        */}
+        <span className="flex items-center gap-2 min-w-0 text-[12px] font-serif text-gold-600">
+          {sailing && (
+            <span className="shrink-0 inline-flex items-center gap-1 rounded-sm border border-ocean-500/40
+              bg-ocean-700/40 px-1.5 py-0.5 text-ocean-200 leading-none" title="打开面板时主循环暂停">
+              ⏸ 海面暂停
+            </span>
+          )}
+          <span className="truncate">{footer}</span>
+        </span>
         <span className="hidden md:flex items-center gap-3 text-[12px] font-serif text-gold-600 tabular-nums shrink-0">
           <span>1–8 换面板</span>
           <span className="text-gold-600">·</span>

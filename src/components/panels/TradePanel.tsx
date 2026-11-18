@@ -400,10 +400,25 @@ export default function TradePanel() {
               <p className="text-gold-300 text-[13px] font-serif flex items-center gap-1 leading-none">
                 <HandCoins size={12} className="shrink-0" />
                 <span className="min-w-0">
-                  掮客说：买 <span className="text-gold-100">{deal.goodName}</span> {deal.qty} 件，运到{' '}
-                  <span className="text-gold-100">{deal.toPortName}</span> 卖
+                  掮客：<span className="text-gold-100">{deal.goodName}</span> ×{deal.qty}
+                  <span className="text-gold-500 mx-1">→</span>
+                  <span className="text-gold-100">{deal.toPortName}</span>
                   <span className="text-gold-500 mx-1.5">·</span>
-                  <span className="text-gold-500 tabular-nums">本港 {deal.buy} / 那边 {deal.sell}</span>
+                  {/*
+                    【这三个数字不许省】
+                    上一轮为了把它压成一行，删掉了「多少金 / 多少天」——
+                    first-run 的断言当场抓红。那条断言守的是本项目最基本的一条：
+                    **推荐必须带数，不能空口说"运到那边卖"**。
+                    玩家要判断的是"值不值得跑这一趟"，而值得与否 = 利润 ÷ 天数。
+                    现在用更短的写法把三样都塞回一行：
+                    利润 / 天数（要算的东西）+ 本港与那边的单价（要对比的东西）。
+                  */}
+                  <span className="tabular-nums text-gold-200">
+                    {deal.totalProfit} 金 / {dealDays ?? '?'} 天
+                  </span>
+                  <span className="text-gold-500 tabular-nums ml-1.5">
+                    （本港 {deal.buy} · 那边 {deal.sell}）
+                  </span>
                 </span>
               </p>
             </div>

@@ -5,7 +5,7 @@ catch { puppeteer = (await import('file:///C:/Users/Brunson/.workbuddy/binaries/
 
 import { mkdirSync } from 'node:fs'
 const EDGE = 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'
-const BASE = 'http://localhost:5174/Age-of-Discovery/'
+const BASE = process.env.GAME_URL || 'http://localhost:5174/Age-of-Discovery/'
 const SHOTS = '.workbuddy/shots'
 mkdirSync(SHOTS, { recursive: true })
 

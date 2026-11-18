@@ -12,7 +12,7 @@
  *   · 左侧图标必须是 Coins 那条路径（lucide 的 class 是 `lucide-coins`）
  *   · 标题里不许有 emoji 码点
  */
-const BASE = process.env.GAME_URL || process.env.AOD_BASE || 'http://127.0.0.1:5174/Age-of-Discovery/'
+const BASE = process.env.GAME_URL || process.env.GAME_URL || process.env.AOD_BASE || 'http://127.0.0.1:5174/Age-of-Discovery/'
 const puppeteer = (await import('file:///C:/Users/Brunson/.workbuddy/binaries/node/workspace/node_modules/puppeteer-core/lib/puppeteer/puppeteer-core.js')).default
 const sleep = (ms) => new Promise(r => setTimeout(r, ms))
 

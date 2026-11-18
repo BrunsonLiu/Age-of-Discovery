@@ -15,7 +15,7 @@
  * 改成"同一屏两处分母必须相同"（上面「探索港口」与座次表「探索」），
  * 谁写死一个数，两处立刻不一致。
  */
-const BASE = process.env.GAME_URL || process.env.AOD_BASE || 'http://127.0.0.1:5174/Age-of-Discovery/'
+const BASE = process.env.GAME_URL || process.env.GAME_URL || process.env.AOD_BASE || 'http://127.0.0.1:5174/Age-of-Discovery/'
 const puppeteer = (await import('file:///C:/Users/Brunson/.workbuddy/binaries/node/workspace/node_modules/puppeteer-core/lib/puppeteer/puppeteer-core.js')).default
 const sleep = (ms) => new Promise(r => setTimeout(r, ms))
 

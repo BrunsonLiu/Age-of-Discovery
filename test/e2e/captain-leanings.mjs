@@ -5,7 +5,7 @@
  * "五张卡都在"这种断言。真正要证的是：`notoriety` 一变，
  * 点阵格数、已成的金框、右上那句「正在成为」都跟着变。
  */
-const BASE = process.env.GAME_URL || process.env.AOD_BASE || 'http://127.0.0.1:5174/Age-of-Discovery/'
+const BASE = process.env.GAME_URL || process.env.GAME_URL || process.env.AOD_BASE || 'http://127.0.0.1:5174/Age-of-Discovery/'
 const puppeteer = (await import('file:///C:/Users/Brunson/.workbuddy/binaries/node/workspace/node_modules/puppeteer-core/lib/puppeteer/puppeteer-core.js')).default
 const sleep = (ms) => new Promise(r => setTimeout(r, ms))
 

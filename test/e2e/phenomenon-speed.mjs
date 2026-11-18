@@ -13,7 +13,7 @@
  * 【为什么不逐帧量】无头浏览器帧率不稳（~2fps），逐帧位移是噪声。
  * 这里量的是**每单位墙钟时间的进度增量**，跨若干帧平均，与帧率无关。
  */
-const BASE = process.env.GAME_URL || process.env.AOD_BASE || 'http://127.0.0.1:5176/Age-of-Discovery/'
+const BASE = process.env.GAME_URL || process.env.GAME_URL || process.env.AOD_BASE || 'http://127.0.0.1:5176/Age-of-Discovery/'
 const puppeteer = (await import('file:///C:/Users/Brunson/.workbuddy/binaries/node/workspace/node_modules/puppeteer-core/lib/puppeteer/puppeteer-core.js')).default
 const sleep = (ms) => new Promise(r => setTimeout(r, ms))
 

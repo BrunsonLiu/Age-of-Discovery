@@ -15,7 +15,7 @@
  * 而不按键时风向只是缓慢摆动，不会有这种单向大位移。这是唯一能把
  * "转向生效" 和 "风在摆" 分开的判据。
  */
-const BASE = process.env.GAME_URL || process.env.AOD_BASE || 'http://127.0.0.1:5174/Age-of-Discovery/'
+const BASE = process.env.GAME_URL || process.env.GAME_URL || process.env.AOD_BASE || 'http://127.0.0.1:5174/Age-of-Discovery/'
 const puppeteer = (await import('file:///C:/Users/Brunson/.workbuddy/binaries/node/workspace/node_modules/puppeteer-core/lib/puppeteer/puppeteer-core.js')).default
 const sleep = (ms) => new Promise(r => setTimeout(r, ms))
 

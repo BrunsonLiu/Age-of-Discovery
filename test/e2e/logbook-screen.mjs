@@ -13,7 +13,7 @@ catch { puppeteer = (await import('file:///C:/Users/Brunson/.workbuddy/binaries/
 import { mkdirSync } from 'node:fs'
 const EDGE = 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'
 // AOD_BASE / GAME_URL 可指向别的端口：dev server 换端口时不用改脚本
-const BASE = process.env.AOD_BASE || process.env.GAME_URL || 'http://localhost:5174/Age-of-Discovery/'
+const BASE = process.env.GAME_URL || process.env.AOD_BASE || process.env.GAME_URL || 'http://localhost:5174/Age-of-Discovery/'
 const SHOTS = '.workbuddy/shots'
 mkdirSync(SHOTS, { recursive: true })
 
