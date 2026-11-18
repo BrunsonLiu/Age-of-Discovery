@@ -792,9 +792,23 @@ export default function HarborView() {
                 <p className="text-gold-400 font-serif text-[13px] mt-0.5">{port?.name}</p>
                 {/* 13 张港口图要覆盖 20 港，同区域共用一张。铭牌这几行让"又回到这里"
                     和"这地方产什么"始终有可见差异，不靠换图也能认出是哪座港。 */}
-                <p className="text-gold-400 font-serif text-[12px] mt-2">
-                  {specialties.length > 0 ? `此地风物 · ${specialties.join('、')}` : '此地以转运为业'}
-                  {visits > 1 && <span className="text-gold-300"> · 第 {visits} 次靠岸</span>}
+                {/*
+                  【标签与货名分两种色】
+                  原来是「此地风物 · 火炮、火枪、丝绸」一整句同色同字号 ——
+                  读起来是"此地风物"后面跟了一句描述，而不是**一张物产表**。
+                  标签用暗一档 + 字距，货名提到 gold-200：玩家扫一眼要抓的是
+                  "这三样"，而那三个字原先是全段最不起眼的。
+                */}
+                <p className="font-serif text-[12px] mt-2 flex flex-wrap items-baseline gap-x-2">
+                  {specialties.length > 0 ? (
+                    <>
+                      <span className="text-gold-500 tracking-[0.14em]">此地风物</span>
+                      <span className="text-gold-200">{specialties.join('、')}</span>
+                    </>
+                  ) : (
+                    <span className="text-gold-500">此地以转运为业</span>
+                  )}
+                  {visits > 1 && <span className="text-gold-300">· 第 {visits} 次靠岸</span>}
                 </p>
 
                 <div className="mt-4 pt-3 border-t border-gold-700/40">
@@ -892,11 +906,14 @@ export default function HarborView() {
                         className="text-left rounded border border-gold-700/45 bg-black/30 px-2.5 py-2.5
                           hover:bg-gold-700/25 hover:border-gold-600/70 press transition-colors"
                       >
-                        <span className="flex items-center gap-1.5 text-gold-100 font-serif text-[14px]">
-                          <Icon size={15} aria-hidden="true" />
-                          {s.label}
+                        {/* 与桌面门牌带同一套：图标一列、两行文字共用一列（手机 15px 图标） */}
+                        <span className="flex items-start gap-1.5">
+                          <Icon size={15} aria-hidden="true" className="shrink-0 mt-[3px] text-gold-300" />
+                          <span className="min-w-0">
+                            <span className="block text-gold-100 font-serif text-[14px] leading-snug">{s.label}</span>
+                            <span className="block text-gold-400 font-serif text-[12px] mt-1 leading-snug">{s.sub}</span>
+                          </span>
                         </span>
-                        <span className="block text-gold-400 font-serif text-[12px] mt-1 leading-snug">{s.sub}</span>
                       </button>
                       )
                     })}
@@ -948,12 +965,23 @@ export default function HarborView() {
                   boxShadow: '0 6px 18px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,246,214,0.10)',
                 }}
               >
-                <span className="flex items-center gap-1.5 text-gold-100 font-serif text-[13px]">
-                  <Icon size={14} aria-hidden="true" className="shrink-0 text-gold-300 group-hover:text-gold-200" />
-                  {s.label}
-                </span>
-                <span className="block text-gold-400 font-serif text-[12px] mt-0.5 leading-tight truncate">
-                  {s.sub}
+                {/*
+                  【图标单独一列，两行文字共用同一列】
+                  原来是一行「图标 + 门牌名」，下面一行说明**从卡片左边距起**（
+                  即落在图标底下），于是图标看着只属于第一行、说明像掉出去的一行。
+                  岸上门牌带在 1440 下是 224×55，说明那行左边缘比门牌名左移 19px，
+                  五块并排时这 19px 的错位会被读成"五块牌子没对齐"。
+                  改成媒体对象：图标占定宽首列（顶对齐门牌名的字身），
+                  门牌名与说明在第二列**共用一个左边缘**。
+                */}
+                <span className="flex items-start gap-1.5">
+                  <Icon size={14} aria-hidden="true" className="shrink-0 mt-[3px] text-gold-300 group-hover:text-gold-200" />
+                  <span className="min-w-0">
+                    <span className="block text-gold-100 font-serif text-[13px] leading-snug">{s.label}</span>
+                    <span className="block text-gold-400 font-serif text-[12px] mt-0.5 leading-tight truncate">
+                      {s.sub}
+                    </span>
+                  </span>
                 </span>
               </button>
               )
