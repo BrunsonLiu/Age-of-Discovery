@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { X } from 'lucide-react'
+import type { PanelType } from '@/types'
 
 interface FullScreenPanelProps {
   /** 顶部大标题，如「商品交易」 */
@@ -18,6 +19,14 @@ interface FullScreenPanelProps {
    * - `'lg'` 1024：本身就是表格/账本的面板（贸易、港口服务）
    */
   width?: 'md' | 'wide' | 'lg'
+  /**
+   * 顶部页签（靠岸那四块彼此之间可以直接切，不必先回海图再点侧栏）。
+   * 传了就渲染，不传就没有 —— 舰队在海上也能开，页签对它是可选的。
+   */
+  tabs?: { key: PanelType; label: string }[]
+  /** 当前页签对应的 key（与 tabs 里的 key 比对） */
+  activeTab?: PanelType
+  onTab?: (key: PanelType) => void
 }
 
 /**
@@ -46,6 +55,7 @@ interface FullScreenPanelProps {
  */
 export default function FullScreenPanel({
   title, subtitle, children, footer, onClose, testId, width = 'md',
+  tabs, activeTab, onTab,
 }: FullScreenPanelProps) {
   return (
     <div
@@ -86,16 +96,52 @@ export default function FullScreenPanel({
             </>
           )}
         </div>
-        <button
-          onClick={onClose}
-          data-testid={`${testId}-close`}
-          className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-sm plate-btn
-            text-gold-300 hover:text-gold-100 font-serif text-sm press transition-colors"
-          title="回到海图（Esc）"
-        >
-          <X size={14} />
-          <span className="hidden sm:inline">回海图</span>
-        </button>
+        <div className="flex items-center gap-2 md:gap-4 shrink-0">
+          {/*
+            【面板页签】整屏面板会把侧栏卸载掉，所以「从贸易切到港口」原本是
+            Esc → 回海图 → 点港口 三步。这四块在玩家心里是同一件事
+            （"我要处理这个港"），页签把三步压成一次点击。
+            页签的选中态用"底部一道金线"而不是整块亮底 —— 它是一排标签，
+            不是一排按钮；亮底会让顶栏出现两块高亮，抢走标题的分量。
+          */}
+          {tabs && tabs.length > 1 && (
+            <nav aria-label="面板切换" className="flex items-end gap-0.5 md:gap-1" data-testid="dock-tabs">
+              {tabs.map(t => {
+                const on = t.key === activeTab
+                return (
+                  <button
+                    key={String(t.key)}
+                    type="button"
+                    onClick={() => onTab?.(t.key)}
+                    aria-current={on ? 'page' : undefined}
+                    data-testid={`dock-tab-${t.key}`}
+                    className={`relative px-2 md:px-3 pb-2 pt-1 font-serif text-[13px] leading-none transition-colors ${
+                      on ? 'text-gold-200' : 'text-gold-600 hover:text-gold-300'
+                    }`}
+                  >
+                    {t.label}
+                    <span
+                      aria-hidden="true"
+                      className={`absolute inset-x-2 -bottom-px h-[2px] rounded-full transition-colors ${
+                        on ? 'bg-gold-400' : 'bg-transparent'
+                      }`}
+                    />
+                  </button>
+                )
+              })}
+            </nav>
+          )}
+          <button
+            onClick={onClose}
+            data-testid={`${testId}-close`}
+            className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-sm plate-btn
+              text-gold-300 hover:text-gold-100 font-serif text-sm press transition-colors"
+            title="回到海图（Esc）"
+          >
+            <X size={14} />
+            <span className="hidden sm:inline">回海图</span>
+          </button>
+        </div>
       </header>
       {/*
         【分隔线改成渐变】原来是一条 `border-b` 通栏 1px 金线 —— 两端齐头齐尾，

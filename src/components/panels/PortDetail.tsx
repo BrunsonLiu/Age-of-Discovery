@@ -18,6 +18,7 @@ import Badge from '@/components/ui/Badge'
 import { UI_ASSETS } from '@/data/uiAssets'
 import { prefersReducedMotion } from '@/utils/motion'
 import FullScreenPanel from '@/components/ui/FullScreenPanel'
+import { DOCK_TABS } from '@/components/ui/dockTabs'
 import ActionButton from '@/components/ui/ActionButton'
 
 const regionNames: Record<string, string> = {
@@ -139,6 +140,9 @@ export default function PortDetail() {
   return (
     <FullScreenPanel
       testId="port-panel"
+      tabs={DOCK_TABS}
+      activeTab="port"
+      onTab={setActivePanel}
       width="wide"
       title={port.nameCn}
       subtitle={`第 ${fleet.day} 天 · ${fleet.isSailing ? '在海上' : '已靠岸'}`}

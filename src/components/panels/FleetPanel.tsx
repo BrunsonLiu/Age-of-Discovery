@@ -17,6 +17,7 @@ import { STANCES } from '@/utils/segment'
 import { WEATHER_INFO, weatherFavorFactor } from '@/utils/weather'
 import { LOW_MORALE, dailyRates, daysToDestination, formatSupplyDays, supplyDaysRemaining, supplyLevel } from '@/utils/voyage'
 import FullScreenPanel from '@/components/ui/FullScreenPanel'
+import { DOCK_TABS } from '@/components/ui/dockTabs'
 import ResourceBar from '@/components/ui/ResourceBar'
 import Badge from '@/components/ui/Badge'
 import Ship3DView from '@/components/three/Ship3DView'
@@ -115,6 +116,9 @@ export default function FleetPanel() {
   return (
     <FullScreenPanel
       testId="fleet-panel"
+      tabs={DOCK_TABS}
+      activeTab="fleet"
+      onTab={setActivePanel}
       title="舰队状态"
       subtitle={`${fleet.name} · 第 ${fleet.day} 天 · ${fleet.ships.length} 艘`}
       footer="点地图上的港口立航线；点海面任意位置就是目的地"

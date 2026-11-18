@@ -6,6 +6,7 @@ import { shipSprite } from '@/data/shipSprites'
 import { ports } from '@/data/ports'
 import { effectiveFleetSpeed } from '@/utils/navigation'
 import FullScreenPanel from '@/components/ui/FullScreenPanel'
+import { DOCK_TABS } from '@/components/ui/dockTabs'
 import ActionButton from '@/components/ui/ActionButton'
 import { useFxStore as useFx } from '@/store/useFxStore'
 
@@ -74,7 +75,34 @@ export default function ShipyardPanel() {
   const portId = fleet.currentPortId
   const port = portId ? ports.find(p => p.id === portId) : null
   const hasShipyard = !!port?.services.includes('shipyard')
-  if (!portId || !port || !hasShipyard) return null
+  /*
+   * 【没船厂时不再 return null】
+   * 它原来是"顶栏页签点得到、点开一片空白"的来源：页签是四个恒定的入口，
+   * 而这块面板在没有船坞的港口会直接返回 null —— 玩家点「造船」什么也不会发生，
+   * 连"为什么没有"都不说。空态至少交代一句，并保留回海图/切别的页签的路。
+   */
+  if (!portId) return null
+  if (!port || !hasShipyard) {
+    return (
+      <FullScreenPanel
+        testId="shipyard-panel"
+        title="造船厂"
+        subtitle={port ? `${port.nameCn} · 第 ${fleet.day} 天` : `第 ${fleet.day} 天`}
+        tabs={DOCK_TABS}
+        activeTab="shipyard"
+        onTab={setActivePanel}
+        footer="只有带大船坞的港口能买卖船只"
+        onClose={() => setActivePanel(null)}
+      >
+        <div className="rounded-sm border border-gold-700/25 bg-black/20 px-5 py-8 text-center">
+          <p className="text-gold-300 font-serif text-[14px]">这座港没有造船厂</p>
+          <p className="text-gold-500 font-serif text-[13px] mt-2 leading-relaxed">
+            买卖船只与整船大修只在有大船坞的港口办得成。日常修理与补给在「港口」那一页。
+          </p>
+        </div>
+      </FullScreenPanel>
+    )
+  }
 
   const totalCapacity = fleet.ships.reduce((s, sh) => s + sh.capacity, 0)
   const usedCapacity = fleet.cargo.reduce((s, c) => s + c.quantity, 0)
@@ -85,9 +113,11 @@ export default function ShipyardPanel() {
   return (
     <FullScreenPanel
       testId="shipyard-panel"
-        title="造船厂"
-        subtitle={`${port.nameCn} · 第 ${fleet.day} 天`}
-        /* 三个船型卡各 ~110px，加卖船区与头部 —— 默认 60vh 扣掉标题只剩 470，会把最后一张裁掉一半 */
+      title="造船厂"
+      subtitle={`${port.nameCn} · 第 ${fleet.day} 天`}
+      tabs={DOCK_TABS}
+      activeTab="shipyard"
+      onTab={setActivePanel}
       footer="差值一栏是拿新船和你的旗舰比；旗舰不能卖"
       onClose={() => setActivePanel(null)}
       >

@@ -5,6 +5,7 @@ import { useMapStore } from '@/store/useMapStore'
 import { ports, portGoods, localSpecialties, localDemands } from '@/data/ports'
 import { goods } from '@/data/goods'
 import FullScreenPanel from '@/components/ui/FullScreenPanel'
+import { DOCK_TABS } from '@/components/ui/dockTabs'
 import ActionButton from '@/components/ui/ActionButton'
 import { useFxStore as useFx } from '@/store/useFxStore'
 
@@ -274,6 +275,9 @@ export default function TradePanel() {
   return (
     <FullScreenPanel
       testId="trade-panel"
+      tabs={DOCK_TABS}
+      activeTab="trade"
+      onTab={setActivePanel}
       width="lg"
       title="商品交易"
       subtitle={`${ports.find(p => p.id === portId)?.nameCn ?? ''} · 第 ${fleet.day} 天`}
