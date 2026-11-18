@@ -854,11 +854,11 @@ function RivalPage() {
         />
         <div className="mt-2" />
         <div className="rounded-sm border border-gold-700/25 bg-black/20 overflow-hidden">
-          <div className="grid grid-cols-[minmax(0,1fr)_5.6rem_4.4rem_6.2rem_5rem] gap-2 px-3 py-1.5 border-b border-gold-700/20 text-xs font-serif text-gold-600">
+          <div className="grid grid-cols-[minmax(0,1fr)_5.6rem_4.4rem_6.2rem_5rem] gap-4 px-3 py-1.5 border-b border-gold-700/20 text-xs font-serif text-gold-600">
             <span>船长</span>
-            <span className="text-right">金币</span>
-            <span className="text-right">声望</span>
-            <span className="text-right">探索</span>
+            <span className="text-right pr-[26px]">金币</span>
+            <span className="text-right pr-[26px]">声望</span>
+            <span className="text-right pr-[26px]">探索</span>
             <span className="text-right">比你</span>
           </div>
           {board.map(b => {
@@ -873,13 +873,24 @@ function RivalPage() {
                 key={b.item.key}
                 data-testid={`standing-${b.item.key}`}
                 data-you={b.item.you ? '1' : '0'}
-                className={`grid grid-cols-[minmax(0,1fr)_5.6rem_4.4rem_6.2rem_5rem] items-center gap-2 px-3 py-1.5 text-[13px] font-serif
+                className={`grid grid-cols-[minmax(0,1fr)_5.6rem_4.4rem_6.2rem_5rem] items-center gap-4 px-3 py-1.5 text-[13px] font-serif
                   ${b.item.you ? 'bg-gold-700/15 border-l-2 border-l-gold-500' : 'border-l-2 border-l-transparent'}`}
               >
                 <span className={`truncate ${b.item.you ? 'text-gold-100' : 'text-gold-300'}`}>
                   {b.item.you && <span className="text-gold-500 mr-1">▶</span>}
                   {b.item.name}
                 </span>
+                {/*
+                  【名次紧挨数字右侧，表头右缩一个名次格】
+                  先试过把名次挪到数字左边（数字右边界就能和表头齐），
+                  但那样「#2」离前一列的 600 比离自己的 10 更近 —— 读起来串列。
+                  真正要同时满足两条：
+                    · 数字右边紧跟着它的名次（邻近性）；
+                    · 表头压在它那一列的数字上（对齐）。
+                  做法是给三个数字列的表头加 `pr-[26px]`（= ml-1.5 的 6px + 名次格 20px），
+                  于是「表头右边界 = 数字右边界」，名次仍在数字右侧。
+                  ⚠️ 改名次格宽度（w-5）或间距（ml-1.5）时，这个 pr 必须同步改。
+                */}
                 <span className="text-right tabular-nums text-gold-200">
                   {b.gold}
                   <span className={`ml-1.5 inline-block w-5 text-right text-xs ${b.goldRank === 1 ? 'text-gold-300' : 'text-gold-600'}`}>
