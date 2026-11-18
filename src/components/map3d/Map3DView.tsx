@@ -3000,7 +3000,7 @@ export default function Map3DView() {  const mountRef = useRef<HTMLDivElement>(n
       )}
 
       {phase === 'error' && (
-        <div className="absolute inset-0 z-10 flex items-center justify-center text-red-200 font-serif text-sm">
+        <div className="absolute inset-0 z-10 flex items-center justify-center text-danger-200 font-serif text-sm">
           立体海图加载失败：{errorMsg}
         </div>
       )}

@@ -159,7 +159,7 @@ export default function EscapeGame({ modifiers, onDone }: {
 
       <div className="flex items-center justify-between text-xs font-serif">
         <span className="text-gold-500">
-          已格挡 <span ref={dodgedRef} className="text-emerald-300">0</span> 次
+          已格挡 <span ref={dodgedRef} className="ink-good">0</span> 次
         </span>
         <span className="text-gold-600">方向键或 WASD（触屏：直接点亮的那一格）</span>
       </div>

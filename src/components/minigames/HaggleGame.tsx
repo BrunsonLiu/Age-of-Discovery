@@ -159,8 +159,8 @@ export default function HaggleGame({ modifiers, onDone }: {
           />
         </div>
         <div className="flex justify-between text-xs font-serif text-gold-600 mt-1">
-          <span className="text-rose-400/80">底线 {HAGGLE_FLOOR}</span>
-          <span className="text-amber-500/70">危险线 {HAGGLE_DANGER_LINE}</span>
+          <span className="text-danger-300">底线 {HAGGLE_FLOOR}</span>
+          <span className="text-gold-500">危险线 {HAGGLE_DANGER_LINE}</span>
           <span>上限 {HAGGLE_CEILING}</span>
         </div>
       </div>

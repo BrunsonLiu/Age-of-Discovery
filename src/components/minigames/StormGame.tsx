@@ -110,7 +110,7 @@ export default function StormGame({ modifiers, onDone }: {
         <div className="flex items-center gap-2 text-xs font-serif mt-2">
           <span className="text-gold-500 w-14 shrink-0">本轮</span>
           <div className="flex-1 h-2 bg-ocean-700 rounded-full overflow-hidden">
-            <div ref={roundBarRef} className="h-full bg-sky-400/80 rounded-full" style={{ width: '0%' }} />
+            <div ref={roundBarRef} className="h-full bg-gold-500/85 rounded-full" style={{ width: '0%' }} />
           </div>
         </div>
       </div>

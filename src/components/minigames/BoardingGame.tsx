@@ -129,7 +129,7 @@ export default function BoardingGame({ modifiers, onDone }: {
       <div className="flex items-center gap-2 text-xs font-serif">
         <span className="text-gold-500 w-14 shrink-0">击退</span>
         <div className="flex-1 h-2 bg-ocean-700 rounded-full overflow-hidden">
-          <div ref={waveBarRef} className="h-full bg-emerald-400/80 rounded-full" style={{ width: '0%' }} />
+          <div ref={waveBarRef} className="h-full bg-safe-300/85 rounded-full" style={{ width: '0%' }} />
         </div>
         <span ref={waveTextRef} className="text-gold-300 w-12 text-right">0/{BOARDING_WAVES}</span>
       </div>

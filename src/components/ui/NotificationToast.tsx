@@ -19,15 +19,15 @@ const colorMap: Record<NotificationKind, string> = {
   achievement: 'border-amber-400/60 bg-slate-900/95',
   // 行情用金铜色（钱），不用红色 —— 它不是警告
   market: 'border-gold-500/70 bg-slate-900/95',
-  warning: 'border-red-400/60 bg-slate-900/95',
+  warning: 'border-danger-300/60 bg-slate-900/95',
 }
 
 const iconColorMap: Record<NotificationKind, string> = {
-  discovery: 'text-blue-400',
+  discovery: 'text-ocean-200',
   history: 'text-gold-400',
-  achievement: 'text-amber-400',
+  achievement: 'text-gold-300',
   market: 'text-gold-300',
-  warning: 'text-red-400',
+  warning: 'text-danger-300',
 }
 
 interface VisibleNotification {

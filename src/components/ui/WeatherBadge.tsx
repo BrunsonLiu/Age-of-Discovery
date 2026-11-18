@@ -152,7 +152,7 @@ export default function WeatherBadge() {
                   <span className="w-4 flex justify-center text-gold-300"><WeatherIcon kind={w.kind} size={12} /></span>
                   <span className="text-gold-200 font-serif text-xs flex-1">{fi.label}</span>
                   <span className="text-gold-500 font-serif text-xs tabular-nums">{w.windSpeed}节</span>
-                  <span className={`font-serif text-xs tabular-nums w-11 text-right ${fi.sailMul < 1 ? 'text-red-300' : 'text-emerald-300'}`}>
+                  <span className={`font-serif text-xs tabular-nums w-11 text-right ${fi.sailMul < 1 ? 'ink-bad' : 'ink-good'}`}>
                     {Math.round((fi.sailMul - 1) * 100)}%
                   </span>
                 </div>

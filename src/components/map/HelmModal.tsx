@@ -41,9 +41,9 @@ function arcPath(radius: number): string {
 }
 
 function windStatus(angle: number): { text: string; cls: string } {
-  if (angle <= HELM_FAVOR_ARC) return { text: '吃风', cls: 'text-emerald-300' }
+  if (angle <= HELM_FAVOR_ARC) return { text: '吃风', cls: 'ink-good' }
   if (angle <= 90) return { text: '侧风', cls: 'text-gold-300' }
-  if (angle <= 135) return { text: '逆风', cls: 'text-orange-300' }
+  if (angle <= 135) return { text: '逆风', cls: 'ink-bad' }
   return { text: '顶风', cls: 'text-danger-400' }
 }
 
@@ -347,7 +347,7 @@ export default function HelmModal() {
             <div className="bg-black/25 border border-gold-700/20 rounded p-3 space-y-2 text-xs font-serif">
               <p className="flex items-center gap-1.5 text-gold-200">
                 <Wind size={12} className="shrink-0" aria-hidden="true" />
-                <span>行星风带此刻吹向 <span className="text-sky-300">{baseWind}°</span>——船首向与风向夹角越小，跑得越快。</span>
+                <span>行星风带此刻吹向 <span className="text-ocean-200">{baseWind}°</span>——船首向与风向夹角越小，跑得越快。</span>
               </p>
               <ul className="space-y-1.5 text-gold-400">
                 <li><span className="text-gold-200">A / D</span>（或 ← / →）：左转 / 右转舵</li>
@@ -476,14 +476,14 @@ export default function HelmModal() {
               <div className="flex items-center gap-2 text-xs font-serif">
                 <span className="text-gold-500 w-14 shrink-0">剩余</span>
                 <div className="flex-1 h-2 bg-black/45 rounded-full overflow-hidden">
-                  <div ref={timeBarRef} className="h-full bg-sky-400/80 rounded-full" style={{ width: '100%' }} />
+                  <div ref={timeBarRef} className="h-full bg-gold-500/85 rounded-full" style={{ width: '100%' }} />
                 </div>
                 <span ref={timeTextRef} className="text-gold-300 w-12 text-right">{HELM_DURATION.toFixed(1)}s</span>
               </div>
               <div className="flex items-center gap-2 text-xs font-serif">
                 <span className="text-gold-500 w-14 shrink-0">均风</span>
                 <div className="flex-1 h-2 bg-black/45 rounded-full overflow-hidden">
-                  <div ref={scoreBarRef} className="h-full bg-emerald-400/80 rounded-full" style={{ width: '50%' }} />
+                  <div ref={scoreBarRef} className="h-full bg-safe-300/85 rounded-full" style={{ width: '50%' }} />
                 </div>
                 <span ref={scoreTextRef} className="text-gold-300 w-16 text-right">均风 1.00</span>
               </div>
@@ -574,11 +574,11 @@ export default function HelmModal() {
             <div className="bg-black/25 border border-gold-700/20 rounded p-3 space-y-1 text-xs font-serif">
               <div className="flex justify-between">
                 <span className="text-gold-500">本段少走</span>
-                <span className="text-sky-300">{advanceNm.toFixed(0)} 海里</span>
+                <span className="text-ocean-200">{advanceNm.toFixed(0)} 海里</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-gold-500">士气</span>
-                <span className={reward.morale >= 0 ? 'text-emerald-300' : 'text-danger-400'}>{reward.morale >= 0 ? `+${reward.morale}` : reward.morale}</span>
+                <span className={reward.morale >= 0 ? 'ink-good' : 'ink-bad'}>{reward.morale >= 0 ? `+${reward.morale}` : reward.morale}</span>
               </div>
               {reward.wear !== 0 && (
                 <div className="flex justify-between">

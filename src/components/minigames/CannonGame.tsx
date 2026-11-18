@@ -346,8 +346,8 @@ export default function CannonGame({ modifiers, onDone, enemyShip = 'navy' }: {
           ))}
         </div>
         <span className="text-gold-500">
-          命中 <span ref={hitsRef} data-testid="cannon-hits" className="text-emerald-300">0</span>
-          {' · '}擦弹 <span ref={grazesRef} data-testid="cannon-grazes" className="text-amber-300">0</span>
+          命中 <span ref={hitsRef} data-testid="cannon-hits" className="ink-good">0</span>
+          {' · '}擦弹 <span ref={grazesRef} data-testid="cannon-grazes" className="text-gold-300">0</span>
           {' · '}落水 <span ref={missesRef} data-testid="cannon-misses" className="text-danger-400">0</span>
         </span>
       </div>

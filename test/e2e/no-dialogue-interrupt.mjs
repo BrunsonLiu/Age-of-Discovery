@@ -82,11 +82,7 @@ check(await scrim() === null, '面板开着时把状态推到彩蛋条件成立�
 
 // ② 面板里每个可点按钮逐个真实点击（会改士气/食物/耐久 → 正是彩蛋触发条件）
 const btns = await p.evaluate(() => {
-  const plates = [...document.querySelectorAll('div')].filter(d => {
-    const cs = getComputedStyle(d); const r = d.getBoundingClientRect()
-    return cs.position === 'absolute' && r.width > 240 && r.width < 460 && r.height > 120
-  })
-  const root = plates.find(d => d.innerText && d.innerText.length > 0)
+  const root = document.querySelector('[data-testid="port-panel"]')
   return root ? root.querySelectorAll('button').length : 0
 })
 let interrupted = null
@@ -108,11 +104,14 @@ for (let i = 0; i < btns; i++) {
   })
   await sleep(160)
   const box = await p.evaluate((i) => {
-    const plates = [...document.querySelectorAll('div')].filter(d => {
-      const cs = getComputedStyle(d); const r = d.getBoundingClientRect()
-      return cs.position === 'absolute' && r.width > 240 && r.width < 460 && r.height > 120
-    })
-    const root = plates.find(d => d.innerText && d.innerText.length > 0)
+    /*
+     * 【2026-11-18】原来靠"absolute + 宽 240~460 + 高 >120"猜出面板容器 ——
+     * 那是 320px 侧板时代的形状。四块面板改成整屏（`absolute inset-0`，宽 1440）之后，
+     * 这个过滤条件一条都匹配不到：`btns` 变成 0，循环一次都不进，
+     * 最后红在"点过足够多的按钮（实际 0 / 0）"。
+     * 面板现在有稳定锚点 `data-testid="port-panel"`，直接用它。
+     */
+    const root = document.querySelector('[data-testid="port-panel"]')
     const el = root?.querySelectorAll('button')[i]
     if (!el || el.disabled) return null
     /*

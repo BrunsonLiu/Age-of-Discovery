@@ -473,7 +473,7 @@ export default function MapView() {
           )}
 
           {loadError && (
-            <div className="absolute bottom-4 left-4 z-10 bg-red-900/80 text-red-200 px-3 py-1.5 rounded text-xs font-serif">
+            <div className="absolute bottom-4 left-4 z-10 bg-danger-900/85 text-danger-200 px-3 py-1.5 rounded text-xs font-serif">
               GeoJSON 数据加载失败，地图将以简化模式显示
             </div>
           )}
