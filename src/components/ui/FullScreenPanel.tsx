@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 import { X } from 'lucide-react'
 import type { PanelType } from '@/types'
 import { useGameStore } from '@/store/useGameStore'
+import { useBackLabel } from './useBackLabel'
 
 interface FullScreenPanelProps {
   /** 顶部大标题，如「商品交易」 */
@@ -65,6 +66,8 @@ export default function FullScreenPanel({
    * 脚注这一行是全站唯一能挂这句话的地方：它常驻、不滚、每个面板都有。
    */
   const sailing = useGameStore(s => s.fleet.isSailing)
+  // 关掉面板回到哪一页由 viewMode 决定：从岸上打开时要写「回岸上」，不是「回海图」
+  const backLabel = useBackLabel()
   return (
     <div
       className="absolute inset-0 flex flex-col"
@@ -158,10 +161,10 @@ export default function FullScreenPanel({
             data-testid={`${testId}-close`}
             className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-sm plate-btn
               text-gold-300 hover:text-gold-100 font-serif text-sm press transition-colors"
-            title="回到海图（Esc）"
+            title={`${backLabel}（Esc）`}
           >
             <X size={14} />
-            <span className="hidden sm:inline">回海图</span>
+            <span className="hidden sm:inline">{backLabel}</span>
         </button>
       </header>
       {/*
@@ -237,7 +240,7 @@ export default function FullScreenPanel({
         <span className="hidden md:flex items-center gap-3 text-[12px] font-serif text-gold-600 tabular-nums shrink-0">
           <span>1–8 换面板</span>
           <span className="text-gold-600">·</span>
-          <span>Esc 回海图</span>
+          <span>Esc {backLabel}</span>
         </span>
       </div>
     </div>

@@ -10,6 +10,7 @@ import { goods } from '@/data/goods'
 import { taskGold, escortRewardMul } from '@/utils/crewPerks'
 import { ScrollText as ScrollIcon, CheckCircle2, Package, Coins } from 'lucide-react'
 import VoyageNextCard from '@/components/panels/VoyageNextCard'
+import { useBackLabel } from '@/components/ui/useBackLabel'
 import { useFxStore as useFx } from '@/store/useFxStore'
 import { rivalPortrait } from '@/data/portraits'
 import type { Rival, Achievement } from '@/types'
@@ -65,6 +66,8 @@ export default function LogbookScreen() {
   }), [activeTasks.length, logbook.length, discoveredPorts.length, earned.length])
 
   const close = () => closeRecords()
+  // 与 FullScreenPanel 同一条：在岸上翻册子，退出后回到岸上而不是海图
+  const backLabel = useBackLabel()
 
   /*
    * Esc 不在这里监听。
@@ -104,9 +107,9 @@ export default function LogbookScreen() {
             onClick={close}
             data-testid="logbook-close"
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-sm border border-gold-700/40 text-gold-300 hover:bg-gold-700/15 transition-colors font-serif text-sm"
-            title="回到海图（Esc）"
+            title={`${backLabel}（Esc）`}
           >
-            <X size={14} /> <span className="hidden sm:inline">回海图</span>
+            <X size={14} /> <span className="hidden sm:inline">{backLabel}</span>
           </button>
         </div>
       </header>

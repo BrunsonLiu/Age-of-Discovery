@@ -15758,5 +15758,29 @@ console.log('== 帧率撑不住时，画质预设是最后一道闸 ==')
   assert(bad.length === 0, `没有超过 100 的透明度（${bad.slice(0, 3).join(', ')}）`)
 }
 
+/* ============ 退出按钮的文字 = 它真的回到的那一页 ============ */
+/*
+ * 2026-11-18 实测：从**岸上**点商行打开贸易面板，右上角写着「回海图」，
+ * 点完 `viewMode` 仍是 'harbor'、`harbor-view` 还在 —— 回到的是岸上。
+ * 这不是措辞问题：按钮在承诺一件它做不到的事，而"界面承诺要兑现"
+ * 是这个项目的硬规矩（帮助面板曾因为写没做的事被改过三次）。
+ *
+ * 关掉面板只是"离开这一页"，回到哪一页由 `viewMode` 决定，文字就该跟着它。
+ * 现在六块面板（走 FullScreenPanel）与航海志（自己的顶栏）共用 `useBackLabel`。
+ */
+{
+  const back = readFileSync(join(process.cwd(), 'src', 'components', 'ui', 'useBackLabel.ts'), 'utf8')
+  assert(/viewMode === 'harbor' \? '回岸上' : '回海图'/.test(back),
+    '退出文字由 viewMode 决定（岸上打开 → 回岸上）')
+  const shell = readFileSync(join(process.cwd(), 'src', 'components', 'ui', 'FullScreenPanel.tsx'), 'utf8')
+  const book = readFileSync(join(process.cwd(), 'src', 'components', 'logbook', 'LogbookScreen.tsx'), 'utf8')
+  for (const [name, src] of [['FullScreenPanel', shell], ['LogbookScreen', book]] as const) {
+    assert(/useBackLabel\(\)/.test(src), `${name} 用同一个来源算退出文字`)
+    assert(!/<span className="hidden sm:inline">回海图<\/span>/.test(stripComments(src)),
+      `${name} 不再把「回海图」写死`)
+  }
+  assert(/Esc \{backLabel\}/.test(shell), '脚注的 Esc 提示也跟着同一句话')
+}
+
 console.log(`\n最终结果：${passed} 通过 / ${failed} 失败`)
 if (failed > 0) process.exit(1)
