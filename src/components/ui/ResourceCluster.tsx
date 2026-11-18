@@ -146,7 +146,7 @@ function ResourceChip({
       onClick={onClick}
       title={tip}
       aria-label={`${label} ${Math.round(value)}${daysText ? `，${daysText}` : ''}`}
-      className="flex items-center gap-1 md:gap-1.5 rounded px-1 md:px-1.5 py-0.5 transition-colors hover:bg-ocean-700/60 focus:outline-none focus-visible:ring-1 focus-visible:ring-gold-500/60 md:min-w-[124px]"
+      className="flex items-center gap-1 md:gap-1.5 rounded px-1 md:px-1.5 py-0.5 transition-colors hover:bg-gold-700/25 focus:outline-none focus-visible:ring-1 focus-visible:ring-gold-500/60 md:min-w-[112px]"
     >
       {/* 图标：危急时脉冲——不需要玩家去读数字就知道出事了 */}
       <span
@@ -182,7 +182,12 @@ function ResourceChip({
       {/* 迷你条：宽度即余量，颜色即水位。
           移动端隐藏——390px 上三个片各占 32px 的条会把数字挤成两行，
           而"余量多少"在手机上一眼看数字比一眼看短条更准。 */}
-      <span className="relative hidden md:block h-1.5 w-9 shrink-0 overflow-hidden rounded-full bg-ocean-900/80">
+      <span /*
+        余量条是**修饰**，数字才是含义："粮 100 30+天" 自己就说完了。
+        底栏在 1280~1439 这一段本来就装不下（实测航行态要 1437px），
+        先砍修饰、保数字：两条 36px 的条只在 1536+ 出现。
+      */
+      className="relative hidden 2xl:block h-1.5 w-9 shrink-0 overflow-hidden rounded-full bg-black/45">
         <span
           className="absolute inset-y-0 left-0 rounded-full"
           style={{ width: `${barPct}%`, background: barColor, transition: TRANSITION }}

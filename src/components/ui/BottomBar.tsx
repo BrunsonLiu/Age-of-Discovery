@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Anchor, Navigation, Coins, RotateCcw, Pause, FastForward, Sailboat, Shield, Package, Skull } from 'lucide-react'
+import { Anchor, Navigation, Coins, RotateCcw, Pause, Sailboat, Shield, Package, Skull } from 'lucide-react'
 import { useGameStore } from '@/store/useGameStore'
 import { useMapStore } from '@/store/useMapStore'
 import { ports } from '@/data/ports'
@@ -120,11 +120,18 @@ export default function BottomBar() {
   const progressPct = Math.round(routeProgress * 100)
   const stanceProfile = STANCES[stance]
 
+  /*
+   * 【四档速度必须能读出是四档】
+   * 原来 3x 与 8x 都用同一个 `FastForward` 图标 —— 两个一模一样的「»」
+   * 挨在一起，含义不同。玩家要判断"我现在是几倍速"只能靠数位置，
+   * 而这一栏恰恰是全局唯一的倍速控件。
+   * 现在四档一律写字（⏸ / 1x / 3x / 8x）：多占 4px，换来"看一眼就知道"。
+   */
   const speedOptions = [
     { value: 0, label: '⏸', icon: <Pause size={12} /> },
     { value: 1, label: '1x', icon: null },
-    { value: 3, label: '3x', icon: <FastForward size={12} /> },
-    { value: 8, label: '8x', icon: <FastForward size={12} /> },
+    { value: 3, label: '3x', icon: null },
+    { value: 8, label: '8x', icon: null },
   ]
 
   return (
@@ -138,7 +145,14 @@ export default function BottomBar() {
     */
     <div
       data-tut="bottombar"
-      className="wood-beam--foot relative px-2 md:px-3 py-1.5 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 xl:flex-nowrap md:py-2"
+      /*
+        【航行中这一条会超宽 13px（实测 scrollW 1453 / barW 1440）】
+        停泊时只有"船名 · 点击地图设定航向"，一到航行就多出目的港、进度条、
+        剩余天数与方针 chip。块与块之间的 12px 与左右 12px 内边距是这里唯一
+        还能让的宽度：收到 8px 后总宽降 20px，四种状态（停泊/航行/事件/岸上）
+        都不会再把内容挤到柱子外。justify-between 会在有余量时把间距补回去，
+        所以宽屏观感不变。 */
+      className="wood-beam--foot relative px-2 py-1.5 flex flex-wrap items-center justify-between gap-x-2 gap-y-1 min-[1360px]:flex-nowrap md:py-2"
       style={{
         /* 与顶栏同一根梁的"下半截"：渐变方向反转（贴屏幕底边的一侧更亮），
            这样上下两条边读起来是同一个材质的两个端面，而不是两条独立的黑条。
@@ -208,7 +222,7 @@ export default function BottomBar() {
             <span className="text-[13px] text-gold-400 shrink-0 tabular-nums">
               {progressPct}%
             </span>
-            <div className="w-16 h-1.5 bg-black/35 rounded-full overflow-hidden shrink-0 hidden sm:block">
+            <div className="w-12 h-1.5 bg-black/45 rounded-full overflow-hidden shrink-0 hidden sm:block">
               <div
                 className="h-full bg-ocean-300 rounded-full transition-all duration-300"
                 style={{ width: `${progressPct}%` }}
@@ -283,7 +297,7 @@ export default function BottomBar() {
             <button
               key={opt.value}
               onClick={() => setSimSpeed(opt.value)}
-              className={`px-2.5 py-1.5 text-[13px] font-serif press transition-all ${
+              className={`px-2 py-1.5 text-[13px] font-serif tabular-nums press transition-all ${
                 simSpeed === opt.value
                   ? 'bg-gold-700/50 text-gold-200'
                   : 'text-gold-500 hover:text-gold-300 hover:bg-gold-700/25'
@@ -298,7 +312,13 @@ export default function BottomBar() {
         </div>
         <button
           onClick={advanceDay}
-          className="px-2.5 py-1.5 text-[13px] font-serif text-gold-500 hover:text-gold-300 bg-ocean-700/40 rounded-md border border-gold-700/20 press transition-all"
+          /* 与左边的速度组同一件衣服：控件是"沉进木头里的槽"，不是一块蓝牌 */
+          className="px-2 py-1.5 text-[13px] font-serif text-gold-500 hover:text-gold-300
+            rounded-sm border border-gold-700/25 press transition-all"
+          style={{
+            background: 'rgba(0,0,0,0.26)',
+            boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.6), inset 0 -1px 0 rgba(255,238,186,0.055)',
+          }}
           title="跳过一天"
           aria-label="跳过一天"
         >

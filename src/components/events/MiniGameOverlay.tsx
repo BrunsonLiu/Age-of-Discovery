@@ -128,9 +128,10 @@ export default function MiniGameOverlay({ gameId, onFinish, enemyShip }: MiniGam
       role="dialog"
       aria-label="事件小游戏"
     >
-      <div className="my-auto w-[30rem] max-w-[94vw] bg-ocean-900/95 border border-gold-700/40 rounded-xl shadow-2xl overflow-hidden animate-fade-in-scale" data-testid="minigame-panel">
+      <div className="my-auto w-[30rem] max-w-[94vw] border border-gold-700/40 rounded-xl shadow-2xl overflow-hidden animate-fade-in-scale"
+        style={{ backgroundColor: '#14100b' }} data-testid="minigame-panel">
         {/* 标题栏 */}
-        <div className="px-4 py-3 border-b border-gold-700/30 bg-ocean-800/50 flex items-center justify-between">
+        <div className="px-4 py-3 border-b border-gold-700/30 bg-black/25 flex items-center justify-between">
           <div>
             <h2 className="pirate-title flex items-center gap-1.5 text-lg text-gold-300">
               <MiniGameGlyph icon={copy.icon} size={16} />
@@ -148,7 +149,7 @@ export default function MiniGameOverlay({ gameId, onFinish, enemyShip }: MiniGam
         {phase === 'intro' && (
           <div className="p-5 space-y-3">
             {/* 唯一必读的一句：讲清这个游戏按什么键 */}
-            <div className="bg-ocean-800/40 border border-gold-700/20 rounded p-3 text-xs font-serif">
+            <div className="bg-black/25 border border-gold-700/20 rounded p-3 text-xs font-serif">
               <p
                 className="text-gold-200"
                 dangerouslySetInnerHTML={{ __html: copy.brief }}
@@ -168,7 +169,7 @@ export default function MiniGameOverlay({ gameId, onFinish, enemyShip }: MiniGam
 
             {showFinePrint && (
               <div className="space-y-3" data-testid="minigame-fine-print">
-                <div className="bg-ocean-800/40 border border-gold-700/20 rounded p-3 text-xs font-serif">
+                <div className="bg-black/25 border border-gold-700/20 rounded p-3 text-xs font-serif">
                   <ul className="space-y-1.5 text-gold-400">
                     {copy.bullets.map((b, i) => (
                       <li key={i}>· {b}</li>

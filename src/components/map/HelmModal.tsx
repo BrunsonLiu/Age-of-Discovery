@@ -319,9 +319,10 @@ export default function HelmModal() {
       role="dialog"
       aria-label="操舵挑战"
     >
-      <div className="my-auto w-[30rem] max-w-[94vw] bg-ocean-900/95 border border-gold-700/40 rounded-xl shadow-2xl overflow-hidden animate-fade-in-scale">
+      <div className="my-auto w-[30rem] max-w-[94vw] border border-gold-700/40 rounded-xl shadow-2xl overflow-hidden animate-fade-in-scale"
+        style={{ backgroundColor: '#14100b' }}>
         {/* 标题 */}
-        <div className="px-4 py-3 border-b border-gold-700/30 bg-ocean-800/50 flex items-center justify-between">
+        <div className="px-4 py-3 border-b border-gold-700/30 bg-black/25 flex items-center justify-between">
           <div>
             <h2 className="pirate-title flex items-center gap-1.5 text-lg text-gold-300">
               <Compass size={16} strokeWidth={1.6} aria-hidden="true" />
@@ -343,7 +344,7 @@ export default function HelmModal() {
 
         {phase === 'intro' && (
           <div className="p-5 space-y-4">
-            <div className="bg-ocean-800/40 border border-gold-700/20 rounded p-3 space-y-2 text-xs font-serif">
+            <div className="bg-black/25 border border-gold-700/20 rounded p-3 space-y-2 text-xs font-serif">
               <p className="flex items-center gap-1.5 text-gold-200">
                 <Wind size={12} className="shrink-0" aria-hidden="true" />
                 <span>行星风带此刻吹向 <span className="text-sky-300">{baseWind}°</span>——船首向与风向夹角越小，跑得越快。</span>
@@ -474,21 +475,21 @@ export default function HelmModal() {
             <div className="space-y-2">
               <div className="flex items-center gap-2 text-xs font-serif">
                 <span className="text-gold-500 w-14 shrink-0">剩余</span>
-                <div className="flex-1 h-2 bg-ocean-700 rounded-full overflow-hidden">
+                <div className="flex-1 h-2 bg-black/45 rounded-full overflow-hidden">
                   <div ref={timeBarRef} className="h-full bg-sky-400/80 rounded-full" style={{ width: '100%' }} />
                 </div>
                 <span ref={timeTextRef} className="text-gold-300 w-12 text-right">{HELM_DURATION.toFixed(1)}s</span>
               </div>
               <div className="flex items-center gap-2 text-xs font-serif">
                 <span className="text-gold-500 w-14 shrink-0">均风</span>
-                <div className="flex-1 h-2 bg-ocean-700 rounded-full overflow-hidden">
+                <div className="flex-1 h-2 bg-black/45 rounded-full overflow-hidden">
                   <div ref={scoreBarRef} className="h-full bg-emerald-400/80 rounded-full" style={{ width: '50%' }} />
                 </div>
                 <span ref={scoreTextRef} className="text-gold-300 w-16 text-right">均风 1.00</span>
               </div>
               <div className="flex items-center gap-2 text-xs font-serif">
                 <span className="text-gold-500 w-14 shrink-0">帆缆</span>
-                <div className="flex-1 h-2 bg-ocean-700 rounded-full overflow-hidden">
+                <div className="flex-1 h-2 bg-black/45 rounded-full overflow-hidden">
                   <div ref={trimBarRef} className="h-full bg-gold-400/80 rounded-full" style={{ width: '60%' }} />
                 </div>
                 <span ref={trimLabelRef} className="text-gold-300 w-16 text-right">半帆</span>
@@ -570,7 +571,7 @@ export default function HelmModal() {
               </div>
             </div>
 
-            <div className="bg-ocean-800/40 border border-gold-700/20 rounded p-3 space-y-1 text-xs font-serif">
+            <div className="bg-black/25 border border-gold-700/20 rounded p-3 space-y-1 text-xs font-serif">
               <div className="flex justify-between">
                 <span className="text-gold-500">本段少走</span>
                 <span className="text-sky-300">{advanceNm.toFixed(0)} 海里</span>

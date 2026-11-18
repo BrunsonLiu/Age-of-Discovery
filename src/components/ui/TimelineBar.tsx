@@ -103,11 +103,19 @@ export default function TimelineBar() {
           受光）、高度加到 4px（有宽度才看得出是槽，2px 只能算线）。
           轨道里的进度条则是**嵌进槽里的黄铜丝**：细、亮、带一点辉光。
         */}
+        {/*
+          【凹槽必须看得见，否则整条顶栏读作"空木梁"】
+          实测 2 倍截图：4px 的槽是 rgba(0,0,0,.34~.62)，压在深棕木纹上只差
+          两三个色阶，1080px 的中段看上去就是一片什么都没有——
+          而这条槽是"你在 1492→1650 的哪一格"的唯一载体。
+          加宽到 5px、两端各压深一点、下棱那道高光从 0.16 提到 0.30：
+          槽才读作"刻下去的"，里面的黄铜进度丝也才有反差的底。
+        */}
         <div
-          className="absolute left-0 right-0 h-[4px] rounded-[2px]"
+          className="absolute left-0 right-0 h-[5px] rounded-[2px]"
           style={{
-            background: 'linear-gradient(180deg, rgba(0,0,0,0.62) 0%, rgba(0,0,0,0.34) 55%, rgba(0,0,0,0.5) 100%)',
-            boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.75), 0 1px 0 rgba(255,238,186,0.16)',
+            background: 'linear-gradient(180deg, rgba(0,0,0,0.78) 0%, rgba(0,0,0,0.46) 55%, rgba(0,0,0,0.62) 100%)',
+            boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.85), 0 1px 0 rgba(255,238,186,0.30)',
           }}
         />
         <div
@@ -157,20 +165,26 @@ export default function TimelineBar() {
                       ? isSeen
                         ? 'h-[11px] bg-gold-600'
                         : 'h-[11px] bg-gold-300 shadow-[0_0_5px_1px_rgba(212,175,55,0.45)]'
-                      : 'h-[6px] bg-gold-700/28'
+                      : 'h-[8px] bg-gold-700/45'
                 }`}
               />
 
               {hoveredEvent === event.day && (
                 <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 whitespace-nowrap z-50">
-                  <div className="bg-ocean-900/95 backdrop-blur-sm border border-gold-700/30 rounded-lg px-3 py-2 shadow-xl">
+                  {/* 浮层是界面的一部分，不归"海"：用与面板同一族的暖褐底
+                      （蓝在这个项目里只表示海上/航行中，见 index.css 的配色语义） */}
+                  <div
+                    className="backdrop-blur-sm border border-gold-700/35 rounded-lg px-3 py-2 shadow-xl"
+                    style={{ backgroundColor: 'rgba(20,16,11,0.97)' }}
+                  >
                     <div className="text-gold-300 font-serif text-[13px] tabular-nums">{event.year}年</div>
                     <div className="text-gold-100 text-[13px] mt-0.5">{event.title}</div>
                     {isPast && (
                       <div className="text-gold-500 text-xs mt-1 max-w-[210px] whitespace-normal leading-relaxed">{event.description}</div>
                     )}
                   </div>
-                  <div className="absolute top-full left-1/2 -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-ocean-900/95" />
+                  <div className="absolute top-full left-1/2 -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent"
+                    style={{ borderTopColor: 'rgba(20,16,11,0.97)' }} />
                 </div>
               )}
             </div>
@@ -183,6 +197,17 @@ export default function TimelineBar() {
         >
           <div className="w-3 h-3 rotate-45 bg-gold-300 shadow-[0_0_10px_2px_rgba(212,175,55,0.5)]" />
         </div>
+      </div>
+
+      {/*
+        轴的右端要有刻度值。
+        只有左边一个「1492年」时，这条槽的中段是**没有尺度的空白**——
+        玩家看不出终点在哪、也看不出自己走了几成。右端补一个「1650年」，
+        这条槽才读作"一段有头有尾的年份"，而不是背景里的一道刻痕。
+        手机端隐藏：390 宽的顶栏已经装满了（见上方 visitor-badge 的注释）。
+      */}
+      <div className="hidden sm:block shrink-0 text-gold-600 font-mono text-[12px] tabular-nums -ml-1">
+        {1492 + (1650 - 1492)}年
       </div>
 
       <div className="hidden sm:block text-gold-400 font-serif text-[13px] min-w-[130px] text-right truncate">
