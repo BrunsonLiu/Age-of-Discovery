@@ -321,7 +321,7 @@ export default function BottomBar() {
       */}
       <div className="flex items-center gap-2 md:gap-2 shrink-0 order-4 md:order-3">
         <div className="flex items-center gap-2 text-[13px] text-gold-300">
-          <span className="text-gold-500 font-serif">第{fleet.day}天</span>
+          <span className="text-gold-500 font-mono">第{fleet.day}天</span>
           {/* 金币也要带字——和粮/水/士气三个片保持同一种"图标 + 单字 + 数字"
               的读法，否则底栏右侧是一串无标签数字，玩家得靠位置去猜。 */}
           <span className="flex items-center gap-0.5" title="金币">

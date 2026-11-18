@@ -7,7 +7,6 @@ import { goods } from '@/data/goods'
 import FullScreenPanel from '@/components/ui/FullScreenPanel'
 import { DOCK_TABS } from '@/components/ui/dockTabs'
 import DockEmpty from '@/components/ui/DockEmpty'
-import ActionButton from '@/components/ui/ActionButton'
 import { useFxStore as useFx } from '@/store/useFxStore'
 
 /**
@@ -103,16 +102,28 @@ function BuyRow({ portId, pg, fleet, usedCapacity, totalCapacity, onBuy, recomme
          * "+1" 比 "+10" 窄 8px，三个并排时右边缘参差，整排读起来是"没对齐的三个东西"。
          * 固定 44px（触摸最小尺寸）+ !px-0 把内边距让给宽度。
          */}
+        {/*
+          【行内操作要比行内数据轻】
+          这六个数字（库存 / 单价）才是玩家在比的东西，而原来每行放三块
+          **凸起铜牌**：一屏十八块亮牌，视线先被按钮吸走，账本读成了按钮墙。
+          凸起的语义是"这是这一屏最重要的事"，可它在这里只是"把这一行买下来"。
+          默认改成平面小牌（描边 + 暗字），hover/focus 才亮起来 ——
+          可发现性没丢（有描边、有 hover），但读表时它是背景。
+        */}
         {[1, 5, 10].map(qty => (
-          <ActionButton
+          <button
             key={qty}
+            type="button"
             onClick={() => onBuy(pg.goodId, qty)}
             disabled={fleet.gold < buyPrice * qty || usedCapacity + qty > totalCapacity || stock < qty}
-            variant="secondary"
-            className="w-9 sm:w-11 !px-0 justify-center"
+            className="w-9 sm:w-11 h-7 rounded-sm border border-gold-700/35 bg-black/20
+              text-[12px] font-serif text-gold-400 tabular-nums
+              hover:border-gold-500/65 hover:text-gold-100 hover:bg-gold-700/25
+              disabled:opacity-30 disabled:cursor-not-allowed
+              transition-colors press"
           >
             +{qty}
-          </ActionButton>
+          </button>
         ))}
       </div>
     </div>
@@ -169,15 +180,19 @@ function SellRow({ portId, item, onSell }: {
 
       <div className="flex gap-1 justify-end">
         {[1, 5, 10].map(qty => (
-          <ActionButton
+          <button
             key={qty}
+            type="button"
             onClick={() => onSell(item.goodId, qty)}
             disabled={item.quantity < qty}
-            variant="secondary"
-            className="w-9 sm:w-11 !px-0 justify-center"
+            className="w-9 sm:w-11 h-7 rounded-sm border border-gold-700/35 bg-black/20
+              text-[12px] font-serif text-gold-400 tabular-nums
+              hover:border-gold-500/65 hover:text-gold-100 hover:bg-gold-700/25
+              disabled:opacity-30 disabled:cursor-not-allowed
+              transition-colors press"
           >
             -{qty}
-          </ActionButton>
+          </button>
         ))}
       </div>
     </div>
@@ -301,7 +316,17 @@ export default function TradePanel() {
       footer="点 +1 / +5 / +10 直接成交；屏幕上的价格就是结算价"
       onClose={() => setActivePanel(null)}
     >
-      <div className="space-y-3">
+      {/*
+        【间距就是分组】
+        原来四块（数据条 / 行情 / 页签+建议 / 表格）之间都是 8px ——
+        间距相等，等于告诉眼睛"这是四个并列的东西"，而它们其实是三组：
+          · 我有什么（数据条）
+          · 这一趟怎么走（行情 + 页签 + 掮客建议）
+          · 具体买哪件（表格）
+        现在按组给距离：组内 8px，组间 16~20px。眼睛不用读文字就知道
+        哪几块是一伙的。
+      */}
+      <div>
         {/*
           【三格数据条】原来金币与舱位是 13px 的一行小字浮在顶上，
           在整屏里几乎读不到。金币是这一屏每一次点击的约束条件，
@@ -328,7 +353,9 @@ export default function TradePanel() {
               <span className="text-gold-500 text-[13px] font-serif tabular-nums">/ {totalCapacity}</span>
             </div>
           </div>
-          <div className="px-3 md:px-4 py-2.5 min-w-0">
+          {/* 第三格是"建议"，不是"我的状态" —— 给一层极淡的金底把它分出来，
+              否则三格同格式，玩家会以为 445 金也是自己身上的某个数 */}
+          <div className={`px-3 md:px-4 py-2.5 min-w-0 ${tab === 'buy' && deal ? 'bg-gold-700/10' : ''}`}>
             <div className="text-[12px] tracking-[0.1em] text-gold-600 font-serif truncate">
               {tab === 'buy' ? '掮客这一单' : '船舱货值'}
             </div>
@@ -354,7 +381,7 @@ export default function TradePanel() {
           合成一行、用 · 分隔，宽屏能全放下，窄屏自然折行。
         */}
         {(specialties.length > 0 || demands.length > 0 || sellableHigh.length > 0) && (
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[13px] font-serif px-1">
+          <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-[13px] font-serif px-1">
             {specialties.length > 0 && (
               <span className="text-safe-400 flex items-center gap-1">
                 <Sprout size={11} className="shrink-0" />本地出产 {specialties.join('、')}
@@ -374,7 +401,7 @@ export default function TradePanel() {
         )}
 
         {/* 页签与掮客建议同一行（手机上竖排）：左边是"我在做什么"，右边是"建议做什么" */}
-        <div className="flex flex-col sm:flex-row sm:items-start gap-2 sm:gap-3">
+        <div className="mt-4 flex flex-col sm:flex-row sm:items-start gap-2 sm:gap-3">
           {/*
            * 【买卖页签：凸/凹，不是深/浅】
            * 原来选中态是 bg-gold-700/40，未选中是 .inlay--flat —— 两者混合到面板底色后
@@ -446,14 +473,16 @@ export default function TradePanel() {
           【账本容器】表头 + 行，共用同一条列宽定义（见 BuyRow / SellRow 的 grid-cols）。
           表头 sticky：滚到第十行时玩家仍然知道哪一列是价格。
         */}
-        <div className="rounded-sm border border-gold-700/25 overflow-hidden bg-black/15">
+        <div className="mt-3 rounded-sm border border-gold-700/25 overflow-hidden bg-black/15">
           <div className="hidden sm:grid grid-cols-[minmax(0,1fr)_4.5rem_6rem_9.5rem] items-center gap-x-2
             px-3 h-9 bg-black/35 border-b border-gold-700/30
             text-[12px] tracking-[0.1em] font-serif text-gold-600">
             <span>货物</span>
             <span className="text-right">{tab === 'buy' ? '库存' : '持有'}</span>
             <span className="text-right">单价</span>
-            <span className="text-center">{tab === 'buy' ? '买入' : '卖出'}</span>
+            {/* 表头必须和它那一列的内容对齐：内容是右对齐的按钮组，
+                表头居中会让人以为"买入"是另一列 */}
+            <span className="text-right">{tab === 'buy' ? '买入' : '卖出'}</span>
           </div>
 
           {tab === 'buy' && (

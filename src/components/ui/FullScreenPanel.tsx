@@ -94,6 +94,16 @@ export default function FullScreenPanel({
         style={{ background: 'linear-gradient(180deg, rgba(0,0,0,0.5) 0%, rgba(0,0,0,0) 100%)' }}
       />
 
+      {/*
+        【顶栏的三件事按关系分组，不按顺序排】
+        标题 / 副标题 / 页签 / 退出 —— 这是四样东西，但只有三组关系：
+          · 「我在哪、这是什么」= 标题 + 副标题
+          · 「还能去哪」= 页签（同一层的横向通路，与标题同级）
+          · 「离开」= 回海图（唯一的出口，永远在最右）
+        上一版把页签放在回海图左边，两者相距 16px、都靠右，读起来
+        "页签是回海图的附属" —— 而它们一个是导航、一个是退出，关系相反。
+        现在页签紧跟标题（同属"这一层"），中间留空，退出单独顶到最右。
+      */}
       <header className="relative shrink-0 h-14 md:h-16 flex items-center justify-between gap-4 px-5 md:px-10">
         <div className="flex items-center gap-3 md:gap-4 min-w-0">
           <h1 className="pirate-title text-xl md:text-[26px] text-gold-300 leading-none truncate">{title}</h1>
@@ -103,8 +113,10 @@ export default function FullScreenPanel({
               <span className="hidden sm:block text-[13px] font-serif text-gold-500 truncate">{subtitle}</span>
             </>
           )}
-        </div>
-        <div className="flex items-center gap-2 md:gap-4 shrink-0">
+          {tabs && tabs.length > 1 && (
+            <span aria-hidden="true" className="hidden md:block w-px h-4 bg-gold-700/30 shrink-0" />
+          )}
+          <div className="flex items-center gap-2 md:gap-4 shrink-0">
           {/*
             【面板页签】整屏面板会把侧栏卸载掉，所以「从贸易切到港口」原本是
             Esc → 回海图 → 点港口 三步。这四块在玩家心里是同一件事
@@ -139,8 +151,10 @@ export default function FullScreenPanel({
               })}
             </nav>
           )}
-          <button
-            onClick={onClose}
+          </div>
+        </div>
+        <button
+          onClick={onClose}
             data-testid={`${testId}-close`}
             className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-sm plate-btn
               text-gold-300 hover:text-gold-100 font-serif text-sm press transition-colors"
@@ -148,8 +162,7 @@ export default function FullScreenPanel({
           >
             <X size={14} />
             <span className="hidden sm:inline">回海图</span>
-          </button>
-        </div>
+        </button>
       </header>
       {/*
         【分隔线改成渐变】原来是一条 `border-b` 通栏 1px 金线 —— 两端齐头齐尾，
@@ -171,6 +184,15 @@ export default function FullScreenPanel({
        * 的最小高度是内容高度，滚动区会被内容撑开、整块溢出。
        */}
       <div className="relative flex-1 min-h-0 overflow-y-auto overscroll-contain scroll-parchment">
+        {/*
+          【为什么这里不是 min-h-full + flex-col】
+          试过让账页撑满整屏（贸易只有六行，剩下 300px 底色读作"没渲染完"）。
+          失败点很具体：`min-height: 100%` **不产生确定高度**，flex 子项的
+          `flex-1` 拿不到剩余空间（basis 百分比解析要父级 height）——
+          表格纹丝不动，而行又被 flex 压缩，最后一行贴着边框。
+          要真撑满得给内层 `height: 100%`，但那样内容超出面板时会被裁。
+          结论：空白留在账页下面，比裁字好。
+        */}
         <div
           className={`mx-auto w-full px-5 md:px-10 py-5 md:py-7 ${
             width === 'lg' ? 'max-w-6xl' : width === 'wide' ? 'max-w-4xl' : 'max-w-3xl'
@@ -193,9 +215,20 @@ export default function FullScreenPanel({
           用一个小徽标分隔，各占 5 个字的位置。
         */}
         <span className="flex items-center gap-2 min-w-0 text-[12px] font-serif text-gold-600">
+          {/*
+            【状态不等于海】
+            这块徽标上一版是海蓝底 + 蓝边 —— 蓝色在这个项目里的语义是"海/航行中"
+            （底栏的「→ 目的地」就是蓝的）。用它来表示"停住了"，颜色在说反话。
+            状态提示归"中性/金"这一族：它不属于任何一块海域，它属于界面本身。
+            材质也不凸起（它不可点）：一道虚线边 + 平面底。
+          */}
           {sailing && (
-            <span className="shrink-0 inline-flex items-center gap-1 rounded-sm border border-ocean-500/40
-              bg-ocean-700/40 px-1.5 py-0.5 text-ocean-200 leading-none" title="打开面板时主循环暂停">
+            <span
+              className="shrink-0 inline-flex items-center gap-1 rounded-sm
+                border border-dashed border-gold-600/45 bg-black/25 px-1.5 py-0.5
+                text-gold-400 leading-none"
+              title="打开面板时主循环暂停"
+            >
               ⏸ 海面暂停
             </span>
           )}

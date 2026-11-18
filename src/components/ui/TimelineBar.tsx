@@ -61,7 +61,8 @@ export default function TimelineBar() {
       {/* 这里原本是 text-sm font-bold。中文只有 400 字重，font-bold 会让「年」变成
               浏览器合成的假粗体（横向涂抹），而「1492」是 Crimson Text 的真 700——
               同一个词里两种粗细，放大 4 倍看非常明显。中文靠字号与字距立足，不靠字重。 */}
-      <div className="text-gold-300 font-serif text-[15px] tracking-wide min-w-[56px]">
+      {/* 年份是这一条上唯一的数字，必须和其它数字同一种字形（见 index.css） */}
+      <div className="text-gold-300 font-mono text-[15px] tracking-wide min-w-[56px]">
         {currentYear}年
       </div>
 

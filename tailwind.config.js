@@ -99,17 +99,20 @@ export default {
         // 否则回退到浏览器默认 serif（Windows = 宋体 SimSun，小字发虚）
         serif: ['"Crimson Text"', '"Noto Serif SC"', 'Georgia', 'serif'],
         /*
-         * 【mono 不再是等宽，而是"衬线 + tabular-nums"】
-         * 全站 30 处 `font-mono` 用的全是数字（金币、天数、耐久、价格、坐标）。
-         * Tailwind 默认 mono 栈在 Windows 上落到 **Consolas** ——
-         * 一个海盗游戏的底栏里横着一排程序员字体，这是"廉价感"最硬的来源之一。
+         * 【数字用 Georgia，不用 Crimson Text】
+         * 第一版把 mono 换成了 Crimson Text + `tabular-nums`，想既去掉 Consolas
+         * 又保住衬线。截图发现**数字还是参差**：Crimson Text 的 GSUB 里只有
+         * ccmp/dnom/frac/liga/locl/numr —— **没有 lnum，也没有 tnum**。
+         * 也就是说它排的是旧式数字（3/4/5/7/9 下沉），而那两个 CSS 属性
+         * 在这份字体上全是空转。价格列 85 / 137 / 371 的基线高低不齐，
+         * 账本读起来像手写。
          *
-         * 等宽这件事并不需要等宽字体：CSS 的 `tabular-nums`（tnum）让每个数字
-         * 占同宽，比 Consolas 更稳，而且保住了衬线的书卷气。
-         * 类名不变（30 处调用一行都不用动），只换字体族；
-         * 再在 index.css 里给 `.font-mono` 补 font-variant-numeric。
+         * Georgia 是系统衬线里少见的"真·等高 + 等宽数字"：字形气质与 Crimson
+         * 接近（都是过渡期衬线），不用多下载一个文件，且中文会自动回落到
+         * Noto Serif SC（Georgia 没有汉字）。
+         * 类名仍是 font-mono，30 处调用一行都不用动。
          */
-        mono: ['"Crimson Text"', '"Noto Serif SC"', 'Georgia', 'serif'],
+        mono: ['Georgia', '"Crimson Text"', '"Noto Serif SC"', 'serif'],
       },
       // 时长与曲线对齐 src/utils/motion.ts 的 DURATION/EASE_* 档位
       // （config 是 JS 无法 import TS，改动需同步）

@@ -41,14 +41,22 @@ function ScaleBarInner() {
     <div
       data-testid="map-scale"
       /*
-       * 【材质统一】它原来是全站唯一一块"半透明深底 + 细铜边"的浮层 ——
-       * 隔壁侧栏、小地图、底栏开关板全是铜木铭牌（顶棱受光 + 底棱背光 + 外投影）。
-       * 同一屏上两种材质语言，读起来就像"这块是后来贴上去的"。
-       * 现在换成同一块铜牌（.side-plate），并压成一行：
-       * 「比例尺」三个字原来单独占一行 18px，而尺子本身才是要看的东西。
+       * 【材质 = 可交互性，这是全站第一条视觉逻辑】
+       * 上一版把它换成了 `.side-plate`（铜木铭牌：顶棱受光 + 外投影），
+       * 想解决"它是全站唯一一块半透明浮层"的不一致 —— 但换错了方向：
+       * `.side-plate` 在这个项目里的语义是**凸起 = 能按**（侧栏十颗按钮、小地图），
+       * 而比例尺是 `pointer-events-none`。于是一块看起来能按的铜牌按下去没反应。
+       *
+       * 正确的一档是「读数板」：压下去、没有外投影（不离开桌面）、边框极淡。
+       * 全站同一个道理 —— 凸起只给能点的东西，读数一律平/凹。
        */
       className="absolute bottom-[88px] right-3 z-[900] pointer-events-none select-none
-                 side-plate rounded-sm px-2.5 py-1.5 font-serif"
+                 rounded-sm px-2.5 py-1.5 font-serif"
+      style={{
+        backgroundColor: 'rgba(12, 9, 5, 0.62)',
+        border: '1px solid rgba(158, 128, 76, 0.22)',
+        boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.55)',
+      }}
       aria-hidden="true"
     >
       {/* 经典海图尺：四段黑白相间，比一条实线更容易对半估 */}

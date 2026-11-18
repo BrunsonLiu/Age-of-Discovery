@@ -173,8 +173,24 @@ body {
  * 单独写 .font-mono 而不是依赖 .tabular-nums：调用处只写了 font-mono，
  * 没有一处记得配 tabular-nums —— 靠调用方自律的规则等于没有规则。
  */
-.font-mono {
-  font-variant-numeric: tabular-nums;
+.font-mono,
+.tabular-nums {
+  /*
+   * 【界面里的数字只有一种字体】
+   * 之前是两套：写 `font-mono` 的走 Tailwind mono 栈，写 `tabular-nums` 的
+   * 仍走 Crimson Text。而 Crimson 的 GSUB 里既没有 lnum 也没有 tnum ——
+   * 它排的是旧式数字（3/4/5/7/9 下沉），表格里的价格列基线高低不齐，
+   * 金币、天数、耐久各自一套字形，同一屏能数出两种"数字气质"。
+   *
+   * Georgia 是系统衬线里少见的"同时有 lnum + tnum"的一款：
+   *   · lining-nums → 数字等高（表格能竖着扫）
+   *   · tabular-nums → 每个数字占同宽（右对齐列不抖）
+   * 中文自动回落到 Noto Serif SC（Georgia 没有汉字）。
+   * 两个类名都指过来，是为了让"随手写的 tabular-nums"也落在同一套字形上 ——
+   * 靠调用方记得加 font-mono 的规则，等于没有规则。
+   */
+  font-family: Georgia, 'Crimson Text', 'Noto Serif SC', serif;
+  font-variant-numeric: lining-nums tabular-nums;
   letter-spacing: 0.01em;
 }
 
