@@ -8449,6 +8449,19 @@ console.log('\n== 天数口径守卫 ==')
   assert(seg6.includes('contrast-audit.mjs --deck'), 'seg6 会跑船上视角的对比度（不是只加了参数）')
   assert((pkg.scripts['test:e2e:all'] ?? '').includes('test:e2e:contrast:deck'),
     'all 也含甲板对比度')
+  /*
+   * 同一批补上的还有两个"更亮"的场景：
+   *   · `--deck-walk` 站上甲板走动（HUD 上的字最多，还带船长室分支）；
+   *   · `--map3d` 3D 海图（同一套顶栏/侧栏/船卡压在 3D 海面与天空上，
+   *     不是几乎恒定的深色羊皮纸底）。
+   * 只加 `--deck` 就以为"3D 都量过了"是不够的：这三处底色各不相同。
+   */
+  assert((pkg.scripts['test:e2e:contrast:deck'] ?? '').includes('--deck-walk'),
+    '甲板对比度同一命令里也跑"走动"那一态')
+  assert((pkg.scripts['test:e2e:contrast:map3d'] ?? '').includes('--map3d'),
+    '3D 海图的对比度有独立命令')
+  assert(seg6.includes('contrast-audit.mjs --deck-walk') && seg6.includes('contrast-audit.mjs --map3d'),
+    'seg6 会跑甲板走动与 3D 海图两态')
   const full = pkg.scripts['test:e2e:full'] ?? ''
   for (let i = 1; i <= 6; i++) {
     assert(full.includes(`npm run test:e2e:seg${i}`), `full 包含 seg${i}`)

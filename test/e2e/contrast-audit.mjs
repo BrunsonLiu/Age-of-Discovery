@@ -45,6 +45,21 @@ const HARBOR = process.argv.includes('--harbor')
  * 主界面（几乎恒定的深色海图）的结论不能代替它，必须单独跑一遍。
  */
 const DECK = process.argv.includes('--deck')
+/**
+ * 可选：进船上视角后**再站上甲板**（--deck-walk）。
+ * 站着走动时 HUD 上的字最多（货舱/载重/航速/下一步天数 + 底部两行提示），
+ * 而它们全都压在海面或船板上 —— 只审"贴着海面"那一态不够。
+ * 这一态还带船长室分支（`deck-cabin-badge`），也必须算进去。
+ */
+const DECK_WALK = process.argv.includes('--deck-walk')
+const DECK_ANY = DECK || DECK_WALK
+/**
+ * 可选：切到 3D 海图（--map3d）。
+ * 同一套 HUD（顶栏/侧栏/船卡/航线提示）压在**3D 的海面与天空**上，
+ * 而不是几乎恒定的深色羊皮纸底 —— 深底上过关的金字在亮海面上会掉到 2:1 上下。
+ * 主界面的结论不能代替它，必须单独跑一遍。
+ */
+const MAP3D = process.argv.includes('--map3d')
 /** 可选：即使 0 未达标也列出最弱的 25 段（--all）。
  *  只有 fails 才打印的老逻辑会让"刚好 4.6:1"这类临界值隐身——
  *  调背景亮度时恰恰需要看这些临界项有没有被推下去。 */
@@ -106,7 +121,17 @@ if (HARBOR) {
     window.__mapStore.getState().setViewMode('harbor')
   })
   await sleep(900)
-} else if (DECK) {
+} else if (MAP3D) {
+  await page.evaluate(() => {
+    const d = window.__dialogueStore
+    for (let i = 0; i < 12 && d?.getState?.().scriptId; i++) d.getState().skip()
+    window.__gameStore.setState({ showHelp: false, activePanel: null })
+    window.__mapStore.getState().setRenderMode('3d')
+  })
+  await page.waitForFunction(() => !!document.querySelector('[data-testid=chart-layer] canvas'), { timeout: 60000 })
+  // 3D 板首次挂载要编译着色器，再等它把首帧画出来
+  await sleep(3600)
+} else if (DECK_ANY) {
   await page.evaluate(() => {
     const d = window.__dialogueStore
     for (let i = 0; i < 12 && d?.getState?.().scriptId; i++) d.getState().skip()
@@ -117,6 +142,13 @@ if (HARBOR) {
   await page.waitForFunction(() => !!document.querySelector('[data-testid=deck-view]'), { timeout: 60000 })
   await page.waitForFunction(() => !document.querySelector('[data-testid=deck-booting]'), { timeout: 60000 }).catch(() => {})
   await sleep(2600)
+  if (DECK_WALK) {
+    await page.waitForFunction(() => !!document.querySelector('[data-testid=deck-walk-toggle]'), { timeout: 20000 })
+    await page.evaluate(() => document.querySelector('[data-testid=deck-walk-toggle]').click())
+    // 站上甲板要等模型/相机就位：判据是底部那行走动提示真的挂出来
+    await page.waitForFunction(() => !!document.querySelector('[data-testid=deck-walk-hint]'), { timeout: 30000 })
+    await sleep(1500)
+  }
 } else if (PANEL === 'event') {
   /*
    * 航海日志（左栏）没有 data-tut，而且平时是空的 —— 要先塞几条记录才有字可审。
@@ -161,7 +193,7 @@ if (HARBOR) {
   await sleep(900)
 }
 
-const shotPath = `.workbuddy/shots/contrast-${DECK ? 'deck' : HARBOR ? 'harbor' : (BOOK ? 'book-' + BOOK : (PANEL ?? 'map'))}.png`
+const shotPath = `.workbuddy/shots/contrast-${MAP3D ? 'map3d' : DECK_WALK ? 'deck-walk' : DECK ? 'deck' : HARBOR ? 'harbor' : (BOOK ? 'book-' + BOOK : (PANEL ?? 'map'))}.png`
 await page.screenshot({ path: shotPath })
 
 // ---- 收集所有可见文字节点 ----
@@ -323,7 +355,7 @@ const collected = await page.evaluate((VW, VH, DECK) => {
     })
   }
   return { items: out, occluded: hitList }
-}, VW, VH, DECK)
+}, VW, VH, DECK_ANY)
 
 // ---- 用截图像素估每段文字的背景色 ----
 const b64 = readFileSync(shotPath).toString('base64')
@@ -455,7 +487,7 @@ const graded = measured.filter(m => m.contrast != null).map((m) => {
 })
 const fails = graded.filter(m => !m.pass).sort((a, b) => a.contrast - b.contrast)
 
-console.log(`\n视口 ${VW}×${VH}${DECK ? ' · 船上视角' : HARBOR ? ' · 岸上视角' : BOOK ? ` · 航海志 ${BOOK}` : PANEL ? ` · 面板 ${PANEL}` : ''}${MODE === 'visitor' ? ' · 参观模式' : ''} · 可见文字 ${graded.length} 段`)
+console.log(`\n视口 ${VW}×${VH}${MAP3D ? ' · 3D 海图' : DECK_WALK ? ' · 甲板走动' : DECK ? ' · 船上视角' : HARBOR ? ' · 岸上视角' : BOOK ? ` · 航海志 ${BOOK}` : PANEL ? ` · 面板 ${PANEL}` : ''}${MODE === 'visitor' ? ' · 参观模式' : ''} · 可见文字 ${graded.length} 段`)
 console.log(`  未达标 ${fails.length} 段（AA：正文 4.5 / 大字 3.0）`)
 /*
  * 靠描边通过的要单独报：这类元素"字 vs 底色"是不达标的（奶油字压浅色陆地 2.81），

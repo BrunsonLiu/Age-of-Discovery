@@ -2433,7 +2433,7 @@ export default function DeckView() {
         <button
           type="button"
           onClick={() => setWalk(!walking)}
-          className="flex items-center gap-1.5 rounded-full border border-gold-600/50 bg-black/40 px-3 py-2 text-xs text-parchment-100 backdrop-blur transition hover:bg-black/60"
+          className="flex items-center gap-1.5 rounded-full border border-gold-600/50 bg-black/60 px-3 py-2 text-xs text-parchment-100 backdrop-blur transition hover:bg-black/60"
           data-testid="deck-walk-toggle"
         >
           <Footprints size={14} />
@@ -2442,7 +2442,7 @@ export default function DeckView() {
         <button
           type="button"
           onClick={() => setDeckView(false)}
-          className="flex items-center gap-1.5 rounded-full border border-gold-600/50 bg-black/40 px-3 py-2 text-xs text-parchment-100 backdrop-blur transition hover:bg-black/60"
+          className="flex items-center gap-1.5 rounded-full border border-gold-600/50 bg-black/60 px-3 py-2 text-xs text-parchment-100 backdrop-blur transition hover:bg-black/60"
           data-testid="deck-view-close"
         >
           <X size={14} />
