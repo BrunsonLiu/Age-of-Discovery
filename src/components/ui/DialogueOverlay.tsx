@@ -4,6 +4,7 @@ import { getScript, getSpeaker } from '@/utils/dialogue'
 import { onUiCommand } from '@/utils/uiBus'
 import { playCue } from '@/utils/audio'
 import { useIsMobile, useIsTouchPrimary } from '@/hooks/useIsMobile'
+import { UI_ASSETS } from '@/data/uiAssets'
 
 /** 打字机步进（毫秒/字） */
 const TYPE_MS = 42
@@ -132,7 +133,17 @@ export default function DialogueOverlay() {
       {portrait && (
         <div
           key={portraitKey}
-          className={`absolute bottom-0 h-[52%] md:h-[72%] ${fromLeft ? 'dlg-slide-in' : 'dlg-slide-in-right'}`}
+          /*
+           * 【桌面：立绘坐到木梁上】
+           * 原来 `bottom-0` —— 立绘的底边压在 900，而底栏木梁占 849~901，
+           * 于是人物的下半截被木梁切掉 52px（实测立绘 [72,247,518,648]，
+           * 底边 895，被 849 起的木梁盖住）。视觉上不是"站在甲板上"，
+           * 是"一张贴图伸到屏幕外"。
+           * 现在底边抬到木梁顶（52px）。
+           * 移动端保持 bottom-0：那里台词框在立绘下方（见 boxSideStyle），
+           * 立绘本来就该从框后面长出去。
+           */
+          className={`absolute bottom-0 md:bottom-[52px] h-[52%] md:h-[72%] ${fromLeft ? 'dlg-slide-in' : 'dlg-slide-in-right'}`}
           style={fromLeft ? { left: '5%' } : { right: '5%' }}
         >
           <img
@@ -144,16 +155,35 @@ export default function DialogueOverlay() {
       )}
 
       {/* 对话框：名牌 + 羊皮纸台词框（事件卡同款配色） */}
-      <div className={`absolute dlg-box-in ${isMobile ? '' : 'bottom-10'}`} style={boxSideStyle}>
+      {/*
+        desktop 的 bottom 从 40 → 60：这一块的最下面一行是「Esc 跳过致辞」，
+        40 时它的底边落在 860，木梁从 849 起 —— 那行字压在木纹上。
+      */}
+      <div className={`absolute dlg-box-in ${isMobile ? '' : 'bottom-[60px]'}`} style={boxSideStyle}>
         <div className="inline-block bg-[#2a1c10] border border-gold-600/70 rounded-md px-3 py-1 mb-1.5">
           <span className="text-gold-300 text-sm font-medium">{speaker.name}</span>
           <span className="text-gold-600 text-xs ml-2">{speaker.title}</span>
         </div>
-        <div className="relative bg-[#dccfae] border-2 border-[#8a6c2a] rounded-lg px-5 py-4 min-h-[5.5rem]">
-          <p className="font-serif text-[#3a2410] text-base leading-relaxed m-0">
+        {/*
+          【台词框要读作"一张纸"，不是一块纯色 div】
+          220,207,174 是全屏除天空外最亮的一块平面：无纹理、无内影，
+          紧挨着一整片深棕木纹时，它读作"网页里的输入框"。
+          加两样东西就够了：
+            · F1 羊皮纸底纹压到 0.35（素材本身是不透明的柔化纸纹）；
+            · 内侧一圈暗角（inset 阴影），让纸边"卷"进画框里。
+          两样都不影响正文对比度（文字 #3a2410 压在最亮的纸面上仍 > 9:1）。
+        */}
+        <div className="relative overflow-hidden bg-[#dccfae] border-2 border-[#8a6c2a] rounded-lg px-5 py-4 min-h-[5.5rem]"
+          style={{ boxShadow: 'inset 0 0 26px rgba(120,86,38,0.22), inset 0 0 0 1px rgba(255,246,214,0.35)' }}>
+          <div
+            aria-hidden="true"
+            className="absolute inset-0 pointer-events-none"
+            style={{ backgroundImage: `url(${UI_ASSETS.parchment})`, backgroundSize: 'cover', opacity: 0.35 }}
+          />
+          <p className="relative font-serif text-[#3a2410] text-base leading-relaxed m-0">
             {line.slice(0, shown)}
           </p>
-          <div className="flex items-center justify-between mt-3">
+          <div className="relative flex items-center justify-between mt-3">
             {/* 进度点 */}
             <div className="flex gap-1.5">
               {script.lines.map((_, i) => (
@@ -189,7 +219,11 @@ export default function DialogueOverlay() {
             跳过这段致辞
           </button>
         ) : (
-          <p className="text-gold-600/70 text-xs mt-1.5 text-right">Esc 跳过致辞</p>
+          <p className="mt-1.5 text-right">
+            <span className="inline-block rounded-sm bg-black/45 px-1.5 py-0.5 text-gold-400 text-xs">
+              Esc 跳过致辞
+            </span>
+          </p>
         )}
       </div>
     </div>
