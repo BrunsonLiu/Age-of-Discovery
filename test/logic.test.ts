@@ -8436,6 +8436,19 @@ console.log('\n== 天数口径守卫 ==')
     assert(names.includes(name), `${name} 文件还在（别把巡检删了）`)
     assert(seg6.includes(name), `${name} 已进 seg6，不再只靠手工跑`)
   }
+  /*
+   * 【船上视角的对比度曾经完全没有判据】
+   * 3D 视角是"整屏 canvas 盖在 2D 海图之上"，`contrast-audit.mjs` 原来只有
+   * 主界面 / --panel / --book / --harbor 四种场景；甲板 HUD（三块半透明小牌）
+   * 从来没被量过，实测最差 2.79:1（12px 要 4.5）—— 而那三块牌子正好压在
+   * 3D 里最亮的天空与反光水面上。现在有 `--deck`，并且必须挂在 seg6 上，
+   * 否则"加了场景但没人跑"等于没加。
+   */
+  assert((pkg.scripts['test:e2e:contrast:deck'] ?? '').includes('contrast-audit.mjs --deck'),
+    '船上视角的对比度有独立命令')
+  assert(seg6.includes('contrast-audit.mjs --deck'), 'seg6 会跑船上视角的对比度（不是只加了参数）')
+  assert((pkg.scripts['test:e2e:all'] ?? '').includes('test:e2e:contrast:deck'),
+    'all 也含甲板对比度')
   const full = pkg.scripts['test:e2e:full'] ?? ''
   for (let i = 1; i <= 6; i++) {
     assert(full.includes(`npm run test:e2e:seg${i}`), `full 包含 seg${i}`)
@@ -10734,6 +10747,24 @@ console.log('\n== 天数口径守卫 ==')
     assert(/coast\.setSighting\(/.test(view), '帧循环要把近岸交给岸线组')
     assert(/frame % 8 === 0/.test(view), '近岸每 8 帧算一次（不必每帧）')
     assert(/data-testid="deck-coast-hud"/.test(view), 'HUD 要有最近陆地的读数')
+    /*
+     * 【3D 上三块 HUD 的底色按"最亮的背景"定】
+     * 2D 海图几乎恒定是深蓝，`bg-black/35` 压得住；3D 实景里同一块牌子会扫过
+     * 正午的云和反光的水面。实测（`contrast-audit.mjs --deck`）：
+     *   · 「DECK VIEW」2.79:1、底部快捷键 2.85:1、距离行 3.32:1（12px 要 4.5）。
+     * 现在三块都是 /60 黑底、不带第二层透明度，底部那行还自带胶囊边。
+     * 判据只认这三个数值，不认"看着够不够深"。
+     */
+    {
+      const black60 = (view.match(/bg-black\/60/g) || []).length
+      assert(black60 >= 3, `3D 上三块 HUD 都是 bg-black/60（实测 ${black60} 处）`)
+      // 否定式判据必须先剥注释，且要钉到**那一段**的完整类名组合上：
+      // 同名的 70% 透明字在「边走边看」的深色面板里是合规的（那里有底板）
+      assert(!/text-xs tracking-wider text-parchment-200\/70/.test(stripComments(view)),
+        '底部快捷键不再用 70% 透明的裸字压在浪上（实测 2.85:1）')
+      assert(/rounded-full[^"]*bg-black\/60|bg-black\/60[^"]*rounded-full/.test(view),
+        '底部快捷键自带胶囊底（裸文字压在反光水面上读不出来）')
+    }
     /*
      * 岸上的树：**两种剪影 + 成丛**。原来 160 棵同一种锥体、u 均匀随机，
      * 屏幕上是等间距的一排同形状 —— 整幅画面里最明显的"程序生成"痕迹。

@@ -2417,8 +2417,16 @@ export default function DeckView() {
         </div>
       )}
       {/* HUD：只留必要信息，别把海面盖住 */}
-      <div className="pointer-events-none absolute left-4 top-4 rounded-md border border-gold-600/30 bg-black/35 px-3 py-2 text-parchment-100 backdrop-blur-sm">
-        <div className="text-xs tracking-[0.3em] text-gold-400">DECK VIEW</div>
+      {/*
+        * 【这几块 HUD 的底色是按"最亮的背景"定的，不是按平均】
+        * 2D 海图那层几乎恒定是深蓝，`bg-black/35` 够了；这一屏是 3D 实景，
+        * 同一块牌子会随镜头扫过正午的云、反光的水面 —— 实测左上那块
+        * 「DECK VIEW」被压在亮天空上时只有 **2.79:1**（12px 要 4.5），
+        * 玩家在最亮的那半分钟里读不到它。所以底色提到 /60、
+        * 小标题提亮到 gold-300，判据见 `contrast-audit.mjs --deck`。
+        */}
+      <div className="pointer-events-none absolute left-4 top-4 rounded-md border border-gold-600/30 bg-black/60 px-3 py-2 text-parchment-100 backdrop-blur-sm">
+        <div className="text-xs tracking-[0.3em] text-gold-300">DECK VIEW</div>
         <div className="mt-0.5 text-sm tracking-widest">船上 · 贴着海面</div>
       </div>
       <div className="absolute right-4 top-4 flex gap-2">
@@ -2444,7 +2452,7 @@ export default function DeckView() {
       <div
         ref={hudRef}
         data-testid="deck-coast-hud"
-        className="pointer-events-none absolute left-4 top-[5.5rem] rounded-md border border-gold-600/25 bg-black/30 px-3 py-1.5 text-xs tracking-wider text-parchment-200/90 backdrop-blur-sm"
+        className="pointer-events-none absolute left-4 top-[5.5rem] rounded-md border border-gold-600/25 bg-black/60 px-3 py-1.5 text-xs tracking-wider text-parchment-200 backdrop-blur-sm"
       >
         远洋 · 视野内无陆地
       </div>
@@ -2474,8 +2482,9 @@ export default function DeckView() {
       ) : null}
       {walking ? (
         <>
+          {/* 与另一支同一处理：压在海面上的字必须自带底（裸字实测 2.85:1） */}
           <div
-            className="pointer-events-none absolute bottom-4 left-1/2 -translate-x-1/2 text-xs tracking-wider text-parchment-200/70"
+            className="pointer-events-none absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full border border-gold-600/25 bg-black/60 px-3 py-1 text-xs tracking-wider text-parchment-200 backdrop-blur-sm"
             data-testid="deck-walk-hint"
           >
             {inCabin ? 'WASD 走动 ｜ 拖拽转头 ｜ 点桌上的海图摊开航路' : 'WASD 走动 ｜ 拖拽转头 ｜ F 回看船'}
@@ -2511,7 +2520,13 @@ export default function DeckView() {
           </div>
         </>
       ) : (
-        <div className="pointer-events-none absolute bottom-4 left-1/2 -translate-x-1/2 text-xs tracking-wider text-parchment-200/70">
+        /*
+         * 【压在海面上的字必须自带底】
+         * 这行原来是纯文字直接画在浪上：`text-parchment-200/70` 压在反光的水面，
+         * 实测 **2.85:1** —— 正午的太阳一照就没了。项目里"出画布的浮层自带深底"
+         * 这条规矩在 2D 那边一直在守，3D 这边漏了这一处。
+         */
+        <div className="pointer-events-none absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full border border-gold-600/25 bg-black/60 px-3 py-1 text-xs tracking-wider text-parchment-200 backdrop-blur-sm">
           V / Esc 回海图 ｜ F 上甲板
         </div>
       )}

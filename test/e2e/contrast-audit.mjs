@@ -38,6 +38,13 @@ const BOOK = argOf('book')
 /** 可选：切到岸上视角再审计（--harbor）。岸上是整屏深褐 + 半透明板，
  *  不能用主界面的结论代替，必须单独跑一遍像素直方图。 */
 const HARBOR = process.argv.includes('--harbor')
+/**
+ * 可选：切到船上视角再审计（--deck）。
+ * HUD 直接压在 3D 的天空与海面上（左上一块"船上 · 贴着海面"、
+ * 顶部两个按钮、底部一行快捷键），底色随镜头在 0.1~1.0 之间漂 ——
+ * 主界面（几乎恒定的深色海图）的结论不能代替它，必须单独跑一遍。
+ */
+const DECK = process.argv.includes('--deck')
 /** 可选：即使 0 未达标也列出最弱的 25 段（--all）。
  *  只有 fails 才打印的老逻辑会让"刚好 4.6:1"这类临界值隐身——
  *  调背景亮度时恰恰需要看这些临界项有没有被推下去。 */
@@ -99,6 +106,17 @@ if (HARBOR) {
     window.__mapStore.getState().setViewMode('harbor')
   })
   await sleep(900)
+} else if (DECK) {
+  await page.evaluate(() => {
+    const d = window.__dialogueStore
+    for (let i = 0; i < 12 && d?.getState?.().scriptId; i++) d.getState().skip()
+    window.__gameStore.setState({ showHelp: false, activePanel: null })
+    window.__mapStore.getState().setDeckView(true)
+  })
+  // 首次进这个视角要编译 98 个着色器程序，2 秒上下；等覆盖层自己撤掉再截
+  await page.waitForFunction(() => !!document.querySelector('[data-testid=deck-view]'), { timeout: 60000 })
+  await page.waitForFunction(() => !document.querySelector('[data-testid=deck-booting]'), { timeout: 60000 }).catch(() => {})
+  await sleep(2600)
 } else if (PANEL === 'event') {
   /*
    * 航海日志（左栏）没有 data-tut，而且平时是空的 —— 要先塞几条记录才有字可审。
@@ -143,11 +161,11 @@ if (HARBOR) {
   await sleep(900)
 }
 
-const shotPath = `.workbuddy/shots/contrast-${HARBOR ? 'harbor' : (BOOK ? 'book-' + BOOK : (PANEL ?? 'map'))}.png`
+const shotPath = `.workbuddy/shots/contrast-${DECK ? 'deck' : HARBOR ? 'harbor' : (BOOK ? 'book-' + BOOK : (PANEL ?? 'map'))}.png`
 await page.screenshot({ path: shotPath })
 
 // ---- 收集所有可见文字节点 ----
-const collected = await page.evaluate((VW, VH) => {
+const collected = await page.evaluate((VW, VH, DECK) => {
   const parse = (s) => {
     const m = s.match(/rgba?\(([^)]+)\)/)
     if (!m) return null
@@ -218,7 +236,18 @@ const collected = await page.evaluate((VW, VH) => {
   }
   const out = []
   const hitList = []
-  for (const el of document.querySelectorAll('body *')) {
+  /*
+   * 【船上视角只审 HUD 自己】
+   * 3D 视角是"整屏 canvas 盖在 2D 海图之上"：海图那套 HUD（1492年 / 航路 / 任务 /
+   * 罗盘 N-E-S-W / 经纬度）全都还在 DOM 里、rect 正常、opacity 1，
+   * 只是被画布挡在后面。审计的遮挡判定把 canvas 当"软层"（它的 background-color
+   * 是透明的，内容画在位图里），于是照旧按像素取背景 —— 取到的是天空，
+   * 一口气报出 32 段 1.0~1.4:1 的"未达标"，全是假红。
+   * 所以这个场景只收 `deck-view` 子树内的文字：那才是"压在海面上"的那一层。
+   */
+  const root = DECK ? document.querySelector('[data-testid=deck-view]') : null
+  for (const el of (root ?? document.body).querySelectorAll('*')) {
+    if (root && el === root) continue
     let txt = ''
     for (const n of el.childNodes) if (n.nodeType === 3) txt += n.textContent
     txt = txt.trim()
@@ -294,7 +323,7 @@ const collected = await page.evaluate((VW, VH) => {
     })
   }
   return { items: out, occluded: hitList }
-}, VW, VH)
+}, VW, VH, DECK)
 
 // ---- 用截图像素估每段文字的背景色 ----
 const b64 = readFileSync(shotPath).toString('base64')
@@ -426,7 +455,7 @@ const graded = measured.filter(m => m.contrast != null).map((m) => {
 })
 const fails = graded.filter(m => !m.pass).sort((a, b) => a.contrast - b.contrast)
 
-console.log(`\n视口 ${VW}×${VH}${HARBOR ? ' · 岸上视角' : BOOK ? ` · 航海志 ${BOOK}` : PANEL ? ` · 面板 ${PANEL}` : ''}${MODE === 'visitor' ? ' · 参观模式' : ''} · 可见文字 ${graded.length} 段`)
+console.log(`\n视口 ${VW}×${VH}${DECK ? ' · 船上视角' : HARBOR ? ' · 岸上视角' : BOOK ? ` · 航海志 ${BOOK}` : PANEL ? ` · 面板 ${PANEL}` : ''}${MODE === 'visitor' ? ' · 参观模式' : ''} · 可见文字 ${graded.length} 段`)
 console.log(`  未达标 ${fails.length} 段（AA：正文 4.5 / 大字 3.0）`)
 /*
  * 靠描边通过的要单独报：这类元素"字 vs 底色"是不达标的（奶油字压浅色陆地 2.81），
