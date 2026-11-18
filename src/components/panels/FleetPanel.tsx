@@ -116,6 +116,7 @@ export default function FleetPanel() {
   return (
     <FullScreenPanel
       testId="fleet-panel"
+      width="wide"
       tabs={DOCK_TABS}
       activeTab="fleet"
       onTab={setActivePanel}
@@ -162,8 +163,27 @@ export default function FleetPanel() {
             </div>
           </div>
 
+          {/*
+            【容器只留两种：段落 / 清单】
+            这一屏原来有五种容器：无底、淡金底+边、凹陷 inlay、仅有边框、
+            以及"什么容器都没有"。同层级的东西五种长相，分组就全靠猜。
+            现在只允许两种：
+              · **段落** = `border-t` + 标题（声望、补给、船只、四方态度、航线）
+              · **清单** = `inlay` 凹陷底（军官团、船上的人：它们是"一条条记录"，
+                需要一个面把它们括起来）
+            只有"旗舰"那张船卡额外用淡金底 —— 那是这一屏唯一需要被挑出来的实体。
+          */}
           {/* 声望与船长特质：声望 ≥40 起港口交易享优惠 */}
-          <div className="rounded p-2 bg-gold-700/10 border border-gold-600/25 space-y-1">
+          <div className="border-t border-gold-700/60 pt-3 space-y-1.5">
+            {/*
+              每一条分隔线都要有归属。原来"声望 / 天赋 / 海上人称"三行直接挂在
+              四格条下面，没有标题也没有分隔线（那一格是 25% 透明度的线，
+              截图里根本看不见）—— 玩家读到的是一条连续的清单，看不出换组了。
+              现在段落 = 分隔线 + 标题 + 内容，三条线各自有名字。
+            */}
+            <h4 className="text-gold-600 font-serif text-[12px] tracking-[0.16em] flex items-center gap-1">
+              <Star size={11} aria-hidden="true" />船长
+            </h4>
             <div className="flex items-center justify-between text-[13px] font-serif">
               <span className="text-gold-500 flex items-center gap-1"><Star size={11} /> 声望</span>
               <span className="text-gold-300">
@@ -255,7 +275,10 @@ export default function FleetPanel() {
             </div>
           )}
 
-          <div className="space-y-1.5">
+          <div className="border-t border-gold-700/60 pt-3 space-y-1.5">
+            <h4 className="text-gold-600 font-serif text-[12px] tracking-[0.16em] flex items-center gap-1">
+              <Heart size={11} aria-hidden="true" />船况
+            </h4>
             {/* 阈值的两处细节：
                 食物/淡水用「可撑天数」判定（见 voyage.supplyLevel），
                 但条的填充仍按 200 份算——若把天数折成百分比，
@@ -299,7 +322,10 @@ export default function FleetPanel() {
             />
           </div>
 
-          <div className="border-t border-gold-700/30 pt-2 space-y-2">
+          <div className="border-t border-gold-700/60 pt-3 space-y-2">
+            <h4 className="text-gold-600 font-serif text-[12px] tracking-[0.16em] flex items-center gap-1">
+              <Ship size={11} aria-hidden="true" />船只
+            </h4>
             {fleet.ships.map(ship => {
               const isFlagship = ship.id === fleet.flagshipId
               return (
@@ -318,7 +344,8 @@ export default function FleetPanel() {
                   </span>
                   <button
                     onClick={() => setPreviewId(previewId === ship.id ? null : ship.id)}
-                    className="text-gold-500 hover:text-gold-300 text-[13px] font-serif transition-colors"
+                    className="text-gold-500 hover:text-gold-300 text-[13px] font-serif transition-colors
+                      underline decoration-dotted decoration-gold-700/70 underline-offset-4"
                     aria-expanded={previewId === ship.id}
                   >
                     {previewId === ship.id ? '收起 3D' : '查看 3D'}
@@ -349,10 +376,12 @@ export default function FleetPanel() {
           </div>
 
           {/* 派系态度：世界上有人记得你做过什么 */}
-          <div className="rounded p-2 inlay border border-gold-700/20 space-y-1">
-            <div className="flex items-center justify-between text-[13px] font-serif">
-              <span className="text-gold-500 flex items-center gap-1"><Globe size={11} aria-hidden="true" />四方态度</span>
-              <span className="text-gold-400 text-xs">同一行为，两副面孔</span>
+          <div className="border-t border-gold-700/60 pt-3 space-y-1">
+            <div className="flex items-center justify-between">
+              <h4 className="text-gold-600 font-serif text-[12px] tracking-[0.16em] flex items-center gap-1">
+                <Globe size={11} aria-hidden="true" />四方态度
+              </h4>
+              <span className="text-gold-600 text-[12px] font-serif">同一行为，两副面孔</span>
             </div>
             {FACTIONS.map(f => {
               const rep = factionRep[f.id] ?? 0
