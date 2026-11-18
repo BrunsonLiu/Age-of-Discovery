@@ -67,14 +67,23 @@ export default function EventChoice({ choice, index, summary, onSelect }: EventC
           期望值带 ~ 前缀（是加权估算不是承诺）；小游戏选项只说明因果，不给数字。 */}
       {summary && (
         <div className="relative mt-1.5 flex items-center justify-between gap-2">
+          {/*
+            【得失芯片排成三列，不自由换行】
+            自由 wrap 时一行塞 4~5 个、剩下的掉到第二行：
+            「食物 ~-11 耐久 ~-11 淡水 ~-7 / 士气 ~-3」—— 每行的列位随机，
+            三个选项之间更对不上，玩家没法竖着比较"哪一个更伤"。
+            固定三列之后：同一行的第 1/2/3 项落在同样的 x 上，
+            6 项代价正好两行、4 项两行、数字成列。
+          */}
           <span
-            className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5"
+            className="grid grid-cols-3 gap-x-2 gap-y-0.5"
             title={choice.miniGame
               ? '结局概率由你的操作表现决定——玩完才知道落在哪一格'
               : '按各结局概率加权的估算值，实际结果仍看运气'}
           >
             {summary.plain ? (
-              <span className="text-xs font-serif text-gold-500">
+              /* 容器现在是三列网格：这一句要跨满三列，否则只占 1/3 宽、被折成两行 */
+              <span className="col-span-3 text-xs font-serif text-gold-500">
                 {choice.miniGame ? '操作定成败 · 评分改写概率' : '影响甚微'}
               </span>
             ) : (

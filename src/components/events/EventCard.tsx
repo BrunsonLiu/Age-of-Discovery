@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { Eye } from 'lucide-react'
 import { useGameStore } from '@/store/useGameStore'
 import { selectOutcome } from '@/utils/eventEngine'
-import { renderEventIcon } from '@/utils/eventTypeStyles'
+import { EVENT_TYPE_NAMES, renderEventIcon } from '@/utils/eventTypeStyles'
 import { onUiCommand } from '@/utils/uiBus'
 import { UI_ASSETS } from '@/data/uiAssets'
 import { GAME_BALANCE } from '@/data/gameConfig'
@@ -220,7 +220,16 @@ export default function EventCard() {
       >
         {/* my-auto：内容比视口高时从顶部开始排（flex 居中会把超出部分裁到屏幕外，
             玩家就看不到事件标题了） */}
-        <div className={`my-auto w-[26rem] max-w-[92vw] bg-gradient-to-b ${cardBg} animate-fade-in-scale overflow-hidden`}
+        {/*
+          【宽度 26rem → 34rem】
+          实测 1440 下这张卡是 [512,96,416,707]：**416 宽、707 高** ——
+          竖着几乎顶满一屏，左右各空 500px。而正文只有 332px 可用宽：
+          描述折成 3 行、每个选项的四项得失也折成 3 行（"食物 ~-11 耐久 ~-11 /
+          淡水 ~-7 / 士气 ~-3"），选项被撑到 86px 高。
+          加宽到 34rem(544) 后正文 460px：描述 2 行、得失 1~2 行，
+          卡片整体矮 60~80px，两边的空白也窄了。上限仍是 92vw（手机照旧占满）。
+        */}
+        <div className={`my-auto w-[34rem] max-w-[92vw] bg-gradient-to-b ${cardBg} animate-fade-in-scale overflow-hidden`}
           style={{
             animationDelay: '0.05s',
             // 金质华丽边框（F2）：border-image 九宫格切片随卡片伸缩。
@@ -259,12 +268,23 @@ export default function EventCard() {
               {/* 类型徽章：原来是一枚裸图标（34px）飘在插图和缎带之间，
                   上下都没有依托，看着像漏排。加一个暗底圆盘当"章"，
                   图标缩到 20px 落进圆里——位置不变，但读起来是徽记而不是残留。 */}
-              <div
-                className="mb-2 flex h-10 w-10 items-center justify-center rounded-full border border-gold-700/45 bg-parchment-900/90"
+              {/*
+                【徽记要带类型名，否则读作"转圈加载"】
+                原来是一个 40px 的独立圆盘，只放图标：夹在插图和缎带之间、
+                没有任何文字，圆盘 + 居中细图标在游戏里等于 loader。
+                现在改成"图标 + 类型名"的横条标签（风暴 / 海盗 / 疾病…），
+                它才读作这一张卡的分类，而不是一个还没转完的圈。
+              */}
+              <span
+                className="mb-2 inline-flex items-center gap-1.5 rounded-full border border-gold-700/45 bg-parchment-900/90 px-2.5 py-1"
                 style={{ boxShadow: 'inset 0 1px 0 rgba(255, 238, 186, 0.12), 0 2px 6px rgba(0, 0, 0, 0.45)' }}
+                data-testid="event-type-badge"
               >
-                {renderEventIcon(currentEvent.type, 20)}
-              </div>
+                {renderEventIcon(currentEvent.type, 13)}
+                <span className="font-serif text-[12px] tracking-[0.1em] text-gold-300">
+                  {EVENT_TYPE_NAMES[currentEvent.type] ?? '遭遇'}
+                </span>
+              </span>
               {/*
                 「天生探险家」留下的痕迹。
 
