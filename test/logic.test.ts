@@ -15782,5 +15782,27 @@ console.log('== 帧率撑不住时，画质预设是最后一道闸 ==')
   assert(/Esc \{backLabel\}/.test(shell), '脚注的 Esc 提示也跟着同一句话')
 }
 
+/* ============ 脚注只能写"这一屏做得到的事" ============ */
+/*
+ * 舰队面板的脚注原来写「点地图上的港口立航线；点海面任意位置就是目的地」——
+ * 可整屏外壳把这屏盖住了整片海图（`absolute inset-0`），玩家照着做会发现
+ * 哪里都点不动。这一屏真正能做的是"选中推荐航线、再点一次出航"。
+ *
+ * 判据：整屏面板的 footer 里若出现"点地图 / 点海面"，必须同时说明
+ * "合上这屏"之类的先后关系 —— 否则就是在让玩家做一个此刻做不到的动作。
+ * 只扫 `footer="..."` 这类字面量（FullScreenPanel 的 props），不扫正文。
+ */
+{
+  const files = ['FleetPanel', 'PortDetail', 'ShipyardPanel', 'TradePanel'].map(n =>
+    readFileSync(join(process.cwd(), 'src', 'components', 'panels', `${n}.tsx`), 'utf8'))
+  files.push(readFileSync(join(process.cwd(), 'src', 'components', 'intro', 'HelpPanel.tsx'), 'utf8'))
+  const footers = files.flatMap(src => [...src.matchAll(/footer="([^"]{4,80})"/g)].map(m => m[1]))
+  assert(footers.length >= 5, `六块整屏面板的脚注都读得到（实测 ${footers.length} 条）`)
+  const bad = footers.filter(f => /点地图|点海面/.test(f) && !/合上这屏|回海图|关掉这屏/.test(f))
+  assert(bad.length === 0,
+    `脚注里"点地图"必须带先后关系（此刻点不到）：${bad[0] ?? ''}`)
+  assert(footers.some(f => /合上这屏/.test(f)), '舰队面板的脚注写明了"合上这屏再点地图"')
+}
+
 console.log(`\n最终结果：${passed} 通过 / ${failed} 失败`)
 if (failed > 0) process.exit(1)

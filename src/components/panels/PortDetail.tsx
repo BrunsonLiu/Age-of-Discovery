@@ -162,7 +162,8 @@ export default function PortDetail() {
       width="wide"
       title={port.nameCn}
       subtitle={`第 ${fleet.day} 天 · ${fleet.isSailing ? '在海上' : '已靠岸'}`}
-      footer="港口服务在下面；修理、补给、招募都是真按钮"
+      /* "都是真按钮"是写给自己的辩解，不是给玩家的信息：脚注要说清这里有什么 */
+      footer="港口服务在下面：修理、补给、招募、军官都在这一屏"
       onClose={() => setActivePanel(null)}
     >
         {/*

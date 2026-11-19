@@ -122,7 +122,14 @@ export default function FleetPanel() {
       onTab={setActivePanel}
       title="舰队状态"
       subtitle={`${fleet.name} · 第 ${fleet.day} 天 · ${fleet.ships.length} 艘`}
-      footer="点地图上的港口立航线；点海面任意位置就是目的地"
+      /*
+       * 【脚注只能写"这一屏做得到的事"】
+       * 原来写的是「点地图上的港口立航线；点海面任意位置就是目的地」——
+       * 可整屏面板把这屏盖住了整片海图，玩家照着做会发现哪里都点不动。
+       * 这一屏真正能做的是：选中一条推荐航线、再点一次出航。
+       * 自己挑目的地要合上这屏 —— 那就把"合上这屏"写出来。
+       */
+      footer="点推荐航线两下就出航；自己挑目的地，合上这屏再点地图"
       onClose={() => setActivePanel(null)}
     >
         <div className="space-y-3">
