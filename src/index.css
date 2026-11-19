@@ -254,13 +254,6 @@ body {
   color: #8a6c2a !important;
 }
 
-.map-vignette {
-  pointer-events: none;
-  position: absolute;
-  inset: 0;
-  z-index: 1;
-  background: radial-gradient(ellipse at center, transparent 55%, rgba(9,15,25,0.5) 100%);
-}
 
 /*
  * 复古装饰层必须压在 Leaflet 的矢量图层之上，但要在标记之下。
@@ -400,10 +393,6 @@ body {
   opacity: 0.6;
 }
 
-.notification-toast {
-  animation: fadeInUp var(--dur-normal) var(--ease-standard),
-             fadeOut var(--dur-normal) var(--ease-exit) 3.6s forwards;
-}
 
 @keyframes fadeOut {
   from { opacity: 1; transform: translateY(0); }
@@ -487,22 +476,9 @@ body {
     text-shadow: 0 1px 0 rgba(0, 0, 0, 0.65), 0 2px 8px rgba(0, 0, 0, 0.45);
   }
 
-  .ink-text {
-    font-family: 'Crimson Text', 'Noto Serif SC', Georgia, serif;
-    color: #2b1e0e;
-  }
 
-  .ocean-gradient {
-    background: linear-gradient(180deg, #1a2a3a 0%, #0a1219 100%);
-  }
 
-  .panel-slide-left {
-    animation: slideInLeft 0.4s ease-out forwards;
-  }
 
-  .panel-slide-right {
-    animation: slideInRight 0.4s ease-out forwards;
-  }
 
   .btn-nautical {
     /* 不用 font-semibold：中文只有 400 字重，那是浏览器合成的假粗体。
@@ -531,18 +507,7 @@ body {
     box-shadow: none;
   }
 
-  .btn-danger {
-    @apply px-4 py-2 rounded font-serif transition-all duration-200;
-    letter-spacing: 0.04em;
-    background: linear-gradient(180deg, #d46a55 0%, #a33e28 100%);
-    color: #fff6ee;
-    border: 2px solid #b8432e;
-  }
 
-  .btn-danger:hover {
-    background: linear-gradient(180deg, #e89a8a 0%, #d46a55 100%);
-    box-shadow: 0 0 15px rgba(139, 37, 0, 0.5);
-  }
 
   /*
     金色滚动条。
@@ -582,20 +547,7 @@ body {
     background: #f0d88a;
   }
 
-  /*
-    移动端底部抽屉里的面板：改为「从下往上」滑入。
-
-    桌面版的面板是左右滑入的（animate-slide-in-left / -right）。
-    放到抽屉里还沿用横向动画会很怪——面板会从屏幕左侧横着飞进来，
-    像是没对齐。所以这里按父级上下文覆盖动画方向。
-
-    特异性：.drawer-panel .animate-slide-in-left 是两个类，
-    高于 Tailwind 单个工具类 .animate-slide-in-left，所以覆盖一定生效。
-  */
-  .drawer-panel .animate-slide-in-left,
-  .drawer-panel .animate-slide-in-right {
-    animation: slideUpDrawer 300ms cubic-bezier(0.32, 0.72, 0, 1) both;
-  }
+  /* 移动端底部抽屉已整类删除（面板改整屏），.drawer-panel 的滑入覆盖同时删掉 */
 }
 
 @keyframes slideUpDrawer {
@@ -655,23 +607,7 @@ body {
   100% { opacity: 0; visibility: hidden; }
 }
 
-.map-loading {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 2;
-  background: linear-gradient(180deg, #0d2a45, #091e35);
-  color: #c9a96e;
-  font-family: 'Crimson Text', 'Noto Serif SC', Georgia, serif;
-  font-size: 18px;
-  letter-spacing: 3px;
-}
 
-.map-loading-dot {
-  animation: loadPulse 1.5s ease-in-out infinite;
-}
 
 /* ========== 事件场景 SVG 动画（sceneKit） ========== */
 @keyframes sceneWave {

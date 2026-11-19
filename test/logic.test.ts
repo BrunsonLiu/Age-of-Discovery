@@ -15758,6 +15758,41 @@ console.log('== 帧率撑不住时，画质预设是最后一道闸 ==')
   assert(bad.length === 0, `没有超过 100 的透明度（${bad.slice(0, 3).join(', ')}）`)
 }
 
+/* ============ index.css 里不许留没人引用的类 ============ */
+/*
+ * 2026-11-18 清出 10 条：.drawer-panel / .notification-toast / .ocean-gradient /
+ * .ink-text / .btn-danger（含 :hover）/ .map-loading / .map-loading-dot /
+ * .map-vignette / .panel-slide-left / .panel-slide-right。
+ * 它们都是"某一版界面用过、改版后忘了删"的残留 —— 单条几十行，
+ * 后果不是体积，是**下一个人以为它还在生效**（我自己就被
+ * `.map3d-legend-label` 骗过一次：以为传说标签有 DOM 样式，其实没有）。
+ *
+ * 判据：index.css 里出现的每个类名，都必须在 src 的 ts/tsx 里出现过；
+ * 动态拼出来的（`scene-wave-${n}`）、库自己创建的（leaflet-*）、
+ * 以及不是类的（@font-face 的 woff2）走白名单，且白名单要写理由。
+ */
+{
+  const stripCss = (t: string) => t.replace(/\/\*[\s\S]*?\*\//g, '')
+  const css = stripCss(readFileSync(join(process.cwd(), 'src', 'index.css'), 'utf8'))
+  const classes = [...new Set([...css.matchAll(/\.([a-zA-Z][\w-]*)/g)].map(m => m[1]))]
+  const walk = (dir: string): string[] => readdirSync(dir).flatMap((f: string) => {
+    const p = join(dir, f)
+    return statSync(p).isDirectory() ? walk(p) : [p]
+  })
+  const srcAll = walk(join(process.cwd(), 'src'))
+    .filter((p: string) => /\.(tsx|ts)$/.test(p))
+    .map((p: string) => readFileSync(p, 'utf8')).join('\n')
+  const ALLOW: { re: RegExp; why: string }[] = [
+    { re: /^leaflet-/, why: 'Leaflet 自己创建的 DOM 类，我们只是给它上色' },
+    { re: /^scene-wave-\d$/, why: '模板串 `scene-wave-${speed}` 拼出来的' },
+    { re: /^woff2$/, why: '@font-face 的 format() 关键字，不是类名' },
+  ]
+  const dead = classes.filter(c => !srcAll.includes(c) && !ALLOW.some(a => a.re.test(c)))
+  assert(classes.length >= 90, `index.css 的类名读得到（实测 ${classes.length} 个）`)
+  assert(dead.length === 0,
+    `index.css 里没有无人引用的类（剩 ${dead.length} 个：${dead.slice(0, 6).join(', ')}）`)
+}
+
 /* ============ 退出按钮的文字 = 它真的回到的那一页 ============ */
 /*
  * 2026-11-18 实测：从**岸上**点商行打开贸易面板，右上角写着「回海图」，
