@@ -15796,6 +15796,37 @@ console.log('== 帧率撑不住时，画质预设是最后一道闸 ==')
     `index.css 里没有无人引用的类（剩 ${dead.length} 个：${dead.slice(0, 6).join(', ')}）`)
 }
 
+/* ============ 会失败的巡检必须有人跑 ============ */
+/*
+ * 2026-11-18 扫出三个"写了、能失败、却不在任何脚本里"的：
+ *   · `map-cursor.mjs`（24 条 check，2D 海图的光标读数/气候带/贴边翻转）
+ *   · `port-palette.mjs`（10 条 check，2.5D 全球板 vs 甲板的港口配色）
+ *   · `first-run-mobile.mjs` —— 这个最讽刺：它的注释写着
+ *     「手机是主要场景之一…而"第一分钟"在手机上从来没被自动验证过」，
+ *     写出来就是为了补那个洞，结果**自己也从来没被跑过**。
+ *
+ * 现在分别并进 test:e2e:map / test:e2e:map3d / test:e2e:mobile。
+ * 判据：test/e2e 下凡是带 `process.exit(` 或 >3 条 `check(` 的脚本，
+ * 必须在 package.json 的某个 script（或 run-suite）里出现。
+ * 只打印不改退出码的**工具**（probe-*、shot、profile-*、typography-audit…）不在范围内。
+ */
+{
+  const dir = join(process.cwd(), 'test', 'e2e')
+  const pkg2 = JSON.parse(readFileSync(join(process.cwd(), 'package.json'), 'utf8')) as { scripts: Record<string, string> }
+  const scripts = Object.values(pkg2.scripts).join('\n') + readFileSync(join(dir, 'run-suite.mjs'), 'utf8')
+  const TOOLS = ['probe-bundle.mjs'] // 量包体的工具：exit 1 只表示"找不到入口"，没有质量判据
+  const orphans = readdirSync(dir)
+    .filter((f: string) => f.endsWith('.mjs') && f !== 'run-suite.mjs' && !TOOLS.includes(f))
+    .filter((f: string) => {
+      const t = readFileSync(join(dir, f), 'utf8')
+      return (t.includes('process.exit(') || (t.match(/check\(/g) || []).length > 3) && !scripts.includes(f)
+    })
+  assert(readdirSync(dir).filter((f: string) => f.endsWith('.mjs')).length > 80, 'e2e 目录读得到')
+  assert(orphans.length === 0, `会失败的巡检都有人跑（孤儿：${orphans.slice(0, 4).join(', ')}）`)
+  assert(scripts.includes('map-cursor.mjs') && scripts.includes('port-palette.mjs') && scripts.includes('first-run-mobile.mjs'),
+    '三条补挂的巡检确实在脚本里（不是只写进守卫）')
+}
+
 /* ============ src 下不许有"零 import"的模块 ============ */
 /*
  * 2026-11-18 扫出唯一一个是 `components/ui/ParchmentCard.tsx`（161 行）：
