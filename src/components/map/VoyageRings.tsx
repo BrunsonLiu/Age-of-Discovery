@@ -10,7 +10,10 @@ import { circleLatLngs, pickRingDays, RING_SEGMENTS, ringRadii } from '@/utils/v
 import { pxPerNmAt } from '@/utils/mapScale'
 
 /**
- * 航程圈：以本船为中心，"约 5 天 / 10 天航程"的等距圈。
+ * 航程圈：以本船为中心、按天数等距的圈。
+ *
+ * 画哪几圈**由缩放决定**（`pickRingDays` 从 1~30 天里挑"看得全"的），
+ * 不是固定的 5/10 —— 这行注释原来写的就是固定的 5/10，跟着代码一起过期了。
  *
  * 【半径来自单一来源】`dailyDistanceNm(fleet, officers, 1, steady, weatherMul)` ——
  * 与出航计划、底部状态栏**同一个函数**。右边这一串参数不是随手挑的：

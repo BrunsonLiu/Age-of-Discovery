@@ -15804,5 +15804,24 @@ console.log('== 帧率撑不住时，画质预设是最后一道闸 ==')
   assert(footers.some(f => /合上这屏/.test(f)), '舰队面板的脚注写明了"合上这屏再点地图"')
 }
 
+/* ============ 悬停文案也不许描述一个已经不存在的实现 ============ */
+/*
+ * 航程圈的 title 原来写「约 5 / 10 天能到多远」——那是第一版的固定两圈。
+ * 后来改成 `pickRingDays` 按缩放从 [1,2,3,5,7,10,15,20,30] 里挑能看全的几圈
+ * （固定 5/10 天时 10 天圈整个跑出画面、标签都看不见）。
+ * 于是提示在描述一个不存在的实现：玩家放大做近海决策时画的是 1/2 天圈，提示却说 5/10。
+ * 判据钉在"天数候选表是不是自适应的"上，而不是"有没有写 5/10"——
+ * 将来若真的改回固定两圈，这条会跟着变红提醒改文案。
+ */
+{
+  const rings = readFileSync(join(process.cwd(), 'src', 'utils', 'voyageRings.ts'), 'utf8')
+  const adaptive = /RING_DAY_CANDIDATES/.test(rings) && /pickRingDays/.test(rings)
+  const bar = readFileSync(join(process.cwd(), 'src', 'components', 'ui', 'BottomBar.tsx'), 'utf8')
+  assert(adaptive, '航程圈的天数仍然是按缩放挑的（候选表 + pickRingDays）')
+  assert(adaptive && !/约 5 \/ 10 天能到多远/.test(stripComments(bar)),
+    '悬停文案不再写死"5 / 10 天"（天数随缩放变）')
+  assert(/随缩放变/.test(bar), '悬停文案说明了天数会随缩放变')
+}
+
 console.log(`\n最终结果：${passed} 通过 / ${failed} 失败`)
 if (failed > 0) process.exit(1)

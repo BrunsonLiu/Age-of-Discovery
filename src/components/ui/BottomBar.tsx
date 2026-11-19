@@ -432,7 +432,16 @@ export default function BottomBar() {
             className={`p-1.5 rounded press transition-all ${
               showVoyageRings ? 'bg-gold-700/40 text-gold-200' : 'text-gold-400 hover:text-gold-200'
             }`}
-            title="航程圈（约 5 / 10 天能到多远）"
+            /*
+              【悬停文案会过期，和断言一样】
+              这句原来写的是「约 5 / 10 天能到多远」——那是**第一版**的固定两圈。
+              后来改成 `pickRingDays` 按缩放从 [1,2,3,5,7,10,15,20,30] 里挑
+              "能看全的那几圈"（固定 5/10 天时 10 天圈整个跑出画面、连标签都看不见）。
+              于是悬停提示在描述一个已经不存在的实现：玩家放大到能做近海决策时，
+              画出来的可能是 1/2 天圈，而提示说 5/10。
+              现在只说它会随缩放变，不写死天数。
+            */
+            title="航程圈（几天能到多远；天数随缩放变）"
             aria-label="航程圈"
             aria-pressed={showVoyageRings}
             data-testid="toggle-voyage-rings"
