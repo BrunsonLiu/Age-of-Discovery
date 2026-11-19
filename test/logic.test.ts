@@ -15827,6 +15827,34 @@ console.log('== 帧率撑不住时，画质预设是最后一道闸 ==')
     '三条补挂的巡检确实在脚本里（不是只写进守卫）')
 }
 
+/* ============ store 里不许有"只声明、没人调"的动作 ============ */
+/*
+ * 2026-11-18 扫出 `setGamePhase(phase)`：接口里声明了、实现里写好了，
+ * **全项目零调用** —— 相位切换一律在各自 action 里一次性写
+ * （`gamePhase: 'helm'` / `'segment'` …），测试也走 `setState({ gamePhase })`。
+ * 留一个"看起来能改相位"的入口，反而让后来的人以为相位有第二条通路。
+ *
+ * 判据：store 里形如 `name: (...) =>` 的每个动作，全项目（含 test/ 与 verify）
+ * 的出现次数必须 > 2 —— 2 次正是"接口声明 + 实现"本身。
+ * 这条同时能抓到"动作写了但界面没接"（那类 bug 在本项目出现过好几次）。
+ */
+{
+  const walk = (dir: string): string[] => readdirSync(dir).flatMap((f: string) => {
+    const p2 = join(dir, f)
+    return statSync(p2).isDirectory() ? walk(p2) : [p2]
+  })
+  const files = [...walk(join(process.cwd(), 'src')), ...walk(join(process.cwd(), 'test')), ...walk(join(process.cwd(), '.workbuddy', 'verify'))]
+    .filter((p2: string) => /\.(ts|tsx|mjs)$/.test(p2))
+  const texts = files.map((p2: string) => readFileSync(p2, 'utf8'))
+  for (const rel of ['src/store/useGameStore.ts', 'src/store/useMapStore.ts']) {
+    const src = readFileSync(join(process.cwd(), rel), 'utf8')
+    const actions = [...new Set([...src.matchAll(/^ {2}([a-zA-Z_]\w*):\s*\(/gm)].map(m => m[1]))]
+    assert(actions.length > 10, `${rel} 的动作读得到（实测 ${actions.length} 个）`)
+    const dead = actions.filter(n => texts.reduce((acc, t) => acc + (t.match(new RegExp(`\\b${n}\\b`, 'g')) || []).length, 0) <= 2)
+    assert(dead.length === 0, `${rel} 没有"只声明没人调"的动作（剩 ${dead.join(', ')}）`)
+  }
+}
+
 /* ============ src 下不许有"零 import"的模块 ============ */
 /*
  * 2026-11-18 扫出唯一一个是 `components/ui/ParchmentCard.tsx`（161 行）：

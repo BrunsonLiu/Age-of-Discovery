@@ -408,7 +408,12 @@ interface GameStore extends GameState {
    */
   /** 开新局：天赋 + 玩法模式 + 开局国别（见 data/nations）。不传国别 = 老的塞维利亚开局 */
   initGame: (trait?: string, mode?: GameMode, nationId?: NationId) => void
-  setGamePhase: (phase: GameState['gamePhase']) => void
+  /*
+   * 这里原本还有一个 `setGamePhase(phase)`。全项目**零调用**：
+   * 相位切换一律在各自的 action 里一次性写（`gamePhase: 'helm'` / `'segment'` …），
+   * 测试也走 `setState({ gamePhase })`。留一个"看起来能改相位"的入口，
+   * 反而让后来的人以为相位有第二条通路 —— 删掉。
+   */
   setCurrentEvent: (event: GameEvent) => void
   clearCurrentEvent: () => void
   selectRoute: (route: Route) => void
@@ -1433,7 +1438,6 @@ export const useGameStore = create<GameStore>()(
         if (startPort) useMapStore.getState().setCenter([startPort.latitude, startPort.longitude])
       },
 
-      setGamePhase: (phase) => set({ gamePhase: phase }),
       setCurrentEvent: (event) => {
         // 事件开场：按事件场景选择环境音效（炮击/雷声等），让画面与声音同源
         const cue = EVENT_SCENE_CUE[event.sceneKey ?? '']
