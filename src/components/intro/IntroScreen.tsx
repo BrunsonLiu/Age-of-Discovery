@@ -4,6 +4,7 @@ import { startAmbience } from '@/utils/audio'
 import { traits, DEFAULT_TRAIT } from '@/data/traits'
 import { NATIONS, DEFAULT_NATION, nationById } from '@/data/nations'
 import { ports } from '@/data/ports'
+import { achievements } from '@/data/achievements'
 import type { NationId } from '@/types'
 import { BG_ASSETS } from '@/data/envAssets'
 import Badge from '@/components/ui/Badge'
@@ -90,7 +91,22 @@ export default function IntroScreen() {
             className="w-28 h-28 mx-auto mb-5 animate-ship-sway select-none drop-shadow-[0_6px_18px_rgba(0,0,0,0.6)]"
           />
           <h1 className="pirate-title text-6xl text-gold-300 mb-3">大航海时代</h1>
-          <p className="text-gold-500 font-serif text-xl tracking-widest mb-8">Age of Discovery</p>
+          <p className="text-gold-500 font-serif text-xl tracking-widest">Age of Discovery</p>
+          {/*
+            【标题页底下那句"世界的规模"】
+            标题页原来只有三行字（罗盘 / 中文名 / 拉丁名），而内容区是
+            `min-h-[320px] + justify-center`（为了五页不跳高），于是这一页
+            中间空出一大块 —— 实测「拉丁名底」到「翻开日志按钮顶」是 **84px**。
+            这里补一行**由数据算出来的**规模：几座港、几面旗、几项成就。
+            三个数都取自 ports / NATIONS / achievements，改数据它自己会变，
+            不是编的宣传语。顺带把那 84px 的空白收成正常行距。
+          */}
+          {/* 这一行必须是 gold-300：卡片底不是平色，是**顶部提亮的径向渐变** ——
+                我先按"取一个背景采样点"算出 gold-400 有 6.7:1，实测（intro-check 的
+                像素直方图）只有 **4.14:1**，12px 要 4.5。**渐变底上的对比度只能量，不能算。** */}
+          <p className="text-gold-300 font-serif text-[12px] tracking-[0.16em] mt-6 tabular-nums">
+            {ports.length} 座港口 · {NATIONS.length} 面旗 · {achievements.length} 项成就
+          </p>
         </>
       ),
       button: '翻开日志',
