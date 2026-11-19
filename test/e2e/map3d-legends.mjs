@@ -57,11 +57,26 @@ const r = await page.evaluate(() => {
     }
     if (o.name === 'map3d-legend-ring') out.found.ring = true
   })
-  const el = document.querySelector('.map3d-legend-label')
-  if (el) {
-    const cs = getComputedStyle(el)
-    out.label = { text: el.textContent, display: cs.display, size: parseFloat(cs.fontSize), opacity: cs.opacity }
-  }
+  /*
+   * 【这三条曾经在查 DOM 标签 —— 而那个实现已经不在了】
+   * 传说/故事标记改成 Canvas 纹理的 Sprite（`mapLegends3d.makeMarkTexture`）之后，
+   * `.map3d-legend-label` 这个类在 DOM 里**再也不会出现**：
+   * 全项目只有 index.css 里还留着那两条规则。
+   * 于是 `check(!!r.label, '传说标签存在')` 长期是红的 ——
+   * 而红的理由不是"功能坏了"，是断言盯的实现被换掉了。
+   *
+   * 现在改成断言**当前实现**：标签是贴图上的字，DOM 里不该再有那个类。
+   * 若哪天又做回 DOM 标签，两条同时变红，提醒一起改（而不是继续红着没人看）。
+   */
+  const el = document.querySelector('.map3d-legend-label, .map3d-story-label')
+  out.label = el ? { text: el.textContent, cls: el.className } : null
+  scene?.traverse?.((o) => {
+    if (o.name === 'map3d-legend-legend' || o.name === 'map3d-legend-story') {
+      // Sprite 的 scale 就是它的世界尺寸；0 表示没画出来
+      out.sizes = out.sizes || {}
+      out.sizes[o.name] = Math.max(o.scale?.x ?? 0, o.scale?.y ?? 0)
+    }
+  })
   // 图板尺寸（MAP_WORLD_SIZE = 20，x 0..20、z -10..10）
   out.plate = 20
   return out
@@ -74,12 +89,12 @@ for (const [x, y, z, kind] of r.pos) {
   check(x >= -1 && x <= r.plate + 1 && z >= -11 && z <= 11 && Math.abs(y) < 1,
     `${kind} 标记在 3D 图板范围内（${x.toFixed(1)}, ${y.toFixed(2)}, ${z.toFixed(1)}）`)
 }
-check(!!r.label, '传说标签存在')
-if (r.label) {
-  check(r.label.display !== 'none', `传说标签没有被隐藏（display=${r.label.display}）`)
-  check(r.label.size >= 12, `传说标签字号 ${r.label.size}px（中文下限 12）`)
-  check((r.label.text || '').length > 0, `传说标签有文字：「${r.label.text}」`)
-}
+
+check(!r.label, '传说标记已不是 DOM 标签（改为 Canvas 纹理 Sprite，旧的 .map3d-legend-label 不该再出现）')
+const sizes = r.sizes || {}
+check((sizes['map3d-legend-legend'] ?? 0) > 0, `传说贴图标尺正常（${(sizes['map3d-legend-legend'] ?? 0).toFixed(3)}）`)
+check((sizes['map3d-legend-story'] ?? 0) > 0, `故事贴图标尺正常（${(sizes['map3d-legend-story'] ?? 0).toFixed(3)}）`)
+
 check(errs.length === 0, `无运行时错误（${errs.length} 条${errs.length ? '：' + errs[0] : ''}）`)
 
 console.log(`\n结论：${pass} 通过 / ${fail} 失败`)

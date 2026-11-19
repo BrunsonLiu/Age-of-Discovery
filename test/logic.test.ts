@@ -15823,5 +15823,34 @@ console.log('== 帧率撑不住时，画质预设是最后一道闸 ==')
   assert(/随缩放变/.test(bar), '悬停文案说明了天数会随缩放变')
 }
 
+/* ============ 断言盯的实现被换掉之后，它会长期红着没人看 ============ */
+/*
+ * `map3d-legends.mjs` 里那三条「传说标签…」原本查 `.map3d-legend-label`。
+ * 传说标记改成 Canvas 纹理 Sprite（`mapLegends3d.makeMarkTexture`）之后，
+ * 这个类在 DOM 里**永远不会出现**：全项目只剩 index.css 两条规则还留着它。
+ * 于是 `check(!!r.label)` 一直是红的 —— 而红的理由不是"功能坏了"，
+ * 是断言盯的实现被换掉了。这与 MEMORY 里那条"长期红的断言先问它盯的还是当前实现吗"
+ * 是同一件事，只是这次真抓到了。
+ *
+ * 现在：CSS 规则删掉，e2e 改成断言**当前实现**（贴图 Sprite、DOM 里不该有那个类）。
+ * 若哪天又做回 DOM 标签，两条会一起变红，提醒连文案一起改。
+ */
+{
+  const css = readFileSync(join(process.cwd(), 'src', 'index.css'), 'utf8')
+  const cssNoComment = css.replace(/\/\*[\s\S]*?\*\//g, '')
+  assert(!/\.map3d-legend-label\s*\{/.test(cssNoComment) && !/\.map3d-story-label\s*\{/.test(cssNoComment),
+    '两条"传说标签"的 DOM 样式已删（现在没有元素会挂这个类）')
+  const legends = readFileSync(join(process.cwd(), 'src', 'components', 'map3d', 'mapLegends3d.ts'), 'utf8')
+  assert(/makeMarkTexture/.test(legends) && !/className.*legend-label/.test(legends),
+    '传说标记是 Canvas 纹理 Sprite（不是 DOM 标签）')
+  // 这条 e2e 的注释里就引用着旧断言（解释"为什么曾经红"），否定式判据必须先剥注释
+  const e2e = readFileSync(join(process.cwd(), 'test', 'e2e', 'map3d-legends.mjs'), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+  assert(!/check\(!!r\.label/.test(e2e),
+    'e2e 不再要求 DOM 标签存在（那正是它长期红着的原因）')
+  assert(/check\(!r\.label/.test(e2e) && /map3d-legend-legend/.test(e2e),
+    'e2e 改成断言"标签是贴图、DOM 里没有旧类"')
+}
+
 console.log(`\n最终结果：${passed} 通过 / ${failed} 失败`)
 if (failed > 0) process.exit(1)
