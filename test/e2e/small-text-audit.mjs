@@ -83,9 +83,20 @@ const COLLECT = () => {
 
 const grab = async (name, marker) => {
   await dismiss()
-  await sleep(320)
+  /*
+   * 【等真条件，不等固定毫秒】
+   * 原来这里是 `sleep(320)` 之后直接断言"场景进入了"。事件卡是懒加载 chunk，
+   * 第一次挂载要编译 + 走入场动画 —— 2026-11-19 整组回归里就红了两条
+   * 「事件卡/事件结算：场景确实进入了」，而同一份脚本后面再开一次却过了：
+   * 典型的"第一次慢"假红（同一脚本历史上也偶发过 1 条）。
+   * 改成轮询那句标记文案（最多 2.5 秒），断言才盯的是"场景到底进没进"。
+   */
+  const arrived = marker
+    ? await until((m) => (document.body.innerText || '').includes(m), 2500, marker)
+    : true
+  await sleep(120)
   const r = await page.evaluate(COLLECT)
-  if (marker) check((await bodyText()).includes(marker), `${name}：场景确实进入了（出现「${marker}」）`)
+  if (marker) check(arrived, `${name}：场景确实进入了（出现「${marker}」）`)
   check(r.cnTotal > 20, `${name}：采到 ${r.cnTotal} 条可见中文（不是空页面）`)
   check(r.small.length === 0,
     `${name}：<12px 中文 ${r.small.length} 条${r.small.length ? ' → ' + r.small.slice(0, 3).map(x => `${x.px}px「${x.txt}」`).join(' ') : ''}`)
