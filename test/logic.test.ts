@@ -937,7 +937,7 @@ assert(/nextPerk\(/.test(fleetSrc), '舰队面板调用 nextPerk 显示下一档
  *
  * 两处修：① 四方态度挪到船卡**之后**（它是"偶尔查一次"的外交信息）；
  * ② 正文区交给容器填满（2026-11-16：不再写 vh —— 76vh 在 900 高下溢出，
- *    面板底部按钮被底栏吃掉；见 ParchmentCard 的守卫）。
+ *    面板底部按钮被底栏吃掉；见「正文区由容器填满」那条守卫）。
  */
 {
   const shipIdx = fleetSrc.indexOf('{fleet.ships.map(ship => {')
@@ -1329,7 +1329,7 @@ console.log('== 17f. 航海志：记录类面板只有一个来源 ==')
    * `ScrollFade` 的 DOM 是「定位容器 > 滚动区 > 渐隐」。给内层写 `h-full`、
    * 而外层容器 height 是 auto 时，`h-full` 被解析成 auto —— 滚动区按内容撑开，
    * 整块溢出父级：
-   *   · ParchmentCard：卡片 2737px 溢出 804 的容器，底部按钮被底栏吃掉；
+   *   · 旧卡片（ParchmentCard，已删）：2737px 溢出 804 的容器，底部按钮被底栏吃掉；
    *   · 册子内容区：1054px 溢出 flex-1 给的高度，滚到底露出根节点 #0d1116
    *     （截图上看就是"页面下半截突然变蓝"）；
    *   · 另有一处 absolute inset-0 与固定 relative 抢同一属性。
@@ -8250,7 +8250,6 @@ console.log('\n== 天数口径守卫 ==')
 // 有「逐节点开读回原字数」的守恒断言，这里守的是实现结构与判据本身。
 {
   const help = readFileSync(join(process.cwd(), 'src', 'components', 'intro', 'HelpPanel.tsx'), 'utf8')
-  const card = readFileSync(join(process.cwd(), 'src', 'components', 'ui', 'ParchmentCard.tsx'), 'utf8')
   const mg = readFileSync(join(process.cwd(), 'src', 'components', 'events', 'MiniGameOverlay.tsx'), 'utf8')
   const audit = readFileSync(join(process.cwd(), 'test', 'e2e', 'copy-density-audit.mjs'), 'utf8')
 
@@ -8291,11 +8290,12 @@ console.log('\n== 天数口径守卫 ==')
     '帮助条目走固定 1rem 标记栏，折行回到文字列（不许再写 `• ` 行内圆点）')
   // 用注释剥离后的源码：这条注释本身就会提到 ChevronDown，裸 includes 会自伤
   assert(!/<ChevronDown/.test(stripComments(help)), '帮助目录不再挂 19 个下拉箭头')
-  assert(card.includes('footer?: ReactNode') && card.includes('{footer}'),
-    'ParchmentCard 提供可选常驻页脚')
-  // 用正则：源码是 CRLF，写死 '\n' 会在 Windows 上假失败
-  assert(/bodyClassName \?\?/.test(card) && /wrapperClassName="contents"/.test(card),
-    '正文区由容器填满（bodyClassName 兜底 + display:contents 让 flex-1 直达滚动区）')
+  /*
+   * 这里原本还有两条针对 ParchmentCard 的断言（可选页脚 / 正文区由容器填满）。
+   * 2026-11-18 删掉了那个组件：全项目零 import —— 帮助面板等改整屏之后，
+   * 只剩这两条断言在"养着"它。**被测着但没人用，比分没测更糟**：
+   * 会让人以为它还在工艺链上。
+   */
 
   assert(mg.includes('useState(false)') && mg.includes('data-testid="minigame-fine-print-toggle"'),
     '小游戏开场细则默认收起')
@@ -8625,7 +8625,7 @@ console.log('\n== 天数口径守卫 ==')
    */
   {
     const mainMap = readFileSync(join(process.cwd(), 'src', 'pages', 'MainMap.tsx'), 'utf8')
-    const card = readFileSync(join(process.cwd(), 'src', 'components', 'ui', 'ParchmentCard.tsx'), 'utf8')
+    const shellSrc = readFileSync(join(process.cwd(), 'src', 'components', 'ui', 'FullScreenPanel.tsx'), 'utf8')
     /*
      * 【2026-11-17：宽度这一档断言整体作废，换成"四条挂载都走整屏"】
      * 原来四块面板按内容密度分宽（港口 320 / 贸易与造船 416），现在它们全是整屏，
@@ -8650,14 +8650,17 @@ console.log('\n== 天数口径守卫 ==')
     assert(!/<ScrollFade/.test(trade), '贸易面板里不再套内层滚动容器（两层滚动条会让滚轮失灵）')
     assert(!/bodyClassName=/.test(trade),
       '贸易面板不再自己写正文高度（四块面板统一交给容器填满）')
-    assert(/bodyClassName \?\?/.test(card), 'ParchmentCard 对 bodyClassName 兜底（不传时与旧行为一致）')
-    assert(/flex flex-col max-h-full/.test(card),
-      '卡片填满父容器（不按内容撑高，否则 2737px 的面板溢出 804 的容器）')
-    assert(/wrapperClassName="contents"/.test(card),
-      'ScrollFade 那层不生成盒子（display:contents，否则 flex-1 传不到滚动区）')
-    const vhInBody = card.replace(/\/\*[\s\S]*?\*\//g, '').match(/max-h-\[\d+(\.\d+)?(d)?vh\]/g)
-    assert(!vhInBody,
-      `正文区不许按视口高度写死（实际 ${vhInBody?.join(',') || '无'}；vh 永远只对某一个视口高度刚好）`)
+    /*
+     * 【这三条原来守的是 ParchmentCard，现在守整屏外壳】
+     * ParchmentCard 已删（全项目零 import，是帮助改整屏之后的遗留）。
+     * 但规则本身还有效 ——"面板高度只能填满父容器、正文自己滚、不许按 vh 写死"——
+     * 只是实现从"一张纸"换成了 FullScreenPanel。**判据跟着实现搬家，不是跟着组件陪葬。**
+     */
+    assert(/flex-1 min-h-0 overflow-y-auto/.test(shellSrc),
+      '正文区是 flex-1 + min-h-0 的滚动区（缺 min-h-0 时 flex 子项不会缩）')
+    const vhInShell = shellSrc.replace(/\/\*[\s\S]*?\*\//g, '').match(/max-h-\[\d+(\.\d+)?(d)?vh\]/g)
+    assert(!vhInShell,
+      `整屏外壳的正文区不许按视口高度写死（实际 ${vhInShell?.join(',') || '无'}；vh 永远只对某一个视口高度刚好）`)
   }
 }
 
@@ -15791,6 +15794,41 @@ console.log('== 帧率撑不住时，画质预设是最后一道闸 ==')
   assert(classes.length >= 90, `index.css 的类名读得到（实测 ${classes.length} 个）`)
   assert(dead.length === 0,
     `index.css 里没有无人引用的类（剩 ${dead.length} 个：${dead.slice(0, 6).join(', ')}）`)
+}
+
+/* ============ src 下不许有"零 import"的模块 ============ */
+/*
+ * 2026-11-18 扫出唯一一个是 `components/ui/ParchmentCard.tsx`（161 行）：
+ * 帮助面板从"一张纸"改成整屏之后，它就没人 import 了，
+ * 但单测里还有 6 条断言在检查它的 API（可选页脚 / bodyClassName 兜底 /
+ * display:contents …）—— **被测着但没人用，比分没测更糟**：
+ * 那几条绿勾会让人以为它仍在工艺链上。已删，判据迁到 FullScreenPanel。
+ *
+ * 判据：src 下每个 .ts/.tsx 都必须被某个文件以路径形式 import（含 `React.lazy`）
+ * 或出现在 test/、.workbuddy/verify 里。入口与纯类型走白名单。
+ * 别信"零 import 会假红"这句话 —— 那是指**按 import 语法**去匹配（lazy 用的是
+ * `import('...')` 字符串）。这里按"有没有任何文件出现过它的路径"判，lazy 也覆盖得到。
+ */
+{
+  const walk = (dir: string): string[] => readdirSync(dir).flatMap((f: string) => {
+    const p2 = join(dir, f)
+    return statSync(p2).isDirectory() ? walk(p2) : [p2]
+  })
+  const srcFiles = walk(join(process.cwd(), 'src')).filter((p2: string) => /\.(ts|tsx)$/.test(p2))
+  const allFiles = [...srcFiles, ...walk(join(process.cwd(), 'test')), ...walk(join(process.cwd(), '.workbuddy', 'verify'))]
+    .filter((p2: string) => /\.(ts|tsx|mjs)$/.test(p2))
+  const ALLOW = [/^main\.tsx$/, /^index\.ts$/, /\.d\.ts$/]
+  const orphan: string[] = []
+  for (const f of srcFiles) {
+    const base = f.split(/[\\/]/).pop() as string
+    if (ALLOW.some(re => re.test(base))) continue
+    const stem = base.replace(/\.(ts|tsx)$/, '')
+    const re = new RegExp(`['\"][^'\"]*${stem}['\"]`)
+    const used = allFiles.some(o => o !== f && re.test(readFileSync(o, 'utf8')))
+    if (!used) orphan.push(f.replace(process.cwd(), '').replace(/\\/g, '/'))
+  }
+  assert(srcFiles.length > 100, `扫描面覆盖 src（实测 ${srcFiles.length} 个模块）`)
+  assert(orphan.length === 0, `src 下没有零 import 的模块（剩 ${orphan.length} 个：${orphan.slice(0, 4).join(', ')}）`)
 }
 
 /* ============ data/constants 里不许有"全项目零引用"的导出 ============ */

@@ -16,7 +16,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
  * 不用滚动条，直接在底部盖一层渐变——有内容可滚时是"雾"，滚到底自动消失。
  * 这跟滚动条实现无关，任何浏览器、任何系统设置下都成立。
  *
- * 渐隐色默认取 ParchmentCard 的深褐 (#30241a)；放在别的容器里时用 fadeColor 覆盖。
+ * 渐隐色默认是面板的深褐 (#30241a)；放在别的容器里时用 fadeColor 覆盖。
  */
 export default function ScrollFade({
   className = '',
