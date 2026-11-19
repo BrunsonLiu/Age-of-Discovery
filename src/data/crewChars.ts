@@ -213,6 +213,5 @@ export const CREW_CHARS: CrewCharDef[] = [
 
 export const CREW_CHAR_MAP = new Map(CREW_CHARS.map(c => [c.id, c]))
 
-export function getCrewChar(id: CrewCharId): CrewCharDef | undefined {
-  return CREW_CHAR_MAP.get(id)
-}
+/* 这里原本有个 `getCrewChar()`：`CREW_CHAR_MAP.get()` 的薄包装，
+ * 而调用方（FleetPanel）直接读 `CREW_CHAR_MAP`。删包装，留单一入口。 */

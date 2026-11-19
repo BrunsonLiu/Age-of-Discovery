@@ -15793,6 +15793,45 @@ console.log('== 帧率撑不住时，画质预设是最后一道闸 ==')
     `index.css 里没有无人引用的类（剩 ${dead.length} 个：${dead.slice(0, 6).join(', ')}）`)
 }
 
+/* ============ data/constants 里不许有"全项目零引用"的导出 ============ */
+/*
+ * 这类问题在本项目真实发生过：`GREED_FAME_PENALTY` / `BOLD_LUCK_BONUS`
+ * 定义了从没被读过，而称号面板与帮助照着它们写了好几个月（配置里留一个
+ * 没人读的数，比没有更危险——后来的人会以为改它有用）。
+ *
+ * 2026-11-18 又扫出 6 个，全是"薄包装"或"废弃后没人删"：
+ *   · `titleFromNotoriety()` / `getCrewChar()` / `factionOfPort()` —— 各自包了一层
+ *     现成的取值，而调用方一律直接读底层（`currentTitle` / `CREW_CHAR_MAP` /
+ *     `portFaction`）。两个入口做同一件事，删包装那个。
+ *   · `SPEED_PROFILES` —— 注释写着"保留下来只为兼容旧存档与旧测试"，
+ *     实测**零引用**：没有测试读它，存档也不会存一个模块常量。理由早就不成立了。
+ *   · 三个只在文件内部用的常量还挂着 `export`，一并收回。
+ *
+ * 判据必须把 **test/ 与 .workbuddy/verify 也算进引用面**，否则会把
+ * "只被单测读"的常量误判成死代码（那一版扫描一次报了 257 个假红）。
+ */
+{
+  const walk = (dir: string): string[] => readdirSync(dir).flatMap((f: string) => {
+    const p = join(dir, f)
+    return statSync(p).isDirectory() ? walk(p) : [p]
+  })
+  const texts = [...walk(join(process.cwd(), 'src')), ...walk(join(process.cwd(), 'test')), ...walk(join(process.cwd(), '.workbuddy', 'verify'))]
+    .filter((p: string) => /\.(ts|tsx|mjs)$/.test(p))
+    .map((p: string) => ({ p: p.replace(/\\/g, '/'), t: readFileSync(p, 'utf8') }))
+  const dead: string[] = []
+  for (const { p, t } of texts) {
+    if (!/\/src\/(data|constants)\//.test(p)) continue
+    for (const m of t.matchAll(/^export (?:async )?(?:function|const) ([A-Za-z_]\w*)/gm)) {
+      const name = m[1]
+      const usedElsewhere = texts.some(o => o.p !== p && new RegExp(`\\b${name}\\b`).test(o.t))
+      if (!usedElsewhere) dead.push(`${p.split('/').slice(-1)[0]}:${name}`)
+    }
+  }
+  assert(texts.length > 100, `扫描面覆盖 src/test/verify（实测 ${texts.length} 个文件）`)
+  assert(dead.length === 0,
+    `data/constants 里没有全项目零引用的导出（剩 ${dead.length} 个：${dead.slice(0, 5).join(', ')}）`)
+}
+
 /* ============ 退出按钮的文字 = 它真的回到的那一页 ============ */
 /*
  * 2026-11-18 实测：从**岸上**点商行打开贸易面板，右上角写着「回海图」，

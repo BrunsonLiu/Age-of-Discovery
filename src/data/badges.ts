@@ -13,7 +13,7 @@
 const BASE = (import.meta.env?.BASE_URL as string | undefined) || '/'
 
 /** 派系徽记：四个势力各一枚 */
-export const FACTION_BADGES: Record<string, string> = {
+const FACTION_BADGES: Record<string, string> = {
   crown: `${BASE}assets/ui/faction_crown.svg`,
   guild: `${BASE}assets/ui/faction_guild.svg`,
   scholars: `${BASE}assets/ui/faction_scholars.svg`,
@@ -21,7 +21,7 @@ export const FACTION_BADGES: Record<string, string> = {
 }
 
 /** 船长特质图标：五选一的五个特质各一枚 */
-export const TRAIT_ICONS: Record<string, string> = {
+const TRAIT_ICONS: Record<string, string> = {
   merchant: `${BASE}assets/ui/trait_merchant.svg`,
   bulwark: `${BASE}assets/ui/trait_bulwark.svg`,
   leader: `${BASE}assets/ui/trait_leader.svg`,

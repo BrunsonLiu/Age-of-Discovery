@@ -95,7 +95,7 @@ export const PIRATE_ZONES: PirateZone[] = [
 ]
 
 /** 风带箭头网格步长（度） */
-export const WIND_GRID_STEP = 15
+const WIND_GRID_STEP = 15
 
 /** 风带分界纬度（信风带与西风带的界线） */
 export const WIND_BAND_LATS = [30, -30]

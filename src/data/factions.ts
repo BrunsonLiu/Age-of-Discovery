@@ -1,4 +1,4 @@
-import type { FactionId, Port } from '@/types'
+import type { FactionId } from '@/types'
 
 export interface FactionPerk {
   /** 声望阈值 */
@@ -214,7 +214,5 @@ export function nextPerk(faction: Faction, rep: number): FactionPerk | null {
   return faction.perks.find(p => rep < p.at) ?? null
 }
 
-export function factionOfPort(port: Port | undefined): Faction | null {
-  if (!port) return null
-  return FACTION_MAP.get(portFaction(port.id)) ?? null
-}
+/* 这里原本有个 `factionOfPort(port)`：`portFaction(port.id)` + 查表的包装。
+ * 调用方一律直接写 `portFaction(port.id)`，这层包装全项目零引用，已删。 */

@@ -1,6 +1,6 @@
 import type { Fleet, FactionId, OfficerId, CrewCharId } from '@/types'
 import { GAME_BALANCE } from '@/data/gameConfig'
-import { currentTitle, type CaptainTitle } from '@/data/titles'
+import { type CaptainTitle } from '@/data/titles'
 
 /**
  * 船长特质：开局三选一（实际五选一），为不同玩家提供差异化玩法。
@@ -109,10 +109,11 @@ export function priceMultiplier(
   return Math.max(0.5, m)
 }
 
-/** 身份称号：由恶名取向推导（传入完整 notoriety 记录） */
-export function titleFromNotoriety(notoriety: Record<string, number> | undefined): CaptainTitle | null {
-  return currentTitle(notoriety as Parameters<typeof currentTitle>[0])
-}
+/*
+ * 这里原本还有一个 `titleFromNotoriety()` —— 只是 `currentTitle()` 的薄包装，
+ * 而全项目调用称号的地方（FleetPanel）直接用的是 `currentTitle`。
+ * 两个入口做同一件事，删掉包装那个。
+ */
 
 /** 事件结算时按特质修正结果数值（返回新对象，不改原值） */
 export interface RawOutcome {

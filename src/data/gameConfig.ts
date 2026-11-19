@@ -120,39 +120,15 @@ export const GAME_BALANCE = {
    * 后来的人（包括我自己）会以为改它有用。真要做这两条效果，先实现再重新加。 */
 } as const
 
-/**
- * 航速档位档案：speed=移动倍率，supply=补给消耗倍率，event=事件遭遇倍率，wear=耐久损耗倍率
+/*
+ * 这里原本有一个 `SPEED_PROFILES`（全速 / 巡航 / 经济三档）。
  *
- * 【已废弃】这套「航速档位」曾与「航段方针」并存，两个旋钮都在改速度与补给，
- * 叠乘之后玩家无法推演因果；而且航速档位实际上从未改变航程天数
- * （每日航程没乘它的倍率），只有界面上的数字在变——数字在骗人。
+ * 【已经删了，2026-11-18】它自己那段注释写着"保留下来只为兼容旧存档与旧测试，
+ * 不参与任何游戏逻辑"—— 而实测：**全项目（含 test/ 与 verify 脚本）零引用**。
+ * 也就是说"兼容旧测试"这个理由已经不成立了：没有测试读它，旧存档里也不会存
+ * 一个模块常量。留着的唯一效果是让后来的人以为航速档位还在。
  *
- * 现在速度/补给/磨损/事件率**统一由航段方针 STANCES 决定**（见 utils/segment.ts）。
- * 这个对象保留下来只为兼容旧存档与旧测试，不参与任何游戏逻辑。
+ * 速度/补给/磨损/事件率现在**只有**一个来源：航段方针 `STANCES`（utils/segment.ts）。
+ * （它当年被废掉的原因也一并记在这里：两个旋钮同时改速度，叠乘之后玩家推不出因果，
+ *  而且档位其实从没进过航程天数计算，只有界面数字在变——数字在骗人。）
  */
-export const SPEED_PROFILES = {
-  full: {
-    label: '全速航行',
-    hint: '张满帆抢时间——补给烧得快，遭遇风险也高',
-    speed: 1.5,
-    supply: 1.5,
-    event: 1.35,
-    wear: 2,
-  },
-  cruise: {
-    label: '巡航',
-    hint: '标准航速，时间与消耗的平衡',
-    speed: 1,
-    supply: 1,
-    event: 1,
-    wear: 1,
-  },
-  economy: {
-    label: '经济航行',
-    hint: '收帆省补给——慢一些，但坏血病和断粮都更晚找上门',
-    speed: 0.7,
-    supply: 0.6,
-    event: 0.7,
-    wear: 0.5,
-  },
-} as const satisfies Record<string, { label: string; hint: string; speed: number; supply: number; event: number; wear: number }>
