@@ -58,21 +58,17 @@ const r = await page.evaluate(() => {
     if (o.name === 'map3d-legend-ring') out.found.ring = true
   })
   /*
-   * 【这三条曾经在查 DOM 标签 —— 而那个实现已经不在了】
-   * 传说/故事标记改成 Canvas 纹理的 Sprite（`mapLegends3d.makeMarkTexture`）之后，
-   * `.map3d-legend-label` 这个类在 DOM 里**再也不会出现**：
-   * 全项目只有 index.css 里还留着那两条规则。
-   * 于是 `check(!!r.label, '传说标签存在')` 长期是红的 ——
-   * 而红的理由不是"功能坏了"，是断言盯的实现被换掉了。
-   *
-   * 现在改成断言**当前实现**：标签是贴图上的字，DOM 里不该再有那个类。
-   * 若哪天又做回 DOM 标签，两条同时变红，提醒一起改（而不是继续红着没人看）。
+   * 【标签是 DOM，不是贴图 —— 别按"看着像 Sprite"去改它】
+   * 传说标记本体是 Canvas 纹理 Sprite（`mapLegends3d.makeMarkTexture`，金色星 +
+   * 呼吸圆环），但**文字标签仍是 DOM**：`mapLabels3d.makeLabel` 用
+   * `map3d-${kind}-label` 拼类名，kind 就是 'legend' / 'story'。
+   * 2026-11-19 我按字面量 grep 判定这个类不存在，删了 CSS 也把这三条断言改红了 ——
+   * **动态拼出来的类名不会出现在任何 grep 结果里**。现在断言与实现一致。
    */
-  const el = document.querySelector('.map3d-legend-label, .map3d-story-label')
-  out.label = el ? { text: el.textContent, cls: el.className } : null
+  const el = document.querySelector('.map3d-legend-label')
+  out.label = el ? { text: el.textContent, size: parseFloat(getComputedStyle(el).fontSize), display: getComputedStyle(el).display } : null
   scene?.traverse?.((o) => {
     if (o.name === 'map3d-legend-legend' || o.name === 'map3d-legend-story') {
-      // Sprite 的 scale 就是它的世界尺寸；0 表示没画出来
       out.sizes = out.sizes || {}
       out.sizes[o.name] = Math.max(o.scale?.x ?? 0, o.scale?.y ?? 0)
     }
@@ -89,8 +85,12 @@ for (const [x, y, z, kind] of r.pos) {
   check(x >= -1 && x <= r.plate + 1 && z >= -11 && z <= 11 && Math.abs(y) < 1,
     `${kind} 标记在 3D 图板范围内（${x.toFixed(1)}, ${y.toFixed(2)}, ${z.toFixed(1)}）`)
 }
-
-check(!r.label, '传说标记已不是 DOM 标签（改为 Canvas 纹理 Sprite，旧的 .map3d-legend-label 不该再出现）')
+check(!!r.label, '传说标签存在（DOM 标签，类名由 map3d-${kind}-label 拼出）')
+if (r.label) {
+  check(r.label.display !== 'none', `传说标签没有被隐藏（display=${r.label.display}）`)
+  check(r.label.size >= 12, `传说标签字号 ${r.label.size}px（中文下限 12）`)
+  check((r.label.text || '').length > 0, `传说标签有文字：「${r.label.text}」`)
+}
 const sizes = r.sizes || {}
 check((sizes['map3d-legend-legend'] ?? 0) > 0, `传说贴图标尺正常（${(sizes['map3d-legend-legend'] ?? 0).toFixed(3)}）`)
 check((sizes['map3d-legend-story'] ?? 0) > 0, `故事贴图标尺正常（${(sizes['map3d-legend-story'] ?? 0).toFixed(3)}）`)

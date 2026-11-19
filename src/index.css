@@ -872,19 +872,29 @@ body {
  * 写全族名后，没装的机器会用我们自托管的 411KB 子集。
  */
 /*
- * 传说 / 故事线的标签：**这两条规则已经删了**（2026-11-18）。
+ * 传说 / 故事线的标签（3D 海图）。
  *
- * 它们对应的 `.map3d-legend-label` / `.map3d-story-label` 在 DOM 里从来没有元素
- * 会挂上：传说标记现在是 `mapLegends3d.makeMarkTexture` 画的 **Canvas 纹理 Sprite**
- * （金色星 + 呼吸圆环），文字在贴图里，不是 DOM。
- * 而 `test/e2e/map3d-legends.mjs` 还在 `querySelector('.map3d-legend-label')`，
- * 于是那条"传说标签存在"长期是红的 —— 红的不是功能，是它盯的实现已经换掉了。
+ * 【为什么单独一套配色】它和港口名共用投影与避让，但语义完全不同：
+ * 港口是"这里可以停"，传说是"这里有故事"。金色 + 斜体把两者分开，
+ * 而字号**不变**（12px 是中文下限，再小就糊）。
  *
- * 现在 DOM 那边没有任何"传说标签"的样式了；标签要改配色，去改 `makeMarkTexture`。
- * （同类死代码还有 .drawer-panel / .notification-toast / .ocean-gradient /
- *   .ink-text / .btn-danger / .map-loading / .map-vignette / .panel-slide-left /
- *   .animate-slide-in-left —— 待下一轮逐个确认后清，见 MEMORY。）
+ * 【⚠️ 别把这两条当死代码删掉】2026-11-19 我删过一次，理由写的是
+ * "DOM 里没有任何元素挂这个类"——那是**按字面量 grep 的结论，是错的**：
+ * 类是 `mapLabels3d.makeLabel` 用 `map3d-${kind}-label` 拼出来的，
+ * `kind` 的取值就是 `'port' | 'legend' | 'story'`。
+ * 删掉之后 3D 板的传说/故事标签掉了金色斜体与描边（视觉回归），
+ * 而 `map3d-legends.mjs` 里"传说标签存在"那条断言本来一直是绿的。
+ * **动态拼出来的类名不会出现在任何 grep 结果里。**
  */
+.map3d-legend-label {
+  color: #f4d79a;
+  font-style: italic;
+  text-shadow: 0 0 10px rgba(240, 200, 120, 0.75), 0 1px 3px #000, 0 0 3px #000;
+}
+.map3d-story-label {
+  color: #d8e6c8;
+  text-shadow: 0 0 9px rgba(200, 220, 170, 0.55), 0 1px 3px #000, 0 0 3px #000;
+}
 
 /* 港口名：跟随 3D 投影的 DOM 标签 */
 .map3d-port-label {

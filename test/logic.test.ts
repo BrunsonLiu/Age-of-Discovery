@@ -15789,6 +15789,7 @@ console.log('== 帧率撑不住时，画质预设是最后一道闸 ==')
     { re: /^leaflet-/, why: 'Leaflet 自己创建的 DOM 类，我们只是给它上色' },
     { re: /^scene-wave-\d$/, why: '模板串 `scene-wave-${speed}` 拼出来的' },
     { re: /^woff2$/, why: '@font-face 的 format() 关键字，不是类名' },
+    { re: /^map3d-(legend|story)-label$/, why: '`map3d-${kind}-label` 拼出来的（kind 含 legend/story），字面量搜不到' },
   ]
   const dead = classes.filter(c => !srcAll.includes(c) && !ALLOW.some(a => a.re.test(c)))
   assert(classes.length >= 90, `index.css 的类名读得到（实测 ${classes.length} 个）`)
@@ -15994,33 +15995,74 @@ console.log('== 帧率撑不住时，画质预设是最后一道闸 ==')
   assert(/随缩放变/.test(bar), '悬停文案说明了天数会随缩放变')
 }
 
-/* ============ 断言盯的实现被换掉之后，它会长期红着没人看 ============ */
+/* ============ 动态拼出来的类名，别按 grep 结论当死代码 ============ */
 /*
- * `map3d-legends.mjs` 里那三条「传说标签…」原本查 `.map3d-legend-label`。
- * 传说标记改成 Canvas 纹理 Sprite（`mapLegends3d.makeMarkTexture`）之后，
- * 这个类在 DOM 里**永远不会出现**：全项目只剩 index.css 两条规则还留着它。
- * 于是 `check(!!r.label)` 一直是红的 —— 而红的理由不是"功能坏了"，
- * 是断言盯的实现被换掉了。这与 MEMORY 里那条"长期红的断言先问它盯的还是当前实现吗"
- * 是同一件事，只是这次真抓到了。
+ * 2026-11-19 我在这里犯过一次错，原样记下来：
  *
- * 现在：CSS 规则删掉，e2e 改成断言**当前实现**（贴图 Sprite、DOM 里不该有那个类）。
- * 若哪天又做回 DOM 标签，两条会一起变红，提醒连文案一起改。
+ * 静态扫描发现 `.map3d-legend-label` / `.map3d-story-label` 在 ts/tsx 里
+ * **一个字都搜不到**，于是我判定"传说标签改成 Canvas 纹理 Sprite 了，这两条 CSS 是死的"，
+ * 把规则删了、把 `map3d-legends.mjs` 里三条断言从"标签存在"改成"标签不该存在"，
+ * 还写了一堆解释。
+ *
+ * 起服务一跑：`check(!r.label)` 当场红 —— DOM 里那个标签**在**。
+ * 原因：`mapLabels3d.makeLabel` 用 `map3d-${kind}-label` **拼**类名，
+ * kind 的取值是 `'port' | 'legend' | 'story'`。字面量 grep 永远搜不到它。
+ *
+ * 代价：3D 板上传说/故事标签丢了金色斜体与描边（视觉回归），
+ * 一条本来**绿的**断言被我改成红的。已全部恢复，并加了这两条守卫。
+ * **教训：判断"某类没人用"之前，先找有没有 `-${x}-` 这种拼法。**
  */
 {
-  const css = readFileSync(join(process.cwd(), 'src', 'index.css'), 'utf8')
-  const cssNoComment = css.replace(/\/\*[\s\S]*?\*\//g, '')
-  assert(!/\.map3d-legend-label\s*\{/.test(cssNoComment) && !/\.map3d-story-label\s*\{/.test(cssNoComment),
-    '两条"传说标签"的 DOM 样式已删（现在没有元素会挂这个类）')
-  const legends = readFileSync(join(process.cwd(), 'src', 'components', 'map3d', 'mapLegends3d.ts'), 'utf8')
-  assert(/makeMarkTexture/.test(legends) && !/className.*legend-label/.test(legends),
-    '传说标记是 Canvas 纹理 Sprite（不是 DOM 标签）')
-  // 这条 e2e 的注释里就引用着旧断言（解释"为什么曾经红"），否定式判据必须先剥注释
+  const css = readFileSync(join(process.cwd(), 'src', 'index.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '')
+  assert(/\.map3d-legend-label\s*\{/.test(css) && /\.map3d-story-label\s*\{/.test(css),
+    '传说/故事标签的配色规则在（金色斜体 + 描边；删了就是视觉回归）')
+  const labels = readFileSync(join(process.cwd(), 'src', 'components', 'map3d', 'mapLabels3d.ts'), 'utf8')
+  assert(/map3d-\$\{kind\}-label/.test(labels) && /'port' \| 'legend' \| 'story'/.test(labels),
+    '类名是 `map3d-${kind}-label` 拼出来的，kind 含 legend/story —— 所以 grep 搜不到不等于没人用')
   const e2e = readFileSync(join(process.cwd(), 'test', 'e2e', 'map3d-legends.mjs'), 'utf8')
-    .replace(/\/\*[\s\S]*?\*\//g, '')
-  assert(!/check\(!!r\.label/.test(e2e),
-    'e2e 不再要求 DOM 标签存在（那正是它长期红着的原因）')
-  assert(/check\(!r\.label/.test(e2e) && /map3d-legend-legend/.test(e2e),
-    'e2e 改成断言"标签是贴图、DOM 里没有旧类"')
+  assert(/querySelector\('\.map3d-legend-label'\)/.test(e2e) && /check\(!!r\.label/.test(e2e),
+    'e2e 仍然要求传说标签存在（它本来就是 DOM 标签）')
+}
+
+/* ============ 脚注只能写"这一屏做得到的事" ============ */
+/*
+ * 舰队面板的脚注原来写「点地图上的港口立航线；点海面任意位置就是目的地」——
+ * 可整屏外壳把这屏盖住了整片海图（`absolute inset-0`），玩家照着做会发现
+ * 哪里都点不动。这一屏真正能做的是"选中推荐航线、再点一次出航"。
+ *
+ * 判据：整屏面板的 footer 里若出现"点地图 / 点海面"，必须同时说明
+ * "合上这屏"之类的先后关系 —— 否则就是在让玩家做一个此刻做不到的动作。
+ * 只扫 `footer="..."` 这类字面量（FullScreenPanel 的 props），不扫正文。
+ */
+{
+  const files = ['FleetPanel', 'PortDetail', 'ShipyardPanel', 'TradePanel'].map(n =>
+    readFileSync(join(process.cwd(), 'src', 'components', 'panels', `${n}.tsx`), 'utf8'))
+  files.push(readFileSync(join(process.cwd(), 'src', 'components', 'intro', 'HelpPanel.tsx'), 'utf8'))
+  const footers = files.flatMap(src => [...src.matchAll(/footer="([^"]{4,80})"/g)].map(m => m[1]))
+  assert(footers.length >= 5, `六块整屏面板的脚注都读得到（实测 ${footers.length} 条）`)
+  const bad = footers.filter(f => /点地图|点海面/.test(f) && !/合上这屏|回海图|关掉这屏/.test(f))
+  assert(bad.length === 0,
+    `脚注里"点地图"必须带先后关系（此刻点不到）：${bad[0] ?? ''}`)
+  assert(footers.some(f => /合上这屏/.test(f)), '舰队面板的脚注写明了"合上这屏再点地图"')
+}
+
+/* ============ 悬停文案也不许描述一个已经不存在的实现 ============ */
+/*
+ * 航程圈的 title 原来写「约 5 / 10 天能到多远」——那是第一版的固定两圈。
+ * 后来改成 `pickRingDays` 按缩放从 [1,2,3,5,7,10,15,20,30] 里挑能看全的几圈
+ * （固定 5/10 天时 10 天圈整个跑出画面、标签都看不见）。
+ * 于是提示在描述一个不存在的实现：玩家放大做近海决策时画的是 1/2 天圈，提示却说 5/10。
+ * 判据钉在"天数候选表是不是自适应的"上，而不是"有没有写 5/10"——
+ * 将来若真的改回固定两圈，这条会跟着变红提醒改文案。
+ */
+{
+  const rings = readFileSync(join(process.cwd(), 'src', 'utils', 'voyageRings.ts'), 'utf8')
+  const adaptive = /RING_DAY_CANDIDATES/.test(rings) && /pickRingDays/.test(rings)
+  const bar = readFileSync(join(process.cwd(), 'src', 'components', 'ui', 'BottomBar.tsx'), 'utf8')
+  assert(adaptive, '航程圈的天数仍然是按缩放挑的（候选表 + pickRingDays）')
+  assert(adaptive && !/约 5 \/ 10 天能到多远/.test(stripComments(bar)),
+    '悬停文案不再写死"5 / 10 天"（天数随缩放变）')
+  assert(/随缩放变/.test(bar), '悬停文案说明了天数会随缩放变')
 }
 
 console.log(`\n最终结果：${passed} 通过 / ${failed} 失败`)
