@@ -188,7 +188,12 @@ const afford = await page.evaluate(() => {
   }
 })
 check(afford.galleonDisabled === true, '钱不够时盖伦的按钮是禁用的')
-check(/还差\s*\d+\s*金币/.test(afford.shortText), `写清了还差多少（${afford.shortText}）`)
+/*
+ * 金额后缀 2026-11-19 统一成「N 金」（原来港口/造船/贸易混用「金币」「金」和图标）。
+ * 这条断言当时没跟着改，于是贪睡了一天才在整组回归里红出来 —— 顺手记一笔：
+ * **改文案时要 grep 一遍 test/ 里的同款断言**。
+ */
+check(/还差\s*\d+\s*金/.test(afford.shortText), `写清了还差多少（${afford.shortText}）`)
 check(afford.frigateDisabled === false, '钱够的护卫舰（2000 ≤ 2500）可以点')
 check(afford.sloopDisabled === true, '单桅快船只在加勒比有售，塞维利亚不可点')
 
