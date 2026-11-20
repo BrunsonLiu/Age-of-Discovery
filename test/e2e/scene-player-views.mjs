@@ -8,7 +8,7 @@ import puppeteer from 'puppeteer-core'
 
 const ROOT = path.resolve('.')
 const SHOTS = path.join(ROOT, '.workbuddy', 'shots', 'scenes')
-const EDGE = 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'
+const EDGE = process.env.EDGE_PATH ?? 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'
 
 const events = fs.readFileSync(path.join(ROOT, 'src/data/events.ts'), 'utf8')
 const pairs = [...events.matchAll(/sceneKey:\s*'([^']+)'[\s\S]{0,120}?title:\s*'([^']+)'/g)].map(m => ({ key: m[1], title: m[2] }))

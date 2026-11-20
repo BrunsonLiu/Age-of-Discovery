@@ -15,7 +15,7 @@
  */
 import puppeteer from 'puppeteer-core'
 
-const EDGE = 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'
+const EDGE = process.env.EDGE_PATH ?? 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'
 const BASE = process.env.GAME_URL || 'http://localhost:5174/Age-of-Discovery/'
 
 const browser = await puppeteer.launch({

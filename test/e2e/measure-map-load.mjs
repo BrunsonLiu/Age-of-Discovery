@@ -1,7 +1,7 @@
 // 实测 dev server 上「绘制航海图...」占屏时长（本地网络，用作相对比较基准）
 import puppeteer from 'puppeteer-core'
 
-const EDGE = 'C://Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe'
+const EDGE = process.env.EDGE_PATH ?? 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'
 const URL = process.env.GAME_URL || process.argv[2] || 'http://localhost:5174/Age-of-Discovery/'
 
 const browser = await puppeteer.launch({ executablePath: EDGE, headless: true, args: ['--no-sandbox'] })

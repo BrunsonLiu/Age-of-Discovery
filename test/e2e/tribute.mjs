@@ -14,7 +14,7 @@ let puppeteer
 try { puppeteer = (await import('puppeteer-core')).default }
 catch { puppeteer = (await import('file:///C:/Users/Brunson/.workbuddy/binaries/node/workspace/node_modules/puppeteer-core/lib/puppeteer/puppeteer-core.js')).default }
 
-const EDGE = 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'
+const EDGE = process.env.EDGE_PATH ?? 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'
 const BASE = process.env.GAME_URL ?? 'http://127.0.0.1:5181/Age-of-Discovery/'
 const SHOTS = '.workbuddy/shots'
 

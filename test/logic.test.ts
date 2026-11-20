@@ -15797,6 +15797,25 @@ console.log('== 帧率撑不住时，画质预设是最后一道闸 ==')
     `index.css 里没有无人引用的类（剩 ${dead.length} 个：${dead.slice(0, 6).join(', ')}）`)
 }
 
+/* ============ 每个 e2e 的浏览器路径都必须能被 EDGE_PATH 覆盖 ============ */
+/*
+ * 2026-11-20：Edge 157 的无头模式坏了（`--headless=new --dump-dom` 返回空、exit 0），
+ * 整组 81 个套件全报 `Failed to launch the browser process: Code: 0`。
+ * 而 `intro-check.mjs` 是**写死路径**的那一批（30 个），于是即使
+ * `EDGE_PATH=chrome.exe` 也救不了它 —— 只有它一个红的。
+ *
+ * 判据：test/e2e 下任何脚本提到 msedge.exe，必须同时出现 EDGE_PATH。
+ * 换浏览器是环境问题，不该让某个脚本单独"换不动"。
+ */
+{
+  const dir = join(process.cwd(), 'test', 'e2e')
+  const bad = readdirSync(dir).filter((f: string) => f.endsWith('.mjs')).filter((f: string) => {
+    const t = readFileSync(join(dir, f), 'utf8')
+    return /msedge\.exe/.test(t) && !/EDGE_PATH/.test(t)
+  })
+  assert(bad.length === 0, `提到 msedge 的脚本都能用 EDGE_PATH 覆盖（剩 ${bad.length} 个：${bad.slice(0, 4).join(', ')}）`)
+}
+
 /* ============ 巡检的"场景进入"判据不许等固定毫秒 ============ */
 /*
  * 2026-11-19 整组回归：small-text-audit 红了两条「事件卡/事件结算：场景确实进入了」，

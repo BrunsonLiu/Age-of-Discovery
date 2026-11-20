@@ -4,7 +4,7 @@ try { puppeteer = (await import('puppeteer-core')).default } catch { puppeteer =
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 const BASE = process.env.GAME_URL ?? 'http://127.0.0.1:5201/Age-of-Discovery/'
 const NET = process.argv.includes('--fast') ? null : { latency: 300, download: 4e5, upload: 2e5 }
-const b = await puppeteer.launch({ executablePath: 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe', headless: true, args: ['--no-sandbox'] })
+const b = await puppeteer.launch({ executablePath: process.env.EDGE_PATH ?? 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe', headless: true, args: ['--no-sandbox'] })
 const p = await (await b.createBrowserContext()).newPage()
 await p.setViewport({ width: 1440, height: 900 })
 await p.setCacheEnabled(false)
