@@ -21,6 +21,19 @@ node test/e2e/scene-missing-prod.mjs
 
 ## 快速跑法
 
+> **浏览器路径**：所有脚本都读 `EDGE_PATH`，默认是 Edge。
+> 2026-11-20 起本机 **Edge 157 的无头模式坏了**（`--headless=new --dump-dom` 返回空、exit 0），
+> 整组 81 个套件会全报 `Failed to launch the browser process: Code: 0` —— **那是环境问题，不是代码问题**。
+> 换 Chrome 即可：
+>
+> ```bash
+> EDGE_PATH="C:/Program Files/Google/Chrome/Application/chrome.exe" \
+>   node test/e2e/run-suite.mjs --port=5176
+> ```
+>
+> 看到某个套件"秒退 + Code: 0"，先换浏览器，别去翻应用代码。
+
+
 ```bash
 npm run test:e2e          # voyage-smoke：全流程航行冒烟
 npm run test:e2e:scenes   # 场景插图三件套
