@@ -15864,6 +15864,46 @@ console.log('== 帧率撑不住时，画质预设是最后一道闸 ==')
     '三条补挂的巡检确实在脚本里（不是只写进守卫）')
 }
 
+/* ============ 远洋溢价：曲线、单调性、以及"预览=实际" ============ */
+/*
+ * 问题：实测"每航行日净利润" 近海 3.67 / 中程 1.60 / 远洋 3.00 / 极远 2.06
+ * （`npm run sim:economy`），跑得越远赚得越少 → 最优解永远是近海倒短。
+ *
+ * 修法：给"这票货真的走了多远"补一个溢价。曲线必须与模拟脚本量过的那条一致
+ * （A' 门槛800 k=0.35，over/4200），否则"量过的"和"发出去的"不是一个东西。
+ */
+{
+  const store = readFileSync(join(process.cwd(), 'src', 'store', 'useGameStore.ts'), 'utf8')
+  const sim = readFileSync(join(process.cwd(), 'scripts', 'sim_economy.ts'), 'utf8')
+  assert(/REMOTE_BONUS_FROM_NM = 800/.test(store), '门槛 800 海里（地中海/加勒比内部基本不动）')
+  assert(/REMOTE_BONUS_MAX = 0\.35/.test(store), '封顶 +35%')
+  assert(/REMOTE_BONUS_FULL_NM = 5000/.test(store) && /over \/ 4200/.test(sim),
+    '代码的满额距离 = 门槛800 + 4200，与 sim:economy 里量过的那条一致')
+
+  // 曲线本身：单调、边界、封顶
+  const mul = (d: number, from = 1, to = 2) => {
+    const t = d <= 800 ? 0 : Math.min(1, (d - 800) / 4200)
+    return 1 + 0.35 * t
+  }
+  assert(mul(300) === 1, '近海（300nm）不加价')
+  assert(Math.abs(mul(1500) - 1.35 * 0) > -1 && mul(1500) > 1 && mul(1500) < 1.35, '中程介于 1 与 1.35 之间')
+  assert(Math.abs(mul(9000) - 1.35) < 1e-9, '极远封顶在 +35%（绕地球半圈不会盖过一切）')
+
+  const t = readFileSync(join(process.cwd(), 'src', 'types', 'index.ts'), 'utf8')
+  assert(/fromPortId\?: number/.test(t), 'CargoItem 记起运港（可选：老存档没有这个字段）')
+  assert(/updateCargo\(state\.fleet\.cargo, goodId, quantity, portId\)/.test(store),
+    '买货时写入起运港')
+  assert(/保留最早那一票的起运港/.test(store),
+    '同一种货合并时保留最早那一票（补货不该让溢价凭空变化）')
+  /*
+   * 【预览必须与结算同源】`recommendDeal` 给的是"在 fromPortId 买、卖到 p"的那一单，
+   * 所以它算卖价时必须**传买入港**当起运港，否则预览用的是货舱里的老票或什么都不加
+   * → 面板写 120、入账 100。这一条正是本项目最容易出的一类错。
+   */
+  assert(/selectSellPrice\(state, p\.id, pg\.goodId, fromPortId\)/.test(store),
+    '掮客预览把买入港当起运港传给卖价（预览=实际）')
+}
+
 /* ============ store 里不许有"只声明、没人调"的动作 ============ */
 /*
  * 2026-11-18 扫出 `setGamePhase(phase)`：接口里声明了、实现里写好了，

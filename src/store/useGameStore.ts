@@ -494,14 +494,19 @@ interface GameStore extends GameState {
   resetGame: () => void
 }
 
-function updateCargo(cargo: CargoItem[], goodId: number, delta: number): CargoItem[] {
+function updateCargo(cargo: CargoItem[], goodId: number, delta: number, fromPortId?: number): CargoItem[] {
   const existingIndex = cargo.findIndex(c => c.goodId === goodId)
   if (existingIndex >= 0) {
     const newQty = cargo[existingIndex].quantity + delta
     if (newQty <= 0) return cargo.filter((_, i) => i !== existingIndex)
+    /*
+     * 合并时**保留最早那一票的起运港**（见 types 里 fromPortId 的说明）：
+     * 同一趟里补货不该让远洋溢价凭空变化，也不该按"最新一票"重算 ——
+     * 玩家会以为多买一点就能改价。
+     */
     return cargo.map((c, i) => i === existingIndex ? { ...c, quantity: newQty } : c)
   }
-  if (delta > 0) return [...cargo, { goodId, quantity: delta }]
+  if (delta > 0) return [...cargo, { goodId, quantity: delta, fromPortId }]
   return cargo
 }
 
@@ -652,7 +657,41 @@ export function selectBuyPrice(state: GameState, portId: number, goodId: number)
  * 拒绝会让货变成死货，而面板此前却显示着折价和可点的按钮，玩家点了
  * 货不减、钱不加、屏幕毫无反应——那是最坏的一种「数字在骗人」。
  */
-export function selectSellPrice(state: GameState, portId: number, goodId: number): number | null {
+/* ───────── 远洋溢价（2026-11-23） ─────────
+ *
+ * 【它解决什么】实测四档"每航行日净利润"是 近海 3.67 / 中程 1.60 / 远洋 3.00 /
+ * 极远 2.06 —— **跑得越远，单位时间赚得越少**，于是最优策略永远是近海倒短，
+ * 而《大航海时代》的核心幻想恰恰是远洋。中程那个洼地是价差结构问题（该给中程港
+ * 加渴求品），而"远洋越来越不划算"这一条可以用**距离溢价**直接修。
+ *
+ * 【为什么用起运港】溢价必须对应"这批货真的走了多远"。起运港记在货位上
+ * （`CargoItem.fromPortId`），卖的时候用大圆距离算 —— 这是唯一能对得上
+ * "我把它从果阿带到了里斯本"的判据。
+ *
+ * 【曲线】800 海里以内不加（近海倒短不该被奖励）；之后按剩余里程线性上浮，
+ * 到 800+4200=5000 海里吃满 +35%。**这条曲线不是拍的**：
+ * `npm run sim:economy` 里 A' 门槛800 k=0.35 用的就是 `over/4200`，实测比值
+ * 近海 3.67 / 中程 1.82 / 远洋 3.66 / 极远 3.46（远/近 = 0.94×，基线 0.56×）。
+ * 代码里的常数必须和模拟脚本里量过的那条一致，否则"量过的"和"发出去的"不是一个东西。
+ * 封顶很重要：否则绕半个地球的极端路线会盖过一切其它玩法。
+ */
+export const REMOTE_BONUS_FROM_NM = 800
+export const REMOTE_BONUS_FULL_NM = 5000
+export const REMOTE_BONUS_MAX = 0.35
+
+/** 距离溢价系数（1 = 不加价）。从起运港到卖出港的大圆距离。 */
+export function remoteBonusMul(fromPortId: number | undefined, toPortId: number): number {
+  if (!fromPortId || fromPortId === toPortId) return 1
+  const a = ports.find(p => p.id === fromPortId)
+  const b = ports.find(p => p.id === toPortId)
+  if (!a || !b) return 1
+  const d = haversineNm(a.latitude, a.longitude, b.latitude, b.longitude)
+  if (!Number.isFinite(d) || d <= REMOTE_BONUS_FROM_NM) return 1
+  const t = Math.min(1, (d - REMOTE_BONUS_FROM_NM) / (REMOTE_BONUS_FULL_NM - REMOTE_BONUS_FROM_NM))
+  return 1 + REMOTE_BONUS_MAX * t
+}
+
+export function selectSellPrice(state: GameState, portId: number, goodId: number, fromPortIdHint?: number): number | null {
   const good = goods.find(g => g.id === goodId)
   if (!good) return null
   const pg = portGoods.find(p => p.portId === portId && p.goodId === goodId)
@@ -665,12 +704,19 @@ export function selectSellPrice(state: GameState, portId: number, goodId: number
      */
     const ratio = offerRatioFor(state.factionRep.guild ?? 0)
     const mk = blackMarketMul(portId, good.category, state.factionRep)
-    return Math.round((good.basePrice * ratio * mk) / priceMultiplier(state.fleet, opts))
+    const origin = fromPortIdHint ?? state.fleet.cargo.find(c => c.goodId === goodId)?.fromPortId
+    return Math.round((good.basePrice * ratio * mk * remoteBonusMul(origin, portId)) / priceMultiplier(state.fleet, opts))
   }
   const stock = state.marketStock[`${portId}:${goodId}`] ?? pg.stock
   // 兄弟会地盘上的黑市：武器/奢侈品溢价收购（面板与结算同一个数）
   const mk = blackMarketMul(portId, good.category, state.factionRep)
-  return Math.round(dynamicSellPrice(pg, stock, pg.stock, state.fleet, opts) * mk)
+  /*
+   * 溢价只乘在**卖出价**上，且必须走这条唯一出口 —— 面板显示、结算入账、
+   * 掮客预览读的都是它（预览传 fromPortIdHint = 买入港，见 recommendDeal）。
+   * 少了这条约束，就会出现"面板写 120、入账 100"。
+   */
+  const origin = fromPortIdHint ?? state.fleet.cargo.find(c => c.goodId === goodId)?.fromPortId
+  return Math.round(dynamicSellPrice(pg, stock, pg.stock, state.fleet, opts) * mk * remoteBonusMul(origin, portId))
 }
 
 /**
@@ -2066,7 +2112,7 @@ export const useGameStore = create<GameStore>()(
         if (buyPrice == null) return state
         if (!canAfford(state.fleet.gold, buyPrice, quantity)) return state
         if (!hasCargoSpace(state.fleet, quantity)) return state
-        const newCargo = updateCargo(state.fleet.cargo, goodId, quantity)
+        const newCargo = updateCargo(state.fleet.cargo, goodId, quantity, portId)
         const total = buyPrice * quantity
         // 大额贸易赢得商会好感（第二条线）
         const guildGain = total >= GAME_BALANCE.GUILD_DEAL_MIN ? GAME_BALANCE.GUILD_DEAL_FAME : 0
@@ -3384,7 +3430,12 @@ export function selectBestDeal(state: GameState): BrokerDeal | null {
 
     for (const p of ports) {
       if (p.id === fromPortId) continue
-      const sell = selectSellPrice(state, p.id, pg.goodId)
+      /*
+       * 预览必须传"买入港"当起运港：这批货是**在 fromPortId 买的**，
+       * 卖到 p 时能拿到多远的那一档溢价，要和真跑一趟完全一致。
+       * 不传的话预览会用当前货舱里的老票（或什么都不加）→ 面板写 120、入账 100。
+       */
+      const sell = selectSellPrice(state, p.id, pg.goodId, fromPortId)
       if (sell == null) continue
       const unit = sell - buy
       if (unit <= 0) continue

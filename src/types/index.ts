@@ -86,6 +86,19 @@ export type AchievementGroup = 'trade' | 'voyage' | 'lore'
 export interface CargoItem {
   goodId: number
   quantity: number
+  /**
+   * 这一票货**第一次装船的那个港**（可选：老存档没有这个字段）。
+   *
+   * 【为什么要它】远洋贸易的收益原来比近海还差（实测 近海 3.67 / 中程 1.60 /
+   * 远洋 3.00 / 极远 2.06 —— 单位是"每航行日的净利润"）。想给远洋补一个
+   * 合理溢价，就必须知道"这批货走了多远"；而货舱原来只有 { goodId, quantity }，
+   * 果阿来的胡椒与里斯本近郊来的在数据上一模一样，卖的那一刻无从判断。
+   *
+   * 【为什么"第一次装船"就算数】同一种货**按 goodId 合并成一堆**（updateCargo），
+   * 分票会让面板、库存、任务交付全部要改成按票处理。合并时保留最早那一票的起运港，
+   * 是一条**看得懂、可复现**的规则：玩家在同一趟里补货不会让溢价凭空变化。
+   */
+  fromPortId?: number
 }
 
 export interface Port {
