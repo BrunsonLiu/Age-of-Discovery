@@ -46,8 +46,21 @@ function Fold({
   danger?: boolean
 }) {
   const [open, setOpen] = useState(false)
+  /*
+   * 【这三行要"看得出来能点"】未来几天天气 / 航线情报 / 三种方针 是同一类可展开的行，
+   * 但原来底是 `bg-ocean-800/35`（冷蓝灰）压在同样深的弹窗底上 —— 1440 实际渲染下
+   * 三行的细边几乎看不见（截图里只剩三行小字），读起来像三个段落标题，不像可点的行。
+   * 改成与底栏开关板同一套"凹槽"配方：黑半透 + 细金边 + 上缘内投影。
+   * 冷色只留给"海"，不给弹窗。
+   */
   return (
-    <div className={`rounded border ${danger ? 'border-danger-700/40 bg-danger-900/10' : 'border-gold-700/20 bg-ocean-800/35'}`}>
+    <div
+      className={`rounded border ${danger ? 'border-danger-700/50 bg-danger-900/15' : 'border-gold-700/30'}`}
+      style={danger ? undefined : {
+        background: 'rgba(0,0,0,0.22)',
+        boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.5)',
+      }}
+    >
       <button
         type="button"
         onClick={() => setOpen(o => !o)}
