@@ -15881,6 +15881,17 @@ console.log('== 帧率撑不住时，画质预设是最后一道闸 ==')
   assert(/text-xs font-serif">航程</.test(m), '标签仍是 12px —— 层级靠字号差，不靠颜色')
   const starCell = /dangerStars\(route\.dangerLevel\)/.test(m) && /text-\[15px\][^`]*dangerStars/.test(m.replace(/\s+/g, ' '))
   assert(starCell, '危险星级同档 15px')
+  /*
+   * 底部「船上：粮 100 · 水 100 · 士气 74」是上面那条警告的**证据数字**
+   * （"淡水不够只够 33 天"说的就是水）。它们原来和句子同为 12px，
+   * 玩家得逐字读才知道哪个数不够。数字提 14px，句子留 12px —— 只提数字。
+   * 不提到 15px：15px 是「航程/危险/风向」那一档，这三项是次级证据。
+   */
+  // 阴影/空白会让"14px tabular-nums"这两个 class 的先后顺序变化，分开数更稳
+  const inv = /船上：粮[\s\S]{0,400}?士气[\s\S]{0,80}?\/span>/.exec(m)?.[0] ?? ''
+  assert((inv.match(/text-\[14px\]/g) ?? []).length === 3, `三个库存数字都是 14px（实际 ${(inv.match(/text-\[14px\]/g) ?? []).length}）`)
+  assert((inv.match(/tabular-nums/g) ?? []).length >= 3, '三个库存数字都等宽')
+  assert(!/船上：[^<]*text-\[15px\]/.test(inv), '库存数字不越级到 15px（15px 属于三个决策数）')
 }
 
 /* ============ 远洋溢价：曲线、单调性、以及"预览=实际" ============ */

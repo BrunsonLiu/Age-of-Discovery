@@ -422,10 +422,17 @@ export default function VoyagePlanModal() {
           {/* 当前库存 + 两套日耗：港内是此刻真正生效的口径，起航后是这趟的口径。
               数字都走 dailyRates，与顶栏和 store.advanceDay 逐字同源。 */}
           <div className="flex flex-col gap-0.5 text-xs font-serif text-gold-600 px-0.5">
+            {/*
+              【这三个数是上面那条警告的"证据"】
+              "淡水不够——只够 33 天" 说的是 100 水；可它原来是 12px、和句子同一个字号，
+              玩家得逐字读才知道是哪个数不够。数字提到 14px（**只提数字，句子留 12px**），
+              一行里就有"标签小、数字大"的节奏，扫一眼就能对上警告。
+              没有提到 15px：那是上面「航程/危险/风向」那一档，这三项是次级证据。
+            */}
             <span>
-              船上：粮 <span className="text-gold-300 tabular-nums">{fleet.food}</span>
-              {' · '}水 <span className="text-gold-300 tabular-nums">{fleet.water}</span>
-              {' · '}士气 <span className="text-gold-300 tabular-nums">{fleet.morale}</span>
+              船上：粮 <span className="text-gold-300 text-[14px] tabular-nums">{fleet.food}</span>
+              {' · '}水 <span className="text-gold-300 text-[14px] tabular-nums">{fleet.water}</span>
+              {' · '}士气 <span className="text-gold-300 text-[14px] tabular-nums">{fleet.morale}</span>
             </span>
             <span data-testid="voyage-supply-rates" className="text-gold-500">
               港内每日 {portRates.foodPerDay} 粮 / {portRates.waterPerDay} 水
