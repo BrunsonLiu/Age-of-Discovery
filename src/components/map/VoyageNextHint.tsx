@@ -179,9 +179,19 @@ export default function VoyageNextHint({ placement = 'float' }: { placement?: 'f
             className="press flex w-full items-center gap-1 text-left font-serif text-[13px] leading-tight text-gold-100"
           >
             <MapPin size={12} className="shrink-0" aria-hidden="true" />
-            <span className="truncate">下一站：{suggest.nameCn}</span>
+            {/*
+              【目的地要压过它的定语】原来整行 13px 一个字号：「下一站：埃尔米纳 2917 海里
+              · 约 15 天」读成一口气的长句，港名和里程粘在一起。现在拆成三档：
+                标签「下一站：」12px 暗一档  →  港名 14px 最亮  →  里程 12px 等宽 + 左移一点。
+              textContent 仍是「下一站：埃尔米纳…」（冒号留在标签里、两段之间不加空格），
+              `next-port-hint` 的 45 条断言读的还是同一串字。
+            */}
+            <span className="flex min-w-0 items-baseline gap-1">
+              <span className="shrink-0 font-serif text-[12px] text-gold-500">下一站：</span>
+              <span className="truncate font-serif text-[14px] text-gold-100">{suggest.nameCn}</span>
+            </span>
             <span
-              className="shrink-0 font-mono text-[12px] text-gold-300 tabular-nums"
+              className="ml-1.5 shrink-0 font-mono text-[12px] text-gold-300 tabular-nums"
               title="里程与天数按「按部就班」算，与出航计划面板同一口径"
             >{distance}</span>
           </button>
