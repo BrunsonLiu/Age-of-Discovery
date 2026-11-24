@@ -45,7 +45,7 @@ const baseState = {
 const weather = { kind: 'clear', windDir: 0, windSpeed: 12, duration: 6 } as never
 const DAY = 120
 
-type Leg = { from: string; to: string; nm: number; days: number; good: string; buy: number; sell: number }
+type Leg = { from: string; to: string; nm: number; days: number; good: string; buy: number; sell: number; favor: number }
 const legs: Leg[] = []
 
 for (const a of ports) {
@@ -64,7 +64,7 @@ for (const a of ports) {
       const sell = selectSellPrice(baseState, b.id, g.id)
       if (buy == null || sell == null) continue
       if (sell - buy <= 0) continue
-      legs.push({ from: a.nameCn, to: b.nameCn, nm: facts.distanceNm, days, good: g.nameCn, buy, sell })
+      legs.push({ from: a.nameCn, to: b.nameCn, nm: facts.distanceNm, days, good: g.nameCn, buy, sell, favor: facts.windFavor })
     }
   }
 }
@@ -182,6 +182,75 @@ rows.push(evaluate("A'(k=0.5) + D", l => {
 }))
 
 /* ── 输出 ── */
+/*
+ * `--wind`：把每个距离桶再按**风向系数**拆开。
+ *
+ * 为什么要拆：中程那一档的中位数（1.60）里混着两种完全不同的航线 ——
+ * 哈瓦那→卡塔赫纳 913nm 走 **5 天**（顺风顺流），皇家港→韦拉克鲁斯 1125nm 走 **12 天**
+ * （加勒比逆风，~90 海里/天）。把"逆风"的代价算进"距离划不划算"里，
+ * 等于用一条错误的尺子做决策：看着像"中程不赚钱"，其实是"逆风不赚钱"。
+ * 分开看，才知道该改数据（渴求品）、改船（风向），还是什么都不改。
+ */
+if (process.argv.includes('--wind')) {
+  const CLS: [string, number, number][] = [['逆风 <0.6', -9, 0.6], ['平风 0.6–1.0', 0.6, 1.0], ['顺风 ≥1.0', 1.0, 9]]
+  const bestPerLane = new Map<string, Leg & { perDay: number }>()
+  for (const l of legs) {
+    const perDay = (l.sell - l.buy) / l.days
+    const k = `${l.from}→${l.to}`
+    const prev = bestPerLane.get(k)
+    if (!prev || perDay > prev.perDay) bestPerLane.set(k, { ...l, perDay })
+  }
+  const lanes = [...bestPerLane.values()]
+  const q2 = (arr: number[], p: number) => {
+    const a = [...arr].sort((x, y) => x - y)
+    if (!a.length) return 0
+    return a[Math.min(a.length - 1, Math.floor(p * (a.length - 1)))]
+  }
+  console.log('\n按「距离桶 × 风向」分开看（每件每日毛利中位数，括号里是航线数）：')
+  console.log('  距离桶'.padEnd(20) + CLS.map(([n]) => n.padStart(16)).join(''))
+  for (const [name, lo, hi] of BUCKETS) {
+    const row = CLS.map(([, flo, fhi]) => {
+      const v = lanes.filter(l => l.nm >= lo && l.nm < hi && l.favor >= flo && l.favor < fhi).map(l => l.perDay)
+      return `${q2(v, 0.5).toFixed(2)} (${v.length})`.padStart(16)
+    })
+    console.log('  ' + name.padEnd(18) + row.join(''))
+  }
+  console.log('')
+}
+
+/*
+ * `--lanes`：把中程（500–1500nm）那段**逐条航线**摊开看。
+ *
+ * 为什么要它：分桶中位数只告诉你"中程最差（1.60）"，不告诉你**差在哪**。
+ * 是"没有一件够贵的货"，还是"有贵货但被天数吃掉了"？这两件事的修法完全不同
+ * （前者加渴求品，后者改航速）。这条 dump 是给"改数据"之前用的显微镜。
+ */
+if (process.argv.includes('--lanes')) {
+  const bestPerLane = new Map<string, Leg & { perDay: number }>()
+  for (const l of legs) {
+    const perDay = (l.sell - l.buy) / l.days
+    const k = `${l.from}→${l.to}`
+    const prev = bestPerLane.get(k)
+    if (!prev || perDay > prev.perDay) bestPerLane.set(k, { ...l, perDay })
+  }
+  const mid = [...bestPerLane.values()].filter(l => l.nm >= 500 && l.nm < 1500)
+    .sort((a, b) => a.perDay - b.perDay)
+  const pmOf = (nameCn: string, goodName: string) => {
+    const to = ports.find(p => p.nameCn === nameCn)
+    const g = goods.find(x => x.nameCn === goodName)
+    if (!to || !g) return 0
+    return portGoods.find(pg => pg.portId === to.id && pg.goodId === g.id)?.priceModifier ?? 0
+  }
+  console.log(`\n中程（500–1500nm）共 ${mid.length} 条航线，按「每件每日毛利」升序：`)
+  console.log('  航线'.padEnd(26) + '海里'.padStart(7) + '天'.padStart(5) + '风'.padStart(6) + '  最好的一件货'.padEnd(14) + '毛利/日'.padStart(9) + '  到岸渴求度'.padStart(11))
+  for (const l of [...mid.slice(0, 14), ...mid.slice(-6)]) {
+    console.log('  ' + `${l.from}→${l.to}`.padEnd(24) + String(Math.round(l.nm)).padStart(7) +
+      l.days.toFixed(1).padStart(5) + l.favor.toFixed(2).padStart(6) + '  ' + l.good.padEnd(12) +
+      l.perDay.toFixed(2).padStart(9) + pmOf(l.to, l.good).toFixed(2).padStart(11))
+  }
+  console.log('')
+}
+
 console.log(`样本：${legs.length} 条「港口对 × 商品」组合\n`)
 const head = '改法'.padEnd(26) + BUCKETS.map(b => b[0].padStart(14)).join('') + '   远/近'
 console.log(head)
