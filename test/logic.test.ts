@@ -15116,7 +15116,16 @@ console.log('== 事件结算屏：数字是这一屏唯一要读的东西 ==')
   const er = readFileSync(join(process.cwd(), 'src', 'components', 'events', 'EventResult.tsx'), 'utf8')
   assert(/RESOURCE_LABEL\[c\.key\]/.test(er), '中文名取自 RESOURCE_LABEL（不在这里另写一遍）')
   assert(!/label="金币"|label="食物"|label="淡水"/.test(er), '组件里不再手写资源中文名')
-  assert(/text-\[17px\].*tabular-nums|tabular-nums.*text-\[17px\]/.test(er), '数值 17px + 等宽数字')
+  /*
+   * 【一屏里同类数值只许一种字号】2026-11-24：这里原来是 17px（修"收据感"时提的），
+   * 而「四方态度」「海上人称」两块的变化值还是 **12px**、且"海上人称"写死了「+」
+   * （负值会印成「+-3」）。三块现在统一 16px + 等宽 + 正负分色 ——
+   * e2e 里那条"数值 ≥16px"的判据也就守住了全部三块。
+   */
+  assert((er.match(/text-\[16px\][^`]*tabular-nums/g) ?? []).length >= 3,
+    `三块变化值都是 16px 等宽（实际 ${(er.match(/text-\[16px\][^`]*tabular-nums/g) ?? []).length} 处）`)
+  assert(!/font-mono text-gold-300">\+\{d\}/.test(er),
+    '「海上人称」不再写死加号（负值会印出「+-3」）')
   assert(/data-testid="event-delta"/.test(er) && /data-value=\{c\.value\}/.test(er), '每行有 event-delta 与 data-value')
   const es = readFileSync(join(process.cwd(), 'src', 'utils', 'eventSummary.ts'), 'utf8')
   assert(/export function outcomeChanges/.test(es), '排序规则在数据层（可单测），不在组件里')

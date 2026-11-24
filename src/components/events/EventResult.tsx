@@ -95,7 +95,14 @@ export default function EventResult({ outcome, performance, traitNote, onContinu
               {RESOURCE_ICON[c.key]}
               {RESOURCE_LABEL[c.key]}
             </span>
-            <span className={`font-mono text-[17px] leading-none tabular-nums ${c.value > 0 ? 'ink-good' : 'ink-bad'}`}>
+            {/*
+              【一屏里同类数值只许一种字号】这里原来是 17px（上一版为了修"收据感"提上去的），
+              可下面「四方态度」「海上人称」两块的变化值还是 12px —— 同一屏三组"标签→值"，
+              三套字号，玩家的眼睛每块都要重新校准一次。三块统一到 **16px**（判据是 e2e
+              里那条"数值 ≥16"），资源块的主次改由**位置（第一块）+ 图标 + 分隔线**区分，
+              不靠字号大小。
+            */}
+            <span className={`font-mono text-[16px] leading-none tabular-nums ${c.value > 0 ? 'ink-good' : 'ink-bad'}`}>
               {c.value > 0 ? '+' : ''}{c.value}
             </span>
           </div>
@@ -140,7 +147,7 @@ export default function EventResult({ outcome, performance, traitNote, onContinu
                   <Badge kind="faction" id={fid} fallback={f.icon} size={15} />
                   {f.name}
                 </span>
-                <span className={`font-mono ${d > 0 ? 'ink-good' : 'ink-bad'}`}>
+                <span className={`font-mono text-[16px] leading-none tabular-nums ${d > 0 ? 'ink-good' : 'ink-bad'}`}>
                   {d > 0 ? '+' : ''}{d}
                 </span>
               </div>
@@ -168,7 +175,15 @@ export default function EventResult({ outcome, performance, traitNote, onContinu
             return (
               <div key={axis} className="flex items-center justify-between text-xs font-serif">
                 <span className="text-gold-400">{NOTORIETY_LABELS[axis] ?? axis}</span>
-                <span className="font-mono text-gold-300">+{d}</span>
+                /*
+                 * 【这里原来写死了一个「+」】`+{d}` —— 只要某次选择让某个取向**下降**，
+                 * 屏幕上就会印出「+-3」。而这一块又不分正负色（永远是 gold-300），
+                 * 于是"你变得更贪婪"和"你没那么贪婪了"长得一模一样。
+                 * 现在与上面两块用同一条规则：正号只在正数时加，正负各一色。
+                 */
+                <span className={`font-mono text-[16px] leading-none tabular-nums ${d > 0 ? 'ink-good' : 'ink-bad'}`}>
+                  {d > 0 ? '+' : ''}{d}
+                </span>
               </div>
             )
           })}
