@@ -434,10 +434,29 @@ export default function VoyagePlanModal() {
               {' · '}水 <span className="text-gold-300 text-[14px] tabular-nums">{fleet.water}</span>
               {' · '}士气 <span className="text-gold-300 text-[14px] tabular-nums">{fleet.morale}</span>
             </span>
-            <span data-testid="voyage-supply-rates" className="text-gold-500">
-              港内每日 {portRates.foodPerDay} 粮 / {portRates.waterPerDay} 水
-              {' · '}起航后按部就班 {seaRates.foodPerDay} 粮 / {seaRates.waterPerDay} 水
-            </span>
+            {/*
+              【两套日耗改成"两列对照"，不再是一句带斜杠的长句】
+              原来是「港内每日 1 粮 / 1 水 · 起航后按部就班 2 粮 / 3 水」——
+              玩家要做的动作是**比较**（这趟比停港多烧多少），而比较需要两个数
+              落在同一列里对齐；串成一句话时，四个数字挤在一行、单位斜杠混在一起，
+              眼睛得来回跳。现在：两列并排、表头一行、数字 14px 等宽 ——
+              这屏前面「航程/危险/风向」用的就是同一套"标签在上、数字在下"的格子，
+              这里沿用，翻上来不会觉得换了一种版式。
+            */}
+            <div data-testid="voyage-supply-rates" className="grid grid-cols-2 gap-2 mt-0.5">
+              <div className="rounded-sm bg-black/20 px-2 py-1">
+                <div className="text-gold-600 text-xs font-serif">港内每日</div>
+                <div className="text-gold-300 text-[14px] font-serif tabular-nums leading-tight">
+                  {portRates.foodPerDay} 粮 / {portRates.waterPerDay} 水
+                </div>
+              </div>
+              <div className="rounded-sm bg-black/20 px-2 py-1">
+                <div className="text-gold-600 text-xs font-serif">起航后按部就班</div>
+                <div className="text-gold-300 text-[14px] font-serif tabular-nums leading-tight">
+                  {seaRates.foodPerDay} 粮 / {seaRates.waterPerDay} 水
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 

@@ -15890,7 +15890,17 @@ console.log('== 帧率撑不住时，画质预设是最后一道闸 ==')
   // 阴影/空白会让"14px tabular-nums"这两个 class 的先后顺序变化，分开数更稳
   const inv = /船上：粮[\s\S]{0,400}?士气[\s\S]{0,80}?\/span>/.exec(m)?.[0] ?? ''
   assert((inv.match(/text-\[14px\]/g) ?? []).length === 3, `三个库存数字都是 14px（实际 ${(inv.match(/text-\[14px\]/g) ?? []).length}）`)
+  // 注意：下面那条日耗守卫会再次匹配 14px，所以上面的计数取的是「船上…士气」这一段
   assert((inv.match(/tabular-nums/g) ?? []).length >= 3, '三个库存数字都等宽')
+  /*
+   * 两套日耗改成**两列对照**（原来是一句带斜杠的长句 + 四个数字）：
+   * 玩家要做的动作是比较，比较要求两个数落在同一列里对齐。
+   * 表头措辞**不许改**：supply-parity 的正则靠「港内每日…起航后按部就班…」
+   * 从 textContent 里读数，中间加个「（此刻）」就会静默读成 null（假绿）。
+   */
+  const rates = /data-testid="voyage-supply-rates"[\s\S]{0,900}?起航后按部就班/.exec(m)?.[0] ?? ''
+  assert(/grid grid-cols-2/.test(rates), '两套日耗是两列对照（不再是斜杠长句）')
+  assert(/text-\[14px\][^>]*tabular-nums/.test(rates), '日耗数字 14px 等宽（与库存三项同档）')
   assert(!/船上：[^<]*text-\[15px\]/.test(inv), '库存数字不越级到 15px（15px 属于三个决策数）')
 }
 
