@@ -299,7 +299,13 @@ export default function VoyagePlanModal() {
           {/* ① 结论：够不够、几天 —— 本面板唯一必须被读到的一行 */}
           <div className={`rounded border px-3 py-2 ${verdictCls}`}>
             <div className="flex items-baseline gap-1.5">
-              <span className="text-sm shrink-0">{verdict.icon}</span>
+              {/*
+                【图标不许比它旁边的字还小】原来是 14px 对 13px —— 差 1px 等于没有差，
+                ⚠ 读起来像句末的一个标点。提到 17px（= 正文 13 的 1.3 倍）才像一个"信号"，
+                同时仍小于标题 16？不：它必须**大于**正文而不是小于，所以取 17。
+                基线对齐保留（`items-baseline`）：正文会折两行，居中会让图标吊在中间。
+              */}
+              <span className="text-[17px] leading-none shrink-0">{verdict.icon}</span>
               <span data-testid="voyage-verdict-text" className="font-serif text-[13px] leading-snug">{verdict.text}</span>
             </div>
             {verdict.sub && (

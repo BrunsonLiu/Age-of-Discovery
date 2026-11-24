@@ -15891,6 +15891,12 @@ console.log('== 帧率撑不住时，画质预设是最后一道闸 ==')
   const starCell = /dangerStars\(route\.dangerLevel\)/.test(m) && /text-\[15px\][^`]*dangerStars/.test(m.replace(/\s+/g, ' '))
   assert(starCell, '危险星级同档 15px')
   /*
+   * 结论行的图标：原来是 14px 对 13px 正文 —— 差 1px 等于没差，⚠ 读成句末标点。
+   * 判据是"图标必须**大于**正文"，而不是"大约相等"：它是这行的信号位。
+   */
+  const iconCls = /verdict\.icon\}<\/span>/.test(m) ? (/text-\[(\d+)px\][^>]*>\{verdict\.icon\}/.exec(m)?.[1] ?? '') : ''
+  assert(Number(iconCls) > 13, `结论行图标 ${iconCls || '?'}px 必须大于正文 13px`)
+  /*
    * 底部「船上：粮 100 · 水 100 · 士气 74」是上面那条警告的**证据数字**
    * （"淡水不够只够 33 天"说的就是水）。它们原来和句子同为 12px，
    * 玩家得逐字读才知道哪个数不够。数字提 14px，句子留 12px —— 只提数字。
