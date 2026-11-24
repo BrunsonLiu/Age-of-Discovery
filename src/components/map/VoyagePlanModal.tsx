@@ -307,19 +307,26 @@ export default function VoyagePlanModal() {
             )}
           </div>
 
-          {/* ② 三个关键数字：航程 / 危险 / 风向 */}
+          {/*
+            ② 三个关键数字：航程 / 危险 / 风向
+            【为什么改成 15px】这三个是这屏**唯一要玩家做判断的输入**，原来值和标签
+            同为 12px —— 一格里两行同样的字号，读起来是"两个标签"，不是"标签 + 数字"。
+            全站规矩也是重要数字 15~16（12px 是正文下限）。标签保持 12px 不动，
+            层级靠字号差拉出来；`leading-tight` 让盒子高度只涨 2~3px。
+            `tabular-nums` 保持等宽，三格的数字仍落在各自列的中央。
+          */}
           <div className="grid grid-cols-3 gap-2 text-center bg-black/25 rounded px-2 py-1.5">
             <div>
               <div className="text-gold-600 text-xs font-serif">航程</div>
-              <div data-testid="voyage-route-distance" className="text-gold-200 text-xs font-serif tabular-nums">{route.distance} 海里</div>
+              <div data-testid="voyage-route-distance" className="text-gold-200 text-[15px] font-serif tabular-nums leading-tight">{route.distance} 海里</div>
             </div>
             <div>
               <div className="text-gold-600 text-xs font-serif">危险</div>
-              <div className="text-danger-400 text-xs font-serif">{dangerStars(route.dangerLevel)}</div>
+              <div className="text-danger-400 text-[15px] font-serif leading-tight">{dangerStars(route.dangerLevel)}</div>
             </div>
             <div>
               <div className="text-gold-600 text-xs font-serif">风向</div>
-              <div className={`text-xs font-serif ${wind.cls}`}>{wind.text}</div>
+              <div className={`text-[15px] font-serif leading-tight ${wind.cls}`}>{wind.text}</div>
             </div>
           </div>
 

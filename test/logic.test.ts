@@ -15864,6 +15864,25 @@ console.log('== 帧率撑不住时，画质预设是最后一道闸 ==')
     '三条补挂的巡检确实在脚本里（不是只写进守卫）')
 }
 
+/* ============ 出航计划：三个决策数字必须比标签大 ============ */
+/*
+ * 2026-11-24 实测：`4045 海里 / ★★★★☆ / 逆风 ×0.60` 三个值和它们的标签
+ * （航程 / 危险 / 风向）**同为 12px**。一格里两行同字号，读起来是"两个标签"，
+ * 不是"标签 + 数字"；而全站规矩是重要数字 15~16px、12px 是正文下限。
+ *
+ * 这一屏是每趟出航必经的一步，三个数字就是决策输入（远不远、险不险、顺不顺），
+ * 它们必须是这屏第二大的东西（第一是标题）。
+ */
+{
+  const m = readFileSync(join(process.cwd(), 'src', 'components', 'map', 'VoyagePlanModal.tsx'), 'utf8')
+  const dist = /data-testid="voyage-route-distance"[^>]*className="([^"]+)"/.exec(m)?.[1] ?? ''
+  assert(/text-\[15px\]/.test(dist), `航程数字 15px（实测 ${dist || '未找到'}）`)
+  assert(/tabular-nums/.test(dist), '航程数字等宽（三格的数字才落得正）')
+  assert(/text-xs font-serif">航程</.test(m), '标签仍是 12px —— 层级靠字号差，不靠颜色')
+  const starCell = /dangerStars\(route\.dangerLevel\)/.test(m) && /text-\[15px\][^`]*dangerStars/.test(m.replace(/\s+/g, ' '))
+  assert(starCell, '危险星级同档 15px')
+}
+
 /* ============ 远洋溢价：曲线、单调性、以及"预览=实际" ============ */
 /*
  * 问题：实测"每航行日净利润" 近海 3.67 / 中程 1.60 / 远洋 3.00 / 极远 2.06
