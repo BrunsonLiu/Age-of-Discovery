@@ -71,8 +71,14 @@ function Fold({
           {icon}
           {title}
         </span>
+        {/*
+          【手机上不显示摘要】390 宽里「三种方针能差多少」+ 摘要 + ▾ 挤不下，
+          摘要会被 `truncate` 截成「抢行最快最险 · 谨慎最…」—— 一句预告只读到一半，
+          比不读更吵。摘要的作用是"点开前先看一眼"，手机上那一眼本来也读不全，
+          所以窄屏只留标题与 ▾，展开后正文照旧完整。
+        */}
         {!open && summary && (
-          <span className="font-serif text-xs text-gold-600 truncate flex-1">{summary}</span>
+          <span className="hidden sm:inline font-serif text-xs text-gold-600 truncate flex-1">{summary}</span>
         )}
         <span className="ml-auto font-serif text-xs text-gold-700 shrink-0">
           {open ? '收起 ▴' : '▾'}
