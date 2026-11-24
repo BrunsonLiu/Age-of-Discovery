@@ -912,7 +912,13 @@ function RivalPage() {
                     #{b.portsRank}
                   </span>
                 </span>
-                <span className={`text-right tabular-nums text-xs ${b.item.you ? 'text-gold-600' : gap > 0 ? 'text-gold-400' : 'text-gold-600'}`}>
+                {/*
+                  【同表四列同字号】座次表前三列的数字都是 13px（继承行字号），
+                  只有这一列（与第一名的差距）写了 `text-xs` → 12px。
+                  实测右边缘四列都对齐（932/1037/1124/1239），所以不是对不齐，
+                  是"同一行里有一个数字比别人小一号"。去掉 text-xs 即可。
+                */}
+                <span className={`text-right tabular-nums ${b.item.you ? 'text-gold-600' : gap > 0 ? 'text-gold-400' : 'text-gold-600'}`}>
                   {b.item.you ? '—' : gap === 0 ? '持平' : gap > 0 ? `+${gap}` : `${gap}`}
                 </span>
               </div>
