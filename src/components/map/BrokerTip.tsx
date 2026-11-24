@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Coins, X, Anchor, PackageOpen, ChevronDown, ChevronUp } from 'lucide-react'
+import { X, Anchor, PackageOpen, ChevronDown, ChevronUp } from 'lucide-react'
 import { useGameStore, selectBestDeal, selectCargoSale, selectDealTalentBonus, selectReturnLeg } from '@/store/useGameStore'
 import { useMapStore } from '@/store/useMapStore'
 import { useIsMobile } from '@/hooks/useIsMobile'
@@ -305,8 +305,13 @@ export default function BrokerTip({ placement = 'float' }: { placement?: 'float'
               </div>
               <div className="mt-1.5 font-serif text-[13px] text-gold-400">本港现价，全部出手</div>
               <div className="mt-2 flex items-center justify-between gap-3">
+                {/*
+                  【去掉金币图标】它把「+445」推出去了 19px —— 卡片里其它每一行都在 25px 上
+                  起排，只有收益这一行在 44px，扫下来会看到一条"凹进去"的线。
+                  图标在这里本来也不带信息：单位「金」就写在数字右边。删掉它，
+                  数字与上面各行左对齐，收益行反而更立得住。
+                */}
                 <span className="flex items-baseline gap-1 font-serif text-gold-200">
-                  <Coins size={15} className="translate-y-[1px]" aria-hidden="true" />
                   <span className="font-mono text-lg tabular-nums">+{sale!.total}</span>
                   <span className="text-xs text-gold-400">金</span>
                 </span>
@@ -372,8 +377,8 @@ export default function BrokerTip({ placement = 'float' }: { placement?: 'float'
                 </div>
               )}
               <div className="mt-2 flex items-center justify-between gap-3">
+                {/* 与上面「卖出」那条同一条规矩：图标把数字推出 19px，删掉（单位「金」已说明是钱） */}
                 <span className="flex items-baseline gap-1 font-serif text-gold-200">
-                  <Coins size={15} className="translate-y-[1px]" aria-hidden="true" />
                   <span className="font-mono text-lg tabular-nums">+{deal!.totalProfit}</span>
                   <span className="text-xs text-gold-400">金</span>
                 </span>
