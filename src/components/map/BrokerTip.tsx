@@ -313,7 +313,7 @@ export default function BrokerTip({ placement = 'float' }: { placement?: 'float'
                 */}
                 <span className="flex items-baseline gap-1 font-serif text-gold-200">
                   <span className="font-mono text-lg tabular-nums">+{sale!.total}</span>
-                  <span className="text-xs text-gold-400">金</span>
+                  <span className="text-[14px] text-gold-400">金</span>
                 </span>
                 <button
                   type="button"
@@ -380,7 +380,7 @@ export default function BrokerTip({ placement = 'float' }: { placement?: 'float'
                 {/* 与上面「卖出」那条同一条规矩：图标把数字推出 19px，删掉（单位「金」已说明是钱） */}
                 <span className="flex items-baseline gap-1 font-serif text-gold-200">
                   <span className="font-mono text-lg tabular-nums">+{deal!.totalProfit}</span>
-                  <span className="text-xs text-gold-400">金</span>
+                  <span className="text-[14px] text-gold-400">金</span>
                 </span>
                 <button
                   type="button"
