@@ -9,9 +9,9 @@ import {
   miniGameGrade,
 } from '@/utils/miniGame'
 import { RESOURCE_LABEL, outcomeChanges, type ResourceKey } from '@/utils/eventSummary'
-import { NOTORIETY_LABELS, crossedGates } from '@/data/notoriety'
+import { NOTORIETY_LABELS, axisThreshold, crossedGates } from '@/data/notoriety'
 import { useGameStore } from '@/store/useGameStore'
-import type { EventOutcome } from '@/types'
+import type { EventOutcome, NotorietyAxis } from '@/types'
 
 interface EventResultProps {
   outcome: EventOutcome
@@ -177,25 +177,51 @@ export default function EventResult({ outcome, performance, traitNote, onContinu
           <h4 className="text-gold-400 font-serif text-xs mb-1 flex items-center gap-1">
             <Compass size={12} /> 海上人称
           </h4>
-          {Object.entries(outcome.notoriety).map(([axis, delta]) => {
+          {Object.entries(outcome.notoriety).map(([rawAxis, delta]) => {
+            const axis = rawAxis as NotorietyAxis
             const d = delta ?? 0
             if (d === 0) return null
             return (
-              <div key={axis} className="flex items-center justify-between text-xs font-serif">
-                <span className="text-gold-400">{NOTORIETY_LABELS[axis] ?? axis}</span>
+              <div key={axis} className="flex items-center justify-between gap-2 text-xs font-serif">
                 {/*
-                  【这里原来写死了一个「+」】`+{d}` —— 只要某次选择让某个取向**下降**，
-                  屏幕上就会印出「+-3」。而这一块又不分正负色（永远是 gold-300），
-                  于是"你变得更贪婪"和"你没那么贪婪了"长得一模一样。
-                  现在与上面两块用同一条规则：正号只在正数时加，正负各一色。
-
-                  ⚠️ 外面这对花括号不能省。这段注释原本是**裸的块注释**，
-                  写在 JSX 子节点位置上 —— 于是它被当成文本，**原样印在结算屏上**，
-                  在 2026-11-24 到 11-25 之间每个事件结算里都能读到一大段开发者备注。
-                  是 e2e 探针把 body.innerText 打出来才看见的：屏幕上不会报错，
-                  代码里也读不出异常。JSX 里写注释只有一种合法写法：花括号包起来的那种。
+                  【刻度贴着名字，不贴数字】第一版把刻度放在最右边、和 +1 挤在一起，
+                  中间空出 400px —— 读起来像"守秘 …… ▮▮▮ +1"，刻度到底修饰谁不清楚。
+                  现在：名字 + 刻度在左成一组（刻度说的就是这条轴），
+                  +1 仍在右边缘的账本列上。
                 */}
-                <span className={`font-mono text-[16px] leading-none tabular-nums ${d > 0 ? 'ink-good' : 'ink-bad'}`}>
+                <span className="flex min-w-0 items-center gap-2">
+                  <span className="text-gold-400">{NOTORIETY_LABELS[axis] ?? axis}</span>
+                  {/*
+                    【刻度的槽必须一直看得见】空槽用极暗底色 + 细边，而不是"什么都没有"：
+                    0/3 的时候若槽不可见，玩家会以为这里没有刻度，只会看到一个孤零零的 +1。
+                    槽数从 `axisThreshold` 取（称号门槛与选项门槛里更低的那条），不写死。
+                    填的是**这次结算之后**的值（结算前 + 本次增量），所以 +1 这一下当场进一格。
+                  */}
+                  <span
+                    className="flex h-[5px] shrink-0 items-center gap-[2px]"
+                    data-axis-pips={axis}
+                    data-filled={Math.min(axisThreshold(axis), (notoriety[axis] ?? 0) + d)}
+                    data-value={(notoriety[axis] ?? 0) + d}
+                    data-max={axisThreshold(axis)}
+                    title={`${NOTORIETY_LABELS[axis] ?? axis} ${
+                      (notoriety[axis] ?? 0) + d >= axisThreshold(axis)
+                        ? `${(notoriety[axis] ?? 0) + d}（${axisThreshold(axis)} 格已满）`
+                        : `${(notoriety[axis] ?? 0) + d} / ${axisThreshold(axis)} 格`
+                    }`}
+                  >
+                    {Array.from({ length: axisThreshold(axis) }, (_, i) => (
+                      <span
+                        key={i}
+                        className={`box-border h-[5px] w-[9px] rounded-[1px] border ${
+                          i < Math.min(axisThreshold(axis), (notoriety[axis] ?? 0) + d)
+                            ? 'border-transparent bg-gold-300'
+                            : 'border-gold-700/45 bg-gold-700/20'
+                        }`}
+                      />
+                    ))}
+                  </span>
+                </span>
+                <span className={`w-[26px] shrink-0 text-right font-mono text-[16px] leading-none tabular-nums ${d > 0 ? 'ink-good' : 'ink-bad'}`}>
                   {d > 0 ? '+' : ''}{d}
                 </span>
               </div>

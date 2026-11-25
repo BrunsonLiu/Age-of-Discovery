@@ -32,7 +32,7 @@ import {
   GRATICULE_MERIDIANS, GRATICULE_PARALLELS, GRATICULE_STEP_DEG,
 } from '../src/utils/chartLines'
 import { departureWindows } from '@/utils/voyage'
-import { optionGateFor, crossedGates } from '@/data/notoriety'
+import { optionGateFor, crossedGates, axisThreshold } from '@/data/notoriety'
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { birdPose, flagYaw, smokePose } from '../src/utils/portLife'
 import { DIALOGUE_RULES, dialogueBudget, pickDialogue, unreachableScripts, type DialogueContext } from '../src/utils/dialogueTriggers'
@@ -16066,9 +16066,23 @@ console.log('== 帧率撑不住时，画质预设是最后一道闸 ==')
 
   const er = readFileSync(join(process.cwd(), 'src', 'components', 'events', 'EventResult.tsx'), 'utf8')
   assert(!/const NOTORIETY_LABELS: Record<string, string>/.test(er), '① 结算屏不再自己维护一份名字表')
-  assert(/import \{ NOTORIETY_LABELS, crossedGates \} from '@\/data\/notoriety'/.test(er),
+  assert(/import \{ NOTORIETY_LABELS, .*crossedGates \} from '@\/data\/notoriety'/.test(er),
     '① 结算屏从 data/notoriety 取名字与判据')
   assert(/data-testid="notoriety-unlock"/.test(er), '② 结算屏有可核对的解锁说明节点')
+  /*
+   * 【"还差几格"要画出来，不是写出来】右侧原来只有一个 +1，玩家想知道
+   * "这算多还是少、离某种人还差多远"，只能自己记着"3 格算一种人"。
+   * 现在每条轴带一条分段刻度（槽数 = `axisThreshold`）。
+   * 判据三条：槽数是算出来的（不是写死 3）、刻度在数字左边（贴着名字，
+   * 否则中间空 400px 会看不出它修饰谁）、空槽有边（0/3 时也要数得清有三格）。
+   */
+  assert(/data-axis-pips=\{axis\}/.test(er), '③ 每条轴有一处可核对的刻度节点')
+  assert(/length: axisThreshold\(axis\)/.test(er), '③ 槽数由 axisThreshold 算（不写死三格）')
+  assert(er.indexOf('data-axis-pips') < er.indexOf('w-[26px]'), '③ 刻度在 +1 左边（贴着名字，不贴着数字）')
+  assert(/border-gold-700\/45 bg-gold-700\/20/.test(er), '③ 空槽有细边（0/3 时也数得清有三格）')
+  const th = { cruel: axisThreshold('cruel'), mercy: axisThreshold('mercy'), greed: axisThreshold('greed'), bold: axisThreshold('bold'), secret: axisThreshold('secret') }
+  assert(Object.values(th).every(n => n === 3), `五轴刻度都是 3（${JSON.stringify(th)}）`)
+  assert(axisThreshold('secret') === Math.min(optionGateFor('secret') ?? 99, 3), '③ 刻度取"称号与选项门槛里更低的那条"')
   const ec = readFileSync(join(process.cwd(), 'src', 'components', 'events', 'EventChoice.tsx'), 'utf8')
   assert(/choice\.requireAxis && \(/.test(ec) && /data-axis=\{choice\.requireAxis\.axis\}/.test(ec),
     '② 带门槛的选项有角标，且带 data-axis 供核对')

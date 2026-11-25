@@ -146,6 +146,29 @@ check(unlock.axis === 'secret', `④ 跨过门槛时结算屏说明了（守秘=
 check(/守秘到了 3/.test(unlock.text || ''), `④ 说明里写了到几分（「${unlock.text}」）`)
 check(/只有你才看得见/.test(unlock.text || ''), '④ 说明的是"专属选项"这件真事（不是泛泛的漂亮话）')
 
+/*
+ * ⑥ "还差几格"是画出来的：三条轴各一条分段刻度，填的是**这次结算之后**的值。
+ * 上面那次正好把守秘推到 3 —— 刻度必须满三格。判据取 DOM 属性，不数像素。
+ */
+const pips = await page.evaluate(() => {
+  const el = document.querySelector('[data-axis-pips="secret"]')
+  if (!el) return null
+  const kids = [...el.children]
+  return {
+    filled: Number(el.getAttribute('data-filled')),
+    max: Number(el.getAttribute('data-max')),
+    value: Number(el.getAttribute('data-value')),
+    slots: kids.length,
+    lit: kids.filter(k => k.className.includes('bg-gold-300')).length,
+    title: el.getAttribute('title'),
+  }
+})
+check(!!pips, '⑥ 守秘那一行有分段刻度')
+check(pips?.slots === pips?.max && pips?.max === 3, `⑥ 槽数 = 门槛（${pips?.slots} 槽 / max ${pips?.max}）`)
+check(pips?.filled === 3 && pips?.lit === 3, `⑥ 跨过门槛后三格全亮（填入 ${pips?.filled}，亮 ${pips?.lit}）`)
+check(pips?.value === 3, `⑥ 刻度用的是"结算之后"的值（data-value=${pips?.value}）`)
+check(/3（3 格已满）/.test(pips?.title || ''), `⑥ 悬停给出确切数字（「${pips?.title}」）`)
+
 /* ⑤ 只报第一次：4→5 不该再说一遍 */
 await page.evaluate(() => {
   window.__gameStore.setState({ notoriety: { cruel: 0, mercy: 0, greed: 0, bold: 0, secret: 4 }, currentEvent: null })

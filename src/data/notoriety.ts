@@ -1,5 +1,6 @@
 import type { NotorietyAxis } from '@/types'
 import { events } from './events'
+import { TITLES } from './titles'
 
 /**
  * 五轴取向的**唯一**中文名表。
@@ -39,6 +40,22 @@ export function optionGateFor(axis: NotorietyAxis): number | null {
     }
   }
   return best
+}
+
+/**
+ * 某条轴的"刻度上限"：玩家在界面上看到的几格。
+ *
+ * 取**两条线里更低的那条** —— 称号门槛（`TITLES.threshold`）与选项门槛
+ * （`optionGateFor`）。现在两者都是 3，所以刻度永远是三格；但取 min 而不是写死 3，
+ * 是因为将来只要有人把某条门槛调成 4 或 2，格子会跟着变，而不是屏幕在骗人。
+ *
+ * 【为什么要这个数】界面要把"还差几格"画成格子（量要被看见，不是读出来），
+ * 而格子数只能是**一个确定的数**。没有这个函数，组件里就会写死 `[1,2,3]`。
+ */
+export function axisThreshold(axis: NotorietyAxis): number {
+  const title = TITLES.find(t => t.axis === axis)?.threshold ?? 3
+  const gate = optionGateFor(axis)
+  return Math.max(1, gate == null ? title : Math.min(title, gate))
 }
 
 /**
