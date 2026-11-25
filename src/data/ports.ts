@@ -118,6 +118,13 @@ export const portGoods: PortGood[] = [
   { portId: 8, goodId: 5, price: 80, stock: 50, priceModifier: 1.45 },
   { portId: 8, goodId: 3, price: 60, stock: 40, priceModifier: 1.3 },
   { portId: 8, goodId: 10, price: 160, stock: 30, priceModifier: 1.25 },
+  /*
+   * 象牙：伦敦是近代早期欧洲的象牙集散地（皇家非洲公司从几内亚海岸运象牙回泰晤士河）。
+   * 依据 `sim:economy --gaps`：埃尔米纳→伦敦 2801nm、顺风(1.01)、**到岸渴求 0.00** ——
+   * 跑 17 天卖象牙每件每日只有 0.18 金，是全表最差的几条之一。
+   * 买入价写 33（略高于基准 30）：这座港是**买家**，玩家不该在这里进货。
+   */
+  { portId: 8, goodId: 2, price: 33, stock: 25, priceModifier: 1.45 },
 
   /* ---- 埃尔米纳(9)：西非，产象牙/黄金海岸木材，渴求火枪/布匹(丝) ---- */
   { portId: 9, goodId: 2, price: 20, stock: 150, priceModifier: 0.6 },
@@ -168,6 +175,8 @@ export const portGoods: PortGood[] = [
   { portId: 15, goodId: 9, price: 255, stock: 35, priceModifier: 1.4 },
   { portId: 15, goodId: 5, price: 82, stock: 45, priceModifier: 1.45 },
   { portId: 15, goodId: 10, price: 145, stock: 40, priceModifier: 1.15 },
+  /* 象牙：VOC 把非洲象牙经阿姆斯特丹转销全欧 —— 同一个洞（埃尔米纳→阿姆斯特丹 2911nm、渴求 0.00） */
+  { portId: 15, goodId: 2, price: 33, stock: 25, priceModifier: 1.45 },
 
   /* ---- 蒙巴萨(16)：东非，产象牙，渴求火枪/丝绸 ---- */
   { portId: 16, goodId: 2, price: 22, stock: 130, priceModifier: 0.65 },

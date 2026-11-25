@@ -247,14 +247,49 @@ if (laneArg) {
   } else {
     rows.sort((a, b) => (b.sell - b.buy) / b.days - (a.sell - a.buy) / a.days)
     console.log(`\n「${want}」共 ${rows.length} 条（港口 × 商品），按每件每日毛利降序：`)
-    console.log('  商品'.padEnd(12) + '买价'.padStart(6) + '卖价'.padStart(6) + '每件'.padStart(7) + '天数'.padStart(6) + '每件每日'.padStart(9))
+    console.log('  到达港'.padEnd(16) + '商品'.padEnd(12) + '买价'.padStart(6) + '卖价'.padStart(6) + '每件'.padStart(7) + '天数'.padStart(6) + '每件每日'.padStart(9))
     for (const r of rows) {
       const per = (r.sell - r.buy) / r.days
-      console.log('  ' + r.good.padEnd(10) + String(r.buy).padStart(6) + String(r.sell).padStart(6) +
+      console.log('  ' + r.to.padEnd(14) + r.good.padEnd(10) + String(r.buy).padStart(6) + String(r.sell).padStart(6) +
         String(r.sell - r.buy).padStart(7) + r.days.toFixed(1).padStart(6) + per.toFixed(2).padStart(9))
     }
     console.log('')
   }
+}
+
+/*
+ * `--gaps`：**顺风但到岸没人要**的中长航线（"跑了却不值"的真缺口）。
+ *
+ * 判据：500–3000nm、风系数 ≥1.0（顺风，天数不是瓶颈）、且最好那件货的到岸渴求度 <1.3。
+ * 逆风航线不列进来 —— 那是航海常识（顶风要走十几天），补价等于把风向的意义抹平。
+ * 这里列出来的才是"本可以赚钱、但目的港不收这种货"的洞，也就是**该补渴求品**的地方。
+ */
+if (process.argv.includes('--gaps')) {
+  const pmAt = (portName: string, goodName: string) => {
+    const to = ports.find(p => p.nameCn === portName)
+    const g = goods.find(x => x.nameCn === goodName)
+    if (!to || !g) return { pm: 0, portId: to?.id ?? 0 }
+    return { pm: portGoods.find(pg => pg.portId === to.id && pg.goodId === g.id)?.priceModifier ?? 0, portId: to.id }
+  }
+  const best = new Map<string, Leg & { perDay: number }>()
+  for (const l of legs) {
+    const perDay = (l.sell - l.buy) / l.days
+    const k = `${l.from}→${l.to}`
+    const prev = best.get(k)
+    if (!prev || perDay > prev.perDay) best.set(k, { ...l, perDay })
+  }
+  const gaps = [...best.values()]
+    .map(l => ({ ...l, ...pmAt(l.to, l.good) }))
+    .filter(l => l.nm >= 500 && l.nm < 3000 && l.favor >= 1.0 && l.pm < 1.3)
+    .sort((a, b) => a.perDay - b.perDay)
+  console.log(`\n顺风但到岸没人要的中长航线：${gaps.length} 条（按每件每日毛利升序，只列前 15）`)
+  console.log('  航线'.padEnd(26) + '海里'.padStart(7) + '天'.padStart(6) + '风'.padStart(6) + '  货'.padEnd(10) + '毛利/日'.padStart(9) + '  到岸渴求'.padStart(9))
+  for (const l of gaps.slice(0, 15)) {
+    console.log('  ' + `${l.from}→${l.to}`.padEnd(24) + String(Math.round(l.nm)).padStart(7) +
+      l.days.toFixed(1).padStart(6) + l.favor.toFixed(2).padStart(6) + '  ' + l.good.padEnd(8) +
+      l.perDay.toFixed(2).padStart(9) + l.pm.toFixed(2).padStart(9))
+  }
+  console.log('')
 }
 
 if (process.argv.includes('--lanes')) {
