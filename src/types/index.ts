@@ -275,6 +275,18 @@ export interface EventChoice {
    * 想清楚"对面是谁"（不写就默认海军，单测会盯）。
    */
   enemyShip?: 'pirate' | 'navy'
+  /**
+   * 这条选项**只在某个取向达到阈值时出现**（R3）。
+   *
+   * 【为什么要它】五轴取向（残忍/仁慈/贪婪/胆识/隐秘）从第 29 轮起就在累积，
+   * 但全项目只有 `currentTitle()` 与册子的「正在成为」读它 —— 玩家做了三十次
+   * 道德选择，换来的只是一个称号。同类游戏（太吾、鬼谷）里，"你是哪种人"
+   * 会**改变你能选什么**：这才是选择有重量的证据。
+   *
+   * 判据写在这里而不是散在各事件里：`visibleChoices()`（utils/eventChoices）
+   * 是唯一过滤入口，单测与 e2e 都盯它，不会出现"某处漏过滤"。
+   */
+  requireAxis?: { axis: NotorietyAxis; min: number }
 }
 
 export interface EventOutcome {

@@ -8,6 +8,7 @@ import { UI_ASSETS } from '@/data/uiAssets'
 import { GAME_BALANCE } from '@/data/gameConfig'
 import { STANCES } from '@/utils/segment'
 import { adjustOutcome, clampOutcomeToFleet, outcomeAdjustDelta, traitEffect } from '@/utils/outcomeAdjust'
+import { visibleChoices } from '@/utils/eventChoices'
 import { summarizeChoice, type ChoiceSummary } from '@/utils/eventSummary'
 import EventChoiceComponent from './EventChoice'
 import EventResult from './EventResult'
@@ -24,6 +25,12 @@ export default function EventCard() {
   const officers = useGameStore(s => s.officers)
   // 船员特长（水手长等）也参与结算：perk 文本写了就必须生效
   const crewRoster = useGameStore(s => s.crewRoster)
+  /*
+   * R3：取向决定**看得见哪些选项**。过滤只在这里做一次，下面渲染、摘要、点击取值
+   * 全部用同一个 `choices` 列表 —— 否则"屏上少一个选项、按 index 却取到它"，
+   * 是这类机制最难查的错。
+   */
+  const notoriety = useGameStore(s => s.notoriety)
   const applyEventOutcome = useGameStore(s => s.applyEventOutcome)
   const addEventLog = useGameStore(s => s.addEventLog)
   const clearCurrentEvent = useGameStore(s => s.clearCurrentEvent)
@@ -78,6 +85,8 @@ export default function EventCard() {
   // 走的是与 resolveOutcome **完全相同**的调整流水线（姿态/特质/大副/截断），
   // 所以芯片上的数字就是掷骰后可能落到的数字的加权平均——
   // 预览与实际分裂是这个世界最忌讳的事，这里不例外。
+  /* R3：取向决定看得见哪些选项。只在这里过滤一次，摘要/渲染/点击共用同一个列表。 */
+  const choices = useMemo(() => visibleChoices(currentEvent?.choices ?? [], notoriety), [currentEvent, notoriety])
   const summaries: ChoiceSummary[] = useMemo(() => {
     if (!currentEvent) return []
     const ctx = {
@@ -87,13 +96,13 @@ export default function EventCard() {
       crewIds: crewRoster.map(m => m.id),
       eventType: currentEvent?.type,
     }
-    return currentEvent.choices.map(c => summarizeChoice(c, ctx, fleet, GAME_BALANCE.MORALE_MAX))
-  }, [currentEvent, stance, fleet, officers, crewRoster])
+    return choices.map(c => summarizeChoice(c, ctx, fleet, GAME_BALANCE.MORALE_MAX))
+  }, [choices, currentEvent, stance, fleet, officers, crewRoster])
 
   if (!currentEvent) return null
 
   const handleSelectChoice = (index: number) => {
-    const choice = currentEvent.choices[index]
+    const choice = choices[index]
     if (!choice) return
     setChoiceIndex(index)
 
@@ -360,7 +369,7 @@ export default function EventCard() {
                   {currentEvent.description}
                 </p>
                 <div className="space-y-2">
-                  {currentEvent.choices.map((choice, idx) => (
+                  {choices.map((choice, idx) => (
                     <EventChoiceComponent
                       key={idx}
                       choice={choice}

@@ -15878,6 +15878,35 @@ console.log('== 帧率撑不住时，画质预设是最后一道闸 ==')
     '三条补挂的巡检确实在脚本里（不是只写进守卫）')
 }
 
+/* ============ R3：取向必须改变"能选什么" ============ */
+/*
+ * 五轴取向从第 29 轮起就在累积，但全项目只有 `currentTitle()` 与册子读它 ——
+ * 玩家做了三十次道德选择，换来的只是一个称号。同类游戏里"你是哪种人"
+ * 会**改变你能选什么**，这才是选择有重量的证据。
+ *
+ * 另外发现：事件级的 `notorietyMin` 门槛（eventEngine.ts）**实现完整但 0 处使用** ——
+ * 机制做完了从来没有被接上。这一条守的是"机制必须真被用"，防止它再次烂在代码里。
+ */
+{
+  const utils = readFileSync(join(process.cwd(), 'src', 'utils', 'eventChoices.ts'), 'utf8')
+  assert(/export function visibleChoices/.test(utils), '① 过滤只有一个入口（visibleChoices）')
+  assert(/if \(!notoriety\) return \[\.\.\.choices\]/.test(utils),
+    '① 没有取向数据时显示全部（老存档不能看到一个没有选项的事件卡）')
+  const card = readFileSync(join(process.cwd(), 'src', 'components', 'events', 'EventCard.tsx'), 'utf8')
+  assert(/visibleChoices\(currentEvent\?\.choices/.test(card), '② 事件卡用过滤后的列表')
+  assert(!/currentEvent\.choices\.map/.test(card) && !/currentEvent\.choices\[index\]/.test(card),
+    '② 渲染与点击取值都走同一个列表（否则"屏上少一个、按 index 却取到它"）')
+  const ev = readFileSync(join(process.cwd(), 'src', 'data', 'events.ts'), 'utf8')
+  const gated = (ev.match(/requireAxis: \{ axis: '/g) ?? []).length
+  assert(gated >= 2, `③ 至少 2 个选项带取向门槛（实际 ${gated} 个）——机制不能只写在类型里`)
+  const axes = (ev.match(/requireAxis: \{ axis: '(cruel|mercy|greed|bold|secret)'/g) ?? [])
+  const uniq = new Set(axes.map(x => /'(cruel|mercy|greed|bold|secret)'/.exec(x)![1]))
+  assert(uniq.size >= 2, `③ 门槛覆盖至少两条轴（实际 ${[...uniq].join('/')}）`)
+  // 事件级 notorietyMin：引擎有实现，数据里也必须有使用，否则整段是死机制
+  const engine = readFileSync(join(process.cwd(), 'src', 'utils', 'eventEngine.ts'), 'utf8')
+  assert(/triggerCondition\.notorietyMin/.test(engine), '④ 引擎里的事件级取向门槛还在')
+}
+
 /* ============ 金盆洗手（R1）：入口两步确认、相位独立、账本同源 ============ */
 /*
  * 原来一局只有两种走法：翻船，或者永远开下去。玩家没有"我赚够了、想收手"的出口，

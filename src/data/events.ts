@@ -517,6 +517,18 @@ export const events: GameEvent[] = [
           { probability: 0.2, goldChange: 0, foodChange: -5, waterChange: 0, moraleChange: 5, durabilityChange: -5, crewChange: 0, description: '你们刚推下两箱货，它就叼走一箱咸鱼扬长而去——老水手直拍大腿。' }
         ]
       },
+      /*
+       * R3：胆识 ≥3 才有的选项。同一个事件里，胆大的人和谨慎的人**看到的选项不同** ——
+       * 这就是"你正在成为谁"落到了玩法上，而不是只落在称号上。
+       */
+      {
+        text: '擂鼓放歌，声势吓退它',
+        requireAxis: { axis: 'bold', min: 3 },
+        outcomes: [
+          { probability: 0.5, goldChange: 0, foodChange: 0, waterChange: 0, moraleChange: 12, durabilityChange: -8, crewChange: -1, notoriety: { bold: 1 }, description: '鼓声在雾里撞回来，它缓缓沉了下去。' },
+          { probability: 0.5, goldChange: 0, foodChange: -5, waterChange: -5, moraleChange: -8, durabilityChange: -22, crewChange: -3, notoriety: { bold: 1 }, description: '它不吃这套。鼓手被卷下海。' }
+        ]
+      },
       {
         text: '熄灯静默，等它自己离开',
         outcomes: [
@@ -1102,6 +1114,22 @@ export const events: GameEvent[] = [
         outcomes: [
           { probability: 0.5, goldChange: 0, foodChange: 0, waterChange: 0, moraleChange: 0, durabilityChange: 0, crewChange: 0, factionChange: { crown: -10, brethren: 5 }, description: '宫务官的脸沉了下来。当夜酒馆里多了几个"打听你航线"的生面孔。' },
           { probability: 0.5, goldChange: 0, foodChange: 0, waterChange: 0, moraleChange: 0, durabilityChange: 0, crewChange: 0, factionChange: { crown: -5 }, description: '你推说舱位已满、航期已定——宫务官笑了笑，那笑容让你后半程都没睡好。' },
+        ],
+      },
+      /*
+       * R3：只有"隐秘"取向累积到 3 的船长才看得见这一条。
+       *
+       * 这里不是给老玩家加特权，而是**让选择有重量**：一个一路偷看、套话、
+       * 走暗线的船长，到了这一步自然有"以惯犯的方式谈价"这个选项；
+       * 新船长看不到它，也就不会觉得"我少了什么"——因为他确实还没成为那种人。
+       * 数值与同事件其它选项同量级（金币 150 / 声望 -5 / 隐秘 +1）。
+       */
+      {
+        text: '以惯犯的口吻谈价：这封密函，值多少？',
+        requireAxis: { axis: 'secret', min: 3 },
+        outcomes: [
+          { probability: 0.55, goldChange: 220, foodChange: 0, waterChange: 0, moraleChange: 0, durabilityChange: 0, crewChange: 0, fameChange: 3, notoriety: { secret: 1 }, factionChange: { crown: -8 }, description: '你把铜片转了一圈，报了个数。他沉默很久，付了钱。' },
+          { probability: 0.45, goldChange: 0, foodChange: 0, waterChange: 0, moraleChange: -5, durabilityChange: 0, crewChange: 0, notoriety: { secret: 1 }, factionChange: { crown: -15 }, description: '你算错了底线。密函被收回，你进了另一本册子。' },
         ],
       },
       {
