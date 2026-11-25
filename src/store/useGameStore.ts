@@ -492,6 +492,15 @@ interface GameStore extends GameState {
    */
   continueAsVisitor: () => void
   resetGame: () => void
+  /**
+   * 金盆洗手：主动把这一局收在一份生涯评价上。
+   *
+   * 【为什么它必须存在】原来一局只有两种结局：翻船，或者永远开下去。
+   * 玩家没有"我赚够了、想看看这一辈子怎么样"的出口 —— 而"何时收手"
+   * 正是这类游戏最有张力的决策之一（Pirates! 的退休结算）。
+   * 只在**靠岸且未航行**时可用（海上退休等于凭空消失一支舰队）。
+   */
+  retire: () => void
 }
 
 function updateCargo(cargo: CargoItem[], goodId: number, delta: number, fromPortId?: number): CargoItem[] {
@@ -3067,6 +3076,12 @@ export const useGameStore = create<GameStore>()(
             makeDonationEntry(next, state.fleet.day, gain, portId),
           ),
         })
+      }),
+
+      retire: () => set((state) => {
+        if (state.fleet.isSailing || state.fleet.currentPortId == null) return state
+        if (state.gamePhase === 'retired' || state.gamePhase === 'gameover') return state
+        return { gamePhase: 'retired' }
       }),
 
       resetGame: () => {

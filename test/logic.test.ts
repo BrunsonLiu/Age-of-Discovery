@@ -1171,7 +1171,12 @@ assert(/十二档势力特权现在都有实现/.test(helpSrc),
 {
   const mm = readFileSync(join(process.cwd(), 'src', 'pages', 'MainMap.tsx'), 'utf8')
   // 这块是文件里最后一个条件渲染块，从这里切到末尾即可（不用猜括号）
-  const at = mm.indexOf("gamePhase === 'gameover' &&")
+  /*
+   * 2026-11-25：加「金盆洗手（retired）」之后，这一块的门控变成两种相位。
+   * 切片锚点跟着改 —— 否则 indexOf 返回 -1，后面四条断言会**一起红**，
+   * 而红的原因与它们各自守的东西无关（这叫"锚点连带"，很容易误判）。
+   */
+  const at = mm.indexOf("(gamePhase === 'gameover' || gamePhase === 'retired') &&")
   assert(at > 0, 'MainMap 里找得到翻船屏那一块')
   const block = stripComments(mm.slice(at))
 
@@ -15871,6 +15876,37 @@ console.log('== 帧率撑不住时，画质预设是最后一道闸 ==')
   assert(orphans.length === 0, `会失败的巡检都有人跑（孤儿：${orphans.slice(0, 4).join(', ')}）`)
   assert(scripts.includes('map-cursor.mjs') && scripts.includes('port-palette.mjs') && scripts.includes('first-run-mobile.mjs'),
     '三条补挂的巡检确实在脚本里（不是只写进守卫）')
+}
+
+/* ============ 金盆洗手（R1）：入口两步确认、相位独立、账本同源 ============ */
+/*
+ * 原来一局只有两种走法：翻船，或者永远开下去。玩家没有"我赚够了、想收手"的出口，
+ * 而"何时收手"正是这类游戏最有张力的决策（Pirates! 的退休结算）。
+ *
+ * 三条判据：
+ *  ① `retired` 必须是**独立相位**，不是给 gameover 加一个布尔标记 ——
+ *     两者在终局屏上的结论完全相反（失败 vs 体面收手），合并会让
+ *     以后每个按相位分支的地方都要额外记住那个标记。
+ *  ② 入口必须两步确认：一次点击就结束一局，误触代价太大。
+ *  ③ 退休屏与翻船屏用同一本账（生涯总结 / 座次表），只是结论不同。
+ */
+{
+  const t = readFileSync(join(process.cwd(), 'src', 'types', 'index.ts'), 'utf8')
+  assert(/gamePhase: .*'gameover' \| 'retired'/.test(t), '① 相位里有 retired（与 gameover 并列）')
+  const store = readFileSync(join(process.cwd(), 'src', 'store', 'useGameStore.ts'), 'utf8')
+  assert(/retire: \(\) => set\(\(state\) => \{/.test(store), '① store 有 retire 动作')
+  assert(/state\.fleet\.isSailing \|\| state\.fleet\.currentPortId == null/.test(store),
+    '① 只有靠岸且未航行时才能退休（海上退休等于凭空消失一支舰队）')
+  const pd = readFileSync(join(process.cwd(), 'src', 'components', 'panels', 'PortDetail.tsx'), 'utf8')
+  assert(/data-testid="retire-open"/.test(pd) && /data-testid="retire-confirm"/.test(pd) && /data-testid="retire-cancel"/.test(pd),
+    '② 入口是两步确认（打开 / 确定 / 再想想三个锚点）')
+  assert(/const \[confirmRetire, setConfirmRetire\] = useState\(false\)/.test(pd),
+    '② 确认态是本地状态，不改存档')
+  const mm = readFileSync(join(process.cwd(), 'src', 'pages', 'MainMap.tsx'), 'utf8')
+  assert(/gamePhase === 'retired' \? BG_ASSETS\.victory : BG_ASSETS\.defeat/.test(mm),
+    '③ 退休用胜利底图、翻船用失败底图（同一屏、两种结论）')
+  assert(/金盆洗手' : '航行终结/.test(mm), '③ 标题按相位分叉')
+  assert(/以新船长再来一局' : '重新起航/.test(mm), '③ 主按钮按相位分叉')
 }
 
 /* ============ 出航计划：三个决策数字必须比标签大 ============ */

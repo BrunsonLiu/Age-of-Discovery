@@ -507,7 +507,15 @@ export interface GameState {
   lastPortId: number | null
   discoveredPorts: number[]
   currentEvent: GameEvent | null
-  gamePhase: 'start' | 'playing' | 'event' | 'segment' | 'helm' | 'gameover'
+  /**
+   * `retired` = 玩家主动退休（金盆洗手）。
+   *
+   * 【为什么单列一个相位，不和 gameover 合并】两者在终局屏上要显示**完全不同的
+   * 结论**：gameover 是"你失败了"，retired 是"你在最好的时候收了手"。
+   * 合并靠一个布尔标记也能做，但那样"失败"与"退休"在类型层面就没有区别，
+   * 以后任何按相位分支的代码都要额外记住那个标记 —— 一条迟早会漏的隐式约定。
+   */
+  gamePhase: 'start' | 'playing' | 'event' | 'segment' | 'helm' | 'gameover' | 'retired'
   /** 港口动态库存与每日价格波动，随天数演进 */
   marketStock: Record<string, number>
   /** 本局已看过的行情速报（portId:goodId），避免重复弹 */

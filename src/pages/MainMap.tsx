@@ -960,7 +960,7 @@ export default function MainMap() {
         <TutorialOverlay />
       )}
 
-      {gamePhase === 'gameover' && (
+      {(gamePhase === 'gameover' || gamePhase === 'retired') && (
         <div
           data-testid="gameover-screen"
           /*
@@ -979,7 +979,7 @@ export default function MainMap() {
             后来翻船"的玩家看到一屏「传奇船长」，那是在说谎。
           */}
           <img
-            src={BG_ASSETS.defeat}
+            src={gamePhase === 'retired' ? BG_ASSETS.victory : BG_ASSETS.defeat}
             alt=""
             aria-hidden="true"
             className="absolute inset-0 w-full h-full object-cover opacity-85"
@@ -994,10 +994,21 @@ export default function MainMap() {
                 （首屏的 ⛵ 换罗盘、登船的 🏴‍☠️ 换 Skull、逃生游戏的 🧍 换线性图标、
                 小游戏评级的 🌟/🌀/⚔️ 换图标），只有这块翻船屏漏了。
                 骷髅是"航行终结"最直接的形，与登船小游戏用的是同一个字形。 */}
-            <Skull size={44} strokeWidth={1.3} className="mx-auto mb-1 text-gold-600/75" aria-hidden="true" />
-            <h1 className="pirate-title text-4xl text-danger-300">航行终结</h1>
+            {/*
+              【同一屏，两种结论】翻船是"你失败了"，退休是"你在最好的时候收了手"。
+              两者共用统计/座次/按钮这些**同一套事实**，只在图标、标题、一句话与
+              主按钮上分叉 —— 不另起一屏，因为要显示的账是同一本。
+            */}
+            {gamePhase === 'retired'
+              ? <Anchor size={44} strokeWidth={1.3} className="mx-auto mb-1 text-gold-500/80" aria-hidden="true" />
+              : <Skull size={44} strokeWidth={1.3} className="mx-auto mb-1 text-gold-600/75" aria-hidden="true" />}
+            <h1 className={`pirate-title text-4xl ${gamePhase === 'retired' ? 'text-gold-300' : 'text-danger-300'}`}>
+              {gamePhase === 'retired' ? '金盆洗手' : '航行终结'}
+            </h1>
             <p className="text-gold-400 font-serif text-lg">
-              你的舰队在第{fleet.day}天走向了终结
+              {gamePhase === 'retired'
+                ? `你在第${fleet.day}天靠岸收帆，把船与名字一起留在了这座港`
+                : `你的舰队在第${fleet.day}天走向了终结`}
             </p>
             <div className="space-y-1 text-gold-500 font-serif text-sm">
               <p>积累财富: <span className="text-gold-300">{fleet.gold} 金</span> · 声望: <span className="text-gold-300">{fleet.fame}</span></p>
@@ -1134,8 +1145,9 @@ export default function MainMap() {
               <button
                 onClick={resetGame}
                 className="px-5 py-2 rounded-lg font-serif text-gold-400 hover:text-gold-200 border border-gold-700/40 press transition-all"
+                data-testid="restart-game"
               >
-                重新起航
+                {gamePhase === 'retired' ? '以新船长再来一局' : '重新起航'}
               </button>
             </div>
           </div>

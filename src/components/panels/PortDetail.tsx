@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { Anchor, Wrench, Package, Users, Coins, Shield, Heart, Ship, Map, Compass, ScrollText } from 'lucide-react'
 import { useGameStore } from '@/store/useGameStore'
 import { useMapStore } from '@/store/useMapStore'
@@ -39,7 +40,14 @@ const serviceNames: Record<string, string> = {
 }
 
 export default function PortDetail() {
+  /*
+   * 金盆洗手要两步确认（一次点击就结束一局，误触代价太大）。
+   * 必须声明在**组件最上方、所有 early return 之前** —— 第一次写在了
+   * `if (!port) return <DockEmpty/>` 之后，eslint 的 rules-of-hooks 直接拦下。
+   */
+  const [confirmRetire, setConfirmRetire] = useState(false)
   const fleet = useGameStore(s => s.fleet)
+  const retire = useGameStore(s => s.retire)
   const selectedPortId = useMapStore(s => s.selectedPortId)
   const setActivePanel = useGameStore(s => s.setActivePanel)
   const repairShip = useGameStore(s => s.repairShip)
@@ -539,6 +547,62 @@ export default function PortDetail() {
                 </div>
                 <p className="text-gold-400 text-xs font-serif">士气低于 45 时，舰队可能爆发哗变——疲惫的船员比风暴更危险。</p>
               </div>
+            </div>
+          )}
+
+          {/*
+            【金盆洗手：主动退休】原来一局只有两种走法 —— 翻船，或者永远开下去。
+            "我赚够了，想看看这一辈子怎么样"没有出口，而"何时收手"正是这类游戏
+            最有张力的决策之一。入口放在港口服务的最末（不在主操作区旁边），
+            并且**两步确认**：一次点击就结束一局，误触代价太大。
+          */}
+          {isAtPort && !fleet.isSailing && (
+            <div data-service-anchor="retire" className="border-t border-gold-700/60 pt-3">
+              <h4 className="text-gold-600 font-serif text-[12px] tracking-[0.16em] mb-2 flex items-center gap-1">
+                <Anchor size={12} /> 退役
+              </h4>
+              {!confirmRetire ? (
+                <>
+                  <div className="flex items-center justify-between text-[13px]">
+                    <span className="text-gold-400 font-serif">金盆洗手：把这一局收在一份生涯评价上</span>
+                    <button
+                      type="button"
+                      onClick={() => setConfirmRetire(true)}
+                      data-testid="retire-open"
+                      className="shrink-0 px-3 py-1.5 rounded-sm border border-gold-700/40 text-[13px] font-serif text-gold-300 hover:bg-gold-700/20 transition-colors"
+                    >
+                      金盆洗手…
+                    </button>
+                  </div>
+                  <p className="text-gold-600 text-xs font-serif mt-1">
+                    退役不清掉图鉴与见闻，只是这一局的船不再出海。
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p className="text-gold-300 font-serif text-[13px] leading-relaxed">
+                    就此收帆？这一局会在第 {fleet.day} 天结束，生涯评价按此刻的账算。
+                  </p>
+                  <div className="flex items-center gap-2 mt-1.5">
+                    <button
+                      type="button"
+                      onClick={retire}
+                      data-testid="retire-confirm"
+                      className="px-3 py-1.5 rounded-sm border border-gold-600/60 text-[13px] font-serif text-gold-200 hover:bg-gold-700/25 transition-colors"
+                    >
+                      确定收帆
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setConfirmRetire(false)}
+                      data-testid="retire-cancel"
+                      className="px-3 py-1.5 rounded-sm text-[13px] font-serif text-gold-500 hover:text-gold-300 transition-colors"
+                    >
+                      再想想
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
           )}
 
