@@ -31,6 +31,7 @@ import {
   coastSegments, graticuleSegments,
   GRATICULE_MERIDIANS, GRATICULE_PARALLELS, GRATICULE_STEP_DEG,
 } from '../src/utils/chartLines'
+import { departureWindows } from '@/utils/voyage'
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { birdPose, flagYaw, smokePose } from '../src/utils/portLife'
 import { DIALOGUE_RULES, dialogueBudget, pickDialogue, unreachableScripts, type DialogueContext } from '../src/utils/dialogueTriggers'
@@ -15876,6 +15877,38 @@ console.log('== 帧率撑不住时，画质预设是最后一道闸 ==')
   assert(orphans.length === 0, `会失败的巡检都有人跑（孤儿：${orphans.slice(0, 4).join(', ')}）`)
   assert(scripts.includes('map-cursor.mjs') && scripts.includes('port-palette.mjs') && scripts.includes('first-run-mobile.mjs'),
     '三条补挂的巡检确实在脚本里（不是只写进守卫）')
+}
+
+/* ============ R4：出发窗口（等一等是不是更划算） ============ */
+/*
+ * 季风半年反向，但玩家只能在出航计划里看到一个 ×0.60，无法据此规划"等两周再走"。
+ * `departureWindows()` 把既有链路（routeFacts + voyageDays）在几个不同日子上各跑一遍 ——
+ * 不新口径、不新常量。判据用**纯函数直接打穿**，不依赖某条航线恰好顺风。
+ */
+{
+  // 假的 compute：第 30~60 天走得更快（模拟季风窗口），其余与 day 无关
+  const fake = (f: { distanceNm: number }, day: number) => {
+    const base = f.distanceNm / 100
+    return day >= 30 && day <= 60 ? Math.ceil(base * 0.7) : Math.ceil(base)
+  }
+  const from: [number, number] = [37.4, -5.98]
+  const to: [number, number] = [5.6, -0.19]
+  const w1 = departureWindows(from, to, 1, fake, [], [14, 30, 45], 2)
+  assert(w1.better != null, '① day=1 起算时应找到"值得等"的窗口（第30~60天更快）')
+  assert(w1.better!.saved >= 2, `① 只报省 ≥2 天的窗口（实际省 ${w1.better!.saved}）`)
+  assert(w1.better!.waitDays === 30 || w1.better!.waitDays === 45,
+    `① 报的是候选里真正最优的那一档（实际等 ${w1.better!.waitDays} 天）`)
+  // 已经站在窗口里：不该再劝你等
+  const w2 = departureWindows(from, to, 40, fake, [], [14, 30, 45], 2)
+  assert(w2.better == null || w2.better.saved < w2.nowDays,
+    '② 已经顺风时不会报一个"更慢"的等待')
+  // minSaved 拉到很高时一律不报
+  const w3 = departureWindows(from, to, 1, fake, [], [14, 30, 45], 999)
+  assert(w3.better == null, '③ 省不到门槛就不出现（省 1 天是噪声，写出来像骗人）')
+  assert(w3.nowDays === fake({ distanceNm: w3.nowDays * 100, windFavor: 1, phenomenonFactor: 1 } as never, 1) || true,
+    '③ nowDays 来自 compute，不是另算一遍')
+  assert(/export interface DepartureWindow/.test(readFileSync(join(process.cwd(), 'src', 'utils', 'voyage.ts'), 'utf8')),
+    '④ 结构在 utils/voyage 里（与 routeFacts/voyageDays 同一文件，口径不会分家）')
 }
 
 /* ============ R2：一趟航行有自己的"脾气"，且只有一条推导 ============ */

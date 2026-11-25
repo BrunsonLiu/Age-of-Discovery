@@ -7,6 +7,7 @@ import { calculateDailyConsumption, prevailingWindBearing, dailyDistanceNm } fro
 import { dailyRates, voyageDays } from '@/utils/voyage'
 import { ports } from '@/data/ports'
 import { pickVoyageMod } from '@/data/voyageModifiers'
+import { departureWindows } from '@/utils/voyage'
 import { shipSprite } from '@/data/shipSprites'
 import { onUiCommand } from '@/utils/uiBus'
 import { WEATHER_INFO, weatherForecast, weatherFavorFactor } from '@/utils/weather'
@@ -240,6 +241,27 @@ export default function VoyagePlanModal() {
     officers,
     weather,
   })
+  /*
+   * R4：出发窗口。季风半年反向，但玩家现在只能看到一个 ×0.60 —— 无法据此规划
+   * "等两周再走"。这里把同一套链路（`routeFacts` + `voyageDays`）在几个不同日子
+   * 上各跑一遍，只在**省 ≥ 2 天**时给出一句话（省 1 天是噪声，写出来像骗人）。
+   */
+  const windows = fromPort
+    ? departureWindows(
+      [fromPort.latitude, fromPort.longitude],
+      [waypoint.latitude, waypoint.longitude],
+      fleet.day,
+      (facts) => voyageDays({
+        distanceNm: facts.distanceNm,
+        windFavor: facts.windFavor,
+        phenomenonFactor: facts.phenomenonFactor,
+        fleet,
+        officers,
+        weather,
+      }),
+      useGameStore.getState().knownPassages ?? [],
+    )
+    : null
   // 「只够几天」也按起航后按部就班的日耗算，不拿港内口径或基础值混用
   const foodDays = seaRates.foodPerDay > 0 ? Math.floor(fleet.food / seaRates.foodPerDay) : 99
   const waterDays = seaRates.waterPerDay > 0 ? Math.floor(fleet.water / seaRates.waterPerDay) : 99
@@ -375,6 +397,27 @@ export default function VoyagePlanModal() {
             <span className="shrink-0 font-serif text-[13px] text-gold-200">{voyageMod.name}</span>
             <span className="min-w-0 truncate font-serif text-[12px] text-gold-500">{voyageMod.line}</span>
           </div>
+
+          {/*
+            R4：只有当"等一等真的划算"（省 ≥ 2 天）时才出现这一行。
+            没有可等的时候什么都不写 —— 空话比没有更吵。
+            数字与上面「这一趟要几天」同一条链路（routeFacts + voyageDays），
+            只是把 day 换成 day+等待天数。
+          */}
+          {windows?.better && (
+            <div
+              className="flex items-baseline gap-2 rounded border border-gold-700/25 px-2.5 py-1.5"
+              style={{ background: 'rgba(0,0,0,0.18)' }}
+              data-testid="departure-window"
+              data-wait={windows.better.waitDays}
+              data-days={windows.better.days}
+              data-saved={windows.better.saved}
+            >
+              <span className="shrink-0 font-serif text-[12px] text-gold-600">等 {windows.better.waitDays} 天</span>
+              <span className="shrink-0 font-serif text-[13px] text-gold-200">{windows.better.days} 天到</span>
+              <span className="min-w-0 truncate font-serif text-[12px] text-safe-400">比现在少 {windows.better.saved} 天</span>
+            </div>
+          )}
 
           {/* ③ 细节全部折叠：想深究才点开 */}
           {forecast.length > 0 && (

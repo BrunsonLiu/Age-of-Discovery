@@ -205,6 +205,51 @@ export function windFavorForRoute(
  * 军官（领航员 +15%）要算进来：出航计划面板用的是 `dailyDistanceNm(fleet, officers, …)`，
  * 漏掉军官就会让主屏比实际慢 15%。
  */
+/**
+ * 出发窗口对比：**现在走**与**等两周 / 等一个月**各要几天（R4）。
+ *
+ * 【要解决什么】季风存在（`phenomenonFactor` 半年反向），但玩家在出航计划里
+ * 只看到一个 ×0.60，无法据此规划"等两个月再走"。UW2 的玩家会等季风，
+ * 我们的玩家只会觉得"这趟不顺"。
+ *
+ * 【为什么是纯函数】它只是把既有链路（`routeFacts` + `voyageDays`）在**不同日**
+ * 上跑几遍 —— 不新口径、不新常量。放在 utils 里，单测能直接打穿它，
+ * 面板只负责显示，不参与计算。
+ *
+ * 【为什么返回"最好的一档"而不是全部】面板上只该有一句话：
+ * "等 N 天，少 M 天"。给三行对比等于让玩家做算术（本项目的头号禁令）。
+ * 只有**省 ≥ 2 天**才算值得等 —— 省 1 天是噪声，写出来反而像在骗人。
+ */
+export interface DepartureWindow {
+  /** 现在走要几天（已经过 routeFacts 的弧长与两套乘数） */
+  nowDays: number
+  /** 值得等的那一档：等多少天、那时要几天、能省几天（不值得等时为 null） */
+  better: { waitDays: number; days: number; saved: number } | null
+}
+
+export function departureWindows(
+  from: [number, number],
+  to: [number, number],
+  day: number,
+  compute: (facts: { distanceNm: number; windFavor: number; phenomenonFactor: number }, day: number) => number,
+  knownPassages: readonly string[] = [],
+  candidates: readonly number[] = [14, 30, 45, 60],
+  minSaved = 2,
+): DepartureWindow {
+  const nowFacts = routeFacts(from, to, day, knownPassages)
+  const nowDays = compute(nowFacts, day)
+  let best: DepartureWindow['better'] = null
+  for (const waitDays of candidates) {
+    const facts = routeFacts(from, to, day + waitDays, knownPassages)
+    const days = compute(facts, day + waitDays)
+    const saved = nowDays - days
+    if (saved >= minSaved && (!best || saved > best.saved)) {
+      best = { waitDays, days, saved }
+    }
+  }
+  return { nowDays, better: best }
+}
+
 export function voyageDays(input: {
   /** 航线弧长（海里）——来自 routeFacts，不要用大圆距离 */
   distanceNm: number
