@@ -101,6 +101,16 @@ export const portGoods: PortGood[] = [
   { portId: 7, goodId: 9, price: 250, stock: 40, priceModifier: 1.45 },
   { portId: 7, goodId: 5, price: 85, stock: 40, priceModifier: 1.5 },
   { portId: 7, goodId: 2, price: 55, stock: 40, priceModifier: 1.5 },
+  /*
+   * 木材：里斯本完全不产，波罗的海/北海的木材经此转运（史实）。
+   * 【为什么要补】`sim:economy --lanes` 里伦敦→里斯本(881nm)、阿姆斯特丹→里斯本(1011nm)
+   * 两条中程航线的**到岸渴求度是 0.00**，跑一千海里卖木材每件每日只赚 0.6~1.0 金；
+   * 中程平风组的 0.67（全线最低）就是被这类"跑了却没价差"的航线拖的。
+   * 木材的产地都在 800 海里以外（伦敦/阿姆斯特丹/开普敦/埃尔米纳），
+   * 所以不会凭空长出一批短途高毛利航线把中位数冲淡 —— 这与上次给韦拉克鲁斯
+   * 补朗姆酒不同（那次多出一串加勒比短跳，中位数反而没动）。
+   */
+  { portId: 7, goodId: 6, price: 38, stock: 60, priceModifier: 1.45 },
 
   /* ---- 伦敦(8)：产火枪/木材，渴求蔗糖/烟草/丝绸 ---- */
   { portId: 8, goodId: 7, price: 58, stock: 70, priceModifier: 0.75 },
