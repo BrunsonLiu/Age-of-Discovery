@@ -61,7 +61,7 @@ import { findRelic, relicDistanceNm, relicInSeason, RELIC_PICKUP_NM } from '@/da
 import { nationById, legendPending, nextChapter, tributeState, DEFAULT_NATION } from '@/data/nations'
 import { phenomenonAt, phenomenonEventBias, SEA_PHENOMENA, routePhenomenonFactor } from '@/data/seaPhenomena'
 import { newlyReached } from '@/data/voyageMilestones'
-import { appendLogbook, findClueFor, makeArrivalEntry, makeDonationEntry, makeEchoEntry, makeLegendEntry, makeTitleEntry, makeTributeEntry, markAllRead } from '@/data/logbook'
+import { appendLogbook, findClueFor, makeArrivalEntry, makeDepartureEntry, makeDonationEntry, makeEchoEntry, makeLegendEntry, makeTitleEntry, makeTributeEntry, markAllRead } from '@/data/logbook'
 import { SAVE_KEY, SAVE_VERSION } from '@/utils/saveFile'
 
 const createStartingShip = (name = '圣玛利亚号'): Ship => ({
@@ -1449,6 +1449,11 @@ export const useGameStore = create<GameStore>()(
           activeTasks: [],
           eventLog: [],
           discoveredPorts: [nation.portId],
+          /*
+           * 开局即写一页「启程」。实测过：不加这一页，新档册子是 0 页 ——
+           * 而"回来有东西等你"是这个游戏唯一的留存承诺，第一天空着等于没承诺。
+           */
+          logbook: [makeDepartureEntry(nation.portId)].filter((e): e is NonNullable<typeof e> => e != null),
           currentEvent: null,
           gamePhase: 'playing',
           activePanel: null,

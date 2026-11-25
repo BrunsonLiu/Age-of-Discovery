@@ -15878,6 +15878,24 @@ console.log('== 帧率撑不住时，画质预设是最后一道闸 ==')
     '三条补挂的巡检确实在脚本里（不是只写进守卫）')
 }
 
+/* ============ R5：新档第一天就有一页 ============ */
+/*
+ * 实测过：不加这一页，新档册子是 **0 页**（journal 0 / 成就 0/17 / 传说 未检验）——
+ * 「回来有东西等你」是本作唯一的留存承诺，而它在第一天是空头。
+ *
+ * 判据三条：生成函数存在且带尾巴、initGame 真的写了它、页的 id 可去重。
+ */
+{
+  const lb = readFileSync(join(process.cwd(), 'src', 'data', 'logbook.ts'), 'utf8')
+  assert(/export function makeDepartureEntry/.test(lb), '① 有「启程」页的生成函数')
+  assert(/id: `departure-1-\$\{portId\}`/.test(lb), '① id 里带 portId（换国别不会撞号）')
+  assert(/targetPortId: rumor\?\.id \?\? null/.test(lb), '① 带一条下一站的尾巴（留存的钩子）')
+  assert(/title: `启程 · \$\{port\.nameCn\}`/.test(lb), '① 标题是「启程 · 母港」，不是通用文案')
+  const store = readFileSync(join(process.cwd(), 'src', 'store', 'useGameStore.ts'), 'utf8')
+  assert(/logbook: \[makeDepartureEntry\(nation\.portId\)\]/.test(store), '② initGame 真的写入了这一页')
+  assert(/discoveredPorts: \[nation\.portId\],/.test(store), '② 母港仍是已发现（页与地图同一座港）')
+}
+
 /* ============ R3：取向必须改变"能选什么" ============ */
 /*
  * 五轴取向从第 29 轮起就在累积，但全项目只有 `currentTitle()` 与册子读它 ——

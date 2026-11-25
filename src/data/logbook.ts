@@ -167,6 +167,36 @@ export function pickRumor(
   }
 }
 
+/**
+ * 开局那一页「启程」。
+ *
+ * 【为什么必须有】实测新档：`journal 0 页 / 成就 0/17 / 传说 未检验` ——
+ * 「回来有东西等你」这个承诺，在第一天是**空头**，要到第三五趟才兑现。
+ * 而册子是这游戏唯一"会变厚的东西"，第一眼就是 0，等于告诉玩家"你还没开始"。
+ *
+ * 与到港页的区别：这一页不是"我到了"，是"我准备走"。
+ * 用 `kind: 'arrival'` 共用配图/统计路径（玩家确实站在母港），
+ * 但标题与页边注按启程写；hint 用同一套酒馆传闻，于是**开局就有一条尾巴**，
+ * 而它会在真正靠上那座港时按既有逻辑"应验"成第二页。
+ */
+export function makeDepartureEntry(portId: number): LogbookEntry | null {
+  const port = ports.find(p => p.id === portId)
+  if (!port) return null
+  const rumor = pickRumor([portId], 1, portId)
+  return {
+    id: `departure-1-${portId}`,
+    kind: 'arrival',
+    day: 1,
+    portId,
+    title: `启程 · ${port.nameCn}`,
+    text: port.description,
+    aside: '缆绳解开了。海图摊在舵手台上，第一笔还没画。',
+    hint: rumor?.text ?? null,
+    targetPortId: rumor?.id ?? null,
+    read: false,
+  }
+}
+
 /** 到港见闻：每带回一趟就多一页；同一天同一港只写一页 */
 export function makeArrivalEntry(
   portId: number,
