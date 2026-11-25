@@ -15923,6 +15923,53 @@ console.log('== 帧率撑不住时，画质预设是最后一道闸 ==')
     '④ 结构在 utils/voyage 里（与 routeFacts/voyageDays 同一文件，口径不会分家）')
 }
 
+/* ============ 港口服务：得失要摆成芯片，不写成带括号的话 ============ */
+/*
+ * 原来两行是句子：
+ *   「休整一日：士气+8（耗食物2/淡水2）」
+ *   「甲板盛宴：士气+15、声望+2」
+ * 玩家要读完括号才知道这一按的代价。而事件卡上早就是芯片形态
+ * （图标 + `士气 ~+8`）——同一个游戏里"一件事的得失"不该有两种读法。
+ *
+ * 现在：名称一行、得失一行（绿=得 / 红=失，数字带符号）、按钮在右，
+ * 与事件选项同一个节奏。数值一律读 `GAME_BALANCE`，芯片里不许出现字面量。
+ */
+{
+  const pd = readFileSync(join(process.cwd(), 'src', 'components', 'panels', 'PortDetail.tsx'), 'utf8')
+  assert(/function EffectChip\(/.test(pd) && /data-effect-chip=\{label\}/.test(pd),
+    '① 有一个可核对的得失芯片组件')
+  assert(/data-value=\{value\}/.test(pd) && /\{up \? '\+' : ''\}\{value\}/.test(pd),
+    '① 芯片带符号与原始数值（屏幕数字 = 实际变化）')
+  /*
+   * 【注释自伤，第五次】这两条否定式判据第一次直接扫源码，结果命中了我自己
+   * 上面那段"原来写的是……「休整一日：士气+8（耗食物2/淡水2）」"的说明。
+   * 否定式判据一律先 `stripComments`。
+   */
+  const pdBare = stripComments(pd)
+  assert(!/休整一日：士气\+/.test(pdBare) && !/（耗食物/.test(pdBare),
+    '② 不再用"名称：效果（代价）"这种带括号的一句话')
+  assert(!/甲板盛宴：士气\+/.test(pdBare), '② 盛宴也不再是顿号连接的一句话')
+  const chips = [...pd.matchAll(/<EffectChip icon=\{(\w+)\} label="([^"]+)" value=\{([^}]+)\} \/>/g)]
+    .map(m => ({ icon: m[1], label: m[2], expr: m[3] }))
+  /*
+   * 【按区块数，不按总数】第一版写的是 `chips.length >= 7`，注入"把一个芯片换成
+   * 裸文字 `<span>士气+8</span>`"之后**没红** —— 9 减 1 还是 ≥7。
+   * 判据要能区分"少了一个"，就得钉到区块上：补给 2 个、休整区 7 个（3+4）。
+   */
+  const supplyBlock = pd.slice(pd.indexOf('data-service-anchor="supply"'), pd.indexOf('港口休整'))
+  // 切片右界用 `data-service-anchor="retire"`，不能用「金盆洗手」——那个词在文件开头的
+  // 注释里先出现过一次，indexOf 会指到第 71 行，切出空串（实测 chips=0 假红）
+  const restBlock = pd.slice(pd.indexOf('港口休整'), pd.indexOf('data-service-anchor="retire"'))
+  const countIn = (t: string) => (t.match(/<EffectChip /g) ?? []).length
+  assert(countIn(supplyBlock) === 2, `③ 补给区是"食物/淡水"两枚芯片（实测 ${countIn(supplyBlock)}）`)
+  assert(countIn(restBlock) === 7, `③ 休整区是 3+4 枚芯片（实测 ${countIn(restBlock)}）`)
+  assert(chips.every(c => /GAME_BALANCE|supplyGot/.test(c.expr)),
+    '③ 芯片里的数一律来自 GAME_BALANCE / supplyGot，不许写死字面量')
+  const labels = new Set(chips.map(c => c.label))
+  assert(labels.size >= 3 && labels.has('士气') && labels.has('食物') && labels.has('淡水'),
+    `③ 至少覆盖士气/食物/淡水（实际 ${[...labels].join('/')}）`)
+}
+
 /* ============ 风险三档要能"扫"，不是逐条读 ============ */
 /*
  * 选项右下角原来是 `[险]`：三个字长得一样，只有字不同，玩家必须逐条读过去

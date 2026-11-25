@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Anchor, Wrench, Package, Users, Coins, Shield, Heart, Ship, Map, Compass, ScrollText } from 'lucide-react'
+import { Anchor, Wrench, Package, Users, Coins, Shield, Heart, Ship, Map, Compass, ScrollText, Moon, PartyPopper, Utensils, Droplets, Star } from 'lucide-react'
 import { useGameStore } from '@/store/useGameStore'
 import { useMapStore } from '@/store/useMapStore'
 import { ports } from '@/data/ports'
@@ -37,6 +37,33 @@ const serviceIcons: Record<string, React.ReactNode> = {
 
 const serviceNames: Record<string, string> = {
   repair: '修理', supply: '补给', recruit: '招募', trade: '贸易', shipyard: '造船厂',
+}
+
+/**
+ * 效果芯片：**图标 + 标签 + 带符号的数**，比如 `❤ 士气 +8` / `🍖 食物 −2`。
+ *
+ * 【为什么要有它】「休整一日：士气+8（耗食物2/淡水2）」和「甲板盛宴：士气+15、
+ * 声望+2」是两句带括号的话 —— 玩家要读完才知道这一按的代价。而事件卡上早就是
+ * 芯片形态（图标 + `士气 ~+8`），同一个游戏里"一件事的得失"却有两种读法。
+ * 现在港口服务也用芯片：**名称一行、得失一行、按钮在右**，与事件选项同一个节奏。
+ *
+ * 正负各一色（绿/红），数字带符号，和结算屏同一条规矩。
+ */
+function EffectChip({ icon: Icon, label, value }: { icon: typeof Heart; label: string; value: number }) {
+  const up = value > 0
+  return (
+    <span
+      data-effect-chip={label}
+      data-value={value}
+      className={`inline-flex items-center gap-1 rounded-sm border px-1.5 py-[1px] font-serif text-[12px] ${
+        up ? 'border-safe-700/60 bg-safe-900/45 text-safe-200' : 'border-danger-800/60 bg-danger-900/35 text-danger-200'
+      }`}
+    >
+      <Icon size={11} className="opacity-80" aria-hidden="true" />
+      <span>{label}</span>
+      <span className="font-mono tabular-nums">{up ? '+' : ''}{value}</span>
+    </span>
+  )
 }
 
 export default function PortDetail() {
@@ -510,8 +537,11 @@ export default function PortDetail() {
               <h4 className="text-gold-600 font-serif text-[12px] tracking-[0.16em] mb-2 flex items-center gap-1">
                 <Package size={12} /> 补给物资
               </h4>
-              <div className="flex items-center justify-between text-[13px]">
-                <span className="text-gold-400 font-serif">食物+{supplyGot.food} 淡水+{supplyGot.water}</span>
+              <div className="flex items-center justify-between gap-2 text-[13px]">
+                <span className="flex flex-wrap items-center gap-1.5">
+                  <EffectChip icon={Utensils} label="食物" value={supplyGot.food} />
+                  <EffectChip icon={Droplets} label="淡水" value={supplyGot.water} />
+                </span>
                 <ActionButton onClick={handleSupply} disabled={fleet.gold < supplyCostNow} variant="secondary">
                   {supplyCostNow} 金
                 </ActionButton>
@@ -524,26 +554,45 @@ export default function PortDetail() {
               <h4 className="text-gold-600 font-serif text-[12px] tracking-[0.16em] mb-2 flex items-center gap-1">
                 <Heart size={12} /> 港口休整
               </h4>
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between text-[13px]">
-                  <span className="text-gold-400 font-serif">
-                    休整一日：士气+{GAME_BALANCE.REST_MORALE}（耗食物{GAME_BALANCE.REST_FOOD}/淡水{GAME_BALANCE.REST_WATER}）
-                  </span>
-                  <ActionButton onClick={handleRest} variant="secondary">
-                    休整
-                  </ActionButton>
+              {/*
+                两行"带括号的话"改成两张卡：**名称一行、得失一行、按钮在右**。
+                原来「休整一日：士气+8（耗食物2/淡水2）」要读完才知道代价，
+                而事件卡上早就是芯片形态（图标 + 士气 ~+8）——同一个游戏里
+                "一件事的得失"不该有两种读法。
+              */}
+              <div className="space-y-2">
+                <div className="rounded-sm border border-gold-700/30 bg-black/20 px-2.5 py-1.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="flex items-center gap-1.5 font-serif text-[13px] text-gold-300">
+                      <Moon size={12} aria-hidden="true" /> 休整一日
+                    </span>
+                    <ActionButton onClick={handleRest} variant="secondary">休整</ActionButton>
+                  </div>
+                  <div className="mt-1 flex flex-wrap gap-1.5">
+                    <EffectChip icon={Heart} label="士气" value={GAME_BALANCE.REST_MORALE} />
+                    <EffectChip icon={Utensils} label="食物" value={-GAME_BALANCE.REST_FOOD} />
+                    <EffectChip icon={Droplets} label="淡水" value={-GAME_BALANCE.REST_WATER} />
+                  </div>
                 </div>
-                <div className="flex items-center justify-between text-[13px]">
-                  <span className="text-gold-400 font-serif">
-                    甲板盛宴：士气+{GAME_BALANCE.FEAST_MORALE}、声望+{GAME_BALANCE.FEAST_FAME}
-                  </span>
-                  <ActionButton
-                    onClick={handleFeast}
-                    disabled={fleet.gold < GAME_BALANCE.FEAST_COST || fleet.food < GAME_BALANCE.FEAST_FOOD || fleet.water < GAME_BALANCE.FEAST_WATER}
-                    variant="secondary"
-                  >
-                    {GAME_BALANCE.FEAST_COST} 金
-                  </ActionButton>
+                <div className="rounded-sm border border-gold-700/30 bg-black/20 px-2.5 py-1.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="flex items-center gap-1.5 font-serif text-[13px] text-gold-300">
+                      <PartyPopper size={12} aria-hidden="true" /> 甲板盛宴
+                    </span>
+                    <ActionButton
+                      onClick={handleFeast}
+                      disabled={fleet.gold < GAME_BALANCE.FEAST_COST || fleet.food < GAME_BALANCE.FEAST_FOOD || fleet.water < GAME_BALANCE.FEAST_WATER}
+                      variant="secondary"
+                    >
+                      {GAME_BALANCE.FEAST_COST} 金
+                    </ActionButton>
+                  </div>
+                  <div className="mt-1 flex flex-wrap gap-1.5">
+                    <EffectChip icon={Heart} label="士气" value={GAME_BALANCE.FEAST_MORALE} />
+                    <EffectChip icon={Star} label="声望" value={GAME_BALANCE.FEAST_FAME} />
+                    <EffectChip icon={Utensils} label="食物" value={-GAME_BALANCE.FEAST_FOOD} />
+                    <EffectChip icon={Droplets} label="淡水" value={-GAME_BALANCE.FEAST_WATER} />
+                  </div>
                 </div>
                 <p className="text-gold-400 text-xs font-serif">士气低于 45 时，舰队可能爆发哗变——疲惫的船员比风暴更危险。</p>
               </div>
