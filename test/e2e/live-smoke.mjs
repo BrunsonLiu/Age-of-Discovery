@@ -241,7 +241,8 @@ const hint = await page.evaluate(() => {
   }
 })
 check(!!hint && hint.visible, `主屏常驻「下一站」可见${hint ? `（${hint.text.slice(0, 28)}）` : '：没渲染'}`)
-check(!!hint && /海里|航路|刚带回/.test(hint.text), '常驻条里带具体数字或回执，不是空壳')
+/* 2026-11-26：回执主行不再写「刚带回」，状态改由数字徽标承担 */
+check(!!hint && /海里|航路|\d/.test(hint.text), '常驻条里带具体数字或回执，不是空壳')
 
 // 侧栏「贸易」：真实鼠标点开面板，再用面板自己的锚点确认——不能用 innerText 包含判断
 // （主屏本来就有「买进并起航」按钮，那种判据永远通过）

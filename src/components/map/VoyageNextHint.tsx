@@ -1,4 +1,4 @@
-import { Anchor, ChevronRight, MapPin, ScrollText } from 'lucide-react'
+import { Anchor, CheckCircle2, ChevronRight, Compass, Crown, MapPin, ScrollText } from 'lucide-react'
 import { useGameStore } from '@/store/useGameStore'
 import { useMapStore } from '@/store/useMapStore'
 import { ports } from '@/data/ports'
@@ -58,22 +58,56 @@ export default function VoyageNextHint({ placement = 'float' }: { placement?: 'f
    * 打开日志（默认见闻页）会 markLogbookRead，已读归零后主行自动恢复
    * 「航路 · 目标」，不会留一条消不掉的横条。
    */
+  /*
+   * 【"刚带回 · "四个字换成一枚数字徽标】
+   * 用户的原话是「我讨厌全是文字」。这一行原来写「刚带回 · 酒馆里有人说…」：
+   * 前四个字是**状态**（有新东西），后面才是内容。状态用文字写，每趟都在重复；
+   * 而"有几页"这个数根本没地方显示（桌面只有侧栏一个 8px 红点）。
+   * 现在：图标（按页的类型换形）+ 数字徽标（几页）+ 内容短句。
+   * 「刚带回」这层意思交给"徽标在 + 图标变了形"两件事，读起来更短也更准。
+   */
   const receiptHead = receipt.latest ? (
     <button
       type="button"
       onClick={openLogbook}
       data-testid="arrival-receipt"
       data-unread={receipt.unread}
+      data-kind={receipt.latest.kind}
+      aria-label={`刚带回 ${receipt.unread} 页：${receipt.gist}（翻开航海日志）`}
       title={`${receipt.latest.title}：${receipt.latest.text}（翻开航海日志）`}
-      className="press block w-full truncate text-left font-serif text-[12px] leading-tight
+      className="press flex w-full min-w-0 items-center gap-1.5 text-left font-serif text-[12px] leading-tight
         text-gold-300 hover:text-gold-100"
     >
-      刚带回 · {receipt.gist}
+      <span
+        data-testid="receipt-count"
+        className="shrink-0 rounded-full border border-gold-600/60 bg-gold-700/45 px-1.5 py-[1px]
+          font-mono text-[12px] leading-none tabular-nums text-gold-100"
+      >
+        {receipt.unread}
+      </span>
+      <span className="min-w-0 truncate">{receipt.gist}</span>
     </button>
   ) : null
-  const headIcon = receipt.latest
-    ? <ScrollText size={14} className="text-gold-300 shrink-0" aria-hidden="true" />
-    : <Anchor size={14} className="text-gold-300 shrink-0" aria-hidden="true" />
+  /*
+   * 图标按**页的类型**换形：到港 / 称号 / 应验 / 传说海域 / 交勘合。
+   * 一眼能看出"这次带回来的是哪种东西"，比一行统一的卷轴图标多一层信息。
+   * 没有未读页时用锚（"在港、没事"），与"有东西在等你"形成对照。
+   */
+  const RECEIPT_ICON: Record<string, typeof Anchor> = {
+    arrival: Anchor,
+    title: Crown,
+    echo: CheckCircle2,
+    legend: Compass,
+    tribute: ScrollText,
+  }
+  const ReceiptIcon = receipt.latest ? (RECEIPT_ICON[receipt.latest.kind] ?? ScrollText) : Anchor
+  const headIcon = (
+    <ReceiptIcon
+      size={14}
+      className={receipt.latest ? 'text-gold-200 shrink-0' : 'text-gold-300 shrink-0'}
+      aria-hidden="true"
+    />
+  )
   /*
    * 移动端刻意保持原样：底栏「日志」标签自带未读数徽标（badge: unreadLogbook），
    * 比桌面那个 8px 红点明显得多，桌面才是这次要补的缺口。stack 分支继续

@@ -109,6 +109,8 @@ const readReceipt = () => page.evaluate(() => {
   const latest = log.find(e => !e.read) ?? null
   return {
     text: (el.textContent || '').replace(/\s+/g, ' ').trim(),
+    countText: (el.querySelector('[data-testid="receipt-count"]')?.textContent || '').trim(),
+    kind: el.getAttribute('data-kind'),
     unreadAttr: Number(el.getAttribute('data-unread')),
     realUnread: log.filter(e => !e.read).length,
     latestHint: latest?.hint ?? '',
@@ -138,7 +140,15 @@ console.log('=== 第 1 趟到港 · 回来的理由出现在主屏 ===')
 await arrive(4, portIds[1])
 const r1 = await readReceipt()
 check(!!r1 && r1.visible, '到港后主屏出现回执条（不依赖点开任何面板）')
-check(!!r1 && /刚带回 ·/.test(r1.text), `主行写「刚带回 · …」（${r1?.text.slice(0, 40) ?? '无'}）`)
+/*
+ * 2026-11-26 改形：「刚带回 · 」四个字换成「数字徽标 + 按类型换形的图标」。
+ * 判据从"文本前缀"改成"徽标里的数 = 未读数"+"短句仍在"——盯的还是同一件事
+ * （这行说明带回了什么、带回了多少），只是形态变了。
+ */
+check(!!r1 && /^\d+/.test(r1.text), `主行以未读页数开头（${r1?.text.slice(0, 40) ?? '无'}）`)
+check(!!r1 && r1.countText === String(r1.realUnread),
+  `徽标里的数 = 实际未读页数（${r1?.countText} / ${r1?.realUnread}）`)
+check(!!r1 && r1.text.replace(/^\d+\s*/, '').length > 4, '徽标后面跟着那页的短句（不是只剩一个数')
 check(!!r1 && r1.unreadAttr === r1.realUnread && r1.realUnread > 0,
   `未读数与 logbook 实际未读页一致（显示 ${r1?.unreadAttr} / 实际 ${r1?.realUnread}）`)
 /*

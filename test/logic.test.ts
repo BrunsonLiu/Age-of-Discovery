@@ -8828,7 +8828,18 @@ console.log('\n== 天数口径守卫 ==')
     '短句只读 LogbookEntry 的真实字段，不凭空造字')
   assert(/data-testid="arrival-receipt"/.test(hint) && /data-unread=\{receipt\.unread\}/.test(hint),
     '回执条有稳定 DOM 锚点，未读数可与 logbook 实际值对账')
-  assert(/刚带回 · \{receipt\.gist\}/.test(hint), '主屏短句来自 hook，不是写死一句「有新内容」')
+  /*
+   * 2026-11-26：主行不再是「刚带回 · <短句>」——那四个字是**状态**，每趟都重复，
+   * 而"有几页"根本没地方显示。现在 = 图标（按页的类型换形）+ 数字徽标 + 短句。
+   * 判据跟着实现走：短句仍只来自 hook（`receipt.gist`），状态改由徽标与 aria-label 承担。
+   */
+  assert(/\{receipt\.gist\}/.test(hint), '主屏短句来自 hook，不是写死一句「有新内容」')
+  assert(/data-testid="receipt-count"/.test(hint) && /\{receipt\.unread\}/.test(hint),
+    '未读页数是一个数字徽标（看得见的量），不是四个字的「刚带回」')
+  assert(/data-kind=\{receipt\.latest\.kind\}/.test(hint) && /const RECEIPT_ICON/.test(hint),
+    '图标按页的类型换形（到港/称号/应验/传说/勘合各不相同）')
+  assert(/aria-label=\{`刚带回 \$\{receipt\.unread\} 页/.test(hint),
+    '「刚带回」这层意思没有丢，挪到 aria-label（读屏仍听得到）')
   assert(/receipt\.latest \? \(/.test(hint),
     '回执条由「是否有未读页」决定渲染，不许写死 false 把它藏回面板里')
   assert(/receiptHead \?\? \(/.test(hint) && /下一站：\{suggest\.nameCn\}/.test(hint),
