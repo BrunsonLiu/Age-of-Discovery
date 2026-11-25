@@ -32,6 +32,7 @@ import {
   GRATICULE_MERIDIANS, GRATICULE_PARALLELS, GRATICULE_STEP_DEG,
 } from '../src/utils/chartLines'
 import { departureWindows } from '@/utils/voyage'
+import { optionGateFor, crossedGates } from '@/data/notoriety'
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { birdPose, flagYaw, smokePose } from '../src/utils/portLife'
 import { DIALOGUE_RULES, dialogueBudget, pickDialogue, unreachableScripts, type DialogueContext } from '../src/utils/dialogueTriggers'
@@ -15956,6 +15957,93 @@ console.log('== 帧率撑不住时，画质预设是最后一道闸 ==')
   const store = readFileSync(join(process.cwd(), 'src', 'store', 'useGameStore.ts'), 'utf8')
   assert(/logbook: \[makeDepartureEntry\(nation\.portId\)\]/.test(store), '② initGame 真的写入了这一页')
   assert(/discoveredPorts: \[nation\.portId\],/.test(store), '② 母港仍是已发现（页与地图同一座港）')
+}
+
+/* ============ JSX 里的注释不许裸写（裸写会被当成正文印出来） ============ */
+/*
+ * 2026-11-24→25 之间，事件结算屏上**真的印着**一大段开发者备注：
+ *
+ *   <span>守秘</span>
+ *   /*  【这里原来写死了一个「+」】……  *\/
+ *   <span>+1</span>
+ *
+ * 裸块注释在 JSX 子节点位置上不是注释，是**文本节点** —— 原样渲染、不报错、
+ * 代码里也读不出异常。是 e2e 探针把 `body.innerText` 打出来才看见的。
+ *
+ * 判据：`.tsx` 里任何一段块注释，若它前面紧邻的是 `>` 或 `}`、后面紧邻的是 `<`，
+ * 那就是写在了 JSX 子节点之间 —— 必须包成 `{/* … *\/}`。
+ * 只认 `>`/`}` + `<` 这一种组合：code 位置的注释后面跟的是语句，不是标签，
+ * 放宽到"后面跟 `{`"会把 `useEffect` 里的注释全扫进来（实测三条假红）。
+ */
+{
+  const walk = (dir: string): string[] => readdirSync(dir).flatMap((f: string) => {
+    const p2 = join(dir, f)
+    return statSync(p2).isDirectory() ? walk(p2) : [p2]
+  })
+  const files = walk(join(process.cwd(), 'src')).filter((p2: string) => p2.endsWith('.tsx'))
+  const bad: string[] = []
+  for (const f of files) {
+    const src = readFileSync(f, 'utf8')
+    const re = /\/\*[\s\S]*?\*\//g
+    let m: RegExpExecArray | null
+    while ((m = re.exec(src)) !== null) {
+      const before = src.slice(0, m.index).trimEnd()
+      const after = src.slice(m.index + m[0].length).trimStart()
+      const prev = before.slice(-1)
+      const next = after.slice(0, 1)
+      if (prev === '{' && next === '}') continue
+      if ((prev === '>' || prev === '}') && next === '<') {
+        bad.push(`${f.split(/[\\/]/).pop()}:${src.slice(0, m.index).split('\n').length}`)
+      }
+    }
+  }
+  assert(files.length > 80, `扫到了 tsx 文件（实测 ${files.length} 个）`)
+  assert(bad.length === 0, `JSX 子节点里没有裸块注释（会被印到屏幕上：${bad.slice(0, 3).join(', ')}）`)
+}
+
+/* ============ R3 的下半句：门槛要能被玩家看见 ============ */
+/*
+ * 机制做完了不等于玩家会知道。取向 ≥3 才出现的选项，如果没有任何提示：
+ *   · 玩家在**看得见它之前**不知道"一致地做某种人"有回报 → 不会往那个方向攒；
+ *   · 看见它之后也不知道**为什么**多出这一条 → 会当成随机。
+ * 所以两处要说话，且都**从数据推导**，不许另写一句可能变假的话：
+ *   ① 选项角标：`守秘 3` + 悬停说明"只有…才看得见这一条"；
+ *   ② 结算屏：这一次 +1 让某轴**第一次**跨过门槛时说一句，之后不再说。
+ *
+ * 最要紧的一条判据是"宁可不说"：`cruel/mercy/greed` 现在**没有**门槛选项，
+ * 于是 `optionGateFor` 返回 null，结算屏不会对它们说"你解锁了专属选项"。
+ * 说一句没有对应实现的话，正是本项目反复吃过亏的那类问题。
+ */
+{
+  const src = readFileSync(join(process.cwd(), 'src', 'data', 'notoriety.ts'), 'utf8')
+  assert(/export const NOTORIETY_LABELS/.test(src), '① 取向中文名只有一个来源')
+  assert(/export function optionGateFor/.test(src) && /c\.requireAxis\?\.axis !== axis/.test(src),
+    '② 门槛从事件库推导（不是写死 AXIS_UNLOCK_AT = 3）')
+  assert(/export function crossedGates/.test(src) && /was < gate && now >= gate/.test(src),
+    '③ 判据是"跨过"（before < gate ≤ after），不是"达到"——达到会每屏都说一次')
+  // 只有真带门槛的轴才会被报出来
+  const gates: Record<string, number | null> = { bold: optionGateFor('bold'), secret: optionGateFor('secret'), mercy: optionGateFor('mercy'), cruel: optionGateFor('cruel'), greed: optionGateFor('greed') }
+  assert(gates.bold === 3 && gates.secret === 3, `② 两条有门槛的轴都推出 3（${JSON.stringify(gates)}）`)
+  assert(gates.mercy === null && gates.cruel === null && gates.greed === null,
+    '② 没有门槛选项的轴返回 null（否则结算屏会说一句没有实现的话）')
+  /* 入参是**结算前**的值（store 在点「继续」时才写入，结算屏看到的就是 before） */
+  const before = (v: Record<string, number>) => ({ cruel: 0, mercy: 0, greed: 0, bold: 0, secret: 0, ...v })
+  assert(crossedGates({ secret: 1 }, before({ secret: 2 })).length === 1, '③ 2 +1 跨过 3 → 报出来')
+  assert(crossedGates({ secret: 1 }, before({ secret: 3 })).length === 0, '③ 3 +1 → 4 不再报（只报第一次）')
+  assert(crossedGates({ secret: 2 }, before({ secret: 1 })).length === 1, '③ +2 一次跨过也算')
+  assert(crossedGates({ mercy: 1 }, before({ mercy: 2 })).length === 0, '③ 无门槛的轴永远不报')
+  assert(crossedGates({ secret: -1 }, before({ secret: 3 })).length === 0, '③ 负向变化不算解锁')
+
+  const er = readFileSync(join(process.cwd(), 'src', 'components', 'events', 'EventResult.tsx'), 'utf8')
+  assert(!/const NOTORIETY_LABELS: Record<string, string>/.test(er), '① 结算屏不再自己维护一份名字表')
+  assert(/import \{ NOTORIETY_LABELS, crossedGates \} from '@\/data\/notoriety'/.test(er),
+    '① 结算屏从 data/notoriety 取名字与判据')
+  assert(/data-testid="notoriety-unlock"/.test(er), '② 结算屏有可核对的解锁说明节点')
+  const ec = readFileSync(join(process.cwd(), 'src', 'components', 'events', 'EventChoice.tsx'), 'utf8')
+  assert(/choice\.requireAxis && \(/.test(ec) && /data-axis=\{choice\.requireAxis\.axis\}/.test(ec),
+    '② 带门槛的选项有角标，且带 data-axis 供核对')
+  assert(/只有\$\{NOTORIETY_LABELS\[choice\.requireAxis\.axis\]\}累积到/.test(ec),
+    '② 角标的悬停说明写清了"只有到 N 才看得见"')
 }
 
 /* ============ R3：取向必须改变"能选什么" ============ */

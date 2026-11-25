@@ -9,6 +9,8 @@ import {
   miniGameGrade,
 } from '@/utils/miniGame'
 import { RESOURCE_LABEL, outcomeChanges, type ResourceKey } from '@/utils/eventSummary'
+import { NOTORIETY_LABELS, crossedGates } from '@/data/notoriety'
+import { useGameStore } from '@/store/useGameStore'
 import type { EventOutcome } from '@/types'
 
 interface EventResultProps {
@@ -24,13 +26,11 @@ interface EventResultProps {
   onContinue: () => void
 }
 
-const NOTORIETY_LABELS: Record<string, string> = {
-  cruel: '冷酷',
-  mercy: '仁慈',
-  greed: '贪婪',
-  bold: '鲁猛',
-  secret: '守秘',
-}
+/*
+ * 取向的中文名不在这个文件里定义了：`data/notoriety` 是唯一来源。
+ * 带取向门槛的选项角标（EventChoice）读的是同一张表 —— 两处各写一份，
+ * 迟早会出现"结算屏叫守秘、选项角标叫隐秘"，那是同一件事的两个名字。
+ */
 
 /**
  * 资源图标。中文名不在这里写 —— 一律取 `RESOURCE_LABEL`（`utils/eventSummary`），
@@ -50,6 +50,14 @@ const RESOURCE_ICON: Record<ResourceKey, React.ReactNode> = {
 export default function EventResult({ outcome, performance, traitNote, onContinue }: EventResultProps) {
   const grade = performance != null ? miniGameGrade(performance) : null
   const changes = outcomeChanges(outcome)
+  /*
+   * R3 的"到手那一刻"：这一次 +1 让某条轴**第一次**跨过自己的选项门槛。
+   * `crossedGates` 用"本次增量 + 结算后的值"反推，不需要存"提示过没有"的旗标 ——
+   * 状态转移本身就是判据。判据与数据同源（`optionGateFor` 从事件库里读），
+   * 所以屏幕上的这句话只有在**真有门槛选项**的轴上才会出现。
+   */
+  const notoriety = useGameStore(s => s.notoriety)
+  const unlocked = crossedGates(outcome.notoriety, notoriety)
 
   return (
     <div className="space-y-4">
@@ -175,12 +183,18 @@ export default function EventResult({ outcome, performance, traitNote, onContinu
             return (
               <div key={axis} className="flex items-center justify-between text-xs font-serif">
                 <span className="text-gold-400">{NOTORIETY_LABELS[axis] ?? axis}</span>
-                /*
-                 * 【这里原来写死了一个「+」】`+{d}` —— 只要某次选择让某个取向**下降**，
-                 * 屏幕上就会印出「+-3」。而这一块又不分正负色（永远是 gold-300），
-                 * 于是"你变得更贪婪"和"你没那么贪婪了"长得一模一样。
-                 * 现在与上面两块用同一条规则：正号只在正数时加，正负各一色。
-                 */
+                {/*
+                  【这里原来写死了一个「+」】`+{d}` —— 只要某次选择让某个取向**下降**，
+                  屏幕上就会印出「+-3」。而这一块又不分正负色（永远是 gold-300），
+                  于是"你变得更贪婪"和"你没那么贪婪了"长得一模一样。
+                  现在与上面两块用同一条规则：正号只在正数时加，正负各一色。
+
+                  ⚠️ 外面这对花括号不能省。这段注释原本是**裸的块注释**，
+                  写在 JSX 子节点位置上 —— 于是它被当成文本，**原样印在结算屏上**，
+                  在 2026-11-24 到 11-25 之间每个事件结算里都能读到一大段开发者备注。
+                  是 e2e 探针把 body.innerText 打出来才看见的：屏幕上不会报错，
+                  代码里也读不出异常。JSX 里写注释只有一种合法写法：花括号包起来的那种。
+                */}
                 <span className={`font-mono text-[16px] leading-none tabular-nums ${d > 0 ? 'ink-good' : 'ink-bad'}`}>
                   {d > 0 ? '+' : ''}{d}
                 </span>
@@ -190,6 +204,20 @@ export default function EventResult({ outcome, performance, traitNote, onContinu
           <p className="text-gold-400 text-xs font-serif">
             酒馆里的传闻正在成形：他们开始用一个词来形容你。
           </p>
+          {/* 跨过门槛的那一次说一句，之后不再说 —— 每屏都说就变成噪声 */}
+          {unlocked.map(u => (
+            <p
+              key={u.axis}
+              data-testid="notoriety-unlock"
+              data-axis={u.axis}
+              className="flex items-start gap-1.5 text-gold-300 text-xs font-serif leading-relaxed border-t border-gold-700/30 pt-1.5"
+            >
+              <Compass size={11} className="mt-0.5 shrink-0 text-gold-400" aria-hidden="true" />
+              <span>
+                {NOTORIETY_LABELS[u.axis]}到了 {u.at} —— 有些事件里，会多出只有你才看得见的选项。
+              </span>
+            </p>
+          ))}
         </div>
       )}
 

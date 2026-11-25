@@ -64,7 +64,7 @@ const COLLECT = () => {
     for (const n of el.childNodes) if (n.nodeType === 3) t += n.textContent
     return t.trim()
   }
-  const small = [], clipped = []
+  const small = [], clipped = [], leaked = []
   let cnTotal = 0
   for (const el of document.querySelectorAll('body *')) {
     const txt = leaf(el)
@@ -77,8 +77,14 @@ const COLLECT = () => {
     cnTotal++
     if (px < 12) small.push({ txt: txt.slice(0, 24), px })
     if (el.scrollWidth > el.clientWidth + 1) clipped.push(txt.slice(0, 24))
+    /*
+     * 【代码注释泄漏到屏幕上】JSX 子节点位置写裸块注释（没包花括号），
+     * 它会被当成文本原样渲染 —— 屏幕上不报错、代码里读不出异常，
+     * 只有把 innerText 打出来才看得见。2026-11-24→25 事件结算屏上真发生过一次。
+     */
+    if (/\/\*|\*\//.test(txt)) leaked.push(txt.slice(0, 40))
   }
-  return { cnTotal, small, clipped }
+  return { cnTotal, small, clipped, leaked }
 }
 
 const grab = async (name, marker) => {
@@ -102,6 +108,13 @@ const grab = async (name, marker) => {
     `${name}：<12px 中文 ${r.small.length} 条${r.small.length ? ' → ' + r.small.slice(0, 3).map(x => `${x.px}px「${x.txt}」`).join(' ') : ''}`)
   check(r.clipped.length === 0,
     `${name}：中文被截断 ${r.clipped.length} 条${r.clipped.length ? ' → ' + r.clipped.slice(0, 3).join(' / ') : ''}`)
+  /*
+   * 代码注释泄漏：屏幕上不该出现 `/*` 或 `*` + `/`。
+   * 这一类错误不会报错、不会变色，只有把 innerText 打出来才看得见 ——
+   * 2026-11-24→25 期间事件结算屏上真的印着一大段开发者备注。
+   */
+  check(r.leaked.length === 0,
+    `${name}：没有代码注释泄漏到屏幕上${r.leaked.length ? ' → ' + r.leaked.slice(0, 2).join(' ‖ ') : ''}`)
   return r
 }
 

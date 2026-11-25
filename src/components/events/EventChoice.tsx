@@ -3,6 +3,7 @@ import type { EventChoice as EventChoiceType } from '@/types'
 import { MINI_GAME_COPY } from '@/utils/miniGame'
 import MiniGameGlyph from '@/components/ui/MiniGameGlyph'
 import { RESOURCE_LABEL, type ChoiceSummary, type ResourceKey, type RiskGrade } from '@/utils/eventSummary'
+import { NOTORIETY_LABELS } from '@/data/notoriety'
 
 interface EventChoiceProps {
   choice: EventChoiceType
@@ -49,6 +50,16 @@ export default function EventChoice({ choice, index, summary, onSelect }: EventC
       <div className="relative flex items-center justify-between gap-2">
         <span className="text-gold-200 font-serif text-sm">{choice.text}</span>
         <span className="flex items-center gap-1.5 shrink-0">
+          {/* 取向门槛：这一条**是因为你才存在**的，说清是哪一项、到几分 */}
+          {choice.requireAxis && (
+            <span
+              data-axis={choice.requireAxis.axis}
+              className="flex items-center gap-1 rounded-full border border-gold-600/40 bg-gold-900/25 px-2 py-0.5 text-xs font-serif text-gold-400"
+              title={`只有${NOTORIETY_LABELS[choice.requireAxis.axis]}累积到 ${choice.requireAxis.min} 的船长才看得见这一条`}
+            >
+              {NOTORIETY_LABELS[choice.requireAxis.axis]} {choice.requireAxis.min}
+            </span>
+          )}
           {tag && (
             /* 要动手的选项：给出明确标记，玩家知道选了就得操作 */
             <span
