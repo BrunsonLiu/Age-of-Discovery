@@ -15878,6 +15878,35 @@ console.log('== 帧率撑不住时，画质预设是最后一道闸 ==')
     '三条补挂的巡检确实在脚本里（不是只写进守卫）')
 }
 
+/* ============ R2：一趟航行有自己的"脾气"，且只有一条推导 ============ */
+/*
+ * 补的是节奏空档：选完方针后一趟 15 天的航行里没有需要重新决策的节点。
+ *
+ * 为什么只做"事件密度"这一个维度：补给/价格/天数都有"面板=结算"的单一来源约束，
+ * 动一个就要连带改面板；事件密度只乘在 `getRandomEvents` 的 chanceMultiplier 上，
+ * 而那本来就是天气偏置的既有入口，没有第二个消费者。
+ *
+ * 为什么由 (day, from, to) 推导而不是存进存档：推导出来的不会不同步
+ * （刷新、导入旧档、换设备都是同一条），存字段则要动 partialize / SAVE_FIELDS /
+ * migrate 三处，还多一个"中途读档丢了它"的失效面。
+ */
+{
+  const m = readFileSync(join(process.cwd(), 'src', 'data', 'voyageModifiers.ts'), 'utf8')
+  assert(/export function pickVoyageMod\(day: number, fromPortId: number, toPortId: number\)/.test(m),
+    '① 推导函数签名含三个输入（同日同段航线必然同一条）')
+  assert(/VOYAGE_MODS\.length/.test(m), '① 从候选表里取，不是写死四条分支')
+  const mods = (m.match(/\{ id: '/g) ?? []).length
+  assert(mods >= 4, `① 至少 4 条候选（实际 ${mods}）`)
+  const store = readFileSync(join(process.cwd(), 'src', 'store', 'useGameStore.ts'), 'utf8')
+  assert(/\* voyageMod\.eventMul/.test(store), '② 乘数真的进了事件率（唯一消费者）')
+  assert(/pickVoyageMod\(\s*newDay,/.test(store), '② 用的是"当天"的键，不是出发日（否则航行中不变）')
+  const modal = readFileSync(join(process.cwd(), 'src', 'components', 'map', 'VoyagePlanModal.tsx'), 'utf8')
+  assert(/data-testid="voyage-mod"/.test(modal) && /data-mod=\{voyageMod\.id\}/.test(modal),
+    '③ 面板上有这一行，且带可核对的 id')
+  assert(/pickVoyageMod\(fleet\.day, route\.fromPortId, route\.toPortId\)/.test(modal),
+    '③ 面板与结算用同一条推导（面板上不出现"可能会"）')
+}
+
 /* ============ R5：新档第一天就有一页 ============ */
 /*
  * 实测过：不加这一页，新档册子是 **0 页**（journal 0 / 成就 0/17 / 传说 未检验）——

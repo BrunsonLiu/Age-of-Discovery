@@ -14,6 +14,7 @@ import { calculateDailyConsumption, dangerLevelFromDistance, effectiveFleetSpeed
 import { getRouteGeometry } from '@/utils/routePath'
 import { routeFacts, voyageDays, windFavorForRoute, LOW_MORALE } from '@/utils/voyage'
 import { getRandomEvents, consumeEventFlags, RECENT_EVENT_WINDOW } from '@/utils/eventEngine'
+import { pickVoyageMod } from '@/data/voyageModifiers'
 import { STANCES, segmentCountFor, nextSegmentBoundary, hazardLabel, dailyFoodUse, dailyWaterUse, dailyWearRate, settleWear } from '@/utils/segment'
 import { repairCost, taskGold, supplyCost, supplyAmounts, intelCost, portServiceMul, escortRewardMul, INTERPRETER_FACTION_MUL } from '@/utils/crewPerks'
 import { donatableRelics, donateFame } from '@/utils/donation'
@@ -1719,7 +1720,17 @@ export const useGameStore = create<GameStore>()(
               timestamp: Date.now(),
             }]
           }
-          const eventBias = WEATHER_INFO[newWeather.kind].eventBias * profile.eventRateMul * modeEventMul * seaEventMul
+          /*
+           * R2：一趟航行的"海况脾气"也乘在这里（唯一入口，没有第二个消费者）。
+           * 由 (日, 起点, 终点) 推导 —— 同一趟永远同一条脾气，刷新/读档都不会变。
+           */
+          const voyageMod = pickVoyageMod(
+            newDay,
+            state.currentRoute?.fromPortId ?? 0,
+            state.currentRoute?.toPortId ?? 0,
+          )
+          const eventBias = WEATHER_INFO[newWeather.kind].eventBias * profile.eventRateMul
+            * modeEventMul * seaEventMul * voyageMod.eventMul
           const triggeredEvent = eventBias !== 1
             ? getRandomEvents({ ...state, fleet: newFleet, routeProgress: state.routeProgress }, events, newDay - lastEventDay, eventBias)
             : getRandomEvents({ ...state, fleet: newFleet, routeProgress: state.routeProgress }, events, newDay - lastEventDay)

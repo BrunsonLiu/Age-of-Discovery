@@ -6,6 +6,7 @@ import { intelCost } from '@/utils/crewPerks'
 import { calculateDailyConsumption, prevailingWindBearing, dailyDistanceNm } from '@/utils/navigation'
 import { dailyRates, voyageDays } from '@/utils/voyage'
 import { ports } from '@/data/ports'
+import { pickVoyageMod } from '@/data/voyageModifiers'
 import { shipSprite } from '@/data/shipSprites'
 import { onUiCommand } from '@/utils/uiBus'
 import { WEATHER_INFO, weatherForecast, weatherFavorFactor } from '@/utils/weather'
@@ -165,6 +166,11 @@ export default function VoyagePlanModal() {
   const consumption = calculateDailyConsumption(fleet)
   const intel = routeIntel[`${route.fromPortId}-${route.toPortId}`]
   const wind = windLabel(route.windFavor)
+  /*
+   * R2：这一趟的"海况脾气"。与 advanceDay 里那次调用**同一条推导**（同一天同一段航线），
+   * 所以面板说的和真跑起来的一致 —— 面板上不出现"可能会"这种模糊词。
+   */
+  const voyageMod = pickVoyageMod(fleet.day, route.fromPortId, route.toPortId)
 
   // 全程方针总账：三种方针各走完整条航线的账
   const weatherMul = WEATHER_INFO[weather.kind].sailMul * weatherFavorFactor(weather.kind)
@@ -353,6 +359,21 @@ export default function VoyagePlanModal() {
               <div className="text-gold-600 text-xs font-serif">风向</div>
               <div className={`text-[15px] font-serif leading-tight ${wind.cls}`}>{wind.text}</div>
             </div>
+          </div>
+
+          {/*
+            R2：这一趟的脾气，一行说完。放在三个决策数字之后、折叠之前 ——
+            它是"这趟为什么不一样"的一句话，不是需要计算的数。
+          */}
+          <div className="flex items-baseline gap-2 rounded border border-gold-700/25 px-2.5 py-1.5"
+            style={{ background: 'rgba(0,0,0,0.18)' }}
+            data-testid="voyage-mod"
+            data-mod={voyageMod.id}
+            data-mul={voyageMod.eventMul}
+          >
+            <span className="shrink-0 font-serif text-[12px] text-gold-600">这一趟</span>
+            <span className="shrink-0 font-serif text-[13px] text-gold-200">{voyageMod.name}</span>
+            <span className="min-w-0 truncate font-serif text-[12px] text-gold-500">{voyageMod.line}</span>
           </div>
 
           {/* ③ 细节全部折叠：想深究才点开 */}
