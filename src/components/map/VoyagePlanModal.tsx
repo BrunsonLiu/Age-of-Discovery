@@ -384,18 +384,48 @@ export default function VoyagePlanModal() {
           </div>
 
           {/*
-            R2：这一趟的脾气，一行说完。放在三个决策数字之后、折叠之前 ——
-            它是"这趟为什么不一样"的一句话，不是需要计算的数。
+            R2：这一趟的脾气。
+            【从"一句解释"改成"四柱小表"】原来是一行三段字：「这一趟 / 往来频繁 /
+            帆影比平时多，事也多」—— 玩家要读完整句才知道它是强是弱。
+            强度这种东西本来就该是**看**出来的，不是读出来的：四根柱子，
+            几根亮着就是几档，名字只做标注。
+            文字解释退到 `title`（悬停/长按）与 ≥sm 的窄屏之外 —— 手机上只剩
+            「这一趟 ▁▃▅▇ 多事之秋」，一行读完。
           */}
-          <div className="flex items-baseline gap-2 rounded border border-gold-700/25 px-2.5 py-1.5"
+          <div
+            className="flex items-center gap-2 rounded border border-gold-700/25 px-2.5 py-1.5"
             style={{ background: 'rgba(0,0,0,0.18)' }}
             data-testid="voyage-mod"
             data-mod={voyageMod.id}
             data-mul={voyageMod.eventMul}
+            data-level={voyageMod.level}
+            title={`${voyageMod.name}：${voyageMod.line}（事件密度 ×${voyageMod.eventMul}）`}
           >
             <span className="shrink-0 font-serif text-[12px] text-gold-600">这一趟</span>
+            {/*
+              四柱：**柱子本身的递增高度**就是刻度（后面那根比前面高，所以"亮到第几根"
+              一眼能数）。3px 宽实测在 1440 下糊成一团，改 4px 宽 + 3px 间距；
+              未亮的柱子压到 /25 —— 它只需要"有个槽"，不需要被看见。
+            */}
+            <span
+              className="flex h-[16px] shrink-0 items-end gap-[3px]"
+              data-testid="voyage-mod-gauge"
+              aria-hidden="true"
+            >
+              {[1, 2, 3, 4].map(n => (
+                <span
+                  key={n}
+                  style={{ height: `${5 + n * 2.6}px` }}
+                  className={`w-[4px] rounded-[1px] ${
+                    n <= voyageMod.level
+                      ? n >= 4 ? 'bg-gold-200' : n === 3 ? 'bg-gold-300' : 'bg-gold-400'
+                      : 'bg-gold-700/25'
+                  }`}
+                />
+              ))}
+            </span>
             <span className="shrink-0 font-serif text-[13px] text-gold-200">{voyageMod.name}</span>
-            <span className="min-w-0 truncate font-serif text-[12px] text-gold-500">{voyageMod.line}</span>
+            <span className="hidden min-w-0 truncate font-serif text-[12px] text-gold-500 sm:inline">{voyageMod.line}</span>
           </div>
 
           {/*
@@ -404,20 +434,63 @@ export default function VoyagePlanModal() {
             数字与上面「这一趟要几天」同一条链路（routeFacts + voyageDays），
             只是把 day 换成 day+等待天数。
           */}
-          {windows?.better && (
-            <div
-              className="flex items-baseline gap-2 rounded border border-gold-700/25 px-2.5 py-1.5"
-              style={{ background: 'rgba(0,0,0,0.18)' }}
-              data-testid="departure-window"
-              data-wait={windows.better.waitDays}
-              data-days={windows.better.days}
-              data-saved={windows.better.saved}
-            >
-              <span className="shrink-0 font-serif text-[12px] text-gold-600">等 {windows.better.waitDays} 天</span>
-              <span className="shrink-0 font-serif text-[13px] text-gold-200">{windows.better.days} 天到</span>
-              <span className="min-w-0 truncate font-serif text-[12px] text-safe-400">比现在少 {windows.better.saved} 天</span>
-            </div>
-          )}
+          {windows?.better && (() => {
+            /*
+             * 【两行横条，不是一句话】原来是「等 30 天 / 21 天到 / 比现在少 3 天」——
+             * 三个数字一句话，玩家得在脑子里把它们对上才看出"短了"。
+             * 而这正是本项目的第一条禁令：**别让玩家做算术**。
+             * 改成两根按天数的比例的横条，长短就是答案；数字留在条尾，只做核对。
+             */
+            const maxDays = Math.max(windows.nowDays, windows.better.days, 1)
+            const pct = (days: number) => `${Math.max(0, Math.round((days / maxDays) * 100))}%`
+            /*
+             * `tail` = 「省下来的那一段」：从"等一等"的天数画到"现在"的天数，
+             * 用绿半透明盖在现在那条的尾巴上。**差值本身是一条可见的色块**，
+             * 而不是两个数字相减 —— 玩家扫一眼就知道短在哪里。
+             */
+            const bar = (days: number, cls: string, tail?: { from: number }) => (
+              <span className="relative h-[6px] flex-1 overflow-hidden rounded-sm bg-black/35">
+                <span
+                  className={`absolute inset-y-0 left-0 rounded-sm ${cls}`}
+                  style={{ width: pct(Math.max(days, maxDays * 0.04)) }}
+                />
+                {tail && (
+                  <span
+                    className="absolute inset-y-0 bg-safe-400/40"
+                    style={{ left: pct(tail.from), width: pct(days - tail.from) }}
+                  />
+                )}
+              </span>
+            )
+            return (
+              <div
+                className="space-y-1 rounded border border-gold-700/25 px-2.5 py-1.5"
+                style={{ background: 'rgba(0,0,0,0.18)' }}
+                data-testid="departure-window"
+                data-wait={windows.better.waitDays}
+                data-days={windows.better.days}
+                data-saved={windows.better.saved}
+                title={`等 ${windows.better.waitDays} 天再走：${windows.better.days} 天到，比现在少 ${windows.better.saved} 天`}
+              >
+                <div className="flex items-center gap-2">
+                  <span className="w-[46px] shrink-0 font-serif text-[12px] text-gold-600">现在走</span>
+                  {bar(windows.nowDays, 'bg-gold-600', { from: windows.better.days })}
+                  <span className="w-[38px] shrink-0 text-right font-mono text-[12px] tabular-nums text-gold-400">
+                    {windows.nowDays} 天
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="w-[46px] shrink-0 font-serif text-[12px] text-gold-400">
+                    等 {windows.better.waitDays} 天
+                  </span>
+                  {bar(windows.better.days, 'bg-safe-400')}
+                  <span className="w-[38px] shrink-0 text-right font-mono text-[12px] tabular-nums text-safe-400">
+                    {windows.better.days} 天
+                  </span>
+                </div>
+              </div>
+            )
+          })()}
 
           {/* ③ 细节全部折叠：想深究才点开 */}
           {forecast.length > 0 && (

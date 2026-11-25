@@ -15912,6 +15912,36 @@ console.log('== 帧率撑不住时，画质预设是最后一道闸 ==')
     '④ 结构在 utils/voyage 里（与 routeFacts/voyageDays 同一文件，口径不会分家）')
 }
 
+/* ============ R2/R4 的那两行必须是"看"出来的，不是"读"出来的 ============ */
+/*
+ * 用户的原话：「我讨厌全是文字」。
+ * 之前两行都是三段字：「这一趟 / 往来频繁 / 帆影比平时多，事也多」、
+ * 「等 30 天 / 21 天到 / 比现在少 3 天」—— 强度和差值本来该是看出来的。
+ *
+ * 现在：脾气是四柱小表（亮到第几根 = 几档），等待窗口是两根按天数比例的横条
+ * + 差值色块。判据盯的是"**图形与数据同源**"，不是"有没有画东西"：
+ *   · `level` 必须与 `eventMul` 同序 —— 否则柱子画出来的强弱会和真实事件率反着走，
+ *     那比没有柱子更糟（本项目对"屏幕数字≠实际"零容忍）；
+ *   · 横条宽度按 `nowDays / better.days` 的比例算，差值色块从 `better.days` 起画。
+ */
+{
+  const src = readFileSync(join(process.cwd(), 'src', 'data', 'voyageModifiers.ts'), 'utf8')
+  const mods = [...src.matchAll(/eventMul: ([\d.]+), level: ([1-4])/g)].map(m => ({ mul: Number(m[1]), level: Number(m[2]) }))
+  assert(mods.length === 4, `四条脾气都带 level（实际 ${mods.length} 条）`)
+  const byMul = [...mods].sort((a, b) => a.mul - b.mul).map(m => m.level)
+  assert(JSON.stringify(byMul) === JSON.stringify([1, 2, 3, 4]),
+    `level 与 eventMul 同序（按 mul 排序后应是 1,2,3,4，实际 ${byMul.join(',')}）`)
+  const modal = readFileSync(join(process.cwd(), 'src', 'components', 'map', 'VoyagePlanModal.tsx'), 'utf8')
+  assert(/data-testid="voyage-mod-gauge"/.test(modal), '① 脾气那一行有四柱小表（可核对节点）')
+  assert(/n <= voyageMod\.level/.test(modal), '① 亮几根由 level 决定（不是画死的四根）')
+  assert(/data-level=\{voyageMod\.level\}/.test(modal), '① level 上屏，供 e2e 核对')
+  assert(/text-\[12px\] text-gold-500 sm:inline/.test(modal), '① 那句解释在窄屏隐藏（手机上只剩「这一趟 ▮▮ 名字」）')
+  assert(/const pct = \(days: number\) =>/.test(modal) && /pct\(days - tail\.from\)/.test(modal),
+    '② 横条宽度按天数比例算，差值色块从等一等那天起画')
+  assert(/bar\(windows\.nowDays, 'bg-gold-600', \{ from: windows\.better\.days \}\)/.test(modal),
+    '② 差值色块画在"现在走"那条的尾巴上（差值本身是可见的色块，不是两个数字相减）')
+}
+
 /* ============ R2：一趟航行有自己的"脾气"，且只有一条推导 ============ */
 /*
  * 补的是节奏空档：选完方针后一趟 15 天的航行里没有需要重新决策的节点。

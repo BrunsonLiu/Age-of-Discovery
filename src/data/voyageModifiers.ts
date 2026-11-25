@@ -28,13 +28,18 @@ export interface VoyageModifier {
   line: string
   /** 乘在全局事件触发率上（>1 更热闹，<1 更寡淡） */
   eventMul: number
+  /**
+   * 1..4，给界面上的**四柱小表**用（面板不再用一句话解释强弱，
+   * 而是画出"这一趟有多热闹"）。必须与 `eventMul` 同序：数字越大越热闹。
+   */
+  level: 1 | 2 | 3 | 4
 }
 
 export const VOYAGE_MODS: readonly VoyageModifier[] = [
-  { id: 'calm', name: '风平浪静', line: '这一趟少见人少见事', eventMul: 0.55 },
-  { id: 'ordinary', name: '寻常海况', line: '和哪一趟都差不多', eventMul: 1 },
-  { id: 'busy', name: '往来频繁', line: '帆影比平时多，事也多', eventMul: 1.3 },
-  { id: 'troubled', name: '多事之秋', line: '这一带不太平，事会找上门', eventMul: 1.75 },
+  { id: 'calm', name: '风平浪静', line: '这一趟少见人少见事', eventMul: 0.55, level: 1 },
+  { id: 'ordinary', name: '寻常海况', line: '和哪一趟都差不多', eventMul: 1, level: 2 },
+  { id: 'busy', name: '往来频繁', line: '帆影比平时多，事也多', eventMul: 1.3, level: 3 },
+  { id: 'troubled', name: '多事之秋', line: '这一带不太平，事会找上门', eventMul: 1.75, level: 4 },
 ]
 
 /**
