@@ -23,10 +23,33 @@ const CHIP_ICONS: Record<ResourceKey, React.ReactNode> = {
   fame: <Star size={10} />,
 }
 
+/*
+ * 风险三档：**彩色胶囊**，不是方括号里的一个字。
+ *
+ * 【为什么换】原来写作 `[险]` —— 三个字长得一样，只有字不同，玩家必须逐条读过去
+ * 才能比较"哪个更险"；而这正是这个界面最常做的判断。
+ * 现在是一条带底色的胶囊（绿=稳 / 金=搏 / 红=险），颜色和形状先给结论，
+ * 字留着做核对（也给色觉障碍的玩家留一条不看颜色的路）。
+ *
+ * 也试过"选项左缘一道竖色条"与"左侧渐隐色晕"：3px 竖条在牌匾金边里像边框毛刺，
+ * 32px 色晕在深皮革上几乎看不见 —— 都不如把颜色放在本来就有字的位置。
+ */
 const RISK_META: Record<RiskGrade, { label: string; className: string; hint: string }> = {
-  steady: { label: '稳', className: 'ink-good', hint: '基本只赚不赔，或代价很小' },
-  gamble: { label: '搏', className: 'text-gold-400', hint: '有真实的坏结局，但期望仍站得住' },
-  risky: { label: '险', className: 'text-danger-400', hint: '期望就差、尾部太重，或可能掉人——想清楚再选' },
+  steady: {
+    label: '稳',
+    className: 'border-safe-400/80 bg-safe-800/85 text-safe-100',
+    hint: '基本只赚不赔，或代价很小',
+  },
+  gamble: {
+    label: '搏',
+    className: 'border-gold-400/80 bg-gold-800/85 text-gold-100',
+    hint: '有真实的坏结局，但期望仍站得住',
+  },
+  risky: {
+    label: '险',
+    className: 'border-danger-300/80 bg-danger-800/85 text-danger-100',
+    hint: '期望就差、尾部太重，或可能掉人——想清楚再选',
+  },
 }
 
 export default function EventChoice({ choice, index, summary, onSelect }: EventChoiceProps) {
@@ -116,11 +139,11 @@ export default function EventChoice({ choice, index, summary, onSelect }: EventC
               等于凭空编造一个根本没算过的结论——左侧那句因果说明已经够了。 */}
           {risk && !choice.miniGame && (!summary.plain || summary.risk !== 'steady') && (
             <span
-              className={`shrink-0 font-serif text-xs ${risk.className}`}
+              className={`shrink-0 rounded-full border px-1.5 py-[1px] font-serif text-xs leading-tight ${risk.className}`}
               title={risk.hint}
               data-risk={summary.risk}
             >
-              [{risk.label}]
+              {risk.label}
             </span>
           )}
         </div>

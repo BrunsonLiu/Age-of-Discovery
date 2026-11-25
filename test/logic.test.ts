@@ -15912,6 +15912,30 @@ console.log('== 帧率撑不住时，画质预设是最后一道闸 ==')
     '④ 结构在 utils/voyage 里（与 routeFacts/voyageDays 同一文件，口径不会分家）')
 }
 
+/* ============ 风险三档要能"扫"，不是逐条读 ============ */
+/*
+ * 选项右下角原来是 `[险]`：三个字长得一样，只有字不同，玩家必须逐条读过去
+ * 才能比较"哪个更险"——而这正是这个界面最常做的判断。
+ *
+ * 现在是彩色胶囊（绿=稳 / 金=搏 / 红=险）：颜色和形状先给结论，字留着做核对，
+ * 也给色觉障碍的玩家留一条不看颜色的路。
+ *
+ * 途中试过两个方案，都记在这里免得重走：
+ *   · 选项左缘 3px 竖色条 —— 在牌匾金边里像边框毛刺；
+ *   · 左侧 32px 渐隐色晕 —— 在深皮革底上几乎看不见。
+ * 结论：颜色要放在**本来就有字的位置**，而不是另开一块。
+ */
+{
+  const ec = readFileSync(join(process.cwd(), 'src', 'components', 'events', 'EventChoice.tsx'), 'utf8')
+  const metas = [...ec.matchAll(/label: '(稳|搏|险)',\s*\n?\s*className: '([^']+)'/g)].map(m => ({ label: m[1], cls: m[2] }))
+  assert(metas.length === 3, `三档风险各有样式（实际 ${metas.length}）`)
+  assert(metas.every(m => /border-/.test(m.cls) && /bg-/.test(m.cls)),
+    '三档都是"带底色 + 描边"的胶囊，不是纯文字色')
+  assert(new Set(metas.map(m => m.cls)).size === 3, '三档样式互不相同（否则扫不出来）')
+  assert(/rounded-full border px-1\.5/.test(ec), '风险标记是圆角胶囊（形状本身也在传达"这是个章"）')
+  assert(!/\[\{risk\.label\}\]/.test(ec), '不再用方括号包一个字（那是纯文字写法）')
+}
+
 /* ============ R2/R4 的那两行必须是"看"出来的，不是"读"出来的 ============ */
 /*
  * 用户的原话：「我讨厌全是文字」。
