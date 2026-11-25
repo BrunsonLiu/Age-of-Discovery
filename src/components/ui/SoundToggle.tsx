@@ -51,7 +51,13 @@ export default function SoundToggle() {
 
       <button
         onClick={() => setOpen((o) => !o)}
-        className={`p-1 rounded transition-colors ${
+        /*
+         * 与左侧四个图层开关**同一个命中框**（27×27）。原来这里 p-1 + 12px 图标
+         * = 20×20，而旁边的图层开关是 27×27 —— 同一行里四个尺寸（27/20/23/27），
+         * 手指点上去的容错和视觉份量都不一样。固定 27 而不是靠 padding 推算，
+         * 换图标就不会又变。
+         */
+        className={`w-[27px] h-[27px] inline-flex items-center justify-center rounded transition-colors ${
           open ? 'bg-gold-700/40 text-gold-200' : 'text-gold-500 hover:text-gold-300'
         }`}
         title="配乐音量"
@@ -63,7 +69,7 @@ export default function SoundToggle() {
 
       <button
         onClick={toggle}
-        className={`p-1 rounded transition-colors ${
+        className={`w-[27px] h-[27px] inline-flex items-center justify-center rounded transition-colors ${
           enabled ? 'bg-gold-700/40 text-gold-200' : 'text-gold-500 hover:text-gold-300'
         }`}
         title={enabled ? '关闭声音' : '开启声音'}

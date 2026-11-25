@@ -36,7 +36,8 @@ export default function QualityToggle() {
        * 把右侧的"重新开始"挤出可视区，clickable-audit 会红）。1280 以上才出现，
        * 窄屏靠自适应分辨率顶着。
        */
-      className="hidden xl:flex items-center gap-1 p-1 rounded text-gold-400 hover:text-gold-200 hover:bg-gold-700/30 press transition-all"
+      /* 与相邻的音量/图层开关同一个 27×27 命中框（原来是 23×23，行内第三个尺寸） */
+      className="hidden xl:w-[27px] xl:h-[27px] xl:inline-flex items-center justify-center rounded text-gold-400 hover:text-gold-200 hover:bg-gold-700/30 press transition-all"
       title={`画质：${preset.label}（点击切换 ${QUALITY_ORDER.map((k) => QUALITY_PRESETS[k].label).join(' / ')}）`}
       aria-label={`画质：${preset.label}`}
       data-testid="quality-toggle"
