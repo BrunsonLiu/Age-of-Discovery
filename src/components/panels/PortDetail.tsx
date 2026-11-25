@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { getStatusColor } from '@/utils/resourceColor'
 import { Anchor, Wrench, Package, Users, Coins, Shield, Heart, Ship, Map, Compass, ScrollText, Moon, PartyPopper, Utensils, Droplets, Star } from 'lucide-react'
 import { useGameStore } from '@/store/useGameStore'
 import { useMapStore } from '@/store/useMapStore'
@@ -517,8 +518,33 @@ export default function PortDetail() {
                 const damage = ship.maxDurability - ship.durability
                 const cost = repairCost(damage, hasCarpenter, serviceMul)
                 return (
-                  <div key={ship.id} className="flex items-center justify-between text-[13px] mb-1">
-                    <span className="text-gold-300 font-serif">{ship.name} ({ship.durability}/{ship.maxDurability})</span>
+                  /*
+                   * 【耐久从括号数字改成一条小条】原来写「圣玛利亚号 (60/100)」——
+                   * 玩家要靠读数字算比例，才知道这条船到底还行不行；而舰队面板里
+                   * 同一件事早就是一条进度条。**同一个量在两个屏用两种读法**是这一周
+                   * 反复在修的问题，这里补齐。
+                   * 配色直接调 `getStatusColor`（耐久按百分比判），与舰队面板同一条规则 ——
+                   * 不在这里另写一套阈值，否则两个屏会在 55% 上给出不同颜色。
+                   */
+                  <div key={ship.id} className="mb-1 flex items-center justify-between gap-2 text-[13px]">
+                    <span className="flex min-w-0 items-center gap-2">
+                      {/* 名字定宽：不定宽时船名长短不同，三条耐久条的起点会各在各处，比不了长短 */}
+                      <span className="w-[76px] shrink-0 truncate text-gold-300 font-serif">{ship.name}</span>
+                      <span
+                        className="relative h-[5px] w-[56px] shrink-0 overflow-hidden rounded-full bg-black/35"
+                        data-ship-durability={ship.id}
+                        data-pct={Math.round((ship.durability / ship.maxDurability) * 100)}
+                        title={`${ship.name} 耐久 ${ship.durability} / ${ship.maxDurability}`}
+                      >
+                        <span
+                          className={`absolute inset-y-0 left-0 rounded-full ${getStatusColor(ship.durability, ship.maxDurability)}`}
+                          style={{ width: `${Math.min(100, Math.max(2, (ship.durability / ship.maxDurability) * 100))}%` }}
+                        />
+                      </span>
+                      <span className="shrink-0 font-mono text-[12px] tabular-nums text-gold-400">
+                        {ship.durability}/{ship.maxDurability}
+                      </span>
+                    </span>
                     {damage > 0 ? (
                       <ActionButton onClick={() => handleRepair(ship.id)} disabled={fleet.gold < cost} variant="secondary">
                         {cost} 金

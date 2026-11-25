@@ -15924,6 +15924,29 @@ console.log('== 帧率撑不住时，画质预设是最后一道闸 ==')
     '④ 结构在 utils/voyage 里（与 routeFacts/voyageDays 同一文件，口径不会分家）')
 }
 
+/* ============ 修理船：耐久要能"看长短"，且与舰队面板同一条配色 ============ */
+/*
+ * 原来一行是「圣玛利亚号 (60/100)」—— 玩家得读数字算比例才知道这条船还行不行；
+ * 而舰队面板里同一件事早就是一条进度条。**同一个量在两个屏用两种读法**，
+ * 是这一周反复在修的那类问题。
+ *
+ * 两条判据（都是"会不会骗人"而不是"好不好看"）：
+ *  ① 配色必须调 `getStatusColor`（耐久按百分比判）——自己写一套阈值，
+ *     两个屏会在 55% 上给出不同颜色；
+ *  ② 条不能取代数字：屏幕上的数必须等于实际耐久（`x/y` 仍在行里）。
+ */
+{
+  const pd = stripComments(readFileSync(join(process.cwd(), 'src', 'components', 'panels', 'PortDetail.tsx'), 'utf8'))
+  assert(/getStatusColor\(ship\.durability, ship\.maxDurability\)/.test(pd),
+    '① 耐久条配色走 getStatusColor（与舰队面板同一条规则）')
+  assert(!/bg-(safe|gold|danger)-400/.test(pd), '① 不在面板里另写一套水位色')
+  assert(/data-ship-durability=\{ship\.id\}/.test(pd), '② 耐久条有可核对节点')
+  assert(/\{ship\.durability\}\/\{ship\.maxDurability\}/.test(pd),
+    '② 条旁边仍有精确数字（条给人扫，数字给人核）')
+  assert(/w-\[76px\] shrink-0 truncate/.test(pd),
+    '② 船名定宽——不定宽时三条耐久条起点各不相同，长短就没法比')
+}
+
 /* ============ 本港渴求：强度要画出来，且与"有没有"同一条阈值 ============ */
 /*
  * 原来贸易面板只有一行字：「高价收购 木材、香料、蔗糖」。它说得清"这几样有人要"，
