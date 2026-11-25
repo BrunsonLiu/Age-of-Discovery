@@ -225,6 +225,38 @@ if (process.argv.includes('--wind')) {
  * 是"没有一件够贵的货"，还是"有贵货但被天数吃掉了"？这两件事的修法完全不同
  * （前者加渴求品，后者改航速）。这条 dump 是给"改数据"之前用的显微镜。
  */
+/*
+ * `--lane 皇家港~韦拉克鲁斯`：把**一条航线**的所有货摊开。
+ *
+ * 【为什么需要它】2026-11-26 我给韦拉克鲁斯补了朗姆（史实也成立），
+ * 目标是那条渴求度 0.00 的航线；结果 `--wind` 的中程中位数 2.00 → 1.60。
+ * 看着像"改坏了"，其实**是量尺的问题**：中位数是"每条航线一个数"的中位数，
+ * 补一条需求会新增若干条航线（每个产地 × 该港），这批新航线多半是逆风长途、
+ * 每件每日很低，于是中位数被拉低，而目标那条其实变好了。
+ *
+ * **给数据做加法时，"全体中位数"不是判据**——它奖励删除航线、惩罚增加航线。
+ * 判据应该是：① 目标航线本身变好没；② 有没有别的航线变差。
+ * 这条命令就是为①准备的；②靠 `--lane` 逐条抽查。
+ */
+const laneArg = process.argv.find(a => a.startsWith('--lane=')) ?? (process.argv.includes('--lane') ? `--lane=${process.argv[process.argv.indexOf('--lane') + 1] ?? ''}` : null)
+if (laneArg) {
+  const want = laneArg.slice('--lane='.length).trim()
+  const rows = legs.filter(l => `${l.from}→${l.to}`.includes(want))
+  if (rows.length === 0) {
+    console.log(`没有匹配「${want}」的航线。可用：${[...new Set(legs.map(l => `${l.from}→${l.to}`))].slice(0, 8).join(' / ')} …`)
+  } else {
+    rows.sort((a, b) => (b.sell - b.buy) / b.days - (a.sell - a.buy) / a.days)
+    console.log(`\n「${want}」共 ${rows.length} 条（港口 × 商品），按每件每日毛利降序：`)
+    console.log('  商品'.padEnd(12) + '买价'.padStart(6) + '卖价'.padStart(6) + '每件'.padStart(7) + '天数'.padStart(6) + '每件每日'.padStart(9))
+    for (const r of rows) {
+      const per = (r.sell - r.buy) / r.days
+      console.log('  ' + r.good.padEnd(10) + String(r.buy).padStart(6) + String(r.sell).padStart(6) +
+        String(r.sell - r.buy).padStart(7) + r.days.toFixed(1).padStart(6) + per.toFixed(2).padStart(9))
+    }
+    console.log('')
+  }
+}
+
 if (process.argv.includes('--lanes')) {
   const bestPerLane = new Map<string, Leg & { perDay: number }>()
   for (const l of legs) {

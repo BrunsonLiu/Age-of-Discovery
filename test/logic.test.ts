@@ -33,6 +33,7 @@ import {
 } from '../src/utils/chartLines'
 import { departureWindows } from '@/utils/voyage'
 import { optionGateFor, crossedGates, axisThreshold } from '@/data/notoriety'
+import { localDemands, localDemandDetail, demandBarPct } from '@/data/ports'
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { birdPose, flagYaw, smokePose } from '../src/utils/portLife'
 import { DIALOGUE_RULES, dialogueBudget, pickDialogue, unreachableScripts, type DialogueContext } from '../src/utils/dialogueTriggers'
@@ -15921,6 +15922,43 @@ console.log('== 帧率撑不住时，画质预设是最后一道闸 ==')
     '③ nowDays 来自 compute，不是另算一遍')
   assert(/export interface DepartureWindow/.test(readFileSync(join(process.cwd(), 'src', 'utils', 'voyage.ts'), 'utf8')),
     '④ 结构在 utils/voyage 里（与 routeFacts/voyageDays 同一文件，口径不会分家）')
+}
+
+/* ============ 本港渴求：强度要画出来，且与"有没有"同一条阈值 ============ */
+/*
+ * 原来贸易面板只有一行字：「高价收购 木材、香料、蔗糖」。它说得清"这几样有人要"，
+ * 说不清**更**想要哪一样 —— 1.60 与 1.30 的到岸价差着一成，而玩家做选择时正需要它。
+ *
+ * 现在每样货一枚芯片：名字 + 一条按乘数归一的小横条（连续量，不是三格：
+ * 第一版三格时蔗糖 1.60 与香料 1.50 **都是满格**，等于没分辨）。
+ *
+ * 判据三条：
+ *  ① `localDemandDetail` 与 `localDemands` **给出同一批货**（阈值不许分家，
+ *     否则会出现"写着有人要、却没有条"或者反过来）；
+ *  ② 横条宽度随乘数单调不减，且两端夹住（1.3 有可见长度、≥1.6 满格）；
+ *  ③ 面板上不许再出现"高价收购 …、…"那种顿号串名字的写法。
+ */
+{
+  const pdSrc = readFileSync(join(process.cwd(), 'src', 'data', 'ports.ts'), 'utf8')
+  assert(/export function localDemandDetail/.test(pdSrc) && /export function demandBarPct/.test(pdSrc),
+    '① 有带乘数的渴求清单与归一函数')
+  const same = [1, 4, 6, 7, 14].every(pid => {
+    const a = localDemands(pid).slice().sort((x, y) => x - y)
+    const b = localDemandDetail(pid).map(d => d.goodId).slice().sort((x, y) => x - y)
+    return JSON.stringify(a) === JSON.stringify(b)
+  })
+  assert(same, '① 两套接口给出同一批货（阈值没有分家）')
+  assert(demandBarPct(1.3) > 0.1 && demandBarPct(1.3) < 0.2, `② 1.30 有可见长度（${demandBarPct(1.3).toFixed(2)}）`)
+  assert(demandBarPct(1.6) === 1, '② 1.60 满格')
+  assert(demandBarPct(1.45) > demandBarPct(1.35) && demandBarPct(1.55) > demandBarPct(1.45),
+    '② 宽度随乘数单调递增')
+  assert(demandBarPct(9) === 1, '② 越界值夹住（不会画出超出轨道的条）')
+  const tp = stripComments(readFileSync(join(process.cwd(), 'src', 'components', 'panels', 'TradePanel.tsx'), 'utf8'))
+  assert(/data-testid="port-demands"/.test(tp) && /data-demand-chip=\{g\.goodId\}/.test(tp),
+    '③ 渴求行是可核对的芯片')
+  assert(/style=\{\{ width: `\$\{Math\.round\(demandBarPct\(g\.mult\) \* 100\)\}%` \}\}/.test(tp),
+    '③ 横条宽度来自 demandBarPct，不是写死的分档')
+  assert(!/高价收购 \{demands/.test(tp), '③ 不再用"高价收购 A、B、C"的顿号串')
 }
 
 /* ============ 港口服务：得失要摆成芯片，不写成带括号的话 ============ */

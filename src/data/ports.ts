@@ -261,6 +261,42 @@ export function localSpecialties(portId: number): number[] {
     .map(pg => pg.goodId)
 }
 
+/**
+ * 某港的渴求清单（含强度），按渴求度降序。**界面用它画"这座港想要什么"的强度条**。
+ *
+ * 【为什么不复用 localDemands】那个只回 id，界面就只剩"高价收购 木材、香料、蔗糖"
+ * 一行字——玩家看不出这座港**更**想要哪一样（1.45 与 1.30 差着三个多点的到岸价）。
+ * 强度这种东西该被看见：这里回 `strength`（1~3 档），面板画成三格小条。
+ * 阈值与 `localDemands` 相同（>= 1.3），两者不会给出不同的"有没有"。
+ */
+export interface PortDemand { goodId: number; mult: number }
+
+export function localDemandDetail(portId: number): PortDemand[] {
+  return portGoods
+    .filter(pg => pg.portId === portId && pg.priceModifier >= 1.3)
+    .sort((a, b) => b.priceModifier - a.priceModifier)
+    .map(pg => ({ goodId: pg.goodId, mult: pg.priceModifier }))
+}
+
+/**
+ * 渴求强度 → 界面那条小横条的宽度（0~1）。
+ *
+ * 【为什么是连续条，不是三格】第一版画三格（1.3/1.4/1.5 各一档），实测蔗糖(1.60)
+ * 与香料(1.50) **都是三格全亮** —— 而它们的到岸价差着一成。格子数不够分辨时，
+ * 该换连续量：宽度按 `(mult - 1.25) / 0.35` 归一，数据区间 [1.3, 1.6] 正好铺满
+ * 14%~100%。下限不取 0：这条只在"确实高价收购"时出现，宽度为 0 会被读成"不要"。
+ *
+ * 归一区间是**常量**，跟数据一起改；写死在这里而不是散在组件里，
+ * 单测才能直接打穿它。
+ */
+const DEMAND_BAR_MIN = 1.25
+const DEMAND_BAR_SPAN = 0.35
+
+export function demandBarPct(mult: number): number {
+  const t = (mult - DEMAND_BAR_MIN) / DEMAND_BAR_SPAN
+  return Math.min(1, Math.max(0.14, t))
+}
+
 /** 某港高价收购的商品（modifier >= 1.3），按渴求度降序 */
 export function localDemands(portId: number): number[] {
   return portGoods

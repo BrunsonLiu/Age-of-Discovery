@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { TrendingUp, TrendingDown, Sprout, HandCoins } from 'lucide-react'
 import { useGameStore, selectBuyPrice, selectSellPrice, selectPriceTone, selectBestDeal } from '@/store/useGameStore'
 import { useMapStore } from '@/store/useMapStore'
-import { ports, portGoods, localSpecialties, localDemands } from '@/data/ports'
+import { ports, portGoods, localSpecialties, localDemands, localDemandDetail, demandBarPct } from '@/data/ports'
 import { goods } from '@/data/goods'
 import FullScreenPanel from '@/components/ui/FullScreenPanel'
 import { DOCK_TABS } from '@/components/ui/dockTabs'
@@ -263,7 +263,7 @@ export default function TradePanel() {
    * `+1/+5/+10` 三个按钮刚好落在折叠线以下——玩家看见"掮客说买丝绸"，
    * 伸手却点不到，得先滚动。推荐不能只写在标题上。
    */
-  const currentPortGoods = portGoods
+    const currentPortGoods = portGoods
     .filter(pg => pg.portId === portId)
     .sort((a, b) => Number(b.goodId === deal?.goodId) - Number(a.goodId === deal?.goodId))
   const totalCapacity = fleet.ships.reduce((s, sh) => s + sh.capacity, 0)
@@ -272,6 +272,13 @@ export default function TradePanel() {
   const nameOf = (id: number) => goods.find(g => g.id === id)?.nameCn ?? ''
   const specialties = localSpecialties(portId).map(nameOf).filter(Boolean)
   const demands = localDemands(portId).map(nameOf).filter(Boolean)
+  const demandedGoods = localDemandDetail(portId)
+    .slice(0, 3)
+    .map(d => {
+      const g = goods.find(x => x.id === d.goodId)
+      return g ? { ...d, nameCn: g.nameCn } : null
+    })
+    .filter((x): x is NonNullable<typeof x> => x != null)
   // 玩家货舱里此港高价收购的商品（直接提示"可在此出手"）
   const sellableHigh = fleet.cargo
     .filter(c => demands.includes(nameOf(c.goodId)))
@@ -394,9 +401,43 @@ export default function TradePanel() {
                 <Sprout size={11} className="shrink-0" />本地出产 {specialties.join('、')}
               </span>
             )}
-            {demands.length > 0 && (
-              <span className="text-gold-300 flex items-center gap-1">
-                <HandCoins size={11} className="shrink-0" />高价收购 {demands.slice(0, 3).join('、')}
+            {demandedGoods.length > 0 && (
+              /*
+               * 【"高价收购 木材、香料、蔗糖"→ 三枚带强度条的芯片】
+               * 一行字只说"这几样有人要"，说不出**更**想要哪一样：
+               * 1.45 与 1.30 的到岸价差着几个点，而玩家做选择时正需要这个。
+               * 现在每枚芯片是「品类图标 + 货名 + 三格强度条」，强度条读
+               * `localDemandDetail` 的 1~3 档（阈值与"有没有"同一条 1.3）。
+               * 数字退进 title，屏幕上只留形状 —— 与全站"量要被看见"一致。
+               */
+              <span className="flex flex-wrap items-center gap-1.5" data-testid="port-demands">
+                <span className="flex shrink-0 items-center gap-1 text-[12px] text-gold-300">
+                  <HandCoins size={11} className="shrink-0" />收购
+                </span>
+                {demandedGoods.map(g => {
+                  return (
+                    <span
+                      key={g.goodId}
+                      data-demand-chip={g.goodId}
+                      data-mult={g.mult}
+                      data-pct={demandBarPct(g.mult).toFixed(2)}
+                      title={`${g.nameCn}：本港到岸价 ×${g.mult.toFixed(2)}`}
+                      className="inline-flex items-center gap-1 rounded-sm border border-gold-600/45 bg-gold-900/25 px-1.5 py-[1px] text-[12px] text-gold-200"
+                    >
+                      {/*
+                        品类图标在 10px 下糊成一团（实测蔗糖的餐具、烟草的箱子
+                        都只剩一个色块），删掉——这条的重点是**条的长度**，不是图标。
+                      */}
+                      {g.nameCn}
+                      <span className="relative h-[4px] w-[22px] shrink-0 overflow-hidden rounded-[1px] bg-gold-700/35">
+                        <span
+                          className="absolute inset-y-0 left-0 rounded-[1px] bg-gold-300"
+                          style={{ width: `${Math.round(demandBarPct(g.mult) * 100)}%` }}
+                        />
+                      </span>
+                    </span>
+                  )
+                })}
               </span>
             )}
             {sellableHigh.length > 0 && (
