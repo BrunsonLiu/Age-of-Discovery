@@ -16967,5 +16967,57 @@ console.log('== 帧率撑不住时，画质预设是最后一道闸 ==')
   assert(/<MoonPhase day=\{day\} \/>/.test(bar), '顶栏挂着月相圆盘（量要被看见）')
 }
 
+/* ============ 全库事件结算：任何一条结局都不许把资源弄成越界/NaN ============ */
+/*
+ * 事件是唯一一处"外面塞进来的数字直接改存档"的地方：160 个选项、500 多条结局，
+ * 每条都可能带 gold/food/water/morale/durability/crew/fame 里的任意几个。
+ * 单条手写用例守不住 —— 加一条新事件、写错一个符号，就会得到"士气 118"或"耐久 -7"。
+ *
+ * 判据：把每条结局都真的 **apply** 一次（不是只算期望），然后检查七个量：
+ *   有限、非负、不超上限（士气 ≤ MORALE_MAX、耐久 ≤ maxDurability、船员 ≤ 上限）。
+ * 状态取"中局"（第 40 天、满士气、满耐久）—— 从 0 开始测的话，
+ * 所有加成都会被下限吃掉，等于什么都没测。
+ */
+{
+  const { events } = await import('../src/data/events')
+  const { adjustedOutcomes } = await import('../src/utils/eventSummary')
+  const base = useGameStore.getState()
+  const mkFleet = () => ({
+    ...base.fleet,
+    gold: 3000, food: 120, water: 120, morale: 80, fame: 40,
+    ships: base.fleet.ships.map(s => ({ ...s, durability: Math.round(s.maxDurability * 0.9) })),
+    cargo: [],
+  })
+  useGameStore.setState({ ...base, gameMode: 'visitor', gamePhase: 'event', fleet: mkFleet() as never })
+  const ctx = { stanceMagnitudeMul: 1, trait: null, hasQuartermaster: false }
+  const bad: string[] = []
+  let applied = 0
+  for (const ev of events) {
+    for (const ch of ev.choices ?? []) {
+      for (const o of adjustedOutcomes(ch, ctx, mkFleet() as never, GAME_BALANCE.MORALE_MAX)) {
+        useGameStore.setState({ ...useGameStore.getState(), fleet: mkFleet() as never, gamePhase: 'event' })
+        useGameStore.getState().applyEventOutcome(o.outcome as never)
+        const f = useGameStore.getState().fleet
+        applied++
+        const nums = { gold: f.gold, food: f.food, water: f.water, morale: f.morale, fame: f.fame }
+        for (const [k, v] of Object.entries(nums)) {
+          if (!Number.isFinite(v)) bad.push(`#${ev.id} ${k}=${v}`)
+          else if (v < 0) bad.push(`#${ev.id} ${k}<0 (${v})`)
+        }
+        if (f.morale > GAME_BALANCE.MORALE_MAX) bad.push(`#${ev.id} 士气超上限 ${f.morale}`)
+        for (const s of f.ships) {
+          if (!Number.isFinite(s.durability) || s.durability < 0) bad.push(`#${ev.id} 耐久 ${s.durability}`)
+          else if (s.durability > s.maxDurability) bad.push(`#${ev.id} 耐久超上限 ${s.durability}/${s.maxDurability}`)
+          if (!Number.isFinite(s.crew) || s.crew < 0) bad.push(`#${ev.id} 船员 ${s.crew}`)
+        }
+      }
+    }
+  }
+  const choices = events.reduce((n, e) => n + (e.choices?.length ?? 0), 0)
+  assert(applied >= choices * 2, `真的 apply 了每条结局（${choices} 个选项 → ${applied} 次结算，平均 ≥2 条）`)
+  assert(bad.length === 0, `事件结算后所有资源都在合法范围${bad.length ? '：' + [...new Set(bad)].slice(0, 4).join('；') : ''}`)
+  useGameStore.setState(base)
+}
+
 console.log(`\n最终结果：${passed} 通过 / ${failed} 失败`)
 if (failed > 0) process.exit(1)
