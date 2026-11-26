@@ -4,6 +4,7 @@ import { MINI_GAME_COPY } from '@/utils/miniGame'
 import MiniGameGlyph from '@/components/ui/MiniGameGlyph'
 import { RESOURCE_LABEL, type ChoiceSummary, type ResourceKey, type RiskGrade } from '@/utils/eventSummary'
 import { NOTORIETY_LABELS } from '@/data/notoriety'
+import { FACTION_MAP } from '@/data/factions'
 
 interface EventChoiceProps {
   choice: EventChoiceType
@@ -100,7 +101,8 @@ export default function EventChoice({ choice, index, summary, onSelect }: EventC
       {/* 结构化摘要：把藏起来的代价表翻出来，压成一行可扫读的芯片。
           期望值带 ~ 前缀（是加权估算不是承诺）；小游戏选项只说明因果，不给数字。 */}
       {summary && (
-        <div className="relative mt-1.5 flex items-center justify-between gap-2">
+        <div className="relative mt-1.5 flex items-start justify-between gap-2">
+          <span className="flex min-w-0 flex-col gap-0.5">
           {/*
             【得失芯片排成三列，不自由换行】
             自由 wrap 时一行塞 4~5 个、剩下的掉到第二行：
@@ -133,6 +135,30 @@ export default function EventChoice({ choice, index, summary, onSelect }: EventC
                 </span>
               ))
             )}
+          </span>
+          {/*
+            阵营好感：**必须能提前看见**。
+            阵营的阈值（30 / 90）直接换港口特权：护送赏金、回收价、黑市开放——
+            卡片上不写，等于让玩家闭着眼投资。取向故意不写（它是"你会变成谁"，
+            结算屏逐格揭晓；提前标出来会把"我是什么人"变成"我要刷哪一格"）。
+            图标用数据层那个单字（王/商/学/?），与 Badge 的回退规则同一套。
+          */}
+          {summary.factions.length > 0 && !choice.miniGame && (
+            <span className="flex flex-wrap items-center gap-1">
+              {summary.factions.map(f => (
+                <span
+                  key={f.id}
+                  data-faction-chip={f.id}
+                  data-value={f.ev}
+                  title={`${FACTION_MAP.get(f.id)?.name ?? f.id}好感（该派系的港口特权按累计好感解锁）`}
+                  className="flex items-center gap-0.5 rounded border border-gold-700/45 bg-gold-900/25 px-1 font-mono text-xs tabular-nums text-gold-300"
+                >
+                  <span className="font-serif opacity-75">{FACTION_MAP.get(f.id)?.icon ?? '·'}</span>
+                  {f.ev > 0 ? '+' : ''}{f.ev}
+                </span>
+              ))}
+            </span>
+          )}
           </span>
           {/* 小游戏选项不显示风险档：它的结局概率会被操作改写，
               硬挂一个「搏」再配上「期望就差、尾部太重」这种断言，

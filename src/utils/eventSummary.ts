@@ -1,4 +1,4 @@
-import type { EventChoice, EventOutcome, Fleet } from '@/types'
+import type { EventChoice, EventOutcome, FactionId, Fleet } from '@/types'
 import { adjustOutcome, clampOutcomeToFleet, type OutcomeAdjustContext } from './outcomeAdjust'
 
 /**
@@ -184,6 +184,19 @@ export interface ChoiceChip {
 export interface ChoiceSummary {
   /** 按 |ev| 降序；可能超过 MAX_CHIPS 个，组件层截断 */
   chips: ChoiceChip[]
+  /**
+   * 四阵营的好感变化（只列 |期望| ≥ 1 的，最多 2 个）。
+   *
+   * 【为什么阵营要上芯片，取向不上】
+   * 阵营是**要经营的东西**：30 / 90 这些阈值直接换港口特权（护送赏金、回收价、黑市），
+   * 玩家必须能提前算这一笔——卡片上不写，等于让他闭着眼投资。
+   * 取向是**你会变成谁**：它的后果在结算屏逐格揭晓（还有一条"跨过门槛"的解锁提示），
+   * 提前标在选项上会把"我是什么人"变成"我要刷哪一格"。
+   *
+   * 审计过：160 个选项里，只看资源时有 17 个选项被另一个严格支配；
+   * 算上阵营剩 12，算上取向才是 0。这一条至少把"看得见的那个缺口"补上。
+   */
+  factions: { id: FactionId; ev: number }[]
   risk: RiskGrade
   /** true = 没有什么值得展示的影响（纯叙事/影响甚微）——UI 显示「影响甚微」 */
   plain: boolean
@@ -202,7 +215,7 @@ export function summarizeChoice(
   if (choice.miniGame) {
     // risk 只是个占位：小游戏选项的 UI 不渲染风险档（见 EventChoice 的守卫），
     // 因为这里的概率会被操作表现改写，任何"稳/搏/险"的断言都是编造的。
-    return { chips: [], risk: 'gamble', plain: true }
+    return { chips: [], factions: [], risk: 'gamble', plain: true }
   }
   const outs = adjustedOutcomes(choice, ctx, fleet, moraleMax)
   const ev = expectedDeltas(outs)
@@ -210,5 +223,17 @@ export function summarizeChoice(
     .map(k => ({ key: k, ev: Math.round(ev[k]) }))
     .filter(c => Math.abs(c.ev) >= CHIP_MIN_EV)
     .sort((a, b) => Math.abs(b.ev) - Math.abs(a.ev))
-  return { chips, risk: riskGrade(outs), plain: chips.length === 0 }
+  /* 阵营期望：按概率加权后四舍五入；|ev| < 1 的不显示（半格好感不值得占位置） */
+  const facAcc: Partial<Record<FactionId, number>> = {}
+  for (const { probability, outcome } of outs) {
+    for (const [fid, d] of Object.entries(outcome.factionChange ?? {})) {
+      facAcc[fid as FactionId] = (facAcc[fid as FactionId] ?? 0) + probability * (d as number)
+    }
+  }
+  const factions = (Object.entries(facAcc) as [FactionId, number][])
+    .map(([id, v]) => ({ id, ev: Math.round(v) }))
+    .filter(f => Math.abs(f.ev) >= 1)
+    .sort((a, b) => Math.abs(b.ev) - Math.abs(a.ev))
+    .slice(0, 2)
+  return { chips, factions, risk: riskGrade(outs), plain: chips.length === 0 && factions.length === 0 }
 }

@@ -4157,9 +4157,24 @@ console.log('== 45. 常驻资源条：界面天数必须等于实际扣的天数
       }
       for (const c of s.chips) assert(Math.abs(c.ev) >= CHIP_MIN_EV, `#${ev.id} 芯片 ${c.key} 未过显示阈值`)
       libMaxChips = Math.max(libMaxChips, s.chips.length)
-      // 7.2 plain ⟺ 无芯片（小游戏除外，它恒 plain）
+      /*
+       * 7.1b 阵营芯片（2026-11-26）：只列 |期望| ≥ 1、最多 2 枚。
+       * 阵营是"要经营的东西"（30/90 阈值换港口特权），必须在选项卡片上能算；
+       * 取向故意不上卡（结算屏逐格揭晓），所以这里只查阵营。
+       */
+      for (const f of s.factions) assert(Math.abs(f.ev) >= 1, `#${ev.id} 阵营芯片 ${f.id} 未过阈值`)
+      assert(s.factions.length <= 2, `#${ev.id} 阵营芯片超过 2 枚（${s.factions.length}）`)
+      if (s.factions.length > 1) {
+        assert(Math.abs(s.factions[0].ev) >= Math.abs(s.factions[1].ev), `#${ev.id} 阵营芯片未按 |期望| 降序`)
+      }
+      /*
+       * 7.2 plain ⟺ 什么影响都没有（小游戏除外，它恒 plain）
+       * 2026-11-26：口径从"无资源芯片"扩成"无资源芯片 **且** 无阵营芯片"——
+       * 只改阵营好感、资源全 0 的选项（#230/#238/#243 那种）不该显示「影响甚微」。
+       */
       if (ch.miniGame) { libMini++; assert(s.plain, `#${ev.id} 小游戏选项必须 plain`) }
-      else assert(s.plain === (s.chips.length === 0), `#${ev.id} plain 与芯片数不一致`)
+      else assert(s.plain === (s.chips.length === 0 && s.factions.length === 0),
+        `#${ev.id} plain 与芯片数不一致（资源 ${s.chips.length} / 阵营 ${s.factions.length}）`)
       if (s.plain) libPlain++
       if (s.risk === 'steady') libSteady++
       else if (s.risk === 'gamble') libGamble++
