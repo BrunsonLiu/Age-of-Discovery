@@ -15,6 +15,7 @@ import { getRouteGeometry } from '@/utils/routePath'
 import { routeFacts, voyageDays, windFavorForRoute, LOW_MORALE } from '@/utils/voyage'
 import { getRandomEvents, consumeEventFlags, RECENT_EVENT_WINDOW } from '@/utils/eventEngine'
 import { pickVoyageMod } from '@/data/voyageModifiers'
+import { moonEventMul } from '@/utils/moon'
 import { STANCES, segmentCountFor, nextSegmentBoundary, hazardLabel, dailyFoodUse, dailyWaterUse, dailyWearRate, settleWear } from '@/utils/segment'
 import { repairCost, taskGold, supplyCost, supplyAmounts, intelCost, portServiceMul, escortRewardMul, INTERPRETER_FACTION_MUL } from '@/utils/crewPerks'
 import { donatableRelics, donateFame } from '@/utils/donation'
@@ -1737,8 +1738,13 @@ export const useGameStore = create<GameStore>()(
             state.currentRoute?.fromPortId ?? 0,
             state.currentRoute?.toPortId ?? 0,
           )
+          /*
+           * 月相：也乘在这一条链上（唯一入口）。月明则夜航看得远、也更容易被看见，
+           * 新月夜海面安静 —— 系数 0.85~1.15，由**航程天数**推导（不是实时），
+           * 读档/切视图都不会变。见 `utils/moon`。
+           */
           const eventBias = WEATHER_INFO[newWeather.kind].eventBias * profile.eventRateMul
-            * modeEventMul * seaEventMul * voyageMod.eventMul
+            * modeEventMul * seaEventMul * voyageMod.eventMul * moonEventMul(newDay)
           const triggeredEvent = eventBias !== 1
             ? getRandomEvents({ ...state, fleet: newFleet, routeProgress: state.routeProgress }, events, newDay - lastEventDay, eventBias)
             : getRandomEvents({ ...state, fleet: newFleet, routeProgress: state.routeProgress }, events, newDay - lastEventDay)

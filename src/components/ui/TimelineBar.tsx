@@ -3,6 +3,7 @@ import { historicalTimeline } from '@/data/historicalTimeline'
 import { useEffect, useRef, useState } from 'react'
 import { Award } from 'lucide-react'
 import { useFxStore as useFx } from '@/store/useFxStore'
+import MoonPhase from '@/components/ui/MoonPhase'
 
 /**
  * 历史时间轴的刻度跨度（天）。三条口径必须共用同一个数：年份换算、进度条、刻度位置。
@@ -213,6 +214,10 @@ export default function TimelineBar() {
       <div className="hidden sm:block text-gold-400 font-serif text-[13px] min-w-[130px] text-right truncate">
         {currentEvent ? currentEvent.title : latestSeenEvent ? latestSeenEvent.title : '启航'}
       </div>
+
+      {/* 月相：连续形变的东西就该是形状（八相同一条路径画出来）。
+          放在声望左边 —— 它是"这段时间的大环境"，不是玩家的账。 */}
+      <MoonPhase day={day} />
 
       {/* 声望：天然的进度指标，此前只在结局画面出现，玩家全程看不到自己在往上走 */}
       <div

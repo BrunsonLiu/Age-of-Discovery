@@ -16886,5 +16886,59 @@ console.log('== 帧率撑不住时，画质预设是最后一道闸 ==')
   useGameStore.setState(base)
 }
 
+/* ============ 月相：航程天数的纯函数 ============ */
+/*
+ * 只做"月相"（潮汐没有落点：本作没有吃水/靠泊模型，加了也是编数）。
+ * 三条要守：
+ *   ① 周期 29.53 天、第 1 天是新月、半个月后是满月（真实朔望月，取整会三年差一月）；
+ *   ② 照亮比例在半月内单调增、后半月单调减（八相由同一条路径画出来，比例错则形状错）；
+ *   ③ 它真的接在事件概率链上（否则就是一个纯装饰的月亮，玩家看不出今晚"不一样"）。
+ */
+{
+  const { moonAt, moonPhaseAt, moonIlluminationAt, moonEventMul, SYNODIC_MONTH_DAYS } =
+    await import('../src/utils/moon')
+  assert(Math.abs(SYNODIC_MONTH_DAYS - 29.53) < 1e-9, `朔望月 29.53 天（实测 ${SYNODIC_MONTH_DAYS}）`)
+  assert(moonAt(1).key === 'new', `第 1 天是新月（实测 ${moonAt(1).name}）`)
+  const half = 1 + SYNODIC_MONTH_DAYS / 2
+  assert(moonAt(half).key === 'full', `第 ${half.toFixed(1)} 天是满月（实测 ${moonAt(half).name}）`)
+  assert(moonIlluminationAt(half) > 0.995, `满月照亮 ≥99%（实测 ${moonIlluminationAt(half).toFixed(3)}）`)
+  assert(moonIlluminationAt(1) < 0.005, '新月照亮 ≈0')
+
+  // 单调：上半月递增、下半月递减
+  let up = true
+  for (let d = 1; d < half - 1; d += 0.5) if (moonIlluminationAt(d + 0.5) < moonIlluminationAt(d) - 1e-9) up = false
+  assert(up, '上半月照亮比例单调不减')
+  let down = true
+  for (let d = half; d < 1 + SYNODIC_MONTH_DAYS - 0.5; d += 0.5) if (moonIlluminationAt(d + 0.5) > moonIlluminationAt(d) + 1e-9) down = false
+  assert(down, '下半月照亮比例单调不增')
+
+  // 八相都要出现过（否则 NAMES 里有死条目）
+  const seen = new Set<string>()
+  for (let d = 1; d < 1 + SYNODIC_MONTH_DAYS; d += 0.25) seen.add(moonAt(d).key)
+  assert(seen.size === 8, `一个朔望月里八相都出现过（实测 ${seen.size} 种）`)
+
+  // 相位永远落在 [0,1)
+  let inRange = true
+  for (const d of [-5, 0, 1, 7.3, 100, 365.25, 999]) {
+    const p = moonPhaseAt(d)
+    if (!(p >= 0 && p < 1)) inRange = false
+  }
+  assert(inRange, '任意天数（含负数/极大值）相位都在 [0,1)')
+
+  // 倍率：新月 0.85、满月 1.15，且只在 [0.85, 1.15]
+  const mNew = moonEventMul(1)
+  const mFull = moonEventMul(half)
+  assert(Math.abs(mNew - 0.85) < 0.01, `新月事件倍率 ×0.85（实测 ${mNew.toFixed(3)}）`)
+  assert(Math.abs(mFull - 1.15) < 0.01, `满月事件倍率 ×1.15（实测 ${mFull.toFixed(3)}）`)
+  assert(mFull > mNew, '满月比新月更容易出事（方向：月明看得远，也更容易被看见）')
+
+  // ③ 接线：eventBias 那条链上必须有它（单一入口）
+  const store = readFileSync(join(process.cwd(), 'src', 'store', 'useGameStore.ts'), 'utf8')
+  assert(/voyageMod\.eventMul \* moonEventMul\(newDay\)/.test(store),
+    '月相乘进了 advanceDay 的 eventBias 链（唯一入口，不许新开一条概率路径）')
+  const bar = readFileSync(join(process.cwd(), 'src', 'components', 'ui', 'TimelineBar.tsx'), 'utf8')
+  assert(/<MoonPhase day=\{day\} \/>/.test(bar), '顶栏挂着月相圆盘（量要被看见）')
+}
+
 console.log(`\n最终结果：${passed} 通过 / ${failed} 失败`)
 if (failed > 0) process.exit(1)
