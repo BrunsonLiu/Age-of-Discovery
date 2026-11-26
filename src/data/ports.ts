@@ -58,7 +58,7 @@ export const portGoods: PortGood[] = [
   { portId: 2, goodId: 10, price: 200, stock: 30, priceModifier: 1.5 },
   { portId: 2, goodId: 9, price: 280, stock: 15, priceModifier: 1.6 },
 
-  /* ---- 拿骚(3)：海盗共和国，产烟草，渴求武器/朗姆酒 ---- */
+  /* ---- 拿骚(3)：海盗共和国，产烟草，渴求火枪/火炮/香料（朗姆酒 1.20 只算小贵，不进渴求） ---- */
   { portId: 3, goodId: 3, price: 32, stock: 120, priceModifier: 0.7 },
   { portId: 3, goodId: 7, price: 100, stock: 30, priceModifier: 1.35 },
   { portId: 3, goodId: 4, price: 125, stock: 25, priceModifier: 1.4 },
@@ -112,7 +112,7 @@ export const portGoods: PortGood[] = [
    */
   { portId: 7, goodId: 6, price: 38, stock: 60, priceModifier: 1.45 },
 
-  /* ---- 伦敦(8)：产火枪/木材，渴求蔗糖/烟草/丝绸 ---- */
+  /* ---- 伦敦(8)：产火枪/木材，渴求蔗糖/烟草/象牙（丝绸 1.25 只算小贵，不进渴求） ---- */
   { portId: 8, goodId: 7, price: 58, stock: 70, priceModifier: 0.75 },
   { portId: 8, goodId: 6, price: 16, stock: 150, priceModifier: 0.6 },
   { portId: 8, goodId: 5, price: 80, stock: 50, priceModifier: 1.45 },
@@ -126,7 +126,7 @@ export const portGoods: PortGood[] = [
    */
   { portId: 8, goodId: 2, price: 33, stock: 25, priceModifier: 1.45 },
 
-  /* ---- 埃尔米纳(9)：西非，产象牙/黄金海岸木材，渴求火枪/布匹(丝) ---- */
+  /* ---- 埃尔米纳(9)：西非，产象牙/黄金海岸木材，渴求火枪/丝绸（布匹） ---- */
   { portId: 9, goodId: 2, price: 20, stock: 150, priceModifier: 0.6 },
   { portId: 9, goodId: 6, price: 18, stock: 120, priceModifier: 0.7 },
   { portId: 9, goodId: 7, price: 95, stock: 30, priceModifier: 1.45 },
@@ -140,7 +140,7 @@ export const portGoods: PortGood[] = [
   { portId: 10, goodId: 7, price: 105, stock: 25, priceModifier: 1.4 },
   { portId: 10, goodId: 9, price: 240, stock: 25, priceModifier: 1.35 },
 
-  /* ---- 果阿(11)：印度，产香料（最便宜），渴求火炮/象牙/木材 ---- */
+  /* ---- 果阿(11)：印度，产香料（最便宜），渴求火炮/木材/丝绸（象牙 1.25 只算小贵，不进渴求） ---- */
   { portId: 11, goodId: 9, price: 110, stock: 100, priceModifier: 0.6 },
   { portId: 11, goodId: 4, price: 115, stock: 30, priceModifier: 1.35 },
   { portId: 11, goodId: 2, price: 50, stock: 40, priceModifier: 1.25 },
@@ -168,7 +168,7 @@ export const portGoods: PortGood[] = [
   { portId: 14, goodId: 9, price: 270, stock: 25, priceModifier: 1.55 },
   { portId: 14, goodId: 6, price: 30, stock: 60, priceModifier: 1.2 },
 
-  /* ---- 阿姆斯特丹(15)：产火炮/木材/火枪，渴求香料/蔗糖/丝绸 ---- */
+  /* ---- 阿姆斯特丹(15)：产火炮/木材/火枪，渴求香料/蔗糖/象牙（丝绸 1.15 只算小贵，不进渴求） ---- */
   { portId: 15, goodId: 4, price: 70, stock: 70, priceModifier: 0.75 },
   { portId: 15, goodId: 6, price: 14, stock: 180, priceModifier: 0.55 },
   { portId: 15, goodId: 7, price: 62, stock: 55, priceModifier: 0.8 },
@@ -184,15 +184,27 @@ export const portGoods: PortGood[] = [
   { portId: 16, goodId: 10, price: 175, stock: 30, priceModifier: 1.35 },
   { portId: 16, goodId: 1, price: 13, stock: 90, priceModifier: 1.05 },
 
-  /* ---- 桑给巴尔(17)：香料岛，产香料，渴求火炮/象牙转运 ---- */
+  /* ---- 桑给巴尔(17)：香料岛，产香料，渴求火炮/丝绸（丁香换印度布） ---- */
   { portId: 17, goodId: 9, price: 120, stock: 80, priceModifier: 0.65 },
   { portId: 17, goodId: 2, price: 24, stock: 110, priceModifier: 0.7 },
   { portId: 17, goodId: 4, price: 125, stock: 25, priceModifier: 1.4 },
   { portId: 17, goodId: 10, price: 170, stock: 30, priceModifier: 1.3 },
 
-  /* ---- 澳门(18)：中国，产丝绸（最便宜），渴求香料/象牙 ---- */
+  /* ---- 澳门(18)：中国，产丝绸（最便宜），渴求香料/蔗糖（象牙 1.15 只算小贵，不进渴求） ---- */
   { portId: 18, goodId: 10, price: 55, stock: 120, priceModifier: 0.45 },
-  { portId: 18, goodId: 9, price: 135, stock: 60, priceModifier: 0.75 },
+  /*
+   * 香料这一行曾经是 0.75（=当产地卖），与上一行注释里写的"渴求香料"自相矛盾。
+   * 后果实测：澳门→广州 58 海里、1 天，买 101 卖 223，**122 金/件/日** —— 全图最高，
+   * 而近海整档的中位数是 3.67。它还绕开了大明的第一段航路
+   * （`nations.ts`：「香料必须从满剌加一带运回来」）—— 母港旁边 58 海里就能刷，
+   * 谁还会去满剌加。
+   *
+   * 改成转口港该有的样子：澳门从满剌加买进、加价卖给广州与日本。
+   * 现在买 273（高于广州的回收价 223，倒手不成立），卖 232（马六甲→澳门 23 金/件/日）。
+   * pm 取 1.30 而不是 1.25：**1.25 差一点进不了"渴求"**（`localDemands` 的线是 ≥1.3），
+   * 那就会出现"注释说渴求、面板不列它"的第二处不一致。
+   */
+  { portId: 18, goodId: 9, price: 210, stock: 45, priceModifier: 1.3 },
   { portId: 18, goodId: 2, price: 45, stock: 40, priceModifier: 1.15 },
   { portId: 18, goodId: 5, price: 75, stock: 40, priceModifier: 1.35 },
 
@@ -203,7 +215,7 @@ export const portGoods: PortGood[] = [
   { portId: 19, goodId: 7, price: 100, stock: 30, priceModifier: 1.35 },
   { portId: 19, goodId: 3, price: 55, stock: 40, priceModifier: 1.2 },
 
-  /* ---- 加的斯(20)：珍宝舰队终点，白银充裕（什么都贵），渴求一切殖民地货 ---- */
+  /* ---- 加的斯(20)：珍宝舰队终点，白银充裕（什么都贵），渴求蔗糖/香料/烟草/朗姆酒/丝绸 ---- */
   { portId: 20, goodId: 5, price: 95, stock: 40, priceModifier: 1.7 },
   { portId: 20, goodId: 3, price: 62, stock: 35, priceModifier: 1.4 },
   { portId: 20, goodId: 9, price: 275, stock: 25, priceModifier: 1.55 },

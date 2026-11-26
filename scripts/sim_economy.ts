@@ -21,6 +21,7 @@
 import { ports, portGoods } from '../src/data/ports'
 import { goods } from '../src/data/goods'
 import { routeFacts, voyageDays } from '../src/utils/voyage'
+import { haversineNm } from '../src/utils/navigation'
 import { selectBuyPrice, selectSellPrice } from '../src/store/useGameStore'
 
 /* ── 与 probe_economy 完全相同的夹具与口径（两份必须一致，否则数字不可比） ── */
@@ -45,7 +46,20 @@ const baseState = {
 const weather = { kind: 'clear', windDir: 0, windSpeed: 12, duration: 6 } as never
 const DAY = 120
 
-type Leg = { from: string; to: string; nm: number; days: number; good: string; buy: number; sell: number; favor: number }
+/*
+ * 【sell 与 sellRaw 为什么是两列】
+ * 距离溢价（`remoteBonusMul`，2026-11-23 上线）要**起运港**才能算，所以
+ * `selectSellPrice(state, 到达港, 货, 起运港)` 与 `selectSellPrice(state, 到达港, 货)`
+ * 是两个价。这里两列都留：
+ *   sell    —— 线上真正会付给玩家的价（含距离溢价）→ 一切"现状"读数必须用它
+ *   sellRaw —— 不带起运港的裸价 → 只给"假如没有溢价"的假设行做底
+ * 之前只算 sellRaw 当"基线"，所以 2026-11-23 之后这个表的基线**不是现状**：
+ * 溢价上线了，量尺没跟上（远洋那几行被低估 20~35%）。
+ */
+type Leg = {
+  from: string; to: string; nm: number; days: number; good: string
+  buy: number; sell: number; sellRaw: number; bonus: number; favor: number
+}
 const legs: Leg[] = []
 
 for (const a of ports) {
@@ -61,10 +75,15 @@ for (const a of ports) {
     if (!Number.isFinite(days) || days <= 0) continue
     for (const g of goods) {
       const buy = selectBuyPrice(baseState, a.id, g.id)
-      const sell = selectSellPrice(baseState, b.id, g.id)
-      if (buy == null || sell == null) continue
+      // 裸价（不带起运港）与线上价（带起运港 → 含距离溢价）都要
+      const sellRaw = selectSellPrice(baseState, b.id, g.id)
+      const sell = selectSellPrice(baseState, b.id, g.id, a.id)
+      if (buy == null || sell == null || sellRaw == null) continue
       if (sell - buy <= 0) continue
-      legs.push({ from: a.nameCn, to: b.nameCn, nm: facts.distanceNm, days, good: g.nameCn, buy, sell, favor: facts.windFavor })
+      legs.push({
+        from: a.nameCn, to: b.nameCn, nm: facts.distanceNm, days, good: g.nameCn,
+        buy, sell, sellRaw, bonus: sellRaw > 0 ? sell / sellRaw : 1, favor: facts.windFavor,
+      })
     }
   }
 }
@@ -114,72 +133,83 @@ function evaluate(
 
 const rows: ReturnType<typeof evaluate>[] = []
 
-/* 基线 */
-rows.push(evaluate('基线（现状）', l => ({ buy: l.buy, sell: l.sell, days: l.days })))
+/* 现状 = 线上真正会付的价（含距离溢价）。这是唯一能当判据的一行。 */
+rows.push(evaluate('现状（含距离溢价）', l => ({ buy: l.buy, sell: l.sell, days: l.days })))
+/* 裸价 = 不带起运港的价（溢价上线前的世界）。只用来量"溢价到底贡献了多少"。 */
+rows.push(evaluate('裸价（溢价上线前）', l => ({ buy: l.buy, sell: l.sellRaw, days: l.days })))
 
 /*
- * A 距离渴求：卖价 ×(1 + k × min(1, nm/5000))
- * 用 5000nm 作饱和点 —— 欧洲到加勒比约 4000、到东亚约 9000，
- * 取 5000 意味着"跨大西洋基本吃满、绕好望角超一点但不失控"。
+ * ── 以下各行为「已评估、未采用」的候选改法 ──
+ * 一律以**裸价**为底（它们当初是在"没有距离溢价"的世界里量出来的）。
+ * 默认不打印：它们与现状并排会让人以为还能叠加，实际 A'/k=0.35 已经上线，
+ * 再乘一次就是重复计算。要看决策依据跑 `--whatif`。
  */
-for (const k of [0.2, 0.35, 0.5]) {
-  rows.push(evaluate(`A 距离渴求 k=${k}`, l => ({
+if (process.argv.includes('--whatif')) {
+  /*
+   * A 距离渴求：卖价 ×(1 + k × min(1, nm/5000))
+   * 用 5000nm 作饱和点 —— 欧洲到加勒比约 4000、到东亚约 9000，
+   * 取 5000 意味着"跨大西洋基本吃满、绕好望角超一点但不失控"。
+   */
+  for (const k of [0.2, 0.35, 0.5]) {
+    rows.push(evaluate(`A 距离渴求 k=${k}`, l => ({
+      buy: l.buy,
+      sell: l.sellRaw * (1 + k * Math.min(1, l.nm / 5000)),
+      days: l.days,
+    })))
+  }
+
+  /*
+   * B 动态稀缺：同一件货连着卖，第 n 趟价格 ×(1 - 0.12×min(n,4))
+   * 这里只量"第 1 趟"之外的第 4 趟 —— 玩家实际会跑的重复趟数最坏情况。
+   * 注意它**压的是近海**（近海周转快、重复多），所以单看比值会更好看，
+   * 但真实体验是"近海越跑越不值钱、远洋单趟仍然贵"。
+   */
+  rows.push(evaluate('B 动态稀缺（第 4 趟，×0.52）', l => ({
     buy: l.buy,
-    sell: l.sell * (1 + k * Math.min(1, l.nm / 5000)),
+    sell: l.buy + (l.sellRaw - l.buy) * 0.52,
     days: l.days,
   })))
-}
 
-/*
- * B 动态稀缺：同一件货连着卖，第 n 趟价格 ×(1 - 0.12×min(n,4))
- * 这里只量"第 1 趟"之外的第 4 趟 —— 玩家实际会跑的重复趟数最坏情况。
- * 注意它**压的是近海**（近海周转快、重复多），所以单看比值会更好看，
- * 但真实体验是"近海越跑越不值钱、远洋单趟仍然贵"。
- */
-rows.push(evaluate('B 动态稀缺（第 4 趟，×0.52）', l => ({
-  buy: l.buy,
-  sell: l.buy + (l.sell - l.buy) * 0.52,
-  days: l.days,
-})))
+  /*
+   * A' 带门槛的距离渴求：前 800nm 一分不给，之后按剩余里程线性上浮。
+   * **这一版已被采用**（就是现行的 `remoteBonusMul`）。
+   *
+   * 【为什么需要这一版】纯 A 有天花板：近海也有 400nm 的航线，照样吃 8% 奖励，
+   * 于是 A 把分子分母一起抬高 —— k=0.5 的比值（0.73）甚至比 k=0.35（0.76）更差。
+   * 而玩家真正吃亏的是「跑得不近不远」那一段（中程中位数 1.60，全场最低）：
+   * 距离已经付出去了，价差却还没长起来。
+   * 门槛设在 800nm：地中海内部（约 300~700）、加勒比内部（约 400~900）基本不动，
+   * 跨大西洋（4000）与绕好望角（9000）吃满。
+   */
+  for (const k of [0.35, 0.5]) {
+    rows.push(evaluate(`A' 门槛800 k=${k}`, l => {
+      const over = Math.max(0, l.nm - 800)
+      return { buy: l.buy, sell: l.sellRaw * (1 + k * Math.min(1, over / 4200)), days: l.days }
+    }))
+  }
 
-/*
- * A' 带门槛的距离渴求：前 800nm 一分不给，之后按剩余里程线性上浮。
- *
- * 【为什么需要这一版】纯 A 有天花板：近海也有 400nm 的航线，照样吃 8% 奖励，
- * 于是 A 把分子分母一起抬高 —— k=0.5 的比值（0.73）甚至比 k=0.35（0.76）更差。
- * 而玩家真正吃亏的是「跑得不近不远」那一段（中程中位数 1.60，全场最低）：
- * 距离已经付出去了，价差却还没长起来。
- * 门槛设在 800nm：地中海内部（约 300~700）、加勒比内部（约 400~900）基本不动，
- * 跨大西洋（4000）与绕好望角（9000）吃满。
- */
-for (const k of [0.35, 0.5]) {
-  rows.push(evaluate(`A' 门槛800 k=${k}`, l => {
+  /* D 缩短远航：天数 ×0.8（远洋吹得更久的顺风 / 更好操纵的船） */
+  rows.push(evaluate('D 远航天数 ×0.8', l => ({
+    buy: l.buy,
+    sell: l.sellRaw,
+    days: l.nm > 3000 ? l.days * 0.8 : l.days,
+  })))
+
+  /* A + D 组合 */
+  rows.push(evaluate('A(k=0.35) + D', l => ({
+    buy: l.buy,
+    sell: l.sellRaw * (1 + 0.35 * Math.min(1, l.nm / 5000)),
+    days: l.nm > 3000 ? l.days * 0.8 : l.days,
+  })))
+  rows.push(evaluate("A'(k=0.5) + D", l => {
     const over = Math.max(0, l.nm - 800)
-    return { buy: l.buy, sell: l.sell * (1 + k * Math.min(1, over / 4200)), days: l.days }
+    return {
+      buy: l.buy,
+      sell: l.sellRaw * (1 + 0.5 * Math.min(1, over / 4200)),
+      days: l.nm > 3000 ? l.days * 0.8 : l.days,
+    }
   }))
 }
-
-/* D 缩短远航：天数 ×0.8（远洋吹得更久的顺风 / 更好操纵的船） */
-rows.push(evaluate('D 远航天数 ×0.8', l => ({
-  buy: l.buy,
-  sell: l.sell,
-  days: l.nm > 3000 ? l.days * 0.8 : l.days,
-})))
-
-/* A + D 组合 */
-rows.push(evaluate('A(k=0.35) + D', l => ({
-  buy: l.buy,
-  sell: l.sell * (1 + 0.35 * Math.min(1, l.nm / 5000)),
-  days: l.nm > 3000 ? l.days * 0.8 : l.days,
-})))
-rows.push(evaluate("A'(k=0.5) + D", l => {
-  const over = Math.max(0, l.nm - 800)
-  return {
-    buy: l.buy,
-    sell: l.sell * (1 + 0.5 * Math.min(1, over / 4200)),
-    days: l.nm > 3000 ? l.days * 0.8 : l.days,
-  }
-}))
 
 /* ── 输出 ── */
 /*
@@ -263,6 +293,14 @@ if (laneArg) {
  * 判据：500–3000nm、风系数 ≥1.0（顺风，天数不是瓶颈）、且最好那件货的到岸渴求度 <1.3。
  * 逆风航线不列进来 —— 那是航海常识（顶风要走十几天），补价等于把风向的意义抹平。
  * 这里列出来的才是"本可以赚钱、但目的港不收这种货"的洞，也就是**该补渴求品**的地方。
+ *
+ * 【为什么还要一列「最近产地」】缺口的修法是"给到岸港补这种货的需求"，但**补需求
+ * 会同时给所有产地开一条新航线**。如果到岸港旁边就有一家便宜产地（<600nm），
+ * 那条新航线会变成近海印钞机：哈瓦那→皇家港只有 400 海里，两边价差一拉开，
+ * 单件毛利除以 2 天，比任何一个远洋航线的"每件每日"都高。
+ * 这不是假设——2026-11-26 差点就这么补了烟草。所以这一列不是装饰：
+ *   ≥600nm  → 「可补」：补完只会救活长途，不会造出短途套利
+ *   <600nm  → 「慎补」：先确认近处的产地不会把这条变成印钞机
  */
 if (process.argv.includes('--gaps')) {
   const pmAt = (portName: string, goodName: string) => {
@@ -270,6 +308,27 @@ if (process.argv.includes('--gaps')) {
     const g = goods.find(x => x.nameCn === goodName)
     if (!to || !g) return { pm: 0, portId: to?.id ?? 0 }
     return { pm: portGoods.find(pg => pg.portId === to.id && pg.goodId === g.id)?.priceModifier ?? 0, portId: to.id }
+  }
+  /** 到岸港附近最近的同种货产地（pm ≤ 1.0，即"不比中性价更贵"的一端）距离；没有别的产地返回 Infinity */
+  const nearestProducerNm = (toName: string, goodName: string) => {
+    const to = ports.find(p => p.nameCn === toName)
+    const g = goods.find(x => x.nameCn === goodName)
+    if (!to || !g) return { nm: Infinity, name: '' }
+    let bestNm = Infinity
+    let bestName = ''
+    for (const pg of portGoods) {
+      if (pg.goodId !== g.id || pg.portId === to.id || pg.priceModifier > 1.0) continue
+      /*
+       * 门槛用 1.0 而不是 0.85：0.90 的港（开普敦的朗姆）一样便宜，一样能当套利的起点。
+       * 第一版用 0.85 时，"开普敦→蒙巴萨朗姆"那一栏跳出来一个 6752nm（托尔图加）——
+       * 指标自己把 2236nm 外的产地漏掉了，于是会把一条"没有价差"的航线判成"可补"。
+       */
+      const p = ports.find(x => x.id === pg.portId)
+      if (!p) continue
+      const nm = haversineNm(p.latitude, p.longitude, to.latitude, to.longitude)
+      if (nm < bestNm) { bestNm = nm; bestName = p.nameCn }
+    }
+    return { nm: bestNm, name: bestName }
   }
   const best = new Map<string, Leg & { perDay: number }>()
   for (const l of legs) {
@@ -279,15 +338,18 @@ if (process.argv.includes('--gaps')) {
     if (!prev || perDay > prev.perDay) best.set(k, { ...l, perDay })
   }
   const gaps = [...best.values()]
-    .map(l => ({ ...l, ...pmAt(l.to, l.good) }))
+    .map(l => ({ ...l, ...pmAt(l.to, l.good), near: nearestProducerNm(l.to, l.good) }))
     .filter(l => l.nm >= 500 && l.nm < 3000 && l.favor >= 1.0 && l.pm < 1.3)
     .sort((a, b) => a.perDay - b.perDay)
-  console.log(`\n顺风但到岸没人要的中长航线：${gaps.length} 条（按每件每日毛利升序，只列前 15）`)
-  console.log('  航线'.padEnd(26) + '海里'.padStart(7) + '天'.padStart(6) + '风'.padStart(6) + '  货'.padEnd(10) + '毛利/日'.padStart(9) + '  到岸渴求'.padStart(9))
+  const safe = gaps.filter(l => l.near.nm >= 600).length
+  console.log(`\n顺风但到岸没人要的中长航线：${gaps.length} 条（可补 ${safe} / 慎补 ${gaps.length - safe}；按每件每日毛利升序，只列前 15）`)
+  console.log('  航线'.padEnd(26) + '海里'.padStart(7) + '天'.padStart(5) + '风'.padStart(6) + '  货'.padEnd(9) + '毛利/日'.padStart(8) + '渴求'.padStart(7) + '  最近产地'.padStart(14) + '  判定')
   for (const l of gaps.slice(0, 15)) {
+    const near = Number.isFinite(l.near.nm) ? `${l.near.name} ${Math.round(l.near.nm)}` : '无'
     console.log('  ' + `${l.from}→${l.to}`.padEnd(24) + String(Math.round(l.nm)).padStart(7) +
-      l.days.toFixed(1).padStart(6) + l.favor.toFixed(2).padStart(6) + '  ' + l.good.padEnd(8) +
-      l.perDay.toFixed(2).padStart(9) + l.pm.toFixed(2).padStart(9))
+      l.days.toFixed(1).padStart(5) + l.favor.toFixed(2).padStart(6) + '  ' + l.good.padEnd(7) +
+      l.perDay.toFixed(2).padStart(8) + l.pm.toFixed(2).padStart(7) + ('  ' + near).padStart(16) +
+      (l.near.nm >= 600 ? '  可补' : '  慎补'))
   }
   console.log('')
 }
@@ -318,8 +380,8 @@ if (process.argv.includes('--lanes')) {
   console.log('')
 }
 
-console.log(`样本：${legs.length} 条「港口对 × 商品」组合\n`)
-const head = '改法'.padEnd(26) + BUCKETS.map(b => b[0].padStart(14)).join('') + '   远/近'
+console.log(`\n样本：${legs.length} 条「港口对 × 商品」组合`)
+const head = '口径'.padEnd(26) + BUCKETS.map(b => b[0].padStart(14)).join('') + '   远/近'
 console.log(head)
 console.log('─'.repeat(head.length + 6))
 for (const r of rows) {
@@ -328,9 +390,29 @@ for (const r of rows) {
   console.log(r.label.padEnd(26) + cells + `   ${r.ratio.toFixed(2)}×${flag}`)
 }
 
+/* 距离溢价实测：这个机制到底把哪一档抬了多少（不能只看比值，还要看它有没有只抬远洋） */
+const q2 = (arr: number[], p: number) => {
+  const a = [...arr].sort((x, y) => x - y)
+  if (!a.length) return 0
+  return a[Math.min(a.length - 1, Math.floor(p * (a.length - 1)))]
+}
+console.log('\n距离溢价实测（`remoteBonusMul`，门槛 800nm / 满额 5000nm / 封顶 +35%）：')
+console.log('  距离桶'.padEnd(20) + '溢价中位数'.padStart(12) + '吃到溢价的组合'.padStart(16) + '毛利变化'.padStart(12))
+for (const [name, lo, hi] of BUCKETS) {
+  const inB = legs.filter(l => l.nm >= lo && l.nm < hi)
+  const share = inB.length ? inB.filter(l => l.bonus > 1.005).length / inB.length : 0
+  const medB = q2(inB.map(l => l.bonus), 0.5)
+  const lift = q2(inB.map(l => (l.sell - l.buy) / l.days), 0.5) / Math.max(0.01, q2(inB.map(l => (l.sellRaw - l.buy) / l.days), 0.5))
+  console.log('  ' + name.padEnd(18) + (`×${medB.toFixed(2)}`).padStart(12) + (`${Math.round(share * 100)}%`).padStart(16) + (`×${lift.toFixed(2)}`).padStart(12))
+}
+
+const nowRatio = rows[0].ratio
 console.log('\n说明：每格是该桶**每件每航行日毛利的中位数**（金币/件/日）。')
-console.log('「远/近」= 极远(>3000nm) 中位数 ÷ 近海(<500nm) 中位数，基线是 0.56×。')
-console.log('判定线：≥0.90 视为「远洋不再吃亏」；0.75~0.90 是「差距可接受」。')
+console.log('「远/近」= 极远(>3000nm) 中位数 ÷ 近海(<500nm) 中位数。')
+console.log(`现状比值 ${nowRatio.toFixed(2)}×。两条线要分开看：`)
+console.log('  R6 验收线 ≥0.75（低于它才算「远洋明显吃亏」；远洋另有见闻/图鉴/声望回报，不该只靠单价补）')
+console.log('  强目标     ≥0.90（纯金钱上远洋与近海持平）—— 现状未达，且这是个取舍，不是缺陷')
+console.log('「裸价」那行是溢价上线前的世界，只用来量机制贡献；`--whatif` 才打印候选改法（均已评估过）。')
 
 console.log('\nC 方案（非金钱回报）量不出来，但值得记一笔：')
 console.log('  远洋单趟的金钱毛利本来就不该比近海高——它的回报是**图鉴/见闻/声望**。')

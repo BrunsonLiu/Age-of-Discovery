@@ -16354,6 +16354,16 @@ console.log('== 帧率撑不住时，画质预设是最后一道闸 ==')
   assert(/REMOTE_BONUS_MAX = 0\.35/.test(store), '封顶 +35%')
   assert(/REMOTE_BONUS_FULL_NM = 5000/.test(store) && /over \/ 4200/.test(sim),
     '代码的满额距离 = 门槛800 + 4200，与 sim:economy 里量过的那条一致')
+  /*
+   * 【量尺必须跟着实现走】2026-11-26 发现 sim 的"基线"没传起运港 ——
+   * 也就是说溢价上线之后，那张表量的是一个**已经不存在的世界**，
+   * 于是注释里一直写着 0.94×，真实值是 0.77×。
+   * 这条守卫钉的是"现状那一行必须带起运港"，而不是某个具体数字。
+   */
+  assert(/selectSellPrice\(baseState, b\.id, g\.id, a\.id\)/.test(sim),
+    'sim:economy 的现状行带起运港（否则量的是溢价上线前的世界）')
+  assert(/sellRaw/.test(sim) && /--whatif/.test(sim),
+    '候选改法走裸价且默认不打印（避免与已上线的溢价重复计算）')
 
   // 曲线本身：单调、边界、封顶
   const mul = (d: number, from = 1, to = 2) => {
@@ -16614,6 +16624,118 @@ console.log('== 帧率撑不住时，画质预设是最后一道闸 ==')
   assert(adaptive && !/约 5 \/ 10 天能到多远/.test(stripComments(bar)),
     '悬停文案不再写死"5 / 10 天"（天数随缩放变）')
   assert(/随缩放变/.test(bar), '悬停文案说明了天数会随缩放变')
+}
+
+/* ============ 短途印花机：一两天一趟的航线不许暴利 ============ */
+/*
+ * 【真 bug】澳门→广州 58 海里、1 天：买 101 卖 223 = **122 金/件/日**，
+ * 而近海整档的中位数是 3.67。母港广州开局、货舱 100，一趟就是一万二。
+ * 更糟的是它绕开了大明的第一段航路（`nations.ts`：「香料必须从满剌加一带运回来」）。
+ *
+ * 根因不是"价格算错"，是**澳门那一行数据与它自己的注释相反**：
+ * 注释写「渴求香料」，`priceModifier` 却是 0.75（产地的值）。
+ *
+ * 判据分两层：
+ *   ① 数据意图：澳门买香料的价必须高于广州的回收价（倒手不成立）；
+ *   ② 系统性质：任何 <400nm 的航线，每件每日毛利 ≤90 —— 顺手把别的同类洞一起守着。
+ *      90 这个线不是拍的：全图最高的合法值就是西班牙开局第一单
+ *      塞维利亚→加的斯 丝绸 77（54 海里、故意留着当"首笔必赚"），留 13 金余量。
+ */
+{
+  const base = useGameStore.getState()
+  /*
+   * 用一艘固定的小船（速度 7、货舱 100）当尺子，不用存档里现有的船。
+   * 理由：`perDay = 毛利 / 天数`，天数跟着船速走 —— 用 90 当线而船速由存档决定，
+   * 换个快船这条判据就自己红了（第一次写成"≤90"时，同一组数据在两种船上量出 77 和 89）。
+   * 量尺必须固定，判据才有意义。
+   */
+  const probeShip = { id: 1, name: 'probe', type: 'caravel', capacity: 100, usedCapacity: 0, durability: 100, crew: 40, speed: 7, maxCrew: 40 }
+  useGameStore.setState({ ...base, marketStock: {}, weather: { ...base.weather, kind: 'clear' },
+    fleet: { ...base.fleet, currentPortId: null, isSailing: false, cargo: [], fame: 0, trait: null,
+      ships: [probeShip as never], flagshipId: 1 } })
+  const S = () => useGameStore.getState()
+
+  // ① 数据意图：澳门是香料转口港，不是产地
+  const buyMacauSpice = selectBuyPrice(S(), 18, 9)
+  const sellCantonSpice = selectSellPrice(S(), 21, 9, 18)
+  assert(buyMacauSpice != null && sellCantonSpice != null, '澳门买香料价 / 广州卖香料价都算得出来')
+  assert((buyMacauSpice as number) > (sellCantonSpice as number),
+    `澳门买香料 ${buyMacauSpice} 必须高于广州回收价 ${sellCantonSpice}（否则 58 海里倒手就赚）`)
+
+  // 香料必须从满剌加运回来（大明主线）：马六甲→澳门 是一趟值钱的远航
+  const buyMalacca = selectBuyPrice(S(), 12, 9) as number
+  const sellMacau = selectSellPrice(S(), 18, 9, 12) as number
+  const facts = routeFacts([2.1896, 102.2501], [22.1987, 113.5439], 120)
+  const d = voyageDays({ distanceNm: facts.distanceNm, windFavor: facts.windFavor,
+    phenomenonFactor: facts.phenomenonFactor, fleet: S().fleet, officers: S().officers, weather: S().weather })
+  const spicePerDay = (sellMacau - buyMalacca) / d
+  assert(spicePerDay > 8, `马六甲→澳门 香料应是一趟值钱的远航（实测 ${spicePerDay.toFixed(1)} 金/件/日）`)
+
+  // ② 系统性质：400nm 以内没有暴利航线
+  const lumps: { route: string; good: string; nm: number; perDay: number }[] = []
+  for (const a of ports) {
+    for (const b of ports) {
+      if (a.id === b.id) continue
+      const f = routeFacts([a.latitude, a.longitude], [b.latitude, b.longitude], 120)
+      if (f.distanceNm > 400) continue
+      const days = voyageDays({ distanceNm: f.distanceNm, windFavor: f.windFavor,
+        phenomenonFactor: f.phenomenonFactor, fleet: S().fleet, officers: S().officers, weather: S().weather })
+      for (const g of goods) {
+        const buy = selectBuyPrice(S(), a.id, g.id)
+        const sell = selectSellPrice(S(), b.id, g.id, a.id)
+        if (buy == null || sell == null || sell <= buy) continue
+        lumps.push({ route: `${a.nameCn}→${b.nameCn}`, good: g.nameCn, nm: f.distanceNm, perDay: (sell - buy) / days })
+      }
+    }
+  }
+  assert(lumps.length > 5, `400nm 内的顺差组合读得到（实测 ${lumps.length} 条）`)
+  lumps.sort((x, y) => y.perDay - x.perDay)
+  const top = lumps[0]
+  assert(top.perDay <= 90,
+    `最赚的短途航线 ${top.route} ${top.good} ${top.nm.toFixed(0)}nm = ${top.perDay.toFixed(0)} 金/件/日（上限 90；已知最高是首单 77）`)
+
+  useGameStore.setState(base)
+}
+
+/*
+ * 【港口注释里写的"渴求"，必须真的出现在贸易面板的渴求行里】
+ * 这是同一类 bug 的第 5 个例子：**注释描述的是一种不存在的实现**。
+ * 实测（2026-11-26）：拿骚写"渴求武器/朗姆酒"（朗姆 1.20）、阿姆斯特丹写"渴求丝绸"（1.15）、
+ * 澳门写"渴求象牙"（1.15）、伦敦写"渴求丝绸"（1.25）、果阿写"渴求象牙"（1.25）——
+ * 而 `localDemands` 的线是 **≥1.3**，这些一条都不会出现在面板上。
+ * 玩家看不到的东西，注释里说有，就等于给自己留了一个"以为是数据坏了"的坑。
+ *
+ * 判据：注释块 `/* ---- 名(号)：…渴求A/B ---- *\/` 里列出的货，pm 必须 ≥1.3；
+ * 反过来不查（数据可以有"没写进注释的渴求"，面板会照实显示）。
+ */
+{
+  const src = readFileSync(join(process.cwd(), 'src', 'data', 'ports.ts'), 'utf8')
+  const nameToId = new Map(goods.map(g => [g.nameCn, g.id]))
+  /* 「武器」这种类别词在注释里是允许的（=火枪+火炮），按类别成员逐个查 */
+  const catMembers: Record<string, string[]> = {
+    '武器': goods.filter(g => g.category === 'weapon').map(g => g.nameCn),
+    '奢侈品': goods.filter(g => g.category === 'luxury').map(g => g.nameCn),
+  }
+  const sections = [...src.matchAll(/\/\* ---- ([^(]+)\((\d+)\)：([^*]*?)----/g)]
+  assert(sections.length >= 15, `读得到港口注释块（实测 ${sections.length} 个）`)
+  const bad: string[] = []
+  for (const sec of sections) {
+    const [name, idText, raw] = [sec[1], sec[2], sec[3]]
+    /* 先把括号里的补充说明去掉，否则「（朗姆酒 1.20 只算小贵）」会被当成渴求品 */
+    const text = raw.replace(/（[^）]*）/g, '')
+    const declared = [...text.matchAll(/渴求([^，。]*)/g)]
+      .flatMap(m => m[1].split(/[\/、]/).map(x => x.trim())).filter(Boolean)
+    for (const word of declared) {
+      const wanted = nameToId.has(word) ? [word] : catMembers[word] ?? null
+      if (!wanted) { bad.push(`${name}：注释里的「${word}」不是商品名也不是类别`); continue }
+      for (const goodName of wanted) {
+        const gid = nameToId.get(goodName) as number
+        const pm = portGoods.find(pg => pg.portId === +idText && pg.goodId === gid)?.priceModifier ?? 0
+        if (pm < 1.3) bad.push(`${name}「${goodName}」pm ${pm}（<1.3，面板不会显示为渴求）`)
+      }
+    }
+  }
+  assert(bad.length === 0, `注释里的渴求都真的成立：${bad.slice(0, 3).join(' / ')}`)
 }
 
 console.log(`\n最终结果：${passed} 通过 / ${failed} 失败`)

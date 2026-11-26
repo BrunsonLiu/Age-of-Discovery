@@ -113,6 +113,16 @@ const opened = await page.evaluate(async () => {
 check(opened.open === true, `点了回执就翻开航海志（recordsOpen=${opened.open}）`)
 check(opened.tab === 'journal', `落在「见闻」页（logTab=${opened.tab}）`)
 
+/*
+ * 【别用固定的 900ms 赌册子已经画完】套件连跑时（前一个套件刚退出、GC 还没停）
+ * 这一页会晚一拍挂出来，于是两条"册子里写着…"的断言在套件里红、单跑绿。
+ * 这是负载假红：等真条件（那一页的文字到了）比加 sleep 可靠。
+ */
+await page.waitForFunction(() => {
+  const el = document.querySelector('[data-testid="logbook-screen"]')
+  return !!el && /正缺/.test(el.textContent || '')
+}, { timeout: 15000 }).catch(() => {})
+
 const inBook = await page.evaluate(() => {
   const el = document.querySelector('[data-testid="logbook-screen"]')
   return (el?.textContent || '').replace(/\s+/g, ' ')
