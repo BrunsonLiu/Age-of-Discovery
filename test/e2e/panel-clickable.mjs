@@ -166,6 +166,12 @@ for (const [panel, name, sel] of [
 ]) {
   await calmDown()
   await page.evaluate((p) => window.__gameStore.getState().setActivePanel(p), panel)
+  /*
+   * 等面板真的挂出来，而不是死等 750ms：全量连跑时（前一个套件刚退出）
+   * 造船厂这屏会晚一拍，`shipyard-panel` 还没进 DOM 就开始扫 → "找不到容器"假红。
+   * 单跑绿、套件红，就是这一条。真条件 = 那个容器在不在。
+   */
+  await page.waitForSelector(sel, { timeout: 8000 }).catch(() => {})
   await sleep(750)
   await scan(name, sel)
 }
