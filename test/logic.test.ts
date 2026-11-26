@@ -17019,5 +17019,29 @@ console.log('== 帧率撑不住时，画质预设是最后一道闸 ==')
   useGameStore.setState(base)
 }
 
+/* ============ 帮助页里的军官三个数，必须与 data/officers.ts 一致 ============ */
+/*
+ * 【真 bug】帮助页写「船医（坏血病脚步放慢、每日士气衰减 -2）」—— 两半都不对：
+ *   ① 本作**没有每日士气衰减**：粮水充足推进一天士气不动，只有断粮断水那天才扣；
+ *   ② 船医的第二半是"疾病类事件率减半"，没有"坏血病脚步"。
+ * `data/officers.ts` 里早就改对了（还留了注释说明为什么不能写"每日"），帮助页没跟上。
+ *
+ * 判据分两层：
+ *   · 否定式：帮助页不许再出现"每日士气衰减"这种说法；
+ *   · 一致性：三个效果数字（航速 +15% / 士气 -2 / 疾病减半）在 officers.ts 里必须都存在，
+ *     并且帮助页里也写着。数字仍手写（帮助页要短句），但不许与数据源分家。
+ */
+{
+  const help = readFileSync(join(process.cwd(), 'src', 'components', 'intro', 'HelpPanel.tsx'), 'utf8')
+  const off = readFileSync(join(process.cwd(), 'src', 'data', 'officers.ts'), 'utf8')
+  /* 否定式判据必须先剥注释 —— 上面那条注释里就引用了旧文案（第 6 次注释自伤） */
+  assert(!/每日士气衰减/.test(stripComments(help)), '帮助页不再承诺"每日士气衰减"（本作没有这个机制）')
+  assert(/断粮断水时少掉 2 点士气/.test(help), '船医那条写的是"断粮断水时"（与 officers.ts 同口径）')
+  assert(/航行速度 \+15%/.test(off), '数据源里老领航员是 +15%')
+  assert(/航速 \+15%/.test(help), '帮助页里老领航员也是 +15%')
+  assert(/士气打击减半/.test(off) && /士气打击减半/.test(help), '大副"士气打击减半"两处一致')
+  assert(/疾病类事件触发率减半/.test(off) && /疾病类事件率减半/.test(help), '船医第二半两处一致')
+}
+
 console.log(`\n最终结果：${passed} 通过 / ${failed} 失败`)
 if (failed > 0) process.exit(1)

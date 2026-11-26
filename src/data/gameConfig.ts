@@ -10,7 +10,11 @@ export const GAME_BALANCE = {
   SUPPLY_AMOUNT: 20,
   /** 补给总费用 */
   SUPPLY_TOTAL_COST: 20 * 2 + 20 * 1, // 60
-  /** 每日士气衰减 */
+  /**
+   * 断粮断水**那一天**的士气损失（不是"每日衰减"）。
+   * 实测：粮水充足推进一天，士气一点不掉；只有 newFood===0 || newWater===0 时才扣这个数，
+   * 船医与随船神甫各减 2（下限 1）。名字保留是因为它已经出现在结算公式里。
+   */
   MORALE_DECAY_PER_DAY: 5,
   /** 士气上限 */
   MORALE_MAX: 100,
