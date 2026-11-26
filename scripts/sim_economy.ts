@@ -211,6 +211,27 @@ if (process.argv.includes('--whatif')) {
   }))
 }
 
+/*
+ * `--dump`：把**全部**「港口对 × 商品」按一行一条打出来，用于改动前后的逐条对账。
+ *
+ * 【为什么这不是"多一个参数"，是判据本身】
+ * 四档中位数是**样本的函数**：给它加一条需求会新增若干条航线，中位数就被拉低
+ * （2026-11-26 两次踩到：韦拉克鲁斯补朗姆、满剌加丝绸从产地改成需求）。
+ * 单次改动的判据不能是中位数，只能是**同一批航线逐条比**：
+ *   npm run sim:economy -- --dump > before.txt   # 改之前
+ *   …改数据…
+ *   npm run sim:economy -- --dump > after.txt    # 改之后
+ *   再比：变差的航线里，有没有一条与本次改动**无关**。
+ * 2026-11-26 满剌加丝绸改需求时，2180 条里变了 36 条，全部是「满剌加 × 丝绸」——
+ * 这才是"这次改动只动了它该动的"的证据。
+ */
+if (process.argv.includes('--dump')) {
+  for (const l of legs) {
+    console.log([`${l.from}→${l.to}`, l.good, Math.round(l.nm), l.days.toFixed(2), l.buy, l.sell, ((l.sell - l.buy) / l.days).toFixed(3)].join('|'))
+  }
+  process.exit(0)
+}
+
 /* ── 输出 ── */
 /*
  * `--wind`：把每个距离桶再按**风向系数**拆开。
@@ -409,9 +430,12 @@ for (const [name, lo, hi] of BUCKETS) {
 const nowRatio = rows[0].ratio
 console.log('\n说明：每格是该桶**每件每航行日毛利的中位数**（金币/件/日）。')
 console.log('「远/近」= 极远(>3000nm) 中位数 ÷ 近海(<500nm) 中位数。')
-console.log(`现状比值 ${nowRatio.toFixed(2)}×。两条线要分开看：`)
-console.log('  R6 验收线 ≥0.75（低于它才算「远洋明显吃亏」；远洋另有见闻/图鉴/声望回报，不该只靠单价补）')
-console.log('  强目标     ≥0.90（纯金钱上远洋与近海持平）—— 现状未达，且这是个取舍，不是缺陷')
+console.log(`现状比值 ${nowRatio.toFixed(2)}×。三条线要分开看：`)
+console.log('  粗线   ≥0.70 —— 低于它说明**整体**塌了（0.56→0.77 那次才是真正的改善）')
+console.log('  强目标 ≥0.90 —— 纯金钱上远洋与近海持平；没达到是取舍（远洋另有见闻/图鉴/声望），不是缺陷')
+console.log('  真门   —— 不在这张表里：单次改动用 `--dump` 前后各导一份，逐条比，')
+console.log('            "与本次改动无关的航线一条都没变差"才算过。中位数是样本的函数，')
+console.log('            加一条需求就会新增一批低毛利航线把中位数拉下来（已踩两次）。')
 console.log('「裸价」那行是溢价上线前的世界，只用来量机制贡献；`--whatif` 才打印候选改法（均已评估过）。')
 
 console.log('\nC 方案（非金钱回报）量不出来，但值得记一笔：')

@@ -16671,6 +16671,21 @@ console.log('== 帧率撑不住时，画质预设是最后一道闸 ==')
   const spicePerDay = (sellMacau - buyMalacca) / d
   assert(spicePerDay > 8, `马六甲→澳门 香料应是一趟值钱的远航（实测 ${spicePerDay.toFixed(1)} 金/件/日）`)
 
+  /*
+   * 生丝的方向：中国才是产地，满剌加是**用它换香料**的集散地。
+   * 满剌加一旦"本地产丝且比中国便宜"，两件事同时坏：
+   *   ① 世界模型反了；② 大明故事线第一段「送一船生丝去满剌加」变成亏钱的航行
+   *      （广州买 59、满剌加回收 46，每件倒贴 13，全靠 420 金赏金兜着）。
+   * 判据钉在"这趟走得通"上，而不是某个 pm 数字。
+   */
+  const buyCantonSilk = selectBuyPrice(S(), 21, 10) as number
+  const sellMalaccaSilk = selectSellPrice(S(), 12, 10, 21) as number
+  assert(sellMalaccaSilk > buyCantonSilk,
+    `广州生丝送到满剌加要有赚（买 ${buyCantonSilk} → 卖 ${sellMalaccaSilk}，${sellMalaccaSilk - buyCantonSilk}/件）`)
+  const buyMalaccaSilk = selectBuyPrice(S(), 12, 10) as number
+  assert(buyMalaccaSilk > buyCantonSilk,
+    `满剌加买丝不能比广州便宜（满剌加 ${buyMalaccaSilk} > 广州 ${buyCantonSilk}）`)
+
   // ② 系统性质：400nm 以内没有暴利航线
   const lumps: { route: string; good: string; nm: number; perDay: number }[] = []
   for (const a of ports) {

@@ -147,9 +147,20 @@ export const portGoods: PortGood[] = [
   { portId: 11, goodId: 6, price: 40, stock: 60, priceModifier: 1.6 },
   { portId: 11, goodId: 10, price: 165, stock: 40, priceModifier: 1.3 },
 
-  /* ---- 马六甲(12)：香料中心，产香料/丝绸（最便宜），渴求火炮 ---- */
+  /* ---- 马六甲(12)：香料中心，产香料，渴求火炮/丝绸/烟草（转口中国生丝与印度布） ---- */
   { portId: 12, goodId: 9, price: 100, stock: 120, priceModifier: 0.55 },
-  { portId: 12, goodId: 10, price: 85, stock: 90, priceModifier: 0.65 },
+  /*
+   * 丝绸这一行原来是 0.65（**比广州、澳门都便宜**），注释还写着"产丝绸（最便宜）"。
+   * 后果有两层，都很实在：
+   *   ① 世界模型反了 —— 中国才是生丝产地，满剌加是**用它换香料**的集散地；
+   *   ② 大明故事线的第一段"送一船生丝去满剌加"（tasks.ts #23、nations.ts 的三段航路）
+   *      变成一趟**亏钱**的航行：广州买 59、满剌加回收 46，每件倒贴 13，
+   *      全靠 420 金的任务赏金兜着 —— 玩家会以为是自己选错了货。
+   * 改成需求方（1.35）：广州→满剌加 生丝 59 → 103（+44/件 / 8 天），
+   * 送丝这一趟从此自带利润；而"满剌加买便宜丝运去欧洲"那条支线随之消失
+   * （本来就该走澳门/广州，见 tasks.ts「澳门的丝价冠绝全球」）。
+   */
+  { portId: 12, goodId: 10, price: 90, stock: 40, priceModifier: 1.35 },
   { portId: 12, goodId: 4, price: 135, stock: 25, priceModifier: 1.45 },
   { portId: 12, goodId: 3, price: 60, stock: 40, priceModifier: 1.3 },
   { portId: 12, goodId: 2, price: 48, stock: 40, priceModifier: 1.2 },
