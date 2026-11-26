@@ -16797,5 +16797,79 @@ console.log('== 帧率撑不住时，画质预设是最后一道闸 ==')
   assert(bad.length === 0, `注释里的渴求都真的成立：${bad.slice(0, 3).join(' / ')}`)
 }
 
+/* ============ 每个事件选项都必须有一个"它存在的理由" ============ */
+/*
+ * 【为什么这条要写死】2026-11-26 用审计脚本扫了 63 个事件 / 160 个选项：
+ *   · 只看 7 项资源（金/粮/水/士气/耐久/船员/声望）→ **17 个选项被另一个选项严格支配**；
+ *   · 再把四阵营与五取向算进去 → **0 个**。
+ * 也就是说：**选择是真的，但"理由"藏在面板上看不见的那两层里。**
+ *
+ * 结构上要守的是后者：任何选项都不许在**所有维度**上都不如另一个（那样它只是
+ * "没读文本的惩罚"）。这条判据逼着以后写事件时，至少给弱的那一支一个属于它的后果
+ * （一段取向、一点阵营好感、一个旗标、船员的忠诚）。
+ *
+ * 口径（与 `.workbuddy/probe-event-econ.ts` 一致）：
+ *   维度 = 7 项资源 × 期望值 + 4 阵营 × 期望 + 5 取向 × 期望 + 那一名船员的忠诚期望；
+ *   旗标不同 → 走的是不同事件链，不可比，跳过；
+ *   有人离船/死亡 → 不可比，跳过。
+ * 固定夹具（声望 60、士气 80）是必须的：声望 0 时"掉声望"会被 clamp 成 0，
+ * 于是"接货赚 305 声望 -16"会被误判成支配（第一次就踩了这个坑）。
+ */
+{
+  const base = useGameStore.getState()
+  useGameStore.setState({ ...base, marketStock: {},
+    fleet: { ...base.fleet, fame: 60, morale: 80, food: 200, water: 200, gold: 3000, cargo: [],
+      ships: [{ id: 1, name: 'probe', type: 'caravel', capacity: 100, usedCapacity: 0, durability: 100, crew: 40, speed: 7, maxCrew: 40 } as never], flagshipId: 1 } })
+  const fleet = useGameStore.getState().fleet
+  const ctx = { stanceMagnitudeMul: 1, trait: null, hasQuartermaster: false }
+  const RES = ['gold', 'food', 'water', 'morale', 'durability', 'crew', 'fame']
+  const FAC = ['crown', 'guild', 'scholars', 'brethren']
+  const AXIS = ['cruel', 'mercy', 'greed', 'bold', 'secret']
+
+  type Vec = { res: Record<string, number>; fac: Record<string, number>; axis: Record<string, number>; loyalty: number; flags: string; fate: boolean }
+  const vecOf = (choice: (typeof events)[number]['choices'][number]): Vec => {
+    const outs = adjustedOutcomes(choice, ctx, fleet, GAME_BALANCE.MORALE_MAX)
+    const res = expectedDeltas(outs) as Record<string, number>
+    const fac: Record<string, number> = {}
+    const axis: Record<string, number> = {}
+    let loyalty = 0
+    let fate = false
+    const flags = new Set<string>()
+    for (const { probability, outcome } of outs) {
+      for (const [k, v] of Object.entries(outcome.factionChange ?? {})) fac[k] = (fac[k] ?? 0) + probability * (v as number)
+      for (const [k, v] of Object.entries(outcome.notoriety ?? {})) axis[k] = (axis[k] ?? 0) + probability * (v as number)
+      loyalty += probability * (outcome.crewEvent?.loyaltyChange ?? 0)
+      if (outcome.crewEvent?.leaves || outcome.crewEvent?.dies) fate = true
+      if (outcome.setsFlag) flags.add(outcome.setsFlag)
+    }
+    return { res, fac, axis, loyalty, flags: [...flags].sort().join(','), fate }
+  }
+  const dominated: string[] = []
+  let choices = 0
+  for (const ev of events) {
+    const list = ev.choices ?? []
+    choices += list.length
+    const vecs = list.map(vecOf)
+    for (let i = 0; i < list.length; i++) {
+      for (let j = 0; j < list.length; j++) {
+        if (i === j) continue
+        const a = vecs[i]; const b = vecs[j]
+        if (a.fate || b.fate || a.flags !== b.flags) continue
+        const ge = (get: (v: Vec) => number) => get(b) >= get(a) - 1e-9
+        const gt = (get: (v: Vec) => number) => get(b) > get(a) + 1e-9
+        const ok = RES.every(k => ge(v => v.res[k] ?? 0)) && FAC.every(k => ge(v => v.fac[k] ?? 0)) &&
+          AXIS.every(k => ge(v => v.axis[k] ?? 0)) && ge(v => v.loyalty)
+        if (!ok) continue
+        const better = RES.some(k => gt(v => v.res[k] ?? 0)) || FAC.some(k => gt(v => v.fac[k] ?? 0)) ||
+          AXIS.some(k => gt(v => v.axis[k] ?? 0)) || gt(v => v.loyalty)
+        if (better) dominated.push(`#${ev.id}「${ev.title}」${list[i].text.slice(0, 10)} 全维度不如「${list[j].text.slice(0, 10)}」`)
+      }
+    }
+  }
+  assert(choices >= 150, `事件选项读得到（实测 ${choices} 个）`)
+  assert(dominated.length === 0, `没有"全维度更差"的选项${dominated.length ? '：' + dominated.slice(0, 3).join('；') : ''}`)
+  useGameStore.setState(base)
+}
+
 console.log(`\n最终结果：${passed} 通过 / ${failed} 失败`)
 if (failed > 0) process.exit(1)

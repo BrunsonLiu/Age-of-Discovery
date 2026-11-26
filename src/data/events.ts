@@ -56,8 +56,8 @@ export const events: GameEvent[] = [
       {
         text: '尝试与海豚互动，投喂食物',
         outcomes: [
-          { probability: 0.8, goldChange: 0, foodChange: -2, waterChange: 0, moraleChange: 15, durabilityChange: 0, crewChange: 0, description: '海豚灵巧地接住了小鱼，一只大胆的甚至游到船舷边任由抚摸。' },
-          { probability: 0.2, goldChange: 0, foodChange: -3, waterChange: 0, moraleChange: 10, durabilityChange: 0, crewChange: 0, description: '海豚们本来就不需要你们的食物——但它们愉快地接受了心意。' }
+          { probability: 0.8, goldChange: 0, foodChange: -2, waterChange: 0, moraleChange: 15, durabilityChange: 0, crewChange: 0, notoriety: { mercy: 1 }, description: '海豚灵巧地接住了小鱼，一只大胆的甚至游到船舷边任由抚摸。' },
+          { probability: 0.2, goldChange: 0, foodChange: -3, waterChange: 0, moraleChange: 10, durabilityChange: 0, crewChange: 0, notoriety: { mercy: 1 }, description: '海豚们本来就不需要你们的食物——但它们愉快地接受了心意。' }
         ]
       }
     ]
@@ -73,15 +73,15 @@ export const events: GameEvent[] = [
       {
         text: '全船出动，大肆捕捞',
         outcomes: [
-          { probability: 0.7, goldChange: 5, foodChange: 20, waterChange: 0, moraleChange: 15, durabilityChange: 0, crewChange: 0, description: '这一网捞到甲板都堆不下——未来多日的食物不再发愁。' },
-          { probability: 0.3, goldChange: 0, foodChange: 15, waterChange: 0, moraleChange: 10, durabilityChange: 0, crewChange: 0, description: '鱼群散得比预想快，但腌成鱼干也够吃上一阵。' }
+          { probability: 0.7, goldChange: 5, foodChange: 20, waterChange: 0, moraleChange: 15, durabilityChange: 0, crewChange: 0, notoriety: { greed: 1 }, description: '这一网捞到甲板都堆不下——未来多日的食物不再发愁。' },
+          { probability: 0.3, goldChange: 0, foodChange: 15, waterChange: 0, moraleChange: 10, durabilityChange: 0, crewChange: 0, notoriety: { greed: 1 }, description: '鱼群散得比预想快，但腌成鱼干也够吃上一阵。' }
         ]
       },
       {
         text: '只取所需，让鱼群继续前行',
         outcomes: [
-          { probability: 0.9, goldChange: 0, foodChange: 10, waterChange: 0, moraleChange: 10, durabilityChange: 0, crewChange: 0, description: '你只取了够用的量——大海记住了这份克制，鱼汤一样鲜美。' },
-          { probability: 0.1, goldChange: 2, foodChange: 5, waterChange: 0, moraleChange: 5, durabilityChange: 0, crewChange: 0, description: '老水手说这种鱼群是海神的祝福——幸运本身就是无价的。' }
+          { probability: 0.9, goldChange: 0, foodChange: 10, waterChange: 0, moraleChange: 10, durabilityChange: 0, crewChange: 0, notoriety: { mercy: 1 }, description: '你只取了够用的量——大海记住了这份克制，鱼汤一样鲜美。' },
+          { probability: 0.1, goldChange: 2, foodChange: 5, waterChange: 0, moraleChange: 5, durabilityChange: 0, crewChange: 0, notoriety: { mercy: 1 }, description: '老水手说这种鱼群是海神的祝福——幸运本身就是无价的。' }
         ]
       }
     ]
@@ -103,10 +103,10 @@ export const events: GameEvent[] = [
         ]
       },
       {
-        text: '交换航海情报，了解前方海域信息',
+        text: '交换航海见闻，听他们讲前方的路',
         outcomes: [
-          { probability: 0.8, goldChange: 5, foodChange: 0, waterChange: 0, moraleChange: 8, durabilityChange: 0, crewChange: 0, description: '商队分享了前方海域的情报：哪里补给充足、哪里暗礁密布——比金币更值钱。' },
-          { probability: 0.2, goldChange: 2, foodChange: 0, waterChange: 0, moraleChange: 12, durabilityChange: 0, crewChange: 0, description: '你意外得知一个潜在商机——前方港口急需某种商品，价格高得离谱。' }
+          { probability: 0.8, goldChange: 5, foodChange: 0, waterChange: 0, moraleChange: 8, durabilityChange: 0, crewChange: 0, fameChange: 4, description: '商队讲了一路见闻：哪里补给充足、哪里暗礁密布——水手们听得入神，这些话靠岸后总会再传出去。' },
+          { probability: 0.2, goldChange: 2, foodChange: 0, waterChange: 0, moraleChange: 12, durabilityChange: 0, crewChange: 0, fameChange: 4, description: '有人提到前方港口缺什么货。你没记在本子上，却记在了心里。' }
         ]
       }
     ]
@@ -610,8 +610,8 @@ export const events: GameEvent[] = [
       {
         text: '当场研读，凭记忆背下航线',
         outcomes: [
-          { probability: 0.7, goldChange: 5, foodChange: 0, waterChange: 0, moraleChange: 3, durabilityChange: 0, crewChange: 0, setsFlag: 'map_fragment_1', description: '领航员研究了半个钟头，把航线牢牢记在心里——知识比羊皮更耐腐蚀。' },
-          { probability: 0.3, goldChange: 0, foodChange: 0, waterChange: 0, moraleChange: -3, durabilityChange: 0, crewChange: 0, setsFlag: 'map_fragment_1', description: '墨迹晕得太厉害，大半航线已无法辨认——但愿另外两块保存得更好。' }
+          { probability: 0.7, goldChange: 5, foodChange: 0, waterChange: 0, moraleChange: 3, durabilityChange: 0, crewChange: 0, setsFlag: 'map_fragment_1', notoriety: { secret: 1 }, description: '领航员研究了半个钟头，把航线牢牢记在心里——知识比羊皮更耐腐蚀。' },
+          { probability: 0.3, goldChange: 0, foodChange: 0, waterChange: 0, moraleChange: -3, durabilityChange: 0, crewChange: 0, setsFlag: 'map_fragment_1', notoriety: { secret: 1 }, description: '墨迹晕得太厉害，大半航线已无法辨认——但愿另外两块保存得更好。' }
         ]
       }
     ]
@@ -634,8 +634,8 @@ export const events: GameEvent[] = [
       {
         text: '向城堡的老人打听这张图的来历',
         outcomes: [
-          { probability: 0.6, goldChange: 5, foodChange: 0, waterChange: 0, moraleChange: 5, durabilityChange: 0, crewChange: 0, setsFlag: 'map_fragment_2', description: '老看守压低声音：几十年前有个西班牙船长总来此，带着"分成四份藏起来的图"。' },
-          { probability: 0.4, goldChange: 0, foodChange: 0, waterChange: 0, moraleChange: -5, durabilityChange: 0, crewChange: 0, setsFlag: 'map_fragment_2', description: '老人什么都不肯说，只反复叮嘱："别找齐。找齐的人，都走了同一片海。"' }
+          { probability: 0.6, goldChange: 5, foodChange: 0, waterChange: 0, moraleChange: 5, durabilityChange: 0, crewChange: 0, setsFlag: 'map_fragment_2', fameChange: 4, description: '老看守压低声音：几十年前有个西班牙船长总来此，带着"分成四份藏起来的图"。' },
+          { probability: 0.4, goldChange: 0, foodChange: 0, waterChange: 0, moraleChange: -5, durabilityChange: 0, crewChange: 0, setsFlag: 'map_fragment_2', fameChange: 4, description: '老人什么都不肯说，只反复叮嘱："别找齐。找齐的人，都走了同一片海。"' }
         ]
       }
     ]
@@ -717,8 +717,8 @@ export const events: GameEvent[] = [
       {
         text: '拒绝并加速离开',
         outcomes: [
-          { probability: 0.6, goldChange: 0, foodChange: -3, waterChange: -3, moraleChange: 5, durabilityChange: 0, crewChange: 0, description: '你以"船上已满"为由拒绝，连夜改变航向——水手们对你的谨慎表示理解。' },
-          { probability: 0.4, goldChange: 0, foodChange: -5, waterChange: -5, moraleChange: -5, durabilityChange: 0, crewChange: 0, description: '你总觉得那艘船在暗处跟着，索性多绕了一夜——虚惊一场。' }
+          { probability: 0.6, goldChange: 0, foodChange: -3, waterChange: -3, moraleChange: 5, durabilityChange: 0, crewChange: 0, notoriety: { secret: 1 }, description: '你以"船上已满"为由拒绝，连夜改变航向——水手们对你的谨慎表示理解。' },
+          { probability: 0.4, goldChange: 0, foodChange: -5, waterChange: -5, moraleChange: -5, durabilityChange: 0, crewChange: 0, notoriety: { secret: 1 }, description: '你总觉得那艘船在暗处跟着，索性多绕了一夜——虚惊一场。' }
         ]
       }
     ]
@@ -749,8 +749,8 @@ export const events: GameEvent[] = [
       {
         text: '假装从未相识',
         outcomes: [
-          { probability: 0.6, goldChange: 0, foodChange: 0, waterChange: 0, moraleChange: -5, durabilityChange: 0, crewChange: 0, description: '你目不斜视地驶过暗礁湾——有些钱赚过一次就够了。' },
-          { probability: 0.4, goldChange: 0, foodChange: -3, waterChange: -3, moraleChange: 5, durabilityChange: 0, crewChange: 0, description: '你主动绕开了那片海域——跟走私贩划清界限，睡觉都踏实。' }
+          { probability: 0.6, goldChange: 0, foodChange: 0, waterChange: 0, moraleChange: -5, durabilityChange: 0, crewChange: 0, notoriety: { secret: 1 }, description: '你目不斜视地驶过暗礁湾——有些钱赚过一次就够了。' },
+          { probability: 0.4, goldChange: 0, foodChange: -3, waterChange: -3, moraleChange: 5, durabilityChange: 0, crewChange: 0, notoriety: { secret: 1 }, description: '你主动绕开了那片海域——跟走私贩划清界限，睡觉都踏实。' }
         ]
       }
     ]
@@ -1345,8 +1345,8 @@ export const events: GameEvent[] = [
       {
         text: '当面质问，给他解释的机会',
         outcomes: [
-          { probability: 0.5, goldChange: 0, foodChange: 0, waterChange: 0, moraleChange: 0, durabilityChange: 0, crewChange: 0, crewEvent: { member: 'purser', loyaltyChange: 15 }, description: '小王的眼泪在眶里转了三圈没有掉下来："给我三天。"' },
-          { probability: 0.5, goldChange: 0, foodChange: 0, waterChange: 0, moraleChange: 0, durabilityChange: 0, crewChange: 0, crewEvent: { member: 'purser', loyaltyChange: -20 }, description: '他攥着拳头说不出话。有些羞辱，比冤枉更难咽下去。' },
+          { probability: 0.5, goldChange: 0, foodChange: 0, waterChange: 0, moraleChange: 0, durabilityChange: 0, crewChange: 0, notoriety: { bold: 1 }, crewEvent: { member: 'purser', loyaltyChange: 15 }, description: '小王的眼泪在眶里转了三圈没有掉下来："给我三天。"' },
+          { probability: 0.5, goldChange: 0, foodChange: 0, waterChange: 0, moraleChange: 0, durabilityChange: 0, crewChange: 0, notoriety: { bold: 1 }, crewEvent: { member: 'purser', loyaltyChange: -20 }, description: '他攥着拳头说不出话。有些羞辱，比冤枉更难咽下去。' },
         ],
       },
       {
@@ -1384,8 +1384,8 @@ export const events: GameEvent[] = [
       {
         text: '拒绝：舰队不为一张星图改道',
         outcomes: [
-          { probability: 0.6, goldChange: 0, foodChange: 0, waterChange: 0, moraleChange: 0, durabilityChange: 0, crewChange: 0, crewEvent: { member: 'scholar', loyaltyChange: -10 }, description: '她默默卷起星图。夜里舱板下传来翻来覆去的声音，持续了三天。' },
-          { probability: 0.4, goldChange: 0, foodChange: 0, waterChange: 0, moraleChange: 0, durabilityChange: 0, crewChange: 0, crewEvent: { member: 'scholar', loyaltyChange: 5 }, description: '"合理的决定。"她说，然后真的不再提——这种明理，反而更让你不安。' },
+          { probability: 0.6, goldChange: 0, foodChange: 0, waterChange: 0, moraleChange: 0, durabilityChange: 0, crewChange: 0, factionChange: { guild: 3 }, crewEvent: { member: 'scholar', loyaltyChange: -10 }, description: '她默默卷起星图。夜里舱板下传来翻来覆去的声音，持续了三天。' },
+          { probability: 0.4, goldChange: 0, foodChange: 0, waterChange: 0, moraleChange: 0, durabilityChange: 0, crewChange: 0, factionChange: { guild: 3 }, crewEvent: { member: 'scholar', loyaltyChange: 5 }, description: '"合理的决定。"她说，然后真的不再提——这种明理，反而更让你不安。' },
         ],
       },
       {
@@ -1415,8 +1415,8 @@ export const events: GameEvent[] = [
       {
         text: '让他从公共账户走账',
         outcomes: [
-          { probability: 0.6, goldChange: -60, foodChange: 5, waterChange: 0, moraleChange: 3, durabilityChange: 0, crewChange: 0, crewEvent: { member: 'cook', loyaltyChange: 15 }, description: '班在账簿上工工整整写下四个字：船员福祉。管账的小王看了你一眼，什么也没说。' },
-          { probability: 0.4, goldChange: -60, foodChange: 0, waterChange: 0, moraleChange: 0, durabilityChange: 0, crewChange: 0, crewEvent: { member: 'cook', loyaltyChange: -5 }, description: '公共账户动了一次，就会有人问第二次。班从此再没提过配方的事。' },
+          { probability: 0.6, goldChange: -60, foodChange: 5, waterChange: 0, moraleChange: 3, durabilityChange: 0, crewChange: 0, notoriety: { greed: 1 }, crewEvent: { member: 'cook', loyaltyChange: 15 }, description: '班在账簿上工工整整写下四个字：船员福祉。管账的小王看了你一眼，什么也没说。' },
+          { probability: 0.4, goldChange: -60, foodChange: 0, waterChange: 0, moraleChange: 0, durabilityChange: 0, crewChange: 0, notoriety: { greed: 1 }, crewEvent: { member: 'cook', loyaltyChange: -5 }, description: '公共账户动了一次，就会有人问第二次。班从此再没提过配方的事。' },
         ],
       },
       {
@@ -1501,15 +1501,15 @@ export const events: GameEvent[] = [
       {
         text: '当众辟谣：摊开罗盘与海图',
         outcomes: [
-          { probability: 0.6, goldChange: 0, foodChange: 0, waterChange: 0, moraleChange: 5, durabilityChange: 0, crewChange: 0, crewEvent: { member: 'chaplain', loyaltyChange: 20 }, description: '你摊开海图讲了两个钟头。散场时，那个哭过的学徒抬头看了你一眼——那一眼比任何祷告都管用。' },
-          { probability: 0.4, goldChange: 0, foodChange: 0, waterChange: 0, moraleChange: 2, durabilityChange: 0, crewChange: 0, crewEvent: { member: 'chaplain', loyaltyChange: -8 }, description: '辟谣了一半。神甫把念珠收进袖子——你把人心的恐惧当谣言辟，他听见了。' },
+          { probability: 0.6, goldChange: 0, foodChange: 0, waterChange: 0, moraleChange: 5, durabilityChange: 0, crewChange: 0, notoriety: { bold: 1 }, crewEvent: { member: 'chaplain', loyaltyChange: 20 }, description: '你摊开海图讲了两个钟头。散场时，那个哭过的学徒抬头看了你一眼——那一眼比任何祷告都管用。' },
+          { probability: 0.4, goldChange: 0, foodChange: 0, waterChange: 0, moraleChange: 2, durabilityChange: 0, crewChange: 0, notoriety: { bold: 1 }, crewEvent: { member: 'chaplain', loyaltyChange: -8 }, description: '辟谣了一半。神甫把念珠收进袖子——你把人心的恐惧当谣言辟，他听见了。' },
         ],
       },
       {
         text: '私下找传谣的人谈谈',
         outcomes: [
-          { probability: 0.7, goldChange: 0, foodChange: 0, waterChange: 0, moraleChange: 3, durabilityChange: 0, crewChange: 0, crewEvent: { member: 'chaplain', loyaltyChange: 15 }, description: '传谣的是个想家的十七岁小子。你答应他到了下一港替他寄家信——谣言当晚就止了。' },
-          { probability: 0.3, goldChange: 0, foodChange: 0, waterChange: 0, moraleChange: 2, durabilityChange: 0, crewChange: 0, crewEvent: { member: 'chaplain', loyaltyChange: 5 }, description: '他哭着说了实话：他怕的不是鬼，是信里那句"父病重"。' },
+          { probability: 0.7, goldChange: 0, foodChange: 0, waterChange: 0, moraleChange: 3, durabilityChange: 0, crewChange: 0, notoriety: { secret: 1 }, crewEvent: { member: 'chaplain', loyaltyChange: 15 }, description: '传谣的是个想家的十七岁小子。你答应他到了下一港替他寄家信——谣言当晚就止了。' },
+          { probability: 0.3, goldChange: 0, foodChange: 0, waterChange: 0, moraleChange: 2, durabilityChange: 0, crewChange: 0, notoriety: { secret: 1 }, crewEvent: { member: 'chaplain', loyaltyChange: 5 }, description: '他哭着说了实话：他怕的不是鬼，是信里那句"父病重"。' },
         ],
       },
       {
@@ -1711,8 +1711,8 @@ export const events: GameEvent[] = [
       {
         text: '分给所有发热的人',
         outcomes: [
-          { probability: 0.5, goldChange: 0, foodChange: 0, waterChange: 0, moraleChange: 4, durabilityChange: 0, crewChange: 0, crewEvent: { member: 'medic', loyaltyChange: 18 }, description: '每人只分到半剂，居然都熬过来了。他把这记在本子上，标了个问号。' },
-          { probability: 0.5, goldChange: 0, foodChange: 0, waterChange: 0, moraleChange: -8, durabilityChange: 0, crewChange: -2, crewEvent: { member: 'medic', loyaltyChange: -5 }, description: '半剂对谁都太少。死了两个，药箱空着，他从此不再接受"平均"这个词。' },
+          { probability: 0.5, goldChange: 0, foodChange: 0, waterChange: 0, moraleChange: 4, durabilityChange: 0, crewChange: 0, notoriety: { mercy: 1 }, crewEvent: { member: 'medic', loyaltyChange: 18 }, description: '每人只分到半剂，居然都熬过来了。他把这记在本子上，标了个问号。' },
+          { probability: 0.5, goldChange: 0, foodChange: 0, waterChange: 0, moraleChange: -8, durabilityChange: 0, crewChange: -2, notoriety: { mercy: 1 }, crewEvent: { member: 'medic', loyaltyChange: -5 }, description: '半剂对谁都太少。死了两个，药箱空着，他从此不再接受"平均"这个词。' },
         ],
       },
       {
@@ -1773,8 +1773,8 @@ export const events: GameEvent[] = [
       {
         text: '按第一个报价买',
         outcomes: [
-          { probability: 0.5, goldChange: -80, foodChange: 0, waterChange: 0, moraleChange: 0, durabilityChange: 0, crewChange: 0, crewEvent: { member: 'interpreter', loyaltyChange: -10 }, description: '你多付了三成。伊斯梅尔站在旁边没吭声——他知道说了也没用。' },
-          { probability: 0.5, goldChange: -80, foodChange: 0, waterChange: 0, moraleChange: 0, durabilityChange: 0, crewChange: 0, crewEvent: { member: 'interpreter', loyaltyChange: 5 }, description: '他事后补了一句：那两个其实是一个人。你多付的钱进了同一个口袋。' },
+          { probability: 0.5, goldChange: -80, foodChange: 0, waterChange: 0, moraleChange: 0, durabilityChange: 0, crewChange: 0, notoriety: { secret: 1 }, crewEvent: { member: 'interpreter', loyaltyChange: -10 }, description: '你多付了三成。伊斯梅尔站在旁边没吭声——他知道说了也没用。' },
+          { probability: 0.5, goldChange: -80, foodChange: 0, waterChange: 0, moraleChange: 0, durabilityChange: 0, crewChange: 0, notoriety: { secret: 1 }, crewEvent: { member: 'interpreter', loyaltyChange: 5 }, description: '他事后补了一句：那两个其实是一个人。你多付的钱进了同一个口袋。' },
         ],
       },
       {
