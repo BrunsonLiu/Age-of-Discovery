@@ -6803,7 +6803,51 @@ console.log('\n== 委托覆盖：每个港口都要有单可接 ==')
 
   // 单条需货量不超过初始货舱（40 舱），否则第一次到港根本接不下
   const tooBig = tasks.filter(t => (t.requiredGoods ?? []).some(r => r.quantity > 10))
-  assert(tooBig.length === 0, `单条委托需货量 ≤10，初始货舱装得下${tooBig.length ? '：' + tooBig.map(t => t.title).join('、') : ''}`)}
+  assert(tooBig.length === 0, `单条委托需货量 ≤10，初始货舱装得下${tooBig.length ? '：' + tooBig.map(t => t.title).join('、') : ''}`)
+  /*
+   * 【送货合约不许是陷阱】赏金 + 到岸卖价，必须盖得住进货成本。
+   *
+   * 这一条是 2026-11-26 补的，当天靠手工审计抓到三条，全是"让你在最贵的地方进货"
+   * 或"目的地根本不收这种货"：
+   *   #11 要塞的火炮：托尔图加的火炮是需求价（1.6，买 232/门），卡塔赫纳又不收火炮
+   *       → 成本 928、卖 172、赏金 400，**净亏 356**，跑 5 天倒贴钱；
+   *   #13（原）香料的对手：在里斯本（最贵的香料市场 1.45）买香料 → 净赚 40；
+   *   #22 增援加勒比：哈瓦那不收火枪 → 6 支卖回 282，比进货 360 还低，44 天 9 金/天。
+   * 判据用**真实的买价/卖价/航程函数**算，不写死期望值 —— 数据一变它跟着变。
+   */
+  const econBase = useGameStore.getState()
+  useGameStore.setState({ ...econBase, marketStock: {}, weather: { ...econBase.weather, kind: 'clear' },
+    fleet: { ...econBase.fleet, currentPortId: null, isSailing: false, cargo: [], fame: 0, trait: null } })
+  const traps: string[] = []
+  for (const t of tasks) {
+    if (!t.requiredGoods?.length || !t.targetPortId) continue
+    const st = useGameStore.getState()
+    let cost = 0
+    let back = 0
+    let ok = true
+    for (const need of t.requiredGoods) {
+      const buy = selectBuyPrice(st, t.portId!, need.goodId)
+      const sell = selectSellPrice(st, t.targetPortId, need.goodId, t.portId!)
+      if (buy == null) { ok = false; continue }
+      cost += buy * need.quantity
+      back += (sell ?? 0) * need.quantity
+    }
+    if (!ok) continue   // 买不到由上面那条守着
+    const net = t.reward.gold + back - cost
+    /*
+     * 两条线，缺一不可：
+     *   ① 净额必须为正（不然就是让你倒贴钱跑腿）；
+     *   ② 赏金是"跑这一趟"的钱，**不该拿去补贴买贵了** —— 到岸卖价盖不住进货成本的一半，
+     *      就说明这单的方向是反的（在最贵的地方进货，或者目的地根本不收这种货）。
+     * 只写①会漏：把托尔图加的火炮改回需求价 1.6、卡塔赫纳仍收炮时，
+     * 净额还有 +64（5 天 12.8 金/天）—— ①过了，可这一单纯粹是"用 400 赏金补贴 336 的差价"。
+     */
+    if (net <= 0) traps.push(`#${t.id}「${t.title}」成本 ${cost} / 卖 ${back} / 赏金 ${t.reward.gold} → 净 ${net}`)
+    else if (net < t.reward.gold * 0.5) traps.push(`#${t.id}「${t.title}」净 ${net} 不到赏金 ${t.reward.gold} 的一半（货在倒贴）`)
+  }
+  assert(traps.length === 0, `送货合约不亏钱、也不靠赏金补差价${traps.length ? '：' + traps.join('；') : ''}`)
+  useGameStore.setState(econBase)
+}
 
 /*
  * 全航线收益：不允许出现「压倒性的异常值」。

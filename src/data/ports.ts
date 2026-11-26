@@ -43,12 +43,15 @@ export const ports: Port[] = [
 ]
 
 export const portGoods: PortGood[] = [
-  /* ---- 哈瓦那(1)：产蔗糖/烟草/朗姆酒，渴求丝绸/火炮 ---- */
+  /* ---- 哈瓦那(1)：产蔗糖/烟草/朗姆酒，渴求丝绸/火炮/火枪（珍宝舰队的母港，军械不嫌多） ---- */
   { portId: 1, goodId: 1, price: 8, stock: 200, priceModifier: 0.7 },
   { portId: 1, goodId: 5, price: 45, stock: 80, priceModifier: 0.8 },
   { portId: 1, goodId: 3, price: 30, stock: 100, priceModifier: 0.8 },
   { portId: 1, goodId: 10, price: 210, stock: 40, priceModifier: 1.6 },
   { portId: 1, goodId: 4, price: 130, stock: 25, priceModifier: 1.4 },
+  /* 火枪：任务 #22「加的斯的军械官要往哈瓦那送一批火枪」——原来哈瓦那不收火枪，
+     6 支卖回去只值 282（比加的斯买价 360 还低），44 天净赚 9 金/天，是条陷阱单。 */
+  { portId: 1, goodId: 7, price: 100, stock: 30, priceModifier: 1.4 },
   { portId: 1, goodId: 8, price: 150, stock: 30, priceModifier: 1.3 },
 
   /* ---- 皇家港(2)：海盗港，产朗姆酒，渴求火炮/火枪/丝绸 ---- */
@@ -74,11 +77,19 @@ export const portGoods: PortGood[] = [
    */
   { portId: 3, goodId: 5, price: 50, stock: 60, priceModifier: 0.9 },
 
-  /* ---- 托尔图加(4)：法国海盗岛，产烟草/朗姆酒，渴求武器 ---- */
+  /* ---- 托尔图加(4)：法国海盗岛，产烟草/朗姆酒/**缴获的火炮**，渴求火枪/香料 ---- */
   { portId: 4, goodId: 3, price: 28, stock: 150, priceModifier: 0.6 },
   { portId: 4, goodId: 1, price: 7, stock: 180, priceModifier: 0.6 },
   { portId: 4, goodId: 7, price: 115, stock: 25, priceModifier: 1.5 },
-  { portId: 4, goodId: 4, price: 145, stock: 20, priceModifier: 1.6 },
+  /*
+   * 火炮从 1.6（当需求方）改成 0.6：**海盗岛卖的是缴获品，不是买炮的地方**。
+   * 证据是任务 #11「要塞的火炮」——文案写"托尔图加的私掠船长手里有一批**缴获**的
+   * 火炮，想脱手给卡塔赫纳的守军"，可数据里托尔图加的火炮是全图最贵的几档之一
+   * （买 232/门），这一单实测量成：成本 928、卖价 172、赏金 400 → **净亏 356**，
+   * 跑 5 天倒贴钱。任务文案与价目表，必须有一个是错的 —— 这里是价目表错。
+   * 海盗买枪的需求仍由拿骚（火枪 1.35 / 火炮 1.4）与皇家港（火炮 1.6）承担。
+   */
+  { portId: 4, goodId: 4, price: 145, stock: 20, priceModifier: 0.6 },
   { portId: 4, goodId: 9, price: 250, stock: 20, priceModifier: 1.4 },
 
   /* ---- 圣胡安(5)：产烟草，渴求蔗糖/丝绸 ---- */
@@ -165,11 +176,14 @@ export const portGoods: PortGood[] = [
   { portId: 12, goodId: 3, price: 60, stock: 40, priceModifier: 1.3 },
   { portId: 12, goodId: 2, price: 48, stock: 40, priceModifier: 1.2 },
 
-  /* ---- 卡塔赫纳(13)：产烟草/蔗糖，渴求丝绸/火枪 ---- */
+  /* ---- 卡塔赫纳(13)：产烟草/蔗糖，渴求丝绸/火枪/火炮（西属美洲最要塞化的港） ---- */
   { portId: 13, goodId: 3, price: 30, stock: 140, priceModifier: 0.7 },
   { portId: 13, goodId: 5, price: 48, stock: 70, priceModifier: 0.85 },
   { portId: 13, goodId: 10, price: 190, stock: 30, priceModifier: 1.45 },
   { portId: 13, goodId: 7, price: 105, stock: 25, priceModifier: 1.4 },
+  /* 火炮：卡塔赫纳是西属美洲最大的要塞（圣费利佩城堡），守军要炮是史实；
+     加这一行是为了让任务 #11 的"卖炮给守军"真的成立（原来这里根本不收火炮） */
+  { portId: 13, goodId: 4, price: 120, stock: 20, priceModifier: 1.45 },
   { portId: 13, goodId: 1, price: 11, stock: 120, priceModifier: 0.95 },
 
   /* ---- 韦拉克鲁斯(14)：产烟草/蔗糖（最便宜），渴求丝绸/香料 ---- */
