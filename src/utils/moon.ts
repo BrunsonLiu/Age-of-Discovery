@@ -81,3 +81,33 @@ export function moonAt(day: number): MoonInfo {
 export function moonEventMul(day: number): number {
   return 1 + 0.3 * (moonIlluminationAt(day) - 0.5)
 }
+
+/**
+ * 亮区的多边形（相对圆心，单位与 r 相同）。
+ *
+ * 【为什么把几何放进 utils 而不是组件里】形状对不对，要能**算**出来核对：
+ * 亮区面积 ÷ 圆面积 必须等于 `moonIlluminationAt`。第一版用 SVG 的两段弧
+ * （`A rx ry ... sweep`）画，sweep 的语义配合缩小的椭圆半径完全靠试错，
+ * 结果娥眉月被画成"几乎整圆"（截图里圆心像素是亮的），而所有 DOM 断言都是绿的。
+ * 现在边界直接按公式算，单测用鞋带公式量面积。
+ *
+ * @param day 航程天数
+ * @param r 半径
+ * @param n 纵向分段（14 段在 16px 下已经看不出折线）
+ */
+export function moonLitPoints(day: number, r: number, n = 14): [number, number][] {
+  const m = moonAt(day)
+  if (m.illum < 0.004) return []
+  const k = Math.cos(m.phase * Math.PI * 2) // 1 = 新月，-1 = 满月
+  const sgn = m.waxing ? 1 : -1
+  const limb: [number, number][] = []
+  const term: [number, number][] = []
+  for (let i = 0; i <= n; i++) {
+    const y = -r + (2 * r * i) / n
+    const half = Math.sqrt(Math.max(0, r * r - y * y))
+    limb.push([sgn * half, y])
+    term.push([sgn * k * half, y])
+  }
+  /* 沿边缘下去，再沿交界回来 */
+  return [...limb, ...term.reverse()]
+}

@@ -16932,6 +16932,33 @@ console.log('== 帧率撑不住时，画质预设是最后一道闸 ==')
   assert(Math.abs(mFull - 1.15) < 0.01, `满月事件倍率 ×1.15（实测 ${mFull.toFixed(3)}）`)
   assert(mFull > mNew, '满月比新月更容易出事（方向：月明看得远，也更容易被看见）')
 
+  /*
+   * ④ 形状必须等于数字：亮区多边形的面积 ÷ 圆面积 ≈ 照亮比例。
+   * 这条是补第一版的漏 —— 当时用 SVG 两段弧画，sweep 标志位配错，
+   * **娥眉月被画成几乎整圆**（截图里圆心像素是亮的），而所有 DOM 断言全绿。
+   * 面积是唯一能自动量出"形状对不对"的东西。
+   */
+  const { moonLitPoints } = await import('../src/utils/moon')
+  const area = (pts: [number, number][]) => {
+    let a = 0
+    for (let i = 0; i < pts.length; i++) {
+      const [x1, y1] = pts[i]
+      const [x2, y2] = pts[(i + 1) % pts.length]
+      a += x1 * y2 - x2 * y1
+    }
+    return Math.abs(a) / 2
+  }
+  const R = 40
+  const ratios: string[] = []
+  for (let d = 1; d < 1 + SYNODIC_MONTH_DAYS; d += 1.5) {
+    const want = moonIlluminationAt(d)
+    const got = area(moonLitPoints(d, R, 64)) / (Math.PI * R * R)
+    if (Math.abs(got - want) > 0.02) ratios.push(`第${d.toFixed(0)}天 期望${want.toFixed(2)} 实际${got.toFixed(2)}`)
+  }
+  assert(ratios.length === 0, `亮区面积 = 照亮比例${ratios.length ? '（' + ratios.slice(0, 3).join('；') + '）' : ''}`)
+  assert(moonLitPoints(1, R, 64).length === 0, '新月没有亮区（不画路径，只留轮廓）')
+  assert(moonLitPoints(half, R, 64).length > 60, '满月画出了完整的亮区多边形')
+
   // ③ 接线：eventBias 那条链上必须有它（单一入口）
   const store = readFileSync(join(process.cwd(), 'src', 'store', 'useGameStore.ts'), 'utf8')
   assert(/voyageMod\.eventMul \* moonEventMul\(newDay\)/.test(store),
